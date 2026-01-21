@@ -1,0 +1,53 @@
+Thoughts on restructuring
+
+Modules
+  Sourcing - what projects to process
+    obtain from master spreadsheet
+    assign DRPID
+    duplicate prevention
+  Collectors
+    Gather files
+    Gather metadata
+    post-process metadata
+    pre-process HTML, eg. expand "read more"
+    HTML to PDF
+  Intermediate storage
+    files
+    metadata
+    progress/status
+    API?
+  Uploaders
+    create project
+    upload files
+    metadata
+    double check completion
+  Publication
+  Nomination
+  Update master spreadsheet
+
+Storage schema
+  DRPID - 6 digit int which is a hash of the source URL.
+  source_url
+  folder_path - used to store all files for the project
+  title - string with user readable project title
+  agency
+  office
+  summary
+  keywords - comma delimited strings
+  time_start
+  time_end
+  data_types
+  download_date
+  collection_notes
+  file_size
+  datalumos_id
+  published_url
+  status - latest step completed? or individual fields for each task
+  status_notes
+
+
+
+Assumptions
+  all contents are utf-8
+  rich text available for large text fields, e.g. summary
+  python 13
