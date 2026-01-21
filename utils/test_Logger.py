@@ -7,7 +7,7 @@ import sys
 import unittest
 from io import StringIO
 
-from Logger import Logger
+from utils.Logger import Logger
 
 
 class TestLogger(unittest.TestCase):

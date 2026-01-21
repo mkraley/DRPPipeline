@@ -5,7 +5,7 @@ Provides a centralized logger accessible via class methods.
 All standard logging.Logger methods are accessible directly.
 
 Example usage:
-    from Logger import Logger
+    from utils.Logger import Logger
     
     # Initialize logger
     Logger.initialize(log_level="INFO")

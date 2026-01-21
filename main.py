@@ -8,8 +8,8 @@ and uploading to various repositories, e.g. DataLumos.
 import sys
 from pathlib import Path
 
-from Args import Args
-from Logger import Logger
+from utils.Args import Args
+from utils.Logger import Logger
 
 
 def setup() -> None:

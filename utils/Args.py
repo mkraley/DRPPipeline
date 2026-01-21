@@ -14,7 +14,7 @@ Config File Format:
     }
 
 Example usage:
-    from Args import Args
+    from utils.Args import Args
     
     # Initialize with optional config file
     Args.initialize()
