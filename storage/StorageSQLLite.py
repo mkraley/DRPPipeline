@@ -3,36 +3,26 @@ SQLite implementation of the Storage protocol for DRP Pipeline.
 
 Provides SQLite-based storage with concurrent access support using WAL mode.
 
-Example usage:
-    from storage.StorageSQLLite import StorageSQLLite
-    from storage.Storage import Storage
-    
-    # Initialize storage
-    storage: Storage = StorageSQLLite()
-    storage.initialize(db_path="drp_pipeline.db")
-    
-    # Create a record
-    drpid = storage.create_record("https://example.com")
-    
-    # Get a record
-    record = storage.get(drpid)
-    
-    # Update a record
-    storage.update_record(drpid, {"title": "My Project", "status": "active"})
-    
-    # Delete a record
-    storage.delete(drpid)
+This class should be instantiated via Storage.initialize() factory method.
 """
 
 import sqlite3
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple, TYPE_CHECKING
 
 from utils.Logger import Logger
 
+if TYPE_CHECKING:
+    from storage.StorageProtocol import StorageProtocol
+
 
 class StorageSQLLite:
-    """SQLite implementation of the Storage protocol."""
+    """
+    SQLite implementation of the Storage protocol.
+    
+    This class implements StorageProtocol. Type checkers will verify
+    that all required protocol methods are present through structural typing.
+    """
     
     _connection: Optional[sqlite3.Connection] = None
     _db_path: Optional[Path] = None
@@ -66,13 +56,58 @@ class StorageSQLLite:
     CREATE INDEX IF NOT EXISTS idx_status ON projects(status);
     """
     
-    # Allowed columns for updates (excluding DRPID and source_url)
-    _allowed_columns = {
-        "folder_path", "title", "agency", "office", "summary", "keywords",
-        "time_start", "time_end", "data_types", "download_date",
-        "collection_notes", "file_size", "datalumos_id", "published_url",
-        "status", "status_notes"
-    }
+    def _ensure_initialized(self) -> None:
+        """
+        Ensure storage is initialized and connection is available.
+        
+        Raises:
+            RuntimeError: If storage is not initialized or connection is not available
+        """
+        if not self._initialized:
+            raise RuntimeError("Storage has not been initialized. Call initialize() first.")
+        
+        if self._connection is None:
+            raise RuntimeError("Database connection is not available.")
+    
+    def _execute_query(
+        self,
+        query: str,
+        parameters: Optional[Tuple[Any, ...]] = None,
+        operation_name: str = "operation",
+        commit: bool = True
+    ) -> sqlite3.Cursor:
+        """
+        Execute a SQL query with error handling.
+        
+        Args:
+            query: SQL query string
+            parameters: Optional query parameters
+            operation_name: Name of the operation for error messages
+            commit: Whether to commit after execution (for non-SELECT queries)
+            
+        Returns:
+            sqlite3.Cursor object
+            
+        Raises:
+            RuntimeError: If storage is not initialized
+            sqlite3.Error: If query execution fails
+        """
+        self._ensure_initialized()
+        
+        try:
+            if parameters:
+                cursor = self._connection.execute(query, parameters)
+            else:
+                cursor = self._connection.execute(query)
+            
+            if commit:
+                self._connection.commit()
+            
+            return cursor
+            
+        except sqlite3.Error as e:
+            Logger.error(f"Failed to {operation_name}: {e}")
+            raise
     
     def initialize(self, db_path: Optional[Path] = None) -> None:
         """
@@ -93,8 +128,6 @@ class StorageSQLLite:
         
         if db_path is None:
             db_path = Path.cwd() / "drp_pipeline.db"
-        elif not isinstance(db_path, Path):
-            db_path = Path(db_path)
         
         self._db_path = db_path
         
@@ -144,23 +177,12 @@ class StorageSQLLite:
             RuntimeError: If Storage is not initialized
             sqlite3.Error: If insert fails (e.g., duplicate source_url)
         """
-        if not self._initialized:
-            raise RuntimeError("Storage has not been initialized. Call initialize() first.")
-        
-        if self._connection is None:
-            raise RuntimeError("Database connection is not available.")
-        
-        try:
-            cursor = self._connection.execute(
-                "INSERT INTO projects (source_url) VALUES (?)",
-                (source_url,)
-            )
-            self._connection.commit()
-            return cursor.lastrowid
-            
-        except sqlite3.Error as e:
-            Logger.error(f"Failed to create record with source_url '{source_url}': {e}")
-            raise
+        cursor = self._execute_query(
+            "INSERT INTO projects (source_url) VALUES (?)",
+            (source_url,),
+            operation_name=f"create record with source_url '{source_url}'"
+        )
+        return cursor.lastrowid
     
     def update_record(self, drpid: int, values: Dict[str, Any]) -> None:
         """
@@ -175,47 +197,30 @@ class StorageSQLLite:
             
         Raises:
             RuntimeError: If Storage is not initialized
-            ValueError: If record doesn't exist or if trying to update DRPID/source_url
-            sqlite3.Error: If update fails
+            ValueError: If trying to update DRPID/source_url or if record doesn't exist
+            sqlite3.Error: If update fails (e.g., invalid column name)
         """
-        if not self._initialized:
-            raise RuntimeError("Storage has not been initialized. Call initialize() first.")
-        
-        if self._connection is None:
-            raise RuntimeError("Database connection is not available.")
-        
         # Check for forbidden columns
         if "DRPID" in values or "source_url" in values:
             raise ValueError("Cannot update DRPID or source_url")
         
-        # Filter out invalid columns
-        invalid_columns = set(values.keys()) - self._allowed_columns
-        if invalid_columns:
-            raise ValueError(f"Invalid columns: {', '.join(invalid_columns)}")
-        
         if not values:
             return  # Nothing to update
         
-        # Check if record exists
-        cursor = self._connection.execute(
-            "SELECT DRPID FROM projects WHERE DRPID = ?",
-            (drpid,)
-        )
-        if cursor.fetchone() is None:
-            raise ValueError(f"Record with DRPID {drpid} does not exist")
-        
-        # Build UPDATE query
+        # Build UPDATE query - database will raise error for invalid columns
         set_clauses = [f"{column} = ?" for column in values.keys()]
         update_query = f"UPDATE projects SET {', '.join(set_clauses)} WHERE DRPID = ?"
         params = tuple(values.values()) + (drpid,)
         
-        try:
-            self._connection.execute(update_query, params)
-            self._connection.commit()
-            
-        except sqlite3.Error as e:
-            Logger.error(f"Failed to update record {drpid}: {e}")
-            raise
+        cursor = self._execute_query(
+            update_query,
+            params,
+            operation_name=f"update record {drpid}"
+        )
+        
+        # Check if any rows were affected (record exists)
+        if cursor.rowcount == 0:
+            raise ValueError(f"Record with DRPID {drpid} does not exist")
     
     def get(self, drpid: int) -> Optional[Dict[str, Any]]:
         """
@@ -230,36 +235,27 @@ class StorageSQLLite:
         Raises:
             RuntimeError: If Storage is not initialized
         """
-        if not self._initialized:
-            raise RuntimeError("Storage has not been initialized. Call initialize() first.")
+        cursor = self._execute_query(
+            "SELECT * FROM projects WHERE DRPID = ?",
+            (drpid,),
+            operation_name=f"get record {drpid}",
+            commit=False
+        )
         
-        if self._connection is None:
-            raise RuntimeError("Database connection is not available.")
+        row = cursor.fetchone()
+        if row is None:
+            return None
         
-        try:
-            cursor = self._connection.execute(
-                "SELECT * FROM projects WHERE DRPID = ?",
-                (drpid,)
-            )
-            
-            row = cursor.fetchone()
-            if row is None:
-                return None
-            
-            # Get column names
-            column_names = [description[0] for description in cursor.description]
-            
-            # Build dictionary with non-null values only
-            result = {}
-            for col_name, value in zip(column_names, row):
-                if value is not None:
-                    result[col_name] = value
-            
-            return result
-            
-        except sqlite3.Error as e:
-            Logger.error(f"Failed to get record {drpid}: {e}")
-            raise
+        # Get column names
+        column_names = [description[0] for description in cursor.description]
+        
+        # Build dictionary with non-null values only
+        result = {}
+        for col_name, value in zip(column_names, row):
+            if value is not None:
+                result[col_name] = value
+        
+        return result
     
     def delete(self, drpid: int) -> None:
         """
@@ -273,30 +269,15 @@ class StorageSQLLite:
             ValueError: If record doesn't exist
             sqlite3.Error: If delete fails
         """
-        if not self._initialized:
-            raise RuntimeError("Storage has not been initialized. Call initialize() first.")
-        
-        if self._connection is None:
-            raise RuntimeError("Database connection is not available.")
-        
-        # Check if record exists
-        cursor = self._connection.execute(
-            "SELECT DRPID FROM projects WHERE DRPID = ?",
-            (drpid,)
+        cursor = self._execute_query(
+            "DELETE FROM projects WHERE DRPID = ?",
+            (drpid,),
+            operation_name=f"delete record {drpid}"
         )
-        if cursor.fetchone() is None:
-            raise ValueError(f"Record with DRPID {drpid} does not exist")
         
-        try:
-            self._connection.execute(
-                "DELETE FROM projects WHERE DRPID = ?",
-                (drpid,)
-            )
-            self._connection.commit()
-            
-        except sqlite3.Error as e:
-            Logger.error(f"Failed to delete record {drpid}: {e}")
-            raise
+        # Check if any rows were affected (record exists)
+        if cursor.rowcount == 0:
+            raise ValueError(f"Record with DRPID {drpid} does not exist")
     
     def close(self) -> None:
         """
@@ -325,8 +306,7 @@ class StorageSQLLite:
         Raises:
             RuntimeError: If Storage is not initialized
         """
-        if not self._initialized:
-            raise RuntimeError("Storage has not been initialized. Call initialize() first.")
+        self._ensure_initialized()
         
         if self._db_path is None:
             raise RuntimeError("Database path is not set.")

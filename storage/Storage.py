@@ -1,86 +1,79 @@
 """
-Storage protocol interface for DRP Pipeline.
+Storage factory for DRP Pipeline.
 
-Defines the Storage protocol that all storage implementations must follow.
+Provides a factory method to create and initialize storage implementations
+without requiring direct imports of implementation classes.
 
 Example usage:
-    from storage.Storage import Storage
-    from storage.StorageSQLLite import StorageSQLLite
+    from storage import Storage
     
-    # Use protocol for type hints
-    storage: Storage = StorageSQLLite()
-    storage.initialize(db_path="drp_pipeline.db")
+    # Initialize storage using implementation class name
+    storage = Storage.initialize('StorageSQLLite', db_path="drp_pipeline.db")
+    
+    # Create a record
+    drpid = storage.create_record("https://example.com")
+    
+    # Get a record
+    record = storage.get(drpid)
+    
+    # Update a record
+    storage.update_record(drpid, {"title": "My Project", "status": "active"})
+    
+    # Delete a record
+    storage.delete(drpid)
 """
 
 from pathlib import Path
-from typing import Optional, Protocol, Dict, Any
+from typing import Optional
+
+from storage.StorageProtocol import StorageProtocol
 
 
-class Storage(Protocol):
-    """
-    Protocol defining the storage API interface.
+class Storage:
+    """Factory class for creating and initializing storage implementations."""
     
-    Any class implementing this protocol must provide these methods
-    for managing project records.
-    """
+    # Registry mapping class names to their module paths
+    _implementations = {
+        'StorageSQLLite': 'storage.StorageSQLLite.StorageSQLLite',
+    }
     
-    def initialize(self, db_path: Optional[Path] = None) -> None:
+    @classmethod
+    def initialize(cls, implementation: str, db_path: Optional[Path] = None) -> StorageProtocol:
         """
-        Initialize the storage backend.
+        Create and initialize a storage implementation.
         
         Args:
-            db_path: Optional path to storage file/database.
-        """
-        ...
-    
-    def create_record(self, source_url: str) -> int:
-        """
-        Create a new record with the given source_url.
-        
-        Args:
-            source_url: The source URL for the project
+            implementation: Name of the implementation class (e.g., 'StorageSQLLite')
+            db_path: Optional path to storage file/database
             
         Returns:
-            The DRPID of the created record
-        """
-        ...
-    
-    def update_record(self, drpid: int, values: Dict[str, Any]) -> None:
-        """
-        Update an existing record with the provided values.
-        
-        Only the columns specified in values are updated. DRPID and source_url
-        cannot be updated.
-        
-        Args:
-            drpid: The DRPID of the record to update
-            values: Dictionary of column names and values to update
+            Initialized storage instance conforming to StorageProtocol
             
         Raises:
-            ValueError: If record doesn't exist or if trying to update DRPID/source_url
+            ValueError: If implementation name is not recognized
+            ImportError: If the implementation class cannot be imported
+            RuntimeError: If initialization fails
         """
-        ...
-    
-    def get(self, drpid: int) -> Optional[Dict[str, Any]]:
-        """
-        Get a record by DRPID.
+        if implementation not in cls._implementations:
+            raise ValueError(
+                f"Unknown storage implementation: {implementation}. "
+                f"Available implementations: {', '.join(cls._implementations.keys())}"
+            )
         
-        Args:
-            drpid: The DRPID of the record to retrieve
-            
-        Returns:
-            Dictionary of non-null column values, or None if record not found
-        """
-        ...
-    
-    def delete(self, drpid: int) -> None:
-        """
-        Delete a record by DRPID.
+        # Dynamically import the implementation class
+        module_path = cls._implementations[implementation]
+        module_name, class_name = module_path.rsplit('.', 1)
         
-        Args:
-            drpid: The DRPID of the record to delete
-            
-        Raises:
-            ValueError: If record doesn't exist
-        """
-        ...
+        try:
+            module = __import__(module_name, fromlist=[class_name])
+            implementation_class = getattr(module, class_name)
+        except (ImportError, AttributeError) as e:
+            raise ImportError(
+                f"Failed to import storage implementation '{implementation}': {e}"
+            ) from e
+        
+        # Create instance and initialize it
+        instance = implementation_class()
+        instance.initialize(db_path=db_path)
+        
+        return instance

@@ -241,14 +241,15 @@ class TestStorageSQLLite(unittest.TestCase):
         self.assertIn("source_url", str(cm.exception))
     
     def test_update_record_invalid_column(self) -> None:
-        """Test that invalid columns raise ValueError."""
+        """Test that invalid columns raise sqlite3.OperationalError."""
         self.storage.initialize(db_path=self.test_db_path)
         
         drpid = self.storage.create_record("https://example.com")
         
-        with self.assertRaises(ValueError) as cm:
+        # Database will raise error for invalid column
+        with self.assertRaises(sqlite3.OperationalError) as cm:
             self.storage.update_record(drpid, {"invalid_column": "value"})
-        self.assertIn("Invalid columns", str(cm.exception))
+        self.assertIn("no such column", str(cm.exception))
     
     def test_update_record_empty_dict(self) -> None:
         """Test that empty update dict does nothing."""
