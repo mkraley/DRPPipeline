@@ -35,6 +35,7 @@
 - Provide clear error messages with context
 - Use try/except blocks for file operations and network requests
 - Log errors but don't crash the entire process unless necessary
+- Use exceptions for fatal errors
 
 ## Testing & Validation
 - Validate URLs before processing

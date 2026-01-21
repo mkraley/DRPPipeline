@@ -1,42 +1,49 @@
 """
 DRP Pipeline - Main entry point.
 
-A modular pipeline for collecting data from various sources
-and uploading to various destinations.
+A modular pipeline for collecting data from various sources, e.g. government websites
+and uploading to various repositories, e.g. DataLumos.
 """
 
-import logging
 import sys
 from pathlib import Path
 
+from Args import Args
+from Logger import Logger
 
-def setup_logging(log_level: str = "INFO") -> None:
-    """
-    Configure logging for the application.
 
-    Args:
-        log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
+def setup() -> None:
     """
-    logging.basicConfig(
-        level=getattr(logging, log_level.upper()),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
+    Initialize the application: configuration and logging.
+    
+    Note: Args must be initialized before Logger since Logger configuration
+    comes from Args. Args uses print() for warnings, not Logger, so this order is safe.
+    """
+    # Initialize configuration (handles command line args and config file)
+    Args.initialize()
+    
+    # Initialize logger using config (Args already initialized above)
+    log_level = Args.log_level
+    Logger.initialize(log_level=log_level)
+    
+    Logger.info("DRP Pipeline starting...")
+    Logger.info(f"Python version: {sys.version}")
+    Logger.info(f"Working directory: {Path.cwd()}")
+    
+    # Log configuration info
+    config_file = getattr(Args, 'config_file', None)
+    if config_file:
+        Logger.info(f"Using config file: {config_file}")
+    Logger.info(f"Log level: {log_level}")
 
 
 def main() -> None:
     """Main entry point for the DRP Pipeline application."""
-    setup_logging()
-    logger = logging.getLogger(__name__)
-    
-    logger.info("DRP Pipeline starting...")
-    logger.info(f"Python version: {sys.version}")
-    logger.info(f"Working directory: {Path.cwd()}")
+    setup()
     
     # TODO: Implement pipeline logic
-    logger.info("DRP Pipeline initialized successfully")
+    Logger.info("DRP Pipeline initialized successfully")
 
 
 if __name__ == "__main__":
     main()
-
