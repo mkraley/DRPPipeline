@@ -18,8 +18,7 @@ class TestArgs(unittest.TestCase):
         import sys
         # Save and restore original argv to prevent test interference
         self._original_argv = sys.argv.copy()
-        Args._args = None
-        Args._args_explicit = None
+        Args._parsed_args = {}
         Args._config = {}
         Args._initialized = False
     
@@ -182,7 +181,7 @@ class TestArgs(unittest.TestCase):
         Args.initialize()
         args = Args.get_args()
         self.assertIsNotNone(args)
-        self.assertTrue(hasattr(args, 'log_level'))
+        self.assertIsInstance(args, dict)
     
     def test_get_config(self) -> None:
         """Test get_config method."""

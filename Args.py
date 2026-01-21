@@ -20,18 +20,21 @@ Example usage:
     Args.initialize()
     
     # Access configuration values as attributes
-    log_level = Args.log_level  # From --log-level or config file
+    log_level = Args.log_level  # From --log-level, config file, or defaults
     config_file = Args.config_file  # From --config or config file
-    
-Note: Command line arguments take precedence over config file values.
-Command line args use hyphens (--log-level) but are accessed with underscores (log_level).
+
+Note: Priority order (highest to lowest):
+    1. Command line arguments (from Typer)
+    2. Config file values
+    3. Default values (from defaults dict)
 """
 
-import argparse
 import json
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+import typer
 
 
 class ArgsMeta(type):
@@ -52,113 +55,140 @@ class ArgsMeta(type):
 class Args(metaclass=ArgsMeta):
     """Args class providing direct attribute access to configuration."""
     
-    _args: Optional[argparse.Namespace] = None
+    # Default values (lowest priority)
+    _defaults: Dict[str, Any] = {
+        "log_level": "INFO",
+    }
+    
     _config: Dict[str, Any] = {}
     _initialized: bool = False
-    
+    _app: Optional[typer.Typer] = None
+    _parsed_args: Dict[str, Any] = {}
+
     @classmethod
     def initialize(cls, config_file: Optional[Path] = None) -> None:
         """
-        Initialize configuration from command line args and config file.
+        Initialize configuration from defaults, config file, and command line args.
+        
+        Priority order (highest to lowest):
+            1. Command line arguments
+            2. Config file values
+            3. Default values
         
         Args:
-            config_file: Optional path to config file. If None, only command line args are used.
+            config_file: Optional path to config file. If None, uses --config from command line or no config file.
         """
         if cls._initialized:
             return
         
-        # Parse command line arguments
-        parser = cls._create_argument_parser()
-        cls._args = parser.parse_args()
+        # Start with defaults (lowest priority)
+        cls._config = dict(cls._defaults)
         
-        # Load config file if provided
-        config_path = config_file or cls._args.config
-        if config_path and Path(config_path).exists():
-            cls._load_config_file(Path(config_path))
-        elif config_path and not Path(config_path).exists():
-            print(f"Warning: Config file '{config_path}' not found. Using defaults and command line arguments only.",
-                  file=sys.stderr)
+        # Parse command line arguments first to get config file path if not provided
+        parsed_args = cls._parse_command_line()
         
-        # Override config file values with command line arguments
-        cls._apply_command_line_overrides()
+        # Load config file if provided (middle priority - overrides defaults)
+        config_path = config_file or parsed_args.get("config")
+        if config_path:
+            if not isinstance(config_path, Path):
+                config_path = Path(config_path)
+            if config_path.exists():
+                cls._load_config_file(config_path)
+            else:
+                # Warn if config file specified but not found (from parameter or command line)
+                print(f"Warning: Config file '{config_path}' not found. Using defaults and command line arguments only.",
+                      file=sys.stderr)
+        
+        # Apply command line arguments (highest priority - overrides config file and defaults)
+        cls._apply_command_line_args(parsed_args)
         
         cls._initialized = True
-    
+
     @classmethod
-    def _create_argument_parser(cls) -> argparse.ArgumentParser:
-        """Create and configure the argument parser."""
-        parser = argparse.ArgumentParser(
-            description="DRP Pipeline - Modular data collection and upload pipeline",
-            formatter_class=argparse.ArgumentDefaultsHelpFormatter
-        )
-        
-        cls._add_arguments(parser)
-        
-        return parser
-    
-    @classmethod
-    def _add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+    def _parse_command_line(cls) -> Dict[str, Any]:
         """
-        Add command line arguments to the parser.
+        Parse command line arguments using Typer.
         
-        Args:
-            parser: The argparse.ArgumentParser instance
+        Returns:
+            Dictionary of parsed command line arguments
         """
-        parser.add_argument(
-            "--config",
-            type=Path,
-            help="Path to configuration file (JSON format)"
-        )
+        # Store parsed values in a dict that can be accessed from the callback
+        parsed_values: Dict[str, Any] = {}
         
-        parser.add_argument(
-            "--log-level",
-            dest="log_level",
-            choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-            default="INFO",
-            help="Set the logging level"
-        )
-    
+        def callback(
+            ctx: typer.Context,
+            config: Optional[str] = typer.Option(None, "--config", "-c", help="Path to configuration file (JSON format)"),
+            log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Set the logging level", 
+                                                     case_sensitive=False)
+        ) -> None:
+            """Callback to capture Typer parsed values."""
+            if config is not None:
+                parsed_values["config"] = config
+            if log_level is not None:
+                # Normalize to uppercase
+                parsed_values["log_level"] = log_level.upper()
+        
+        # Create Typer app with callback
+        app = typer.Typer(help="DRP Pipeline - Modular data collection and upload pipeline")
+        app.callback(invoke_without_command=True)(callback)
+        
+        # Parse sys.argv, but handle unittest case where we might need to skip certain args
+        # Typer will handle parsing, but we need to catch SystemExit that Typer might raise
+        try:
+            app(sys.argv[1:], standalone_mode=False)
+        except SystemExit:
+            # Typer may raise SystemExit for help/errors, but we want to continue in unittest
+            pass
+        
+        return parsed_values
+
     @classmethod
     def _load_config_file(cls, config_path: Path) -> None:
         """
-        Load configuration from JSON file.
+        Load configuration from JSON file and merge into config.
         
         Args:
             config_path: Path to the JSON config file
         """
         try:
             with open(config_path, "r", encoding="utf-8") as f:
-                cls._config = json.load(f)
+                config_file_data = json.load(f)
+                # Merge config file data into existing config (overriding defaults)
+                cls._config.update(config_file_data)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON in config file '{config_path}': {e}")
         except Exception as e:
             raise IOError(f"Error reading config file '{config_path}': {e}")
-    
+
     @classmethod
-    def _apply_command_line_overrides(cls) -> None:
-        """Apply command line argument values to config, overriding file values."""
-        # Apply all command line arguments to config dict
-        # This includes defaults from argparse, which will override config file values
-        # Convert Path objects to strings for config_file
-        for key, value in vars(cls._args).items():
+    def _apply_command_line_args(cls, parsed_args: Dict[str, Any]) -> None:
+        """
+        Apply command line argument values to config, overriding file values and defaults.
+        
+        Args:
+            parsed_args: Dictionary of parsed command line arguments from Typer
+        """
+        # Store parsed args for get_args() method
+        cls._parsed_args = parsed_args
+      
+        # Merge command line args into config (overriding config file and defaults)
+        # Only include values that were actually provided (not None)
+        for key, value in parsed_args.items():
             if value is not None:
-                if isinstance(value, Path):
-                    cls._config[key] = str(value)
-                else:
-                    cls._config[key] = value
-    
+                cls._config[key] = value
+
     @classmethod
-    def get_args(cls) -> argparse.Namespace:
+    def get_args(cls) -> Dict[str, Any]:
         """
         Get the parsed command line arguments.
         
         Returns:
-            argparse.Namespace object containing all arguments
+            Dictionary containing all command line arguments that were provided
         """
         if not cls._initialized:
             raise RuntimeError("Args has not been initialized. Call Args.initialize() first.")
-        return cls._args
-    
+        return cls._parsed_args.copy()
+
     @classmethod
     def get_config(cls) -> Dict[str, Any]:
         """
