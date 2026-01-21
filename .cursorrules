@@ -14,6 +14,9 @@
 - segregate code in multiple files rather than creating very large source files. Typically only one class per file.
 - Don't Repeat Yourself - look for duplicate (or almost duplicate) code and combine them into common methods or utility functions.
 
+## Debugging
+- when agent creates temp files for debugging, keep them and any output files they generate in a separate folder, e.g. debug
+
 ## Source control
 - at each iteration of the chat, prepare a commit with all changed files and a suggested commit comment.
 
