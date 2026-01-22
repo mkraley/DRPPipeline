@@ -2,27 +2,28 @@ Thoughts on restructuring
 
 Modules
   Sourcing - what projects to process
-    obtain from master spreadsheet
-    assign DRPID
+    obtain from master spreadsheet, e.g. DRP Data_Inventories
+    create database record and generate ID
     duplicate prevention
+    check for source URL existence
   Collectors
-    Gather files
-    Gather metadata
-    post-process metadata
     pre-process HTML, eg. expand "read more"
+    Harvest metadata
+    post-process metadata
     HTML to PDF
+    download files
   Intermediate storage
     files
     metadata
     progress/status
-    API?
-  Uploaders
+    API
+  Uploading
     create project
     upload files
     metadata
     double check completion
   Publication
-  Nomination
+  Add to U.S. Government Web & Data Archive
   Update master spreadsheet
 
 Storage schema
