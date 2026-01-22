@@ -27,16 +27,17 @@ class SpreadsheetCandidateFetcher:
         Obtain candidate source URLs from the configured spreadsheet.
 
         Fetches the tab as CSV, filters rows with _row_passes_filter, returns
-        non-empty URL column values.
+        non-empty URL column values. Stops once num_rows limit is reached.
 
         Returns:
-            List of candidate URLs to process.
+            List of candidate URLs to process (limited by sourcing_num_rows if set).
         """
         spreadsheet_url = Args.sourcing_spreadsheet_url
         sheet_id, gid = parse_spreadsheet_url(spreadsheet_url)
         csv_text = self._fetch_sheet_csv(sheet_id, gid)
         url_column = Args.sourcing_url_column
-        return self._extract_urls_from_csv(csv_text, url_column)
+        num_rows = Args.sourcing_num_rows
+        return self._extract_urls_from_csv(csv_text, url_column, num_rows)
 
     def _fetch_sheet_csv(self, sheet_id: str, gid: str) -> str:
         """
@@ -76,9 +77,21 @@ class SpreadsheetCandidateFetcher:
         download_location = (row.get("Download Location") or "").strip()
         return claimed == "" and download_location == ""
 
-    def _extract_urls_from_csv(self, csv_text: str, url_column: str) -> list[str]:
+    def _extract_urls_from_csv(
+        self, csv_text: str, url_column: str, num_rows: int | None = None
+    ) -> list[str]:
         """
         Parse CSV, filter rows with _row_passes_filter, collect non-empty URL values.
+
+        Stops processing once num_rows URLs have been collected (if num_rows is set).
+
+        Args:
+            csv_text: CSV content to parse.
+            url_column: Column name containing URLs.
+            num_rows: Maximum number of URLs to return. None = unlimited.
+
+        Returns:
+            List of candidate URLs (limited to num_rows if set).
 
         Raises:
             ValueError: If required columns (URL column or filter columns) are missing.
@@ -108,6 +121,10 @@ class SpreadsheetCandidateFetcher:
         
         urls: list[str] = []
         for row in reader:
+            # Stop if we've reached the limit
+            if num_rows is not None and len(urls) >= num_rows:
+                break
+            
             if not self._row_passes_filter(row):
                 continue
             raw = row.get(url_column, "")

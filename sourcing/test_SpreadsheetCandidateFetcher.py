@@ -91,3 +91,66 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         # Note: In practice, columns are validated before calling this method.
         # This test verifies the method's behavior when keys are missing.
         self.assertTrue(self.fetcher._row_passes_filter({}))
+
+    @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
+    def test_get_candidate_urls_respects_num_rows_limit(self, mock_fetch: object) -> None:
+        """Test get_candidate_urls stops at num_rows limit."""
+        # CSV has 4 valid URLs (a, d, and two more we'll add)
+        csv_with_many = (
+            "Admin Notes,Claimed (add your name),URL,Download Location\r\n"
+            ",,https://example.com/a,\r\n"
+            ",alice,https://example.com/b,\r\n"
+            ",,https://example.com/c,/path\r\n"
+            ",,https://example.com/d,\r\n"
+            ",,https://example.com/e,\r\n"
+            ",,https://example.com/f,\r\n"
+        )
+        mock_fetch.return_value = csv_with_many
+        
+        # Set limit to 2
+        Args._config["sourcing_num_rows"] = 2
+        urls = self.fetcher.get_candidate_urls()
+        self.assertEqual(len(urls), 2)
+        self.assertEqual(urls, ["https://example.com/a", "https://example.com/d"])
+        
+        # Reset
+        Args._config["sourcing_num_rows"] = None
+
+    @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
+    def test_get_candidate_urls_unlimited_when_num_rows_none(self, mock_fetch: object) -> None:
+        """Test get_candidate_urls returns all URLs when num_rows is None."""
+        csv_with_many = (
+            "Admin Notes,Claimed (add your name),URL,Download Location\r\n"
+            ",,https://example.com/a,\r\n"
+            ",,https://example.com/d,\r\n"
+            ",,https://example.com/e,\r\n"
+        )
+        mock_fetch.return_value = csv_with_many
+        
+        Args._config["sourcing_num_rows"] = None
+        urls = self.fetcher.get_candidate_urls()
+        self.assertEqual(len(urls), 3)
+        self.assertEqual(urls, ["https://example.com/a", "https://example.com/d", "https://example.com/e"])
+
+    @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
+    def test_get_candidate_urls_stops_early_when_limit_reached(self, mock_fetch: object) -> None:
+        """Test that processing stops once limit is reached (doesn't process all rows)."""
+        # Create CSV with many rows, but only first 2 pass filter
+        csv_many_rows = (
+            "Admin Notes,Claimed (add your name),URL,Download Location\r\n"
+            ",,https://example.com/a,\r\n"
+            ",,https://example.com/b,\r\n"
+            ",alice,https://example.com/c,\r\n"  # Filtered out
+            ",,https://example.com/d,/path\r\n"  # Filtered out
+            ",,https://example.com/e,\r\n"  # Should not be processed
+            ",,https://example.com/f,\r\n"  # Should not be processed
+        )
+        mock_fetch.return_value = csv_many_rows
+        
+        Args._config["sourcing_num_rows"] = 2
+        urls = self.fetcher.get_candidate_urls()
+        # Should stop after collecting 2 URLs, even though more valid URLs exist
+        self.assertEqual(len(urls), 2)
+        self.assertEqual(urls, ["https://example.com/a", "https://example.com/b"])
+        
+        Args._config["sourcing_num_rows"] = None
