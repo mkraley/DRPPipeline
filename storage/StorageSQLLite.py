@@ -48,7 +48,9 @@ class StorageSQLLite:
         datalumos_id TEXT UNIQUE,
         published_url TEXT,
         status TEXT,
-        status_notes TEXT
+        status_notes TEXT,
+        warnings TEXT,
+        errors TEXT
     );
     
     CREATE INDEX IF NOT EXISTS idx_source_url ON projects(source_url);
