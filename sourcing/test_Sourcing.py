@@ -12,23 +12,11 @@ from storage import Storage
 from utils.Args import Args
 from utils.Logger import Logger
 
-from sourcing import Sourcing, SourceConfig
-
-
-def _csv_candidates() -> str:
-    """Sample CSV matching Data_Inventories layout: URL, Claimed, Download Location."""
-    return (
-        "Admin Notes,Claimed (add your name),URL,Download Location\r\n"
-        ",,https://example.com/a,\r\n"
-        ",alice,https://example.com/b,\r\n"
-        ",,https://example.com/c,/path\r\n"
-        ",,https://example.com/d,\r\n"
-        ",,,\r\n"
-    )
+from sourcing import Sourcing
 
 
 class TestSourcing(unittest.TestCase):
-    """Test cases for Sourcing stubs."""
+    """Test cases for Sourcing."""
 
     def setUp(self) -> None:
         """Set up test environment before each test."""
@@ -51,52 +39,20 @@ class TestSourcing(unittest.TestCase):
             import shutil
             shutil.rmtree(self.temp_dir)
 
-    def test_run_accepts_sources_and_returns_none(self) -> None:
-        """Test run() accepts list of SourceConfig and returns None."""
-        config = SourceConfig()
-        result = self.sourcing.run([config])
+    def test_run_returns_none(self) -> None:
+        """Test run() takes no args and returns None."""
+        result = self.sourcing.run()
         self.assertIsNone(result)
 
-    @patch("sourcing.Sourcing.Sourcing._fetch_sheet_csv")
-    def test_get_candidate_urls_returns_filtered_urls(self, mock_fetch: object) -> None:
-        """Test get_candidate_urls() fetches CSV, filters rows, returns URL list."""
-        mock_fetch.return_value = _csv_candidates()
-        config = SourceConfig()
-        urls = self.sourcing.get_candidate_urls(config)
-        self.assertIsInstance(urls, list)
-        self.assertEqual(urls, ["https://example.com/a", "https://example.com/d"])
-        mock_fetch.assert_called_once()
-
-    @patch("sourcing.Sourcing.Sourcing._fetch_sheet_csv")
-    def test_get_candidate_urls_missing_url_column_returns_empty(self, mock_fetch: object) -> None:
-        """Test get_candidate_urls() returns [] and warns when URL column missing."""
-        mock_fetch.return_value = "ColA,ColB\r\n1,2\r\n"
-        config = SourceConfig()
-        urls = self.sourcing.get_candidate_urls(config)
-        self.assertEqual(urls, [])
-
-    @patch("sourcing.Sourcing.Sourcing._fetch_sheet_csv")
-    def test_get_candidate_urls_source_override(self, mock_fetch: object) -> None:
-        """Test get_candidate_urls() uses source spreadsheet/tab when provided."""
-        mock_fetch.return_value = _csv_candidates()
-        url = "https://docs.google.com/spreadsheets/d/OVERRIDE_ID/edit?gid=999"
-        config = SourceConfig(spreadsheet=url, tab="999")
-        self.sourcing.get_candidate_urls(config)
-        mock_fetch.assert_called_once_with("OVERRIDE_ID", "999")
-
-    @patch("sourcing.Sourcing.Sourcing._fetch_sheet_csv")
-    def test_get_candidate_urls_missing_filter_columns_excluded(self, mock_fetch: object) -> None:
-        """Test get_candidate_urls() excludes missing filter columns and warns."""
-        # CSV has URL and Claimed only; "Download Location" missing
-        csv_no_dl = (
-            "Admin Notes,Claimed (add your name),URL\r\n"
-            ",,https://example.com/x\r\n"
-            ",alice,https://example.com/y\r\n"
-        )
-        mock_fetch.return_value = csv_no_dl
-        config = SourceConfig()
-        urls = self.sourcing.get_candidate_urls(config)
-        self.assertEqual(urls, ["https://example.com/x"])
+    @patch("sourcing.Sourcing.SpreadsheetCandidateFetcher")
+    def test_get_candidate_urls_delegates_to_fetcher(self, mock_fetcher_cls: object) -> None:
+        """Test get_candidate_urls() delegates to SpreadsheetCandidateFetcher."""
+        mock_fetcher = mock_fetcher_cls.return_value
+        mock_fetcher.get_candidate_urls.return_value = ["https://example.com/1"]
+        urls = self.sourcing.get_candidate_urls()
+        self.assertEqual(urls, ["https://example.com/1"])
+        mock_fetcher_cls.assert_called_once()
+        mock_fetcher.get_candidate_urls.assert_called_once_with()
 
     def test_process_candidate_returns_bool(self) -> None:
         """Test process_candidate() returns bool (stub returns False)."""
