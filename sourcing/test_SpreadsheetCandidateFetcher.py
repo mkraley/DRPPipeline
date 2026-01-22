@@ -49,23 +49,27 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         mock_fetch.assert_called_once()
 
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
-    def test_get_candidate_urls_missing_url_column_returns_empty(self, mock_fetch: object) -> None:
-        """Test get_candidate_urls returns [] and warns when URL column missing."""
+    def test_get_candidate_urls_missing_url_column_raises(self, mock_fetch: object) -> None:
+        """Test get_candidate_urls raises ValueError when URL column missing."""
         mock_fetch.return_value = "ColA,ColB\r\n1,2\r\n"
-        urls = self.fetcher.get_candidate_urls()
-        self.assertEqual(urls, [])
+        with self.assertRaises(ValueError) as cm:
+            self.fetcher.get_candidate_urls()
+        self.assertIn("missing required URL column", str(cm.exception))
+        self.assertIn("URL", str(cm.exception))
 
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
-    def test_get_candidate_urls_filters_when_column_missing(self, mock_fetch: object) -> None:
-        """Test _row_passes_filter treats missing columns as empty; filters by Claimed."""
+    def test_get_candidate_urls_missing_filter_column_raises(self, mock_fetch: object) -> None:
+        """Test get_candidate_urls raises ValueError when filter column missing."""
         csv_no_dl = (
             "Admin Notes,Claimed (add your name),URL\r\n"
             ",,https://example.com/x\r\n"
             ",alice,https://example.com/y\r\n"
         )
         mock_fetch.return_value = csv_no_dl
-        urls = self.fetcher.get_candidate_urls()
-        self.assertEqual(urls, ["https://example.com/x"])
+        with self.assertRaises(ValueError) as cm:
+            self.fetcher.get_candidate_urls()
+        self.assertIn("missing required filter columns", str(cm.exception))
+        self.assertIn("Download Location", str(cm.exception))
 
     def test_row_passes_filter_both_empty(self) -> None:
         """Test _row_passes_filter returns True when Claimed and Download Location empty."""
@@ -83,5 +87,7 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         self.assertFalse(self.fetcher._row_passes_filter(row))
 
     def test_row_passes_filter_missing_columns_treated_empty(self) -> None:
-        """Test _row_passes_filter treats missing columns as empty."""
+        """Test _row_passes_filter treats missing columns as empty (for row dict access)."""
+        # Note: In practice, columns are validated before calling this method.
+        # This test verifies the method's behavior when keys are missing.
         self.assertTrue(self.fetcher._row_passes_filter({}))

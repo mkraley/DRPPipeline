@@ -68,7 +68,9 @@ class SpreadsheetCandidateFetcher:
         Return True if the row meets the desired criteria.
 
         Keeps rows where Claimed (add your name) and Download Location are empty.
-        Missing columns are treated as empty.
+        
+        Note: This method assumes required columns are present (validated in
+        _extract_urls_from_csv). Missing columns would indicate a bug.
         """
         claimed = (row.get("Claimed (add your name)") or "").strip()
         download_location = (row.get("Download Location") or "").strip()
@@ -78,16 +80,32 @@ class SpreadsheetCandidateFetcher:
         """
         Parse CSV, filter rows with _row_passes_filter, collect non-empty URL values.
 
-        Logs a warning and returns [] if the URL column is missing.
+        Raises:
+            ValueError: If required columns (URL column or filter columns) are missing.
         """
         reader = csv.DictReader(io.StringIO(csv_text))
         fieldnames = reader.fieldnames or []
+        
+        # Required columns for _row_passes_filter
+        required_filter_columns = ["Claimed (add your name)", "Download Location"]
+        
+        # Check URL column
         if url_column not in fieldnames:
-            Logger.warning(
-                f"CSV missing URL column '{url_column}'. "
+            raise ValueError(
+                f"CSV missing required URL column '{url_column}'. "
                 f"Available columns: {fieldnames}"
             )
-            return []
+        
+        # Check filter columns
+        missing_filter_columns = [
+            col for col in required_filter_columns if col not in fieldnames
+        ]
+        if missing_filter_columns:
+            raise ValueError(
+                f"CSV missing required filter columns: {missing_filter_columns}. "
+                f"Available columns: {fieldnames}"
+            )
+        
         urls: list[str] = []
         for row in reader:
             if not self._row_passes_filter(row):
