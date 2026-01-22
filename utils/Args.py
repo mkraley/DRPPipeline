@@ -58,6 +58,14 @@ class Args(metaclass=ArgsMeta):
     # Default values (lowest priority)
     _defaults: Dict[str, Any] = {
         "log_level": "INFO",
+        "sourcing_spreadsheet_url": (
+            "https://docs.google.com/spreadsheets/d/1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY/edit?gid=101637367#gid=101637367"
+        ),
+        "sourcing_url_column": "URL",
+        "sourcing_filter_empty_columns": [
+            "Claimed (add your name)",
+            "Download Location",
+        ],
     }
     
     _config: Dict[str, Any] = {}

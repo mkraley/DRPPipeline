@@ -14,11 +14,11 @@ class SourceConfig:
     Configuration for a single source of candidate URLs.
 
     Attributes:
-        spreadsheet: Path or ID of the source spreadsheet (e.g. DRP Data_Inventories).
-        tab: Sheet/tab name within the spreadsheet.
+        spreadsheet: Google Sheets URL (edit or export). If empty, uses Args.sourcing_spreadsheet_url.
+        tab: Sheet gid. If empty, uses gid from spreadsheet URL.
         filter_criteria: Optional filter to restrict which rows qualify (structure TBD).
     """
 
-    spreadsheet: str
-    tab: str
+    spreadsheet: str = ""
+    tab: str = ""
     filter_criteria: Optional[dict[str, Any]] = None

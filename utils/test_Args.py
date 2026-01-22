@@ -34,6 +34,18 @@ class TestArgs(unittest.TestCase):
         Args.initialize()
         self.assertTrue(Args._initialized)
         self.assertEqual(Args.log_level, "INFO")
+
+    def test_sourcing_defaults(self) -> None:
+        """Test sourcing-related defaults are present."""
+        import sys
+        sys.argv = ["test"]
+        Args.initialize()
+        self.assertIn("1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY", Args.sourcing_spreadsheet_url)
+        self.assertEqual(Args.sourcing_url_column, "URL")
+        self.assertEqual(
+            Args.sourcing_filter_empty_columns,
+            ["Claimed (add your name)", "Download Location"],
+        )
     
     def test_initialize_with_config_file(self) -> None:
         """Test Args initialization with config file."""
