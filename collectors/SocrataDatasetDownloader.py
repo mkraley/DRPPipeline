@@ -35,14 +35,15 @@ class SocrataDatasetDownloader:
         """
         self._collector = collector
     
-    def download(self, dataset_path: Path, timeout: int = 60000) -> bool:
+    def download(self, folder_path: Path, timeout: int = 60000) -> bool:
         """
         Download dataset by clicking Export button and then Download button.
         
         Updates result directly with download status, path, extension, and size.
+        Uses the original filename from the download with sanitization.
         
         Args:
-            dataset_path: Path where the downloaded file should be saved
+            folder_path: Folder where the downloaded file should be saved
             timeout: Timeout in milliseconds
             
         Returns:
@@ -63,7 +64,7 @@ class SocrataDatasetDownloader:
                 return False
             
             # Download the file
-            return self._download_file(dataset_path, timeout)
+            return self._download_file(folder_path, timeout)
         
         except PlaywrightTimeoutError:
             self._collector._update_status("Timeout waiting for download")
@@ -75,25 +76,21 @@ class SocrataDatasetDownloader:
     
     def _click_export_button(self) -> bool:
         """
-        Find and click the Export button.
+        Find and click the Export button using precise locator.
+        
+        Uses forge-button with data-testid="export-data-button".
         
         Returns:
             True if button was found and clicked, False otherwise
         """
-        all_buttons = self._collector._page.locator('button, a, [role="button"]')
-        button_count = all_buttons.count()
-        
-        for i in range(button_count):
-            try:
-                button = all_buttons.nth(i)
-                text = button.inner_text().strip().lower()
-                if 'export' in text and len(text) < 50:
-                    button.scroll_into_view_if_needed()
-                    button.click()
-                    return True
-            except Exception:
-                continue
-        
+        try:
+            export_button = self._collector._page.locator('forge-button[data-testid="export-data-button"]')
+            if export_button.count() > 0:
+                export_button.first.scroll_into_view_if_needed()
+                export_button.first.click()
+                return True
+        except Exception:
+            pass
         return False
     
     def _has_large_dataset_warning(self) -> bool:
@@ -113,14 +110,15 @@ class SocrataDatasetDownloader:
             pass
         return False
     
-    def _download_file(self, dataset_path: Path, timeout: int) -> bool:
+    def _download_file(self, folder_path: Path, timeout: int) -> bool:
         """
         Find Download button, click it, and save the file.
         
         Updates result with dataset path, extension, and size.
+        Uses the original filename from the download with sanitization.
         
         Args:
-            dataset_path: Path where file should be saved
+            folder_path: Folder where file should be saved
             timeout: Timeout in milliseconds
             
         Returns:
@@ -141,13 +139,32 @@ class SocrataDatasetDownloader:
         
         # Save the downloaded file
         download = download_info.value
-        file_extension = self._get_file_extension(download, dataset_path)
+        suggested_filename = download.suggested_filename
+        
+        # Use original filename with sanitization, or fallback to generic name
+        if suggested_filename:
+            from utils.file_utils import sanitize_filename
+            original_name = Path(suggested_filename).stem
+            file_extension = Path(suggested_filename).suffix[1:] if Path(suggested_filename).suffix else None
+            sanitized_name = sanitize_filename(original_name, max_length=100)
+            if file_extension:
+                dataset_filename = f"{sanitized_name}.{file_extension}"
+            else:
+                dataset_filename = sanitized_name
+        else:
+            # Fallback if no suggested filename
+            dataset_filename = "dataset.csv"
+        
+        dataset_path = folder_path / dataset_filename
         download.save_as(dataset_path)
         
         # Get file size after saving
         file_size = None
         if dataset_path.exists():
             file_size = dataset_path.stat().st_size
+        
+        # Get file extension
+        file_extension = self._get_file_extension(dataset_path)
         
         # Update result
         self._collector._result['dataset_path'] = str(dataset_path)
@@ -162,62 +179,33 @@ class SocrataDatasetDownloader:
     
     def _find_download_button(self):
         """
-        Find the Download button in the dialog.
+        Find the Download button in the dialog using precise locator.
+        
+        Uses forge-button with data-testid="export-download-button".
         
         Returns:
             Button locator if found, None otherwise
         """
-        # First try all buttons
-        all_buttons = self._collector._page.locator('button, a, [role="button"]')
-        button_count = all_buttons.count()
-        
-        for i in range(button_count):
-            try:
-                button = all_buttons.nth(i)
-                if button.inner_text().strip() == 'Download':
-                    return button
-            except Exception:
-                continue
-        
-        # Try looking in dialogs if not found
-        dialogs = self._collector._page.locator('dialog, [role="dialog"], .modal, [class*="dialog"]')
-        dialog_count = dialogs.count()
-        for i in range(dialog_count):
-            dialog = dialogs.nth(i)
-            dialog_buttons = dialog.locator('button, a, [role="button"]')
-            dialog_button_count = dialog_buttons.count()
-            for j in range(dialog_button_count):
-                try:
-                    button = dialog_buttons.nth(j)
-                    if button.inner_text().strip() == 'Download':
-                        return button
-                except Exception:
-                    continue
-        
+        try:
+            download_button = self._collector._page.locator('forge-button[data-testid="export-download-button"]')
+            if download_button.count() > 0:
+                return download_button.first
+        except Exception:
+            pass
         return None
     
-    def _get_file_extension(self, download, dataset_path: Path) -> Optional[str]:
+    def _get_file_extension(self, dataset_path: Path) -> Optional[str]:
         """
-        Get file extension from download or saved file.
+        Get file extension from saved file.
         
         Args:
-            download: Playwright download object
             dataset_path: Path where file was saved
             
         Returns:
             File extension (without dot) or None
         """
-        # Try from suggested filename
-        suggested_filename = download.suggested_filename
-        if suggested_filename:
-            ext_with_dot = Path(suggested_filename).suffix
-            if ext_with_dot:
-                return ext_with_dot[1:].lower()
-        
-        # Try from saved file
         if dataset_path.exists():
             ext_with_dot = dataset_path.suffix
             if ext_with_dot:
                 return ext_with_dot[1:].lower()
-        
         return None

@@ -103,6 +103,7 @@ class TestSocrataCollector(unittest.TestCase):
         
         mock_extractor = mock_extractor_cls.return_value
         mock_extractor.extract_all_metadata.return_value = {
+            'title': None,
             'rows': None,
             'columns': None,
             'description': None,

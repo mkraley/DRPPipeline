@@ -56,7 +56,7 @@ class SocrataPageProcessor:
         # Show all rows
         self._show_all_rows(total_rows)
         
-        # Expand read more links
+        # Expand read more links and hide the buttons
         self._expand_read_more_links()
         
         # Generate PDF
@@ -207,6 +207,7 @@ class SocrataPageProcessor:
     def _expand_read_more_links(self) -> int:
         """
         Find and click "Read more" links/buttons to expand content.
+        After expanding, hides the forge-button.collapse-button elements.
         
         Returns:
             Number of links clicked
@@ -228,11 +229,39 @@ class SocrataPageProcessor:
             if clicked_count > 0:
                 self._collector._page.wait_for_timeout(1500)
                 Logger.debug(f"Expanded {clicked_count} 'Read more' sections")
+                
+                # Hide the collapse buttons after expanding
+                self._hide_collapse_buttons()
             
             return clicked_count
         except Exception as e:
             Logger.warning(f"Could not expand 'Read more' links: {e}")
             return 0
+    
+    def _hide_collapse_buttons(self) -> None:
+        """
+        Hide or remove the forge-button.collapse-button elements.
+        
+        Uses CSS to hide them rather than removing from DOM.
+        """
+        try:
+            self._collector._page.evaluate("""
+                () => {
+                    const buttons = document.querySelectorAll('forge-button.collapse-button');
+                    buttons.forEach(button => {
+                        if (button.shadowRoot) {
+                            const root = button.shadowRoot;
+                            const style = document.createElement('style');
+                            style.textContent = 'display: none !important;';
+                            root.appendChild(style);
+                        } else {
+                            button.style.display = 'none';
+                        }
+                    });
+                }
+            """)
+        except Exception as e:
+            Logger.debug(f"Could not hide collapse buttons: {e}")
     
     def _generate_pdf(self, pdf_path: Path) -> bool:
         """

@@ -53,9 +53,9 @@ class SocrataCollector:
         
         Main entry point for collection. Performs all collection steps:
         1. Validates and accesses URL
-        2. Creates output folder
-        3. Generates PDF
-        4. Downloads dataset
+        2. Creates output folder (named based on DRPID)
+        3. Generates PDF (with original page title, sanitized)
+        4. Downloads dataset (with original filename, sanitized)
         5. Extracts metadata
         
         Args:
@@ -67,7 +67,7 @@ class SocrataCollector:
             - status: Overall status message
             - pdf_path: Path to generated PDF (if successful)
             - dataset_path: Path to downloaded dataset (if successful)
-            - metadata: Dictionary with rows, columns, description, keywords
+            - metadata: Dictionary with title, rows, columns, description, keywords
             - file_extensions: List of file extensions collected
             - dataset_size: Size of dataset in bytes (if downloaded)
         """
@@ -77,6 +77,7 @@ class SocrataCollector:
             'pdf_path': None,
             'dataset_path': None,
             'metadata': {
+                'title': None,
                 'rows': None,
                 'columns': None,
                 'description': None,
@@ -90,7 +91,7 @@ class SocrataCollector:
         if not self._validate_and_access_url(url):
             return self._result
         
-        # Create output folder
+        # Create output folder (named based on DRPID)
         folder_path = self._create_output_folder(drpid)
         if not folder_path:
             return self._result
@@ -101,10 +102,10 @@ class SocrataCollector:
                 return self._result
             
             # Process page and generate PDF
-            self._process_and_generate_pdf(folder_path, drpid)
+            self._process_and_generate_pdf(folder_path)
             
             # Download dataset and extract metadata
-            self._download_dataset_and_extract_metadata(folder_path, drpid)
+            self._download_dataset_and_extract_metadata(folder_path)
             
         except Exception as e:
             error_msg = f"Collection error: {str(e)}"
@@ -145,6 +146,9 @@ class SocrataCollector:
     def _create_output_folder(self, drpid: int) -> Optional[Path]:
         """
         Create output folder for the DRPID.
+        
+        Folder name is based on DRPID (e.g., DRP000123).
+        Folder names don't need sanitization.
         
         Updates result status on failure.
         
@@ -190,33 +194,42 @@ class SocrataCollector:
             Logger.error(error_msg)
             return False
     
-    def _process_and_generate_pdf(self, folder_path: Path, drpid: int) -> None:
+    def _process_and_generate_pdf(self, folder_path: Path) -> None:
         """
         Process page and generate PDF.
         
+        PDF filename uses the original page title (sanitized).
+        
         Args:
             folder_path: Folder where PDF should be saved
-            drpid: DRPID for filename
         """
         page_processor = SocrataPageProcessor(self)
-        pdf_filename = sanitize_filename(f"dataset_{drpid}", max_length=100) + ".pdf"
-        pdf_path = folder_path / pdf_filename
         
+        # Get page title for PDF filename
+        try:
+            page_title = self._page.title()
+            if page_title:
+                pdf_filename = sanitize_filename(page_title, max_length=100) + ".pdf"
+            else:
+                # Fallback if no title
+                pdf_filename = "page.pdf"
+        except Exception:
+            pdf_filename = "page.pdf"
+        
+        pdf_path = folder_path / pdf_filename
         page_processor.generate_pdf(pdf_path)
     
-    def _download_dataset_and_extract_metadata(self, folder_path: Path, drpid: int) -> None:
+    def _download_dataset_and_extract_metadata(self, folder_path: Path) -> None:
         """
         Download dataset and extract metadata.
         
+        Dataset filename uses the original filename from the download (sanitized).
+        
         Args:
             folder_path: Folder where dataset should be saved
-            drpid: DRPID for filename
         """
         dataset_downloader = SocrataDatasetDownloader(self)
-        dataset_filename = sanitize_filename(f"dataset_{drpid}", max_length=80) + ".csv"
-        dataset_path = folder_path / dataset_filename
-        
-        dataset_downloader.download(dataset_path)
+        dataset_downloader.download(folder_path)
         
         # Extract metadata
         metadata_extractor = SocrataMetadataExtractor(self)

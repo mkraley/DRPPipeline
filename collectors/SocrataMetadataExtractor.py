@@ -2,8 +2,9 @@
 Socrata Metadata Extractor for DRP Pipeline.
 
 Handles extraction of metadata from Socrata pages:
+- Extracting title
 - Extracting dataset metadata (rows, columns)
-- Extracting description text
+- Extracting description text (with rich text)
 - Extracting keywords/tags
 """
 
@@ -18,7 +19,7 @@ class SocrataMetadataExtractor:
     Extracts metadata from Socrata pages.
     
     Handles:
-    - Metadata extraction (rows, columns, description, keywords)
+    - Metadata extraction (title, rows, columns, description, keywords)
     """
     
     def __init__(self, collector: "SocrataCollector") -> None:
@@ -37,13 +38,15 @@ class SocrataMetadataExtractor:
         Updates result directly with extracted metadata.
         
         Returns:
-            Dictionary with keys: rows, columns, description, keywords
+            Dictionary with keys: title, rows, columns, description, keywords
         """
+        title = self._extract_title()
         rows, columns = self._extract_dataset_metadata()
         description = self._extract_description()
         keywords = self._extract_keywords()
         
         metadata = {
+            'title': title,
             'rows': rows,
             'columns': columns,
             'description': description,
@@ -52,6 +55,24 @@ class SocrataMetadataExtractor:
         
         self._collector._result['metadata'] = metadata
         return metadata
+    
+    def _extract_title(self) -> Optional[str]:
+        """
+        Extract title from h2.asset-name element.
+        
+        There should only be one such element.
+        
+        Returns:
+            Title text as string, or None if not found
+        """
+        try:
+            title_locator = self._collector._page.locator('h2.asset-name')
+            if title_locator.count() == 0:
+                return None
+            text = title_locator.first.inner_text()
+            return text.strip() if text else None
+        except Exception:
+            return None
     
     def _extract_dataset_metadata(self) -> Tuple[Optional[str], Optional[str]]:
         """
@@ -93,17 +114,19 @@ class SocrataMetadataExtractor:
     
     def _extract_description(self) -> Optional[str]:
         """
-        Extract description text from div.description-section element.
+        Extract description HTML from div.description-section element.
+        
+        Uses innerHTML to preserve rich text formatting.
         
         Returns:
-            Description text as string, or None if not found
+            Description HTML as string, or None if not found
         """
         try:
             description_locator = self._collector._page.locator('div.description-section')
             if description_locator.count() == 0:
                 return None
-            text = description_locator.first.inner_text()
-            return text.strip() if text else None
+            html = description_locator.first.inner_html()
+            return html.strip() if html else None
         except Exception:
             return None
     
