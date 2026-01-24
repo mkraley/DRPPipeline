@@ -53,6 +53,18 @@ class StorageProtocol(Protocol):
         """
         ...
     
+    def exists_by_source_url(self, source_url: str) -> bool:
+        """
+        Check whether a record with the given source_url already exists.
+        
+        Args:
+            source_url: The source URL to look up
+            
+        Returns:
+            True if a record exists, False otherwise
+        """
+        ...
+
     def get(self, drpid: int) -> Optional[Dict[str, Any]]:
         """
         Get a record by DRPID.

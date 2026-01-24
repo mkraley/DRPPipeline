@@ -259,6 +259,28 @@ class StorageSQLLite:
         
         return result
     
+    def exists_by_source_url(self, source_url: str) -> bool:
+        """
+        Check whether a record with the given source_url already exists.
+        
+        Args:
+            source_url: The source URL to look up
+            
+        Returns:
+            True if a record exists, False otherwise
+            
+        Raises:
+            RuntimeError: If Storage is not initialized
+        """
+        cursor = self._execute_query(
+            "SELECT EXISTS(SELECT 1 FROM projects WHERE source_url = ?)",
+            (source_url,),
+            operation_name="check exists by source_url",
+            commit=False
+        )
+        row = cursor.fetchone()
+        return bool(row[0]) if row else False
+    
     def delete(self, drpid: int) -> None:
         """
         Delete a record by DRPID.

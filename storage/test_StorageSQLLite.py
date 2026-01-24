@@ -164,6 +164,26 @@ class TestStorageSQLLite(unittest.TestCase):
         record = self.storage.get(999)
         self.assertIsNone(record)
     
+    def test_exists_by_source_url_empty_db(self) -> None:
+        """Test exists_by_source_url returns False when database is empty."""
+        self.storage.initialize(db_path=self.test_db_path)
+        
+        self.assertFalse(self.storage.exists_by_source_url("https://example.com"))
+    
+    def test_exists_by_source_url_not_found(self) -> None:
+        """Test exists_by_source_url returns False when URL not in database."""
+        self.storage.initialize(db_path=self.test_db_path)
+        self.storage.create_record("https://existing.com")
+        
+        self.assertFalse(self.storage.exists_by_source_url("https://other.com"))
+    
+    def test_exists_by_source_url_found(self) -> None:
+        """Test exists_by_source_url returns True when URL exists."""
+        self.storage.initialize(db_path=self.test_db_path)
+        self.storage.create_record("https://example.com")
+        
+        self.assertTrue(self.storage.exists_by_source_url("https://example.com"))
+    
     def test_get_record_only_non_null_values(self) -> None:
         """Test that get returns only non-null values."""
         self.storage.initialize(db_path=self.test_db_path)
@@ -416,6 +436,9 @@ class TestStorageSQLLite(unittest.TestCase):
         
         with self.assertRaises(RuntimeError):
             storage.create_record("https://example.com")
+        
+        with self.assertRaises(RuntimeError):
+            storage.exists_by_source_url("https://example.com")
         
         with self.assertRaises(RuntimeError):
             storage.get(1)
