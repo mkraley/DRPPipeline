@@ -2,3 +2,4 @@
 # Add dependencies here as the project develops
 
 typer>=0.9.0
+playwright>=1.49.0

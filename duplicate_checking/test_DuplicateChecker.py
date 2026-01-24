@@ -5,6 +5,7 @@ Unit tests for DuplicateChecker.
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from utils.Args import Args
 from utils.Logger import Logger
@@ -51,3 +52,24 @@ class TestDuplicateChecker(unittest.TestCase):
         """Test exists_in_storage returns True when URL already exists in database."""
         self.storage.create_record("https://example.com")
         self.assertTrue(self.checker.exists_in_storage("https://example.com"))
+
+    @patch("duplicate_checking.DuplicateChecker.verify_source_url_in_datalumos")
+    def test_exists_in_datalumos_returns_false_when_no_match(
+        self, mock_verify: unittest.mock.MagicMock
+    ) -> None:
+        """Test exists_in_datalumos returns False when ODU verification finds no match."""
+        mock_verify.return_value = False
+        self.assertFalse(
+            self.checker.exists_in_datalumos("https://data.cdc.gov/some/dataset/about_data")
+        )
+        mock_verify.assert_called_once_with("https://data.cdc.gov/some/dataset/about_data")
+
+    @patch("duplicate_checking.DuplicateChecker.verify_source_url_in_datalumos")
+    def test_exists_in_datalumos_returns_true_when_odu_matches(
+        self, mock_verify: unittest.mock.MagicMock
+    ) -> None:
+        """Test exists_in_datalumos returns True when ODU verification finds a match."""
+        mock_verify.return_value = True
+        url = "https://data.cdc.gov/Vision-Eye-Health/BRFSS-Vision-Module-Data-Vision-Eye-Health/pttf-ck53/about_data"
+        self.assertTrue(self.checker.exists_in_datalumos(url))
+        mock_verify.assert_called_once_with(url)
