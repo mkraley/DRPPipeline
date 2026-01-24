@@ -1,0 +1,269 @@
+"""
+Socrata Collector for DRP Pipeline.
+
+Collects data from Socrata-hosted pages (e.g., data.cdc.gov):
+- Pre-processes HTML (expands "read more" links)
+- Harvests metadata (rows, columns, description, keywords)
+- Converts HTML to PDF
+- Downloads datasets
+"""
+
+from contextlib import suppress
+from pathlib import Path
+from typing import Optional, Dict, Any
+
+from playwright.sync_api import sync_playwright, Page, Browser, Playwright
+
+from utils.Logger import Logger
+from utils.Args import Args
+from utils.url_utils import is_valid_url, access_url
+from utils.file_utils import sanitize_filename, create_output_folder
+from collectors.SocrataPageProcessor import SocrataPageProcessor
+from collectors.SocrataMetadataExtractor import SocrataMetadataExtractor
+from collectors.SocrataDatasetDownloader import SocrataDatasetDownloader
+
+
+class SocrataCollector:
+    """
+    Collector for Socrata-hosted data pages.
+    
+    Handles collection of data from Socrata sites including:
+    - URL validation and access
+    - PDF generation from HTML pages
+    - Dataset download
+    - Metadata extraction
+    """
+    
+    def __init__(self, headless: bool = True) -> None:
+        """
+        Initialize SocrataCollector.
+        
+        Args:
+            headless: If False, run browser in visible mode for debugging
+        """
+        self._headless = headless
+        self._playwright: Optional[Playwright] = None
+        self._browser: Optional[Browser] = None
+        self._page: Optional[Page] = None
+        self._result: Optional[Dict[str, Any]] = None
+    
+    def collect(self, url: str, drpid: int) -> Dict[str, Any]:
+        """
+        Collect data from a Socrata URL.
+        
+        Main entry point for collection. Performs all collection steps:
+        1. Validates and accesses URL
+        2. Creates output folder
+        3. Generates PDF
+        4. Downloads dataset
+        5. Extracts metadata
+        
+        Args:
+            url: Source URL to collect from
+            drpid: DRPID for the record
+            
+        Returns:
+            Dictionary with collection results including:
+            - status: Overall status message
+            - pdf_path: Path to generated PDF (if successful)
+            - dataset_path: Path to downloaded dataset (if successful)
+            - metadata: Dictionary with rows, columns, description, keywords
+            - file_extensions: List of file extensions collected
+            - dataset_size: Size of dataset in bytes (if downloaded)
+        """
+        # Initialize result
+        self._result = {
+            'status': None,
+            'pdf_path': None,
+            'dataset_path': None,
+            'metadata': {
+                'rows': None,
+                'columns': None,
+                'description': None,
+                'keywords': None
+            },
+            'file_extensions': [],
+            'dataset_size': None
+        }
+        
+        # Validate and access URL
+        if not self._validate_and_access_url(url):
+            return self._result
+        
+        # Create output folder
+        folder_path = self._create_output_folder(drpid)
+        if not folder_path:
+            return self._result
+        
+        try:
+            # Initialize browser and load page
+            if not self._init_browser_and_load_page(url):
+                return self._result
+            
+            # Process page and generate PDF
+            self._process_and_generate_pdf(folder_path, drpid)
+            
+            # Download dataset and extract metadata
+            self._download_dataset_and_extract_metadata(folder_path, drpid)
+            
+        except Exception as e:
+            error_msg = f"Collection error: {str(e)}"
+            Logger.exception(error_msg)
+            self._update_status(error_msg)
+        finally:
+            self._cleanup_browser()
+        
+        return self._result
+    
+    def _validate_and_access_url(self, url: str) -> bool:
+        """
+        Validate URL and check accessibility.
+        
+        Updates result status on failure.
+        
+        Args:
+            url: URL to validate and access
+            
+        Returns:
+            True if URL is valid and accessible, False otherwise
+        """
+        if not is_valid_url(url):
+            self._result['status'] = "Invalid URL"
+            Logger.warning(f"Invalid URL: {url}")
+            return False
+        
+        access_success, status_msg = access_url(url)
+        if not access_success:
+            self._result['status'] = status_msg
+            Logger.warning(f"URL access failed: {url} - {status_msg}")
+            return False
+        
+        self._result['status'] = status_msg
+        Logger.info(f"Successfully accessed URL: {url}")
+        return True
+    
+    def _create_output_folder(self, drpid: int) -> Optional[Path]:
+        """
+        Create output folder for the DRPID.
+        
+        Updates result status on failure.
+        
+        Args:
+            drpid: DRPID for the record
+            
+        Returns:
+            Path to created folder, or None if creation failed
+        """
+        base_output_dir = Path(Args.base_output_dir)
+        folder_path = create_output_folder(base_output_dir, drpid)
+        if not folder_path:
+            error_msg = "Failed to create output folder"
+            self._update_status(error_msg)
+            Logger.error(f"{error_msg} for DRPID: {drpid}")
+            return None
+        return folder_path
+    
+    def _init_browser_and_load_page(self, url: str) -> bool:
+        """
+        Initialize browser and load the page.
+        
+        Updates result status on failure.
+        
+        Args:
+            url: URL to load
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self._init_browser():
+            error_msg = "Failed to initialize browser"
+            self._update_status(error_msg)
+            return False
+        
+        try:
+            self._page.goto(url, wait_until='domcontentloaded', timeout=120000)
+            self._page.wait_for_timeout(500)
+            return True
+        except Exception as e:
+            error_msg = f"Failed to load page: {str(e)}"
+            self._update_status(error_msg)
+            Logger.error(error_msg)
+            return False
+    
+    def _process_and_generate_pdf(self, folder_path: Path, drpid: int) -> None:
+        """
+        Process page and generate PDF.
+        
+        Args:
+            folder_path: Folder where PDF should be saved
+            drpid: DRPID for filename
+        """
+        page_processor = SocrataPageProcessor(self)
+        pdf_filename = sanitize_filename(f"dataset_{drpid}", max_length=100) + ".pdf"
+        pdf_path = folder_path / pdf_filename
+        
+        page_processor.generate_pdf(pdf_path)
+    
+    def _download_dataset_and_extract_metadata(self, folder_path: Path, drpid: int) -> None:
+        """
+        Download dataset and extract metadata.
+        
+        Args:
+            folder_path: Folder where dataset should be saved
+            drpid: DRPID for filename
+        """
+        dataset_downloader = SocrataDatasetDownloader(self)
+        dataset_filename = sanitize_filename(f"dataset_{drpid}", max_length=80) + ".csv"
+        dataset_path = folder_path / dataset_filename
+        
+        dataset_downloader.download(dataset_path)
+        
+        # Extract metadata
+        metadata_extractor = SocrataMetadataExtractor(self)
+        metadata_extractor.extract_all_metadata()
+    
+    def _update_status(self, status_msg: str) -> None:
+        """
+        Update result status, appending to existing status if present.
+        
+        Args:
+            status_msg: Status message to add
+        """
+        if self._result['status']:
+            self._result['status'] = f"{self._result['status']}; {status_msg}"
+        else:
+            self._result['status'] = status_msg
+    
+    def _init_browser(self) -> bool:
+        """
+        Initialize Playwright browser and page.
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            self._playwright = sync_playwright().start()
+            self._browser = self._playwright.chromium.launch(
+                headless=self._headless,
+                slow_mo=500 if not self._headless else 0
+            )
+            self._page = self._browser.new_page()
+            return True
+        except Exception as e:
+            Logger.error(f"Failed to initialize browser: {e}")
+            self._cleanup_browser()
+            return False
+    
+    def _cleanup_browser(self) -> None:
+        """Clean up browser resources."""
+        if self._browser:
+            with suppress(Exception):
+                self._browser.close()
+            self._browser = None
+        
+        if self._playwright:
+            with suppress(Exception):
+                self._playwright.stop()
+            self._playwright = None
+        
+        self._page = None

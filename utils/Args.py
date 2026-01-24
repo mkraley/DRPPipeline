@@ -63,6 +63,7 @@ class Args(metaclass=ArgsMeta):
         ),
         "sourcing_url_column": "URL",
         "sourcing_num_rows": None,  # None = unlimited, or set max number of candidate URLs to return
+        "base_output_dir": r"C:\Documents\DataRescue\DRPData",
     }
     
     _config: Dict[str, Any] = {}
