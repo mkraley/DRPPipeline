@@ -124,14 +124,13 @@ class Args(metaclass=ArgsMeta):
         def callback(
             ctx: typer.Context,
             config: Optional[str] = typer.Option(None, "--config", "-c", help="Path to configuration file (JSON format)"),
-            log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Set the logging level", 
+            log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Set the logging level",
                                                      case_sensitive=False)
         ) -> None:
             """Callback to capture Typer parsed values."""
             if config is not None:
                 parsed_values["config"] = config
             if log_level is not None:
-                # Normalize to uppercase
                 parsed_values["log_level"] = log_level.upper()
         
         # Create Typer app with callback
