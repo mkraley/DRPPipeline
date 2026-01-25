@@ -10,9 +10,9 @@ from unittest.mock import Mock, patch, MagicMock
 
 from utils.Args import Args
 from utils.Logger import Logger
-from utils import url_utils, file_utils
 
 from collectors.SocrataCollector import SocrataCollector
+from collectors.test_utils import setup_mock_playwright
 
 
 class TestSocrataCollector(unittest.TestCase):
@@ -81,15 +81,8 @@ class TestSocrataCollector(unittest.TestCase):
         mock_response.status_code = 200
         mock_get.return_value = mock_response
         
-        # Mock Playwright
-        mock_playwright_instance = Mock()
-        mock_browser = Mock()
-        mock_page = Mock()
-        
-        mock_playwright.return_value.start.return_value = mock_playwright_instance
-        mock_playwright_instance.chromium.launch.return_value = mock_browser
-        mock_browser.new_page.return_value = mock_page
-        
+        mock_page, _, _ = setup_mock_playwright(mock_playwright)
+
         # Mock page methods
         mock_page.goto.return_value = None
         mock_page.wait_for_timeout.return_value = None
@@ -126,14 +119,8 @@ class TestSocrataCollector(unittest.TestCase):
     @patch('collectors.SocrataCollector.sync_playwright')
     def test_init_browser_success(self, mock_playwright: Mock) -> None:
         """Test _init_browser successfully initializes browser."""
-        mock_playwright_instance = Mock()
-        mock_browser = Mock()
-        mock_page = Mock()
-        
-        mock_playwright.return_value.start.return_value = mock_playwright_instance
-        mock_playwright_instance.chromium.launch.return_value = mock_browser
-        mock_browser.new_page.return_value = mock_page
-        
+        setup_mock_playwright(mock_playwright)
+
         result = self.collector._init_browser()
         
         self.assertTrue(result)
@@ -152,4 +139,41 @@ class TestSocrataCollector(unittest.TestCase):
         self.assertFalse(result)
         self.assertIsNone(self.collector._browser)
         self.assertIsNone(self.collector._playwright)
-    
+
+    def test_update_status(self) -> None:
+        """Test _update_status appends when status exists, replaces when empty."""
+        self.collector._result = {'status': None}
+        self.collector._update_status('First')
+        self.assertEqual(self.collector._result['status'], 'First')
+
+        self.collector._update_status('Second')
+        self.assertEqual(self.collector._result['status'], 'First; Second')
+
+    @patch('collectors.SocrataCollector.create_output_folder', return_value=None)
+    @patch('utils.url_utils.requests.get')
+    def test_collect_output_folder_fails(self, mock_get: Mock, mock_create: Mock) -> None:
+        """Test collect() when output folder creation fails."""
+        mock_get.return_value = Mock(status_code=200)
+
+        result = self.collector.collect("https://data.cdc.gov/view/x", 1)
+
+        self.assertIn("Failed to create output folder", result['status'])
+        self.assertIsNone(result['pdf_path'])
+        self.assertIsNone(result['dataset_path'])
+
+    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('utils.url_utils.requests.get')
+    def test_collect_page_load_fails(self, mock_get: Mock, mock_playwright: Mock) -> None:
+        """Test collect() when browser loads URL but page.goto fails."""
+        mock_get.return_value = Mock(status_code=200)
+
+        mock_page, _, _ = setup_mock_playwright(mock_playwright)
+        mock_page.goto.side_effect = Exception("Load failed")
+        mock_page.wait_for_timeout.return_value = None
+
+        with patch.object(Args, 'base_output_dir', self.temp_dir):
+            result = self.collector.collect("https://data.cdc.gov/view/x", 1)
+
+        self.assertIn("Failed to load page", result['status'])
+        self.assertIsNone(result['pdf_path'])
+

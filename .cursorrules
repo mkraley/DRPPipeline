@@ -1,61 +1,137 @@
-# Standing Instructions for CDC Data Collector Project
+# DRPPipeline - Development Guidelines
+
+# ⚠️ MANDATORY CHECKLIST - Review Before EVERY Response
+
+When modifying or creating code, you MUST:
+- [ ] Update or create corresponding unit tests in test_xxx.py
+- [ ] Add type hints to all function signatures  
+- [ ] Add docstrings to all functions and classes
+- [ ] Keep methods short (one responsibility each)
+- [ ] Check for code duplication and apply DRY
+- [ ] Prepare git commit with all changed files and message
+- [ ] Use UTF-8-sig encoding for CSV/text files
+- [ ] Use Windows path syntax (backslashes, drive letters)
+
+**If ANY of these are missing, the response is incomplete.**
+
+---
+
+## Testing - NON-NEGOTIABLE
+
+**EVERY code change MUST include corresponding test updates**
+- Tests in parallel files: `module.py` → `test_module.py`
+- Modifying existing code → update existing tests
+- Adding new code → write new tests  
+- No code submission is complete without tests
+
+---
+
+## Source Control - REQUIRED AT END OF EVERY RESPONSE
+
+At the end of EVERY response that modifies code, provide:
+```bash
+git add <list all changed files>
+git commit -m "Summary description of changes"
+```
+
+Example:
+```bash
+git add src/scraper.py src/utils.py test_scraper.py
+git commit -m "Add retry logic with exponential backoff"
+```
+
+---
+
+## Code Organization - ENFORCE STRICTLY
+
+- **One class per file** (filename matches class name in snake_case)
+- **Methods must be short** - one responsibility each
+  - If you describe a method with "and", split it into two methods
+  - Target: under 50 lines per method
+- **DRY (Don't Repeat Yourself)**
+  - Before writing code, search for similar existing code
+  - Extract duplicate logic into shared utility functions
+  - Place utilities in appropriate modules (e.g., utils/)
+- **File size**: Keep files under ~200 lines; split if longer
+- Use classes and inheritance where appropriate
+- Segregate related functionality into separate modules
+
+---
 
 ## Code Style & Conventions
-- use python 13
-- target windows 11
-- use playwright for automating access to web pages
-- Use Windows path syntax for file paths (backslashes, drive letters)
-- Use type hints where appropriate
-- Add docstrings to functions and classes
-- Prefer descriptive variable names
-- CSV and other text-based files are UTF-8-sig encoded
-- keep methods short. Each method should do one thing only
-- Use python classes and inheritance where appropriate
-- segregate code in multiple files rather than creating very large source files. Typically only one class per file.
-- Don't Repeat Yourself - look for duplicate (or almost duplicate) code and combine them into common methods or utility functions.
 
-## Debugging
-- when agent creates temp files for debugging, keep them and any output files they generate in a separate folder, e.g. debug
+**Environment:**
+- Python 3.13
+- Target: Windows 11
+- Use Playwright for web automation
 
-## Source control
-- at each iteration of the chat, prepare a commit with all changed files and a suggested commit comment.
+**Coding Standards:**
+- Type hints on all function parameters and returns
+- Docstrings for all public functions and classes
+- Descriptive variable names (no single letters except loop counters)
+- UTF-8-sig encoding for CSV and text files
+- Windows path syntax: backslashes, drive letters (e.g., `C:\path\to\file`)
 
-## Testing
-- create unit tests as code is developed. Keep tests up to date.
-- store test code in parallel files, e.g. test_xxx.py
-
-## Logging
-- use standard log levels: debug, info, warning, error
-
-## Input parameters and configuration
-- use command line parameters for any configuration-type parameters with suitable defaults
-- allow use of a config file to hold parameters. config file is overridable by command line args
-
-## Project-Specific Guidelines
-
+---
 
 ## Error Handling
-- Provide clear error messages with context
-- Use try/except blocks for file operations and network requests
-- Log errors but don't crash the entire process unless necessary
-- Use exceptions for fatal errors
 
-## Testing & Validation
-- Validate URLs before processing
-- Check file existence before operations
-- Handle missing columns in CSV/Excel files gracefully, but warn the user
+- Provide clear, contextual error messages
+- Use try/except for file operations and network requests
+- Log errors appropriately but don't crash unless fatal
+- Validate inputs before processing (URLs, file paths, etc.)
+- Missing CSV/Excel columns should halt execution
 
-## Documentation
-- Update README.md when adding new features or changing behavior
-- Include examples in docstrings showing how to use functions
+---
 
-## Dependencies
-- Keep requirements.txt up to date
-- Note: This code is written by Cursor/Claude (as noted in README)
+## Logging
+
+Use standard log levels appropriately:
+- `debug`: Detailed verbose diagnostic information
+- `info`: General informational messages
+- `warning`: Warning messages for recoverable issues
+- `error`: Error messages for serious problems - abort the current operation, but continue with the batch
+- `exception`: Fatal error - cease execution
+
+---
+
+## Configuration
+
+- Use command-line arguments with sensible defaults (typer)
+- Support config file for parameters
+- Command-line args override config file values
+- Document all configuration options
+
+---
 
 ## Database
-- Use SQLite with WAL mode for shared database access
 
-## File Organization
-- Keep utility functions in separate modules (e.g., url_id_utils.py, shared_db.py)
+- Use SQLite with WAL mode for concurrent access
+- Place database utilities in shared_db.py
+
+---
+
+## Debugging
+
+- Store temporary debug files and outputs in `debug/` folder
+- Don't clutter the main project directory
+
+---
+
+## Documentation
+
+- Update README.md when adding features or changing behavior
+- Include usage examples in docstrings
+- Keep requirements.txt synchronized with dependencies
+
+---
+
+## Anti-Patterns - NEVER DO THESE
+
+❌ Submitting code without tests
+❌ Methods longer than 50 lines  
+❌ Copy-pasting similar code (use shared functions)
+❌ Missing type hints or docstrings
+❌ Skipping git commit preparation
+❌ Mixing multiple responsibilities in one method/class
 
