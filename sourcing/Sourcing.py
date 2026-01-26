@@ -38,13 +38,31 @@ class Sourcing:
         """
         from utils.Args import Args
         from storage import Storage
+        from utils.Logger import Logger
         
         # Get num_rows from Args
         num_rows = Args.num_rows
         
         urls = self.get_candidate_urls(limit=num_rows)
+        
+        # Track statistics
+        successfully_added = 0
+        dupes_in_storage = 0
+        skipped_by_filtering = 0
+        
         for url in urls:
-            self.process_candidate(url)
+            result = self.process_candidate(url)
+            if result == "added":
+                successfully_added += 1
+            elif result == "duplicate":
+                dupes_in_storage += 1
+            elif result == "skipped":
+                skipped_by_filtering += 1
+        
+        # Log statistics
+        Logger.info(f"Sourcing complete: {successfully_added} URLs successfully added, "
+                   f"{dupes_in_storage} duplicates found in storage, "
+                   f"{skipped_by_filtering} URLs skipped by filtering")
 
     def get_candidate_urls(self, limit: int | None = None) -> list[str]:
         """
@@ -55,7 +73,7 @@ class Sourcing:
         fetcher = SpreadsheetCandidateFetcher()
         return fetcher.get_candidate_urls(limit=limit)
 
-    def process_candidate(self, url: str) -> bool:
+    def process_candidate(self, url: str) -> str:
         """
         Process a single candidate URL: duplicate check, availability check,
         then create storage record and generate ID if both pass.
@@ -67,10 +85,32 @@ class Sourcing:
             url: Candidate source URL.
 
         Returns:
-            True if a storage record was created; False if skipped (duplicate
-            or unavailable).
+            "added" if a storage record was created; "duplicate" if already in storage;
+            "skipped" if unavailable or filtered out.
         """
-        return False
+        from storage import Storage
+        from duplicate_checking import DuplicateChecker
+        
+        # Check if URL already exists in storage
+        checker = DuplicateChecker()
+        if checker.exists_in_storage(url):
+            return "duplicate"
+        
+        # Check if URL exists in datalumos (commented out for now)
+        # if checker.exists_in_datalumos(url):
+        #     return "duplicate"
+        
+        # Check if source is available
+        if not self.is_source_available(url):
+            return "skipped"
+        
+        # Create storage record
+        drpid = self.create_storage_record_and_id(url)
+        
+        # Update status to 'sourcing'
+        Storage.update_record(drpid, {"status": "sourcing"})
+        
+        return "added"
 
     def is_duplicate(self, url: str) -> bool:
         """
@@ -84,7 +124,9 @@ class Sourcing:
         Returns:
             True if URL is already stored; False otherwise.
         """
-        return False
+        from duplicate_checking import DuplicateChecker
+        checker = DuplicateChecker()
+        return checker.exists_in_storage(url)
 
     def is_source_available(self, url: str) -> bool:
         """

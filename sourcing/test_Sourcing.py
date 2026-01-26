@@ -56,17 +56,25 @@ class TestSourcing(unittest.TestCase):
         mock_fetcher_cls.assert_called_once()
         mock_fetcher.get_candidate_urls.assert_called_once_with(limit=10)
 
-    def test_process_candidate_returns_bool(self) -> None:
-        """Test process_candidate() returns bool (stub returns False)."""
+    def test_process_candidate_returns_string(self) -> None:
+        """Test process_candidate() returns string status ("added", "duplicate", or "skipped")."""
         result = self.sourcing.process_candidate("https://example.com/data")
-        self.assertIsInstance(result, bool)
-        self.assertFalse(result)
+        self.assertIsInstance(result, str)
+        self.assertIn(result, ["added", "duplicate", "skipped"])
 
-    def test_is_duplicate_returns_bool(self) -> None:
-        """Test is_duplicate() returns bool (stub returns False)."""
-        result = self.sourcing.is_duplicate("https://example.com/data")
-        self.assertIsInstance(result, bool)
+    def test_is_duplicate_checks_storage(self) -> None:
+        """Test is_duplicate() checks storage for existing URL."""
+        # URL not in storage yet
+        result = self.sourcing.is_duplicate("https://example.com/new")
         self.assertFalse(result)
+        
+        # Add URL to storage
+        drpid = self.sourcing.create_storage_record_and_id("https://example.com/new")
+        self.assertGreater(drpid, 0)
+        
+        # Now it should be a duplicate
+        result = self.sourcing.is_duplicate("https://example.com/new")
+        self.assertTrue(result)
 
     def test_is_source_available_returns_bool(self) -> None:
         """Test is_source_available() returns bool (stub returns True)."""
