@@ -5,6 +5,9 @@ Central loop: list_eligible_projects and run() only here. Resolves module
 from MODULES registry, dynamically imports module classes by name, and calls run(drpid).
 """
 
+import importlib
+import pkgutil
+import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -34,7 +37,8 @@ def _find_module_class(class_name: str) -> type:
     """
     Dynamically find and import a module class by name.
     
-    Searches common module locations: sourcing, collectors, etc.
+    Searches the entire project tree from the root using pkgutil.walk_packages,
+    looking for the class in any Python module.
     
     Args:
         class_name: Name of the class (e.g., "Sourcing", "SocrataCollector")
@@ -45,24 +49,41 @@ def _find_module_class(class_name: str) -> type:
     Raises:
         ImportError: If the class cannot be found or imported
     """
-    # Common module locations to search
-    search_paths = [
-        f"sourcing.{class_name}",
-        f"collectors.{class_name}",
-        f"orchestration.{class_name}",
-    ]
+    # Get project root (directory containing main.py/orchestration)
+    project_root = Path(__file__).parent.parent
+    project_root_str = str(project_root)
     
-    for module_path in search_paths:
-        try:
-            module = __import__(module_path, fromlist=[class_name])
-            if hasattr(module, class_name):
-                return getattr(module, class_name)
-        except ImportError:
-            continue
+    # Ensure project root is on sys.path for pkgutil
+    was_on_path = project_root_str in sys.path
+    if not was_on_path:
+        sys.path.insert(0, project_root_str)
+    
+    try:
+        # Walk through all packages and modules in the project
+        for importer, modname, ispkg in pkgutil.walk_packages([project_root_str]):
+            # Skip test modules
+            if "test" in modname.lower():
+                continue
+            
+            try:
+                # Import the module
+                module = importlib.import_module(modname)
+                # Check if it has the class we're looking for
+                if hasattr(module, class_name):
+                    cls = getattr(module, class_name)
+                    # Verify it's actually a class
+                    if isinstance(cls, type):
+                        return cls
+            except (ImportError, AttributeError, TypeError):
+                # Skip modules that can't be imported or don't have the class
+                continue
+    finally:
+        # Clean up: remove from sys.path if we added it
+        if not was_on_path and project_root_str in sys.path:
+            sys.path.remove(project_root_str)
     
     raise ImportError(
-        f"Could not find module class '{class_name}'. "
-        f"Searched: {', '.join(search_paths)}"
+        f"Could not find module class '{class_name}' in project tree."
     )
 
 
@@ -96,7 +117,8 @@ class Orchestrator:
         
         # Initialize storage
         impl = getattr(Args, "storage_implementation", None) or "StorageSQLLite"
-        Storage.initialize(impl, db_path=Path(Args.db_path))
+        db_path = Path(Args.db_path) if getattr(Args, "db_path", None) else None
+        Storage.initialize(impl, db_path=db_path)
         
         num_rows: Optional[int] = getattr(Args, "num_rows", None)
         Logger.info(f"Orchestrator running module={module!r} num_rows={num_rows}")
