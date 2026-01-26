@@ -116,11 +116,9 @@ class Orchestrator:
         class_name = info["class_name"]
         
         # Initialize storage
-        impl = getattr(Args, "storage_implementation", None) or "StorageSQLLite"
-        db_path = Path(Args.db_path) if getattr(Args, "db_path", None) else None
-        Storage.initialize(impl, db_path=db_path)
+        Storage.initialize(Args.storage_implementation, db_path=Path(Args.db_path))
         
-        num_rows: Optional[int] = getattr(Args, "num_rows", None)
+        num_rows: Optional[int] = Args.num_rows
         Logger.info(f"Orchestrator running module={module!r} num_rows={num_rows}")
         
         # Handle noop directly

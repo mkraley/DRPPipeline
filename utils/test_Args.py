@@ -99,7 +99,7 @@ class TestArgs(unittest.TestCase):
         sys.argv = original_argv
 
     def test_config_file_not_found(self) -> None:
-        """Test handling of missing config file."""
+        """Test handling of missing config file (explicitly specified)."""
         import sys
         from io import StringIO
 
@@ -115,6 +115,29 @@ class TestArgs(unittest.TestCase):
 
         self.assertTrue(Args._initialized)
         self.assertIn("not found", stderr_capture.getvalue())
+
+        sys.argv = original_argv
+        sys.stderr = original_stderr
+
+    def test_config_file_default_not_found(self) -> None:
+        """Test that default config file warning appears when file doesn't exist."""
+        import sys
+        from io import StringIO
+
+        original_argv = sys.argv.copy()
+        original_stderr = sys.stderr
+
+        stderr_capture = StringIO()
+        sys.stderr = stderr_capture
+
+        sys.argv = ["test", "noop"]  # No --config specified, should use default
+        Args._initialized = False
+        Args.initialize()
+
+        self.assertTrue(Args._initialized)
+        # Should warn about default config file not found
+        self.assertIn("not found", stderr_capture.getvalue())
+        self.assertIn("DRPPipeline_config.json", stderr_capture.getvalue())
 
         sys.argv = original_argv
         sys.stderr = original_stderr

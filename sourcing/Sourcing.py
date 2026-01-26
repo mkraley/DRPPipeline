@@ -40,7 +40,7 @@ class Sourcing:
         from storage import Storage
         
         # Get num_rows from Args
-        num_rows = getattr(Args, "num_rows", None)
+        num_rows = Args.num_rows
         
         urls = self.get_candidate_urls(limit=num_rows)
         for url in urls:

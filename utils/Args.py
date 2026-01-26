@@ -63,7 +63,7 @@ class Args(metaclass=ArgsMeta):
         ),
         "sourcing_url_column": "URL",
         "num_rows": None,  # None = unlimited; batch limit for orchestration
-        "db_path": None,
+        "db_path": 'drp_pipeline.db',
         "storage_implementation": "StorageSQLLite",
         "base_output_dir": r"C:\Documents\DataRescue\DRPData",
     }
@@ -96,14 +96,18 @@ class Args(metaclass=ArgsMeta):
         parsed_args = cls._parse_command_line()
         
         # Load config file if provided (middle priority - overrides defaults)
+        # Default to "./DRPPipeline_config.json" if not explicitly provided
         config_path = config_file or parsed_args.get("config")
+        if config_path is None:
+            config_path = "./DRPPipeline_config.json"
+        
         if config_path:
             if not isinstance(config_path, Path):
                 config_path = Path(config_path)
             if config_path.exists():
                 cls._load_config_file(config_path)
             else:
-                # Warn if config file specified but not found (from parameter or command line)
+                # Warn if config file not found, but continue without it
                 print(f"Warning: Config file '{config_path}' not found. Using defaults and command line arguments only.",
                       file=sys.stderr)
         
@@ -126,10 +130,10 @@ class Args(metaclass=ArgsMeta):
         def callback(
             ctx: typer.Context,
             module: str = typer.Argument(..., help="Module to run: noop, sourcing, collectors"),
-            config: Optional[str] = typer.Option(None, "--config", "-c", help="Path to configuration file (JSON format)"),
+            config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to configuration file (JSON format). Default: ./DRPPipeline_config.json"),
             log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Set the logging level", case_sensitive=False),
             num_rows: Optional[int] = typer.Option(None, "--num-rows", "-n", help="Max projects or candidate URLs per batch; None = unlimited"),
-            db_path: Optional[str] = typer.Option(None, "--db-path", help="Path to SQLite database file"),
+            db_path: Optional[Path] = typer.Option(None, "--db-path", help="Path to SQLite database file"),
             storage: Optional[str] = typer.Option(None, "--storage", help="Storage implementation (e.g. StorageSQLLite)"),
         ) -> None:
             """Callback to capture Typer parsed values."""
