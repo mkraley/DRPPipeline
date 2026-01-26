@@ -42,8 +42,8 @@ class TestSourcing(unittest.TestCase):
 
     @patch.object(Sourcing, "get_candidate_urls", return_value=[])
     def test_run_returns_none(self, _mock_get: object) -> None:
-        """Test run(limit=None) returns None after processing (no URLs)."""
-        result = self.sourcing.run(limit=None)
+        """Test run(-1) returns None after processing (no URLs)."""
+        result = self.sourcing.run(-1)
         self.assertIsNone(result)
 
     @patch("sourcing.Sourcing.SpreadsheetCandidateFetcher")

@@ -27,16 +27,22 @@ class Sourcing:
         # Storage methods are accessed directly on the Storage class, no need to store instance
         pass
 
-    def run(self, limit: int | None = None) -> None:
+    def run(self, drpid: int) -> None:
         """
         Process configured sources: obtain candidate URLs, then for each
         candidate run duplicate check, availability check, and create storage
         record when appropriate.
 
         Args:
-            limit: Max candidate URLs to process. None = unlimited. From orchestrator.
+            drpid: DRPID of project to process. Use -1 for sourcing (no specific project).
         """
-        urls = self.get_candidate_urls(limit=limit)
+        from utils.Args import Args
+        from storage import Storage
+        
+        # Get num_rows from Args
+        num_rows = getattr(Args, "num_rows", None)
+        
+        urls = self.get_candidate_urls(limit=num_rows)
         for url in urls:
             self.process_candidate(url)
 

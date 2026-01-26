@@ -47,6 +47,17 @@ class SocrataCollector:
         self._page: Optional[Page] = None
         self._result: Optional[Dict[str, Any]] = None
     
+    def run(self, drpid: int) -> None:
+        """
+        Run the collectors module for a single project (ModuleProtocol interface).
+        
+        TODO: This will replace collect() method. For now, raises NotImplementedError.
+        
+        Args:
+            drpid: The DRPID of the project to process.
+        """
+        raise NotImplementedError("collectors run not yet implemented")
+    
     def collect(self, url: str, drpid: int) -> Dict[str, Any]:
         """
         Collect data from a Socrata URL.
