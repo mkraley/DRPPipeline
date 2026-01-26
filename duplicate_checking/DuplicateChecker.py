@@ -18,14 +18,12 @@ class DuplicateChecker:
     Checks for duplicate source URLs in Storage and external repos (e.g. datalumos).
     """
 
-    def __init__(self, storage: "StorageProtocol") -> None:
+    def __init__(self) -> None:
         """
-        Create a duplicate checker that uses the given Storage implementation.
-
-        Args:
-            storage: Initialized Storage instance to check against.
+        Initialize DuplicateChecker. Uses Storage singleton (call Storage.initialize() first).
         """
-        self._storage = storage
+        # Storage methods are accessed directly on the Storage class, no need to store instance
+        pass
 
     def exists_in_storage(self, source_url: str) -> bool:
         """
@@ -38,7 +36,8 @@ class DuplicateChecker:
         Returns:
             True if a record with that source_url exists, False otherwise.
         """
-        return self._storage.exists_by_source_url(source_url)
+        from storage import Storage
+        return Storage.exists_by_source_url(source_url)
 
     def exists_in_datalumos(self, source_url: str) -> bool:
         """

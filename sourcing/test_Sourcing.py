@@ -21,7 +21,7 @@ class TestSourcing(unittest.TestCase):
     def setUp(self) -> None:
         """Set up test environment before each test."""
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test"]
+        sys.argv = ["test", "sourcing"]
 
         Args.initialize()
         Logger.initialize(log_level="WARNING")
@@ -29,30 +29,32 @@ class TestSourcing(unittest.TestCase):
         self.temp_dir = Path(tempfile.mkdtemp())
         self.test_db_path = self.temp_dir / "test_drp_pipeline.db"
         self.storage = Storage.initialize("StorageSQLLite", db_path=self.test_db_path)
-        self.sourcing = Sourcing(self.storage)
+        self.sourcing = Sourcing()
 
     def tearDown(self) -> None:
         """Clean up after each test."""
         sys.argv = self._original_argv
         self.storage.close()
+        Storage.reset()  # Reset singleton for next test
         if self.temp_dir.exists():
             import shutil
             shutil.rmtree(self.temp_dir)
 
-    def test_run_returns_none(self) -> None:
-        """Test run() takes no args and returns None."""
-        result = self.sourcing.run()
+    @patch.object(Sourcing, "get_candidate_urls", return_value=[])
+    def test_run_returns_none(self, _mock_get: object) -> None:
+        """Test run(limit=None) returns None after processing (no URLs)."""
+        result = self.sourcing.run(limit=None)
         self.assertIsNone(result)
 
     @patch("sourcing.Sourcing.SpreadsheetCandidateFetcher")
     def test_get_candidate_urls_delegates_to_fetcher(self, mock_fetcher_cls: object) -> None:
-        """Test get_candidate_urls() delegates to SpreadsheetCandidateFetcher."""
+        """Test get_candidate_urls(limit=...) delegates to SpreadsheetCandidateFetcher."""
         mock_fetcher = mock_fetcher_cls.return_value
         mock_fetcher.get_candidate_urls.return_value = ["https://example.com/1"]
-        urls = self.sourcing.get_candidate_urls()
+        urls = self.sourcing.get_candidate_urls(limit=10)
         self.assertEqual(urls, ["https://example.com/1"])
         mock_fetcher_cls.assert_called_once()
-        mock_fetcher.get_candidate_urls.assert_called_once_with()
+        mock_fetcher.get_candidate_urls.assert_called_once_with(limit=10)
 
     def test_process_candidate_returns_bool(self) -> None:
         """Test process_candidate() returns bool (stub returns False)."""

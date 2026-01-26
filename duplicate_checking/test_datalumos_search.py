@@ -49,7 +49,7 @@ class TestFetchSearchPage(unittest.TestCase):
     def setUp(self) -> None:
         import sys
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test"]
+        sys.argv = ["test", "noop"]
         Args.initialize()
         Logger.initialize(log_level="WARNING")
 
@@ -91,7 +91,7 @@ class TestExtractOriginalDistributionUrl(unittest.TestCase):
     def setUp(self) -> None:
         import sys
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test"]
+        sys.argv = ["test", "noop"]
         Args.initialize()
         Logger.initialize(log_level="WARNING")
 
@@ -140,7 +140,7 @@ class TestDatalumosSearch(unittest.TestCase):
         """Set up test environment before each test."""
         import sys
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test"]
+        sys.argv = ["test", "noop"]
         Args.initialize()
         Logger.initialize(log_level="WARNING")
 
@@ -276,7 +276,7 @@ class TestVerifySourceUrlInDatalumos(unittest.TestCase):
         """Set up test environment before each test."""
         import sys
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test"]
+        sys.argv = ["test", "noop"]
         Args.initialize()
         Logger.initialize(log_level="WARNING")
 
@@ -390,7 +390,7 @@ class TestDatalumosSearchLive(unittest.TestCase):
     def setUp(self) -> None:
         import sys
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test"]
+        sys.argv = ["test", "noop"]
         Args.initialize()
         Logger.initialize(log_level="INFO")
 

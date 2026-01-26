@@ -20,33 +20,34 @@ class Sourcing:
     check duplicates and availability, create storage records.
     """
 
-    def __init__(self, storage: "StorageProtocol") -> None:
+    def __init__(self) -> None:
         """
-        Initialize Sourcing with a storage backend.
-
-        Args:
-            storage: Storage implementation for creating and querying records.
+        Initialize Sourcing. Uses Storage singleton (call Storage.initialize() first).
         """
-        self._storage = storage
+        # Storage methods are accessed directly on the Storage class, no need to store instance
+        pass
 
-    def run(self) -> None:
+    def run(self, limit: int | None = None) -> None:
         """
         Process configured sources: obtain candidate URLs, then for each
         candidate run duplicate check, availability check, and create storage
         record when appropriate.
 
-        All parameters (spreadsheet, URL column, etc.) come from Args.
+        Args:
+            limit: Max candidate URLs to process. None = unlimited. From orchestrator.
         """
-        ...
+        urls = self.get_candidate_urls(limit=limit)
+        for url in urls:
+            self.process_candidate(url)
 
-    def get_candidate_urls(self) -> list[str]:
+    def get_candidate_urls(self, limit: int | None = None) -> list[str]:
         """
         Obtain candidate source URLs from the configured spreadsheet.
 
-        Delegates to SpreadsheetCandidateFetcher. Configuration from Args.
+        Delegates to SpreadsheetCandidateFetcher. Limit from orchestrator.
         """
         fetcher = SpreadsheetCandidateFetcher()
-        return fetcher.get_candidate_urls()
+        return fetcher.get_candidate_urls(limit=limit)
 
     def process_candidate(self, url: str) -> bool:
         """
@@ -103,4 +104,5 @@ class Sourcing:
         Returns:
             The DRPID of the created record.
         """
-        return self._storage.create_record(url)
+        from storage import Storage
+        return Storage.create_record(url)

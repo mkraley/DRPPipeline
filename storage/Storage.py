@@ -1,26 +1,23 @@
 """
-Storage factory for DRP Pipeline.
+Storage singleton for DRP Pipeline.
 
-Provides a factory method to create and initialize storage implementations
-without requiring direct imports of implementation classes.
+Provides a centralized storage accessible via direct method calls, similar to Args and Logger.
+All StorageProtocol methods are accessible directly on the Storage class.
 
 Example usage:
     from storage import Storage
     
     # Initialize storage using implementation class name
-    storage = Storage.initialize('StorageSQLLite', db_path="drp_pipeline.db")
+    Storage.initialize('StorageSQLLite', db_path="drp_pipeline.db")
     
-    # Create a record
-    drpid = storage.create_record("https://example.com")
+    # Use storage methods directly on the class
+    drpid = Storage.create_record("https://example.com")
+    record = Storage.get(drpid)
+    Storage.update_record(drpid, {"title": "My Project", "status": "active"})
+    Storage.delete(drpid)
     
-    # Get a record
-    record = storage.get(drpid)
-    
-    # Update a record
-    storage.update_record(drpid, {"title": "My Project", "status": "active"})
-    
-    # Delete a record
-    storage.delete(drpid)
+    # For testing: reset singleton
+    Storage.reset()
 """
 
 from pathlib import Path
@@ -29,8 +26,31 @@ from typing import Optional
 from storage.StorageProtocol import StorageProtocol
 
 
-class Storage:
-    """Factory class for creating and initializing storage implementations."""
+class StorageMeta(type):
+    """Metaclass to delegate all method calls to the underlying storage instance."""
+    
+    def __getattr__(cls, name: str):
+        """Delegate attribute access to the underlying storage instance."""
+        # Don't delegate special/private attributes
+        if name.startswith('_') or name.startswith('__'):
+            raise AttributeError(f"type object 'Storage' has no attribute '{name}'")
+        
+        if not cls._initialized or cls._instance is None:
+            raise RuntimeError("Storage has not been initialized. Call Storage.initialize() first.")
+        
+        return getattr(cls._instance, name)
+
+
+class Storage(metaclass=StorageMeta):
+    """
+    Storage class providing direct access to all StorageProtocol methods.
+    
+    Storage is a singleton - call initialize() once, then use methods directly on the class.
+    """
+    
+    # Singleton instance
+    _instance: Optional[StorageProtocol] = None
+    _initialized: bool = False
     
     # Registry mapping class names to their module paths
     _implementations = {
@@ -40,7 +60,10 @@ class Storage:
     @classmethod
     def initialize(cls, implementation: str, db_path: Optional[Path] = None) -> StorageProtocol:
         """
-        Create and initialize a storage implementation.
+        Create and initialize a storage implementation (singleton).
+        
+        If already initialized, returns the existing instance. To reinitialize with
+        different parameters, call reset() first.
         
         Args:
             implementation: Name of the implementation class (e.g., 'StorageSQLLite')
@@ -54,6 +77,9 @@ class Storage:
             ImportError: If the implementation class cannot be imported
             RuntimeError: If initialization fails
         """
+        if cls._instance is not None:
+            return cls._instance
+        
         if implementation not in cls._implementations:
             raise ValueError(
                 f"Unknown storage implementation: {implementation}. "
@@ -76,4 +102,17 @@ class Storage:
         instance = implementation_class()
         instance.initialize(db_path=db_path)
         
+        # Store as singleton
+        cls._instance = instance
+        cls._initialized = True
         return instance
+    
+    @classmethod
+    def reset(cls) -> None:
+        """
+        Reset the singleton instance (for testing).
+        
+        After calling reset(), initialize() must be called again before using Storage methods.
+        """
+        cls._instance = None
+        cls._initialized = False

@@ -5,7 +5,7 @@ Defines the Storage protocol that all storage implementations must follow.
 """
 
 from pathlib import Path
-from typing import Optional, Protocol, Dict, Any
+from typing import Literal, Optional, Protocol, Dict, Any
 
 
 class StorageProtocol(Protocol):
@@ -86,5 +86,39 @@ class StorageProtocol(Protocol):
             
         Raises:
             ValueError: If record doesn't exist
+        """
+        ...
+
+    def list_eligible_projects(
+        self, prereq_status: Optional[str], limit: Optional[int]
+    ) -> list[Dict[str, Any]]:
+        """
+        List projects eligible for the next module: status == prereq_status and no errors.
+
+        Order by DRPID ASC. Optionally limit the number of rows. Return full row dicts.
+        Only the orchestrator should call this; when prereq_status is None, return [].
+
+        Args:
+            prereq_status: Required status (e.g. "sourcing" for collectors). None -> [].
+            limit: Max rows to return. None = no limit.
+
+        Returns:
+            List of full row dicts (all columns, including None for nulls).
+        """
+        ...
+
+    def append_to_field(
+        self, drpid: int, field: Literal["warnings", "errors"], text: str
+    ) -> None:
+        """
+        Append text to the warnings or errors field. Format: one entry per line (newline).
+
+        Args:
+            drpid: The DRPID of the record to update.
+            field: Either "warnings" or "errors".
+            text: Text to append.
+
+        Raises:
+            ValueError: If field is not "warnings" or "errors", or record does not exist.
         """
         ...

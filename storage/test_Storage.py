@@ -20,8 +20,8 @@ class TestStorage(unittest.TestCase):
         # Save and restore original argv to prevent test interference
         self._original_argv = sys.argv.copy()
         # Set minimal argv to avoid Typer command parsing issues
-        sys.argv = ["test"]
-        
+        sys.argv = ["test", "noop"]
+
         # Initialize Args and Logger (required by Storage)
         Args.initialize()
         Logger.initialize(log_level="WARNING")  # Reduce log noise during tests
@@ -33,6 +33,8 @@ class TestStorage(unittest.TestCase):
     def tearDown(self) -> None:
         """Clean up after each test."""
         import sys
+        # Reset singleton for next test
+        Storage.reset()
         # Restore original argv
         sys.argv = self._original_argv
         # Clean up temp directory
@@ -78,3 +80,43 @@ class TestStorage(unittest.TestCase):
             storage.close()
         finally:
             os.chdir(original_cwd)
+    
+    def test_direct_method_access(self) -> None:
+        """Test that Storage methods can be called directly on the class."""
+        Storage.initialize('StorageSQLLite', db_path=self.test_db_path)
+        
+        # Should be able to call methods directly
+        drpid = Storage.create_record("https://example.com")
+        self.assertIsInstance(drpid, int)
+        
+        record = Storage.get(drpid)
+        self.assertIsNotNone(record)
+        self.assertEqual(record["source_url"], "https://example.com")
+        
+        Storage.close()
+    
+    def test_method_access_before_initialize_raises(self) -> None:
+        """Test that method access before initialize() raises RuntimeError."""
+        Storage.reset()  # Ensure no instance exists
+        with self.assertRaises(RuntimeError) as cm:
+            Storage.create_record("https://example.com")
+        self.assertIn("not been initialized", str(cm.exception))
+    
+    def test_initialize_twice_returns_same_instance(self) -> None:
+        """Test calling initialize() twice returns the same singleton instance."""
+        storage1 = Storage.initialize('StorageSQLLite', db_path=self.test_db_path)
+        storage2 = Storage.initialize('StorageSQLLite', db_path=self.test_db_path)
+        
+        self.assertIs(storage1, storage2)
+        storage1.close()
+    
+    def test_reset_clears_singleton(self) -> None:
+        """Test reset() clears the singleton so a new instance can be created."""
+        storage1 = Storage.initialize('StorageSQLLite', db_path=self.test_db_path)
+        storage1.close()
+        Storage.reset()
+        
+        # Should be able to initialize again
+        storage2 = Storage.initialize('StorageSQLLite', db_path=self.test_db_path)
+        self.assertIsNot(storage1, storage2)
+        storage2.close()

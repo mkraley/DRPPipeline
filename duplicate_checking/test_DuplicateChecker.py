@@ -20,7 +20,7 @@ class TestDuplicateChecker(unittest.TestCase):
         """Set up test environment before each test."""
         import sys
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test"]
+        sys.argv = ["test", "noop"]
 
         Args.initialize()
         Logger.initialize(log_level="WARNING")
@@ -28,12 +28,13 @@ class TestDuplicateChecker(unittest.TestCase):
         self.temp_dir = Path(tempfile.mkdtemp())
         self.test_db_path = self.temp_dir / "test_drp_pipeline.db"
         self.storage = Storage.initialize("StorageSQLLite", db_path=self.test_db_path)
-        self.checker = DuplicateChecker(self.storage)
+        self.checker = DuplicateChecker()
 
     def tearDown(self) -> None:
         """Clean up after each test."""
         import sys
         self.storage.close()
+        Storage.reset()  # Reset singleton for next test
         sys.argv = self._original_argv
         if self.temp_dir.exists():
             import shutil

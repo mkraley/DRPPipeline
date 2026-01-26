@@ -46,9 +46,30 @@ Storage schema
   status - latest step completed? or individual fields for each task
   status_notes
 
-
-
 Assumptions
   all contents are utf-8
   rich text available for large text fields, e.g. summary
   python 13
+
+Terminology
+  project - all the work done on behalf of a single source url - named after a datalumos project
+  asset - an individual file. projects usually have more than one file
+  metadata - information not contained in a file - often represents information extracted from a landing page
+  batch - a set of projects run through a specific module
+
+Orchestration
+  The pipeline consists of a set of mostly independent modules. See the list above.
+  Although we might someday restructure to allow all/many modules to run at once, e.g. to send a individual project through the entire pipeline,
+    we'll start by running one module at a time on a number of projects.
+  The first (required) command line parameter will be the name of the module to run.
+  Each project's database entry status field will consist of the name of the last module that successfully processed that project.
+  When a module completes a project successfully, it will update the status field accordingly.
+  A module may also appeend to the project's warning or error fields as appropriate. 
+  A project which has entries in the error field is not eligible for further processing. Warnings are allowed to proceed.
+  A module knows which other module is its prereq, for example, collect requires sourcing. 
+  The process is that the main program iterates through the database, in PRDID order, looking for projects whose status field is set to the appropriate prereq and have no errors.
+  As it finds a suitable project, it runs it through the current module, updating the status, error, and warning fields. 
+  It then moves on to find the next suitable project.
+  The num_rows parameter limits the number of projects executed in a given batch.
+  The first module run, typically Sourcing, will populate the Storage database with candidate projects. Sourcing has no prereq.
+  There is a list of modules and their prereqs maintained in the main program area.

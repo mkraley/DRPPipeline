@@ -20,8 +20,8 @@ class TestStorageSQLLite(unittest.TestCase):
         import sys
         # Save and restore original argv to prevent test interference
         self._original_argv = sys.argv.copy()
-        # Set minimal argv to avoid Typer command parsing issues
-        sys.argv = ["test"]
+        # Set minimal argv (module required by Args)
+        sys.argv = ["test", "noop"]
         
         # Initialize Args and Logger (required by Storage)
         Args.initialize()
@@ -448,3 +448,96 @@ class TestStorageSQLLite(unittest.TestCase):
         
         with self.assertRaises(RuntimeError):
             storage.delete(1)
+
+    def test_list_eligible_projects_none_prereq_returns_empty(self) -> None:
+        """Test list_eligible_projects with prereq_status None returns []."""
+        self.storage.initialize(db_path=self.test_db_path)
+        out = self.storage.list_eligible_projects(None, 10)
+        self.assertEqual(out, [])
+
+    def test_list_eligible_projects_filters_status_and_errors(self) -> None:
+        """Test list_eligible_projects returns only status=X and (errors null or '')."""
+        self.storage.initialize(db_path=self.test_db_path)
+        self.storage.create_record("https://a.com")
+        self.storage.update_record(1, {"status": "sourcing"})
+        self.storage.create_record("https://b.com")
+        self.storage.update_record(2, {"status": "sourcing", "errors": "fail"})
+        self.storage.create_record("https://c.com")
+        self.storage.update_record(3, {"status": "sourcing"})
+        out = self.storage.list_eligible_projects("sourcing", None)
+        self.assertEqual(len(out), 2)
+        drpids = [r["DRPID"] for r in out]
+        self.assertIn(1, drpids)
+        self.assertIn(3, drpids)
+        self.assertNotIn(2, drpids)
+
+    def test_list_eligible_projects_respects_limit(self) -> None:
+        """Test list_eligible_projects respects limit."""
+        self.storage.initialize(db_path=self.test_db_path)
+        for i in range(5):
+            self.storage.create_record(f"https://x{i}.com")
+            self.storage.update_record(i + 1, {"status": "sourcing"})
+        out = self.storage.list_eligible_projects("sourcing", 2)
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0]["DRPID"], 1)
+        self.assertEqual(out[1]["DRPID"], 2)
+
+    def test_list_eligible_projects_order_by_drpid(self) -> None:
+        """Test list_eligible_projects returns rows ordered by DRPID ASC."""
+        self.storage.initialize(db_path=self.test_db_path)
+        self.storage.create_record("https://a.com")
+        self.storage.update_record(1, {"status": "sourcing"})
+        self.storage.create_record("https://b.com")
+        self.storage.update_record(2, {"status": "sourcing"})
+        out = self.storage.list_eligible_projects("sourcing", None)
+        self.assertEqual([r["DRPID"] for r in out], [1, 2])
+
+    def test_append_to_field_warnings(self) -> None:
+        """Test append_to_field appends to warnings with newline."""
+        self.storage.initialize(db_path=self.test_db_path)
+        self.storage.create_record("https://a.com")
+        self.storage.append_to_field(1, "warnings", "w1")
+        r = self.storage.get(1)
+        self.assertEqual(r.get("warnings"), "w1")
+        self.storage.append_to_field(1, "warnings", "w2")
+        r = self.storage.get(1)
+        self.assertEqual(r["warnings"], "w1\nw2")
+
+    def test_append_to_field_errors(self) -> None:
+        """Test append_to_field appends to errors."""
+        self.storage.initialize(db_path=self.test_db_path)
+        self.storage.create_record("https://a.com")
+        self.storage.append_to_field(1, "errors", "e1")
+        r = self.storage.get(1)
+        self.assertEqual(r["errors"], "e1")
+
+    def test_append_to_field_invalid_field_raises(self) -> None:
+        """Test append_to_field with field not warnings/errors raises."""
+        self.storage.initialize(db_path=self.test_db_path)
+        self.storage.create_record("https://a.com")
+        with self.assertRaises(ValueError) as cm:
+            self.storage.append_to_field(1, "status", "x")
+        self.assertIn("warnings", str(cm.exception))
+        self.assertIn("errors", str(cm.exception))
+
+    def test_append_to_field_nonexistent_drpid_raises(self) -> None:
+        """Test append_to_field for missing DRPID raises."""
+        self.storage.initialize(db_path=self.test_db_path)
+        with self.assertRaises(ValueError) as cm:
+            self.storage.append_to_field(999, "warnings", "x")
+        self.assertIn("does not exist", str(cm.exception))
+
+    def test_append_to_field_preserves_whitespace(self) -> None:
+        """Test append_to_field preserves whitespace consistently across multiple appends."""
+        self.storage.initialize(db_path=self.test_db_path)
+        self.storage.create_record("https://a.com")
+        # First append with leading/trailing whitespace
+        self.storage.append_to_field(1, "warnings", " warning1 ")
+        r = self.storage.get(1)
+        self.assertEqual(r["warnings"], " warning1 ")
+        # Second append should preserve leading whitespace from first entry
+        # (trailing whitespace from entire field is stripped to avoid trailing newlines)
+        self.storage.append_to_field(1, "warnings", " warning2 ")
+        r = self.storage.get(1)
+        # Leading spaces preserved, trailing space from last entry stripped
+        self.assertEqual(r["warnings"], " warning1 \n warning2")

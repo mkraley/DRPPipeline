@@ -8,7 +8,7 @@ This class should be instantiated via Storage.initialize() factory method.
 
 import sqlite3
 from pathlib import Path
-from typing import Optional, Dict, Any, Tuple, TYPE_CHECKING
+from typing import Literal, Optional, Dict, Any, Tuple, TYPE_CHECKING
 
 from utils.Logger import Logger
 
@@ -334,5 +334,73 @@ class StorageSQLLite:
         
         if self._db_path is None:
             raise RuntimeError("Database path is not set.")
-        
+
         return self._db_path
+
+    def list_eligible_projects(
+        self, prereq_status: Optional[str], limit: Optional[int]
+    ) -> list[Dict[str, Any]]:
+        """
+        List projects eligible for the next module: status == prereq_status and no errors.
+
+        Order by DRPID ASC. Optionally limit the number of rows. Return full row dicts.
+        When prereq_status is None, return [].
+
+        Args:
+            prereq_status: Required status (e.g. "sourcing" for collectors). None -> [].
+            limit: Max rows to return. None = no limit.
+
+        Returns:
+            List of full row dicts (all columns, including None for nulls).
+        """
+        if prereq_status is None:
+            return []
+        query = (
+            "SELECT * FROM projects "
+            "WHERE status = ? AND (errors IS NULL OR errors = '') "
+            "ORDER BY DRPID ASC"
+        )
+        params: Tuple[Any, ...] = (prereq_status,)
+        if limit is not None:
+            query += " LIMIT ?"
+            params = (prereq_status, limit)
+        cursor = self._execute_query(
+            query, params, operation_name="list_eligible_projects", commit=False
+        )
+        rows = cursor.fetchall()
+        column_names = [d[0] for d in cursor.description]
+        result: list[Dict[str, Any]] = []
+        for row in rows:
+            result.append(dict(zip(column_names, row)))
+        return result
+
+    def append_to_field(
+        self, drpid: int, field: Literal["warnings", "errors"], text: str
+    ) -> None:
+        """
+        Append text to the warnings or errors field. Format: one entry per line (newline).
+
+        Args:
+            drpid: The DRPID of the record to update.
+            field: Either "warnings" or "errors".
+            text: Text to append.
+
+        Raises:
+            ValueError: If field is not "warnings" or "errors", or record does not exist.
+        """
+        if field not in ("warnings", "errors"):
+            raise ValueError(f"field must be 'warnings' or 'errors', got: {field!r}")
+        cursor = self._execute_query(
+            f"SELECT {field} FROM projects WHERE DRPID = ?",
+            (drpid,),
+            operation_name=f"read {field} for append",
+            commit=False,
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError(f"Record with DRPID {drpid} does not exist")
+        current = row[0] or ""
+        # Preserve whitespace consistently: append with newline, only strip trailing whitespace
+        # from the entire field to avoid trailing newlines, but preserve whitespace within entries
+        new_value = (current + "\n" + text).rstrip() if current else text
+        self.update_record(drpid, {field: new_value})

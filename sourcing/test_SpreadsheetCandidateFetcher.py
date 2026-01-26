@@ -13,13 +13,13 @@ from sourcing.SpreadsheetCandidateFetcher import SpreadsheetCandidateFetcher
 
 
 def _csv_candidates() -> str:
-    """Sample CSV matching Data_Inventories layout: URL, Claimed, Download Location."""
+    """Sample CSV matching Data_Inventories layout: URL, Claimed, Download Location. Uses data.cdc.gov so _row_passes_filter passes."""
     return (
         "Admin Notes,Claimed (add your name),URL,Download Location\r\n"
-        ",,https://example.com/a,\r\n"
-        ",alice,https://example.com/b,\r\n"
-        ",,https://example.com/c,/path\r\n"
-        ",,https://example.com/d,\r\n"
+        ",,https://data.cdc.gov/a,\r\n"
+        ",alice,https://data.cdc.gov/b,\r\n"
+        ",,https://data.cdc.gov/c,/path\r\n"
+        ",,https://data.cdc.gov/d,\r\n"
         ",,,\r\n"
     )
 
@@ -30,7 +30,7 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
     def setUp(self) -> None:
         """Set up test environment before each test."""
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test"]
+        sys.argv = ["test", "sourcing"]
         Args.initialize()
         Logger.initialize(log_level="WARNING")
         self.fetcher = SpreadsheetCandidateFetcher()
@@ -45,7 +45,7 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         mock_fetch.return_value = _csv_candidates()
         urls = self.fetcher.get_candidate_urls()
         self.assertIsInstance(urls, list)
-        self.assertEqual(urls, ["https://example.com/a", "https://example.com/d"])
+        self.assertEqual(urls, ["https://data.cdc.gov/a", "https://data.cdc.gov/d"])
         mock_fetch.assert_called_once()
 
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
@@ -72,85 +72,72 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         self.assertIn("Download Location", str(cm.exception))
 
     def test_row_passes_filter_both_empty(self) -> None:
-        """Test _row_passes_filter returns True when Claimed and Download Location empty."""
-        row = {"Claimed (add your name)": "", "Download Location": ""}
+        """Test _row_passes_filter returns True when Claimed and Download Location empty and URL is data.cdc.gov."""
+        row = {"Claimed (add your name)": "", "Download Location": "", "URL": "https://data.cdc.gov/x"}
         self.assertTrue(self.fetcher._row_passes_filter(row))
 
     def test_row_passes_filter_claimed_filled(self) -> None:
         """Test _row_passes_filter returns False when Claimed non-empty."""
-        row = {"Claimed (add your name)": "alice", "Download Location": ""}
+        row = {"Claimed (add your name)": "alice", "Download Location": "", "URL": "https://data.cdc.gov/x"}
         self.assertFalse(self.fetcher._row_passes_filter(row))
 
     def test_row_passes_filter_download_location_filled(self) -> None:
         """Test _row_passes_filter returns False when Download Location non-empty."""
-        row = {"Claimed (add your name)": "", "Download Location": "/path"}
+        row = {"Claimed (add your name)": "", "Download Location": "/path", "URL": "https://data.cdc.gov/x"}
         self.assertFalse(self.fetcher._row_passes_filter(row))
 
-    def test_row_passes_filter_missing_columns_treated_empty(self) -> None:
-        """Test _row_passes_filter treats missing columns as empty (for row dict access)."""
-        # Note: In practice, columns are validated before calling this method.
-        # This test verifies the method's behavior when keys are missing.
-        self.assertTrue(self.fetcher._row_passes_filter({}))
+    def test_row_passes_filter_missing_url_treated_empty_fails(self) -> None:
+        """Test _row_passes_filter returns False when URL is missing (empty); requires data.cdc.gov."""
+        # Missing URL yields "".startswith("https://data.cdc.gov/") -> False.
+        self.assertFalse(self.fetcher._row_passes_filter({}))
 
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
-    def test_get_candidate_urls_respects_num_rows_limit(self, mock_fetch: object) -> None:
-        """Test get_candidate_urls stops at num_rows limit."""
-        # CSV has 4 valid URLs (a, d, and two more we'll add)
+    def test_get_candidate_urls_respects_limit(self, mock_fetch: object) -> None:
+        """Test get_candidate_urls stops at limit (from caller)."""
         csv_with_many = (
             "Admin Notes,Claimed (add your name),URL,Download Location\r\n"
-            ",,https://example.com/a,\r\n"
-            ",alice,https://example.com/b,\r\n"
-            ",,https://example.com/c,/path\r\n"
-            ",,https://example.com/d,\r\n"
-            ",,https://example.com/e,\r\n"
-            ",,https://example.com/f,\r\n"
+            ",,https://data.cdc.gov/a,\r\n"
+            ",alice,https://data.cdc.gov/b,\r\n"
+            ",,https://data.cdc.gov/c,/path\r\n"
+            ",,https://data.cdc.gov/d,\r\n"
+            ",,https://data.cdc.gov/e,\r\n"
+            ",,https://data.cdc.gov/f,\r\n"
         )
         mock_fetch.return_value = csv_with_many
-        
-        # Set limit to 2
-        Args._config["sourcing_num_rows"] = 2
-        urls = self.fetcher.get_candidate_urls()
+
+        urls = self.fetcher.get_candidate_urls(limit=2)
         self.assertEqual(len(urls), 2)
-        self.assertEqual(urls, ["https://example.com/a", "https://example.com/d"])
-        
-        # Reset
-        Args._config["sourcing_num_rows"] = None
+        self.assertEqual(urls, ["https://data.cdc.gov/a", "https://data.cdc.gov/d"])
 
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
-    def test_get_candidate_urls_unlimited_when_num_rows_none(self, mock_fetch: object) -> None:
-        """Test get_candidate_urls returns all URLs when num_rows is None."""
+    def test_get_candidate_urls_unlimited_when_limit_none(self, mock_fetch: object) -> None:
+        """Test get_candidate_urls returns all URLs when limit is None."""
         csv_with_many = (
             "Admin Notes,Claimed (add your name),URL,Download Location\r\n"
-            ",,https://example.com/a,\r\n"
-            ",,https://example.com/d,\r\n"
-            ",,https://example.com/e,\r\n"
+            ",,https://data.cdc.gov/a,\r\n"
+            ",,https://data.cdc.gov/d,\r\n"
+            ",,https://data.cdc.gov/e,\r\n"
         )
         mock_fetch.return_value = csv_with_many
-        
-        Args._config["sourcing_num_rows"] = None
-        urls = self.fetcher.get_candidate_urls()
+
+        urls = self.fetcher.get_candidate_urls(limit=None)
         self.assertEqual(len(urls), 3)
-        self.assertEqual(urls, ["https://example.com/a", "https://example.com/d", "https://example.com/e"])
+        self.assertEqual(urls, ["https://data.cdc.gov/a", "https://data.cdc.gov/d", "https://data.cdc.gov/e"])
 
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
     def test_get_candidate_urls_stops_early_when_limit_reached(self, mock_fetch: object) -> None:
         """Test that processing stops once limit is reached (doesn't process all rows)."""
-        # Create CSV with many rows, but only first 2 pass filter
         csv_many_rows = (
             "Admin Notes,Claimed (add your name),URL,Download Location\r\n"
-            ",,https://example.com/a,\r\n"
-            ",,https://example.com/b,\r\n"
-            ",alice,https://example.com/c,\r\n"  # Filtered out
-            ",,https://example.com/d,/path\r\n"  # Filtered out
-            ",,https://example.com/e,\r\n"  # Should not be processed
-            ",,https://example.com/f,\r\n"  # Should not be processed
+            ",,https://data.cdc.gov/a,\r\n"
+            ",,https://data.cdc.gov/b,\r\n"
+            ",alice,https://data.cdc.gov/c,\r\n"
+            ",,https://data.cdc.gov/d,/path\r\n"
+            ",,https://data.cdc.gov/e,\r\n"
+            ",,https://data.cdc.gov/f,\r\n"
         )
         mock_fetch.return_value = csv_many_rows
-        
-        Args._config["sourcing_num_rows"] = 2
-        urls = self.fetcher.get_candidate_urls()
-        # Should stop after collecting 2 URLs, even though more valid URLs exist
+
+        urls = self.fetcher.get_candidate_urls(limit=2)
         self.assertEqual(len(urls), 2)
-        self.assertEqual(urls, ["https://example.com/a", "https://example.com/b"])
-        
-        Args._config["sourcing_num_rows"] = None
+        self.assertEqual(urls, ["https://data.cdc.gov/a", "https://data.cdc.gov/b"])

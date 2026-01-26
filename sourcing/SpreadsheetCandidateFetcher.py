@@ -22,22 +22,24 @@ class SpreadsheetCandidateFetcher:
     All configuration comes from Args: sourcing_spreadsheet_url, sourcing_url_column.
     """
 
-    def get_candidate_urls(self) -> list[str]:
+    def get_candidate_urls(self, limit: int | None = None) -> list[str]:
         """
         Obtain candidate source URLs from the configured spreadsheet.
 
         Fetches the tab as CSV, filters rows with _row_passes_filter, returns
-        non-empty URL column values. Stops once num_rows limit is reached.
+        non-empty URL column values. Stops once limit is reached (if set).
+
+        Args:
+            limit: Max URLs to return. None = unlimited. Provided by orchestrator.
 
         Returns:
-            List of candidate URLs to process (limited by sourcing_num_rows if set).
+            List of candidate URLs to process (limited by limit if set).
         """
         spreadsheet_url = Args.sourcing_spreadsheet_url
         sheet_id, gid = parse_spreadsheet_url(spreadsheet_url)
         csv_text = self._fetch_sheet_csv(sheet_id, gid)
         url_column = Args.sourcing_url_column
-        num_rows = Args.sourcing_num_rows
-        return self._extract_urls_from_csv(csv_text, url_column, num_rows)
+        return self._extract_urls_from_csv(csv_text, url_column, limit)
 
     def _fetch_sheet_csv(self, sheet_id: str, gid: str) -> str:
         """

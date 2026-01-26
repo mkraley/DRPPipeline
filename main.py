@@ -27,8 +27,7 @@ def setup() -> None:
     Logger.initialize(log_level=log_level)
     
     Logger.info("DRP Pipeline starting...")
-    Logger.info(f"Python version: {sys.version}")
-    Logger.info(f"Working directory: {Path.cwd()}")
+    Logger.debug(f"Python version: {sys.version}")
     
     # Log configuration info
     config_file = getattr(Args, 'config_file', None)
@@ -40,9 +39,10 @@ def setup() -> None:
 def main() -> None:
     """Main entry point for the DRP Pipeline application."""
     setup()
-    
-    # TODO: Implement pipeline logic
-    Logger.info("DRP Pipeline initialized successfully")
+
+    from orchestration import Orchestrator
+
+    Orchestrator.run(Args.module)
 
 
 if __name__ == "__main__":

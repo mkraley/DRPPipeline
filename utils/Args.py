@@ -62,7 +62,9 @@ class Args(metaclass=ArgsMeta):
             "https://docs.google.com/spreadsheets/d/1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY/edit?gid=101637367#gid=101637367"
         ),
         "sourcing_url_column": "URL",
-        "sourcing_num_rows": None,  # None = unlimited, or set max number of candidate URLs to return
+        "num_rows": None,  # None = unlimited; batch limit for orchestration
+        "db_path": None,
+        "storage_implementation": "StorageSQLLite",
         "base_output_dir": r"C:\Documents\DataRescue\DRPData",
     }
     
@@ -123,28 +125,42 @@ class Args(metaclass=ArgsMeta):
         
         def callback(
             ctx: typer.Context,
+            module: str = typer.Argument(..., help="Module to run: noop, sourcing, collectors"),
             config: Optional[str] = typer.Option(None, "--config", "-c", help="Path to configuration file (JSON format)"),
-            log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Set the logging level",
-                                                     case_sensitive=False)
+            log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Set the logging level", case_sensitive=False),
+            num_rows: Optional[int] = typer.Option(None, "--num-rows", "-n", help="Max projects or candidate URLs per batch; None = unlimited"),
+            db_path: Optional[str] = typer.Option(None, "--db-path", help="Path to SQLite database file"),
+            storage: Optional[str] = typer.Option(None, "--storage", help="Storage implementation (e.g. StorageSQLLite)"),
         ) -> None:
             """Callback to capture Typer parsed values."""
+            parsed_values["module"] = module
             if config is not None:
                 parsed_values["config"] = config
             if log_level is not None:
                 parsed_values["log_level"] = log_level.upper()
-        
-        # Create Typer app with callback
+            if num_rows is not None:
+                parsed_values["num_rows"] = num_rows
+            if db_path is not None:
+                parsed_values["db_path"] = db_path
+            if storage is not None:
+                parsed_values["storage_implementation"] = storage
+
+        # Use a single @app.command() so the first positional (module) is not treated as a
+        # subcommand. A Group would require the first token to match a subcommand.
         app = typer.Typer(help="DRP Pipeline - Modular data collection and upload pipeline")
-        app.callback(invoke_without_command=True)(callback)
-        
-        # Parse sys.argv, but handle unittest case where we might need to skip certain args
-        # Typer will handle parsing, but we need to catch SystemExit that Typer might raise
+        app.command()(callback)
+
+        # Parse args. With a single Command (no Group), pass args without program name so
+        # the first positional (module) is parsed correctly.
         try:
             app(sys.argv[1:], standalone_mode=False)
         except SystemExit:
-            # Typer may raise SystemExit for help/errors, but we want to continue in unittest
-            pass
-        
+            raise  # --help/--version: let SystemExit propagate so the process exits
+
+        # If --help was used, the callback is never invoked and module is missing; exit cleanly.
+        if "module" not in parsed_values:
+            sys.exit(0)
+
         return parsed_values
 
     @classmethod
