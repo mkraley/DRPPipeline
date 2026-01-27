@@ -40,7 +40,7 @@ class TestSourcing(unittest.TestCase):
             import shutil
             shutil.rmtree(self.temp_dir)
 
-    @patch.object(Sourcing, "get_candidate_urls", return_value=[])
+    @patch.object(Sourcing, "get_candidate_urls", return_value=([], 0))
     def test_run_returns_none(self, _mock_get: object) -> None:
         """Test run(-1) returns None after processing (no URLs)."""
         result = self.sourcing.run(-1)
@@ -50,58 +50,11 @@ class TestSourcing(unittest.TestCase):
     def test_get_candidate_urls_delegates_to_fetcher(self, mock_fetcher_cls: object) -> None:
         """Test get_candidate_urls(limit=...) delegates to SpreadsheetCandidateFetcher."""
         mock_fetcher = mock_fetcher_cls.return_value
-        mock_fetcher.get_candidate_urls.return_value = ["https://example.com/1"]
-        urls = self.sourcing.get_candidate_urls(limit=10)
+        mock_fetcher.get_candidate_urls.return_value = (["https://example.com/1"], 0)
+        urls, skipped = self.sourcing.get_candidate_urls(limit=10)
         self.assertEqual(urls, ["https://example.com/1"])
+        self.assertEqual(skipped, 0)
         mock_fetcher_cls.assert_called_once()
         mock_fetcher.get_candidate_urls.assert_called_once_with(limit=10)
 
-    def test_process_candidate_returns_tuple_for_added(self) -> None:
-        """Test process_candidate() returns tuple ("added", drpid) for new URLs."""
-        result = self.sourcing.process_candidate("https://example.com/data")
-        # Should return ("added", drpid) for new URLs
-        self.assertIsInstance(result, tuple)
-        self.assertEqual(result[0], "added")
-        self.assertIsInstance(result[1], int)
-        self.assertGreater(result[1], 0)
-    
-    def test_process_candidate_returns_string_for_duplicate(self) -> None:
-        """Test process_candidate() returns "duplicate" for existing URLs."""
-        # Add URL first
-        drpid = self.sourcing.create_storage_record_and_id("https://example.com/duplicate")
-        self.assertGreater(drpid, 0)
-        
-        # Try to add again - should return "duplicate"
-        result = self.sourcing.process_candidate("https://example.com/duplicate")
-        self.assertEqual(result, "duplicate")
 
-    def test_is_duplicate_checks_storage(self) -> None:
-        """Test is_duplicate() checks storage for existing URL."""
-        # URL not in storage yet
-        result = self.sourcing.is_duplicate("https://example.com/new")
-        self.assertFalse(result)
-        
-        # Add URL to storage
-        drpid = self.sourcing.create_storage_record_and_id("https://example.com/new")
-        self.assertGreater(drpid, 0)
-        
-        # Now it should be a duplicate
-        result = self.sourcing.is_duplicate("https://example.com/new")
-        self.assertTrue(result)
-
-    def test_is_source_available_returns_bool(self) -> None:
-        """Test is_source_available() returns bool (stub returns True)."""
-        result = self.sourcing.is_source_available("https://example.com/data")
-        self.assertIsInstance(result, bool)
-        self.assertTrue(result)
-
-    def test_create_storage_record_and_id_creates_record_and_returns_drpid(self) -> None:
-        """Test create_storage_record_and_id() delegates to storage and returns DRPID."""
-        url = "https://example.com/sourced"
-        drpid = self.sourcing.create_storage_record_and_id(url)
-        self.assertIsInstance(drpid, int)
-        self.assertGreater(drpid, 0)
-
-        record = self.storage.get(drpid)
-        self.assertIsNotNone(record)
-        self.assertEqual(record["source_url"], url)

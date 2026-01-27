@@ -22,18 +22,18 @@ class SpreadsheetCandidateFetcher:
     All configuration comes from Args: sourcing_spreadsheet_url, sourcing_url_column.
     """
 
-    def get_candidate_urls(self, limit: int | None = None) -> list[str]:
+    def get_candidate_urls(self, limit: int | None = None) -> tuple[list[str], int]:
         """
         Obtain candidate source URLs from the configured spreadsheet.
 
         Fetches the tab as CSV, filters rows with _row_passes_filter, returns
-        non-empty URL column values. Stops once limit is reached (if set).
+        non-empty URL column values. Continues until limit filtered rows are found (if set).
 
         Args:
             limit: Max URLs to return. None = unlimited. Provided by orchestrator.
 
         Returns:
-            List of candidate URLs to process (limited by limit if set).
+            Tuple of (list of candidate URLs, count of skipped rows).
         """
         spreadsheet_url = Args.sourcing_spreadsheet_url
         sheet_id, gid = parse_spreadsheet_url(spreadsheet_url)
@@ -81,19 +81,19 @@ class SpreadsheetCandidateFetcher:
 
     def _extract_urls_from_csv(
         self, csv_text: str, url_column: str, num_rows: int | None = None
-    ) -> list[str]:
+    ) -> tuple[list[str], int]:
         """
         Parse CSV, filter rows with _row_passes_filter, collect non-empty URL values.
 
-        Stops processing once num_rows URLs have been collected (if num_rows is set).
+        Continues processing until num_rows filtered URLs have been collected (if num_rows is set).
 
         Args:
             csv_text: CSV content to parse.
             url_column: Column name containing URLs.
-            num_rows: Maximum number of URLs to return. None = unlimited.
+            num_rows: Maximum number of filtered URLs to return. None = unlimited.
 
         Returns:
-            List of candidate URLs (limited to num_rows if set).
+            Tuple of (list of candidate URLs, count of skipped rows).
 
         Raises:
             ValueError: If required columns (URL column or filter columns) are missing.
@@ -122,15 +122,20 @@ class SpreadsheetCandidateFetcher:
             )
         
         urls: list[str] = []
+        skipped_count = 0
+        
         for row in reader:
-            # Stop if we've reached the limit
+            # Stop if we've reached the limit of filtered rows
             if num_rows is not None and len(urls) >= num_rows:
                 break
             
             if not self._row_passes_filter(row):
+                skipped_count += 1
                 continue
+            
             raw = row.get(url_column, "")
             url = (raw or "").strip()
             if url:
                 urls.append(url)
-        return urls
+        
+        return (urls, skipped_count)
