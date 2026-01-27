@@ -118,6 +118,11 @@ class Orchestrator:
         # Initialize storage
         Storage.initialize(Args.storage_implementation, db_path=Path(Args.db_path))
         
+        # Clear database if requested
+        if Args.delete_all_db_entries:
+            Logger.warning("Deleting all database entries as requested by --delete-all-db-entries flag")
+            Storage.clear_all_records()
+        
         num_rows: Optional[int] = Args.num_rows
         Logger.info(f"Orchestrator running module={module!r} num_rows={num_rows}")
         

@@ -88,7 +88,19 @@ class StorageProtocol(Protocol):
             ValueError: If record doesn't exist
         """
         ...
-
+    
+    def clear_all_records(self) -> None:
+        """
+        Delete all records from the database.
+        
+        This will remove all projects from the projects table, but keep
+        the table structure intact.
+        
+        Raises:
+            RuntimeError: If Storage is not initialized
+        """
+        ...
+    
     def list_eligible_projects(
         self, prereq_status: Optional[str], limit: Optional[int]
     ) -> list[Dict[str, Any]]:

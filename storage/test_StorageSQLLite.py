@@ -327,6 +327,39 @@ class TestStorageSQLLite(unittest.TestCase):
         self.assertFalse(self.storage._initialized)
         self.assertIsNone(self.storage._connection)
     
+    def test_clear_all_records(self) -> None:
+        """Test clearing all records from the database and resetting auto-increment."""
+        self.storage.initialize(db_path=self.test_db_path)
+        
+        # Create multiple records
+        drpid1 = self.storage.create_record("https://example.com/1")
+        drpid2 = self.storage.create_record("https://example.com/2")
+        drpid3 = self.storage.create_record("https://example.com/3")
+        
+        # Verify records exist and IDs are sequential
+        self.assertEqual(drpid1, 1)
+        self.assertEqual(drpid2, 2)
+        self.assertEqual(drpid3, 3)
+        self.assertIsNotNone(self.storage.get(drpid1))
+        self.assertIsNotNone(self.storage.get(drpid2))
+        self.assertIsNotNone(self.storage.get(drpid3))
+        
+        # Clear all records
+        self.storage.clear_all_records()
+        
+        # Verify all records are gone
+        self.assertIsNone(self.storage.get(drpid1))
+        self.assertIsNone(self.storage.get(drpid2))
+        self.assertIsNone(self.storage.get(drpid3))
+        
+        # Verify list_eligible_projects returns empty
+        projects = self.storage.list_eligible_projects(None, None)
+        self.assertEqual(len(projects), 0)
+        
+        # Verify auto-increment was reset - new record should get ID 1
+        new_drpid = self.storage.create_record("https://example.com/new")
+        self.assertEqual(new_drpid, 1, "Auto-increment should reset to 1 after clearing")
+    
     def test_schema_all_fields(self) -> None:
         """Test that schema includes all required fields."""
         self.storage.initialize(db_path=self.test_db_path)

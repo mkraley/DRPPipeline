@@ -303,6 +303,36 @@ class StorageSQLLite:
         if cursor.rowcount == 0:
             raise ValueError(f"Record with DRPID {drpid} does not exist")
     
+    def clear_all_records(self) -> None:
+        """
+        Delete all records from the database and reset auto-increment counter.
+        
+        This will remove all projects from the projects table, reset the
+        auto-increment counter so new IDs start at 1, but keep the table
+        structure intact.
+        
+        Raises:
+            RuntimeError: If Storage is not initialized
+            sqlite3.Error: If delete fails
+        """
+        self._execute_query(
+            "DELETE FROM projects",
+            (),
+            operation_name="clear all records"
+        )
+        # Reset auto-increment counter so new IDs start at 1
+        try:
+            self._execute_query(
+                "DELETE FROM sqlite_sequence WHERE name='projects'",
+                (),
+                operation_name="reset auto-increment"
+            )
+        except sqlite3.OperationalError:
+            # sqlite_sequence table may not exist if no AUTOINCREMENT was used
+            # or if the table was never populated. This is fine.
+            pass
+        Logger.info("All records cleared from database and auto-increment reset")
+    
     def close(self) -> None:
         """
         Close the database connection.

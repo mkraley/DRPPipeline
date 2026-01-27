@@ -56,11 +56,24 @@ class TestSourcing(unittest.TestCase):
         mock_fetcher_cls.assert_called_once()
         mock_fetcher.get_candidate_urls.assert_called_once_with(limit=10)
 
-    def test_process_candidate_returns_string(self) -> None:
-        """Test process_candidate() returns string status ("added", "duplicate", or "skipped")."""
+    def test_process_candidate_returns_tuple_for_added(self) -> None:
+        """Test process_candidate() returns tuple ("added", drpid) for new URLs."""
         result = self.sourcing.process_candidate("https://example.com/data")
-        self.assertIsInstance(result, str)
-        self.assertIn(result, ["added", "duplicate", "skipped"])
+        # Should return ("added", drpid) for new URLs
+        self.assertIsInstance(result, tuple)
+        self.assertEqual(result[0], "added")
+        self.assertIsInstance(result[1], int)
+        self.assertGreater(result[1], 0)
+    
+    def test_process_candidate_returns_string_for_duplicate(self) -> None:
+        """Test process_candidate() returns "duplicate" for existing URLs."""
+        # Add URL first
+        drpid = self.sourcing.create_storage_record_and_id("https://example.com/duplicate")
+        self.assertGreater(drpid, 0)
+        
+        # Try to add again - should return "duplicate"
+        result = self.sourcing.process_candidate("https://example.com/duplicate")
+        self.assertEqual(result, "duplicate")
 
     def test_is_duplicate_checks_storage(self) -> None:
         """Test is_duplicate() checks storage for existing URL."""

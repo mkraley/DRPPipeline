@@ -49,18 +49,29 @@ class Sourcing:
         successfully_added = 0
         dupes_in_storage = 0
         skipped_by_filtering = 0
+        assigned_ids: list[int] = []
         
         for url in urls:
             result = self.process_candidate(url)
-            if result == "added":
+            if isinstance(result, tuple) and result[0] == "added":
                 successfully_added += 1
+                assigned_ids.append(result[1])
             elif result == "duplicate":
                 dupes_in_storage += 1
             elif result == "skipped":
                 skipped_by_filtering += 1
         
         # Log statistics
-        Logger.info(f"Sourcing complete: {successfully_added} URLs successfully added, "
+        id_range_str = ""
+        if assigned_ids:
+            min_id = min(assigned_ids)
+            max_id = max(assigned_ids)
+            if min_id == max_id:
+                id_range_str = f" (DRPID: {min_id})"
+            else:
+                id_range_str = f" (DRPIDs: {min_id}-{max_id})"
+        
+        Logger.info(f"Sourcing complete: {successfully_added} URLs successfully added{id_range_str}, "
                    f"{dupes_in_storage} duplicates found in storage, "
                    f"{skipped_by_filtering} URLs skipped by filtering")
 
@@ -73,7 +84,7 @@ class Sourcing:
         fetcher = SpreadsheetCandidateFetcher()
         return fetcher.get_candidate_urls(limit=limit)
 
-    def process_candidate(self, url: str) -> str:
+    def process_candidate(self, url: str) -> str | tuple[str, int]:
         """
         Process a single candidate URL: duplicate check, availability check,
         then create storage record and generate ID if both pass.
@@ -85,7 +96,7 @@ class Sourcing:
             url: Candidate source URL.
 
         Returns:
-            "added" if a storage record was created; "duplicate" if already in storage;
+            ("added", drpid) if a storage record was created; "duplicate" if already in storage;
             "skipped" if unavailable or filtered out.
         """
         from storage import Storage
@@ -110,7 +121,7 @@ class Sourcing:
         # Update status to 'sourcing'
         Storage.update_record(drpid, {"status": "sourcing"})
         
-        return "added"
+        return ("added", drpid)
 
     def is_duplicate(self, url: str) -> bool:
         """

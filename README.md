@@ -74,6 +74,7 @@ python main.py <module> [options]
 - `--num-rows, -n`: Max projects or candidate URLs per batch (None = unlimited)
 - `--db-path`: Path to SQLite database file
 - `--storage`: Storage implementation (default: `StorageSQLLite`)
+- `--delete-all-db-entries`: Delete all database entries and reset auto-increment before proceeding (removes all records, IDs will start at 1)
 
 #### Config File Format
 

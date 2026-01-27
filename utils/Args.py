@@ -66,6 +66,7 @@ class Args(metaclass=ArgsMeta):
         "db_path": 'drp_pipeline.db',
         "storage_implementation": "StorageSQLLite",
         "base_output_dir": r"C:\Documents\DataRescue\DRPData",
+        "delete_all_db_entries": False,
     }
     
     _config: Dict[str, Any] = {}
@@ -135,6 +136,7 @@ class Args(metaclass=ArgsMeta):
             num_rows: Optional[int] = typer.Option(None, "--num-rows", "-n", help="Max projects or candidate URLs per batch; None = unlimited"),
             db_path: Optional[Path] = typer.Option(None, "--db-path", help="Path to SQLite database file"),
             storage: Optional[str] = typer.Option(None, "--storage", help="Storage implementation (e.g. StorageSQLLite)"),
+            delete_all_db_entries: bool = typer.Option(False, "--delete-all-db-entries", help="Delete all database entries and reset auto-increment before proceeding"),
         ) -> None:
             """Callback to capture Typer parsed values."""
             parsed_values["module"] = module
@@ -148,6 +150,8 @@ class Args(metaclass=ArgsMeta):
                 parsed_values["db_path"] = db_path
             if storage is not None:
                 parsed_values["storage_implementation"] = storage
+            if delete_all_db_entries:
+                parsed_values["delete_all_db_entries"] = True
 
         # Use a single @app.command() so the first positional (module) is not treated as a
         # subcommand. A Group would require the first token to match a subcommand.
