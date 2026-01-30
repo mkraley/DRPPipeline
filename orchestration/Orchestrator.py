@@ -8,6 +8,7 @@ from MODULES registry, dynamically imports module classes by name, and calls run
 import importlib
 import pkgutil
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -27,9 +28,9 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": None,
         "class_name": "Sourcing",
     },
-    "collectors": {
+    "collector": {
         "prereq": "sourcing",
-        "class_name": "SocrataCollector",  # Will implement ModuleProtocol directly
+        "class_name": "SocrataCollector",  
     },
 }
 
@@ -143,21 +144,53 @@ class Orchestrator:
             # Modules with prereq: call run(drpid) for each eligible project
             projects = Storage.list_eligible_projects(prereq, num_rows)
             Logger.info(f"Orchestrator module={module!r} eligible projects={len(projects)}")
-            
-            for proj in projects:
+            max_workers = getattr(Args, "max_workers", 1) or 1
+            max_workers = max(1, int(max_workers))
+
+            def run_one(proj: Dict[str, Any]) -> None:
                 drpid = proj["DRPID"]
                 source_url = proj.get("source_url", "")
                 Logger.set_current_drpid(drpid)
+                # Each thread gets its own module instance (and thus its own Playwright/browser)
+                instance = module_class()
                 try:
                     Logger.info(f"Starting project with source URL {source_url}")
-                    module_instance.run(drpid)
+                    instance.run(drpid)
                 except Exception as exc:
                     record_error(
                         drpid,
                         f"Orchestrator module={module!r} DRPID={drpid} exception: {exc}",
                     )
-                    continue
                 finally:
                     Logger.clear_current_drpid()
-        
+
+            if max_workers <= 1:
+                # Single-threaded: reuse one instance
+                for proj in projects:
+                    drpid = proj["DRPID"]
+                    source_url = proj.get("source_url", "")
+                    Logger.set_current_drpid(drpid)
+                    try:
+                        Logger.info(f"Starting project with source URL {source_url}")
+                        module_instance.run(drpid)
+                    except Exception as exc:
+                        record_error(
+                            drpid,
+                            f"Orchestrator module={module!r} DRPID={drpid} exception: {exc}",
+                        )
+                    finally:
+                        Logger.clear_current_drpid()
+            else:
+                Logger.info(f"Orchestrator running with max_workers={max_workers}")
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = {executor.submit(run_one, proj): proj for proj in projects}
+                    for future in as_completed(futures):
+                        proj = futures[future]
+                        try:
+                            future.result()
+                        except Exception as exc:
+                            record_error(
+                                proj["DRPID"],
+                                f"Orchestrator module={module!r} worker exception: {exc}",
+                            )
         Logger.info(f"Orchestrator finished module={module!r}")

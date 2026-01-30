@@ -20,17 +20,43 @@ Example usage:
 
 import logging
 import sys
+import threading
 from pathlib import Path
-from typing import Optional, Union
+from typing import Dict, Optional, Union
+
+# Human-friendly thread id: map threading.get_ident() -> 1, 2, 3, ...
+_thread_id_lock = threading.Lock()
+_thread_id_counter = 0
+_thread_id_map: Dict[int, int] = {}
+
+
+def _get_thread_id() -> int:
+    """Return a stable, human-friendly thread number (1, 2, 3, ...) for the current thread."""
+    ident = threading.get_ident()
+    with _thread_id_lock:
+        if ident not in _thread_id_map:
+            global _thread_id_counter
+            _thread_id_counter += 1
+            _thread_id_map[ident] = _thread_id_counter
+        return _thread_id_map[ident]
+
+
+def _get_current_drpid() -> Optional[int]:
+    """Return the current thread's drpid for log tagging (thread-safe)."""
+    return getattr(Logger._thread_local, "drpid", None)
 
 
 class _DrpidFilter(logging.Filter):
-    """Add drpid to the log record from Logger._current_drpid or record.extra."""
+    """Add thread id and drpid to the log record (thread-local or record.extra)."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        thread_id = getattr(record, "thread_id", None)
+        if thread_id is None:
+            thread_id = f"[T{_get_thread_id()}] "
+        record.thread_id = thread_id
         drpid = getattr(record, "drpid", None)
         if drpid is None:
-            drpid = getattr(Logger, "_current_drpid", None)
+            drpid = _get_current_drpid()
         record.drpid = f"[{drpid}] " if drpid is not None else ""
         return True
 
@@ -50,17 +76,17 @@ class Logger(metaclass=LoggerMeta):
 
     _logger: Optional[logging.Logger] = None
     _initialized: bool = False
-    _current_drpid: Optional[int] = None
+    _thread_local = threading.local()
 
     @classmethod
     def set_current_drpid(cls, drpid: Optional[int]) -> None:
-        """Set the current project DRPID for log output. Use None to clear."""
-        cls._current_drpid = drpid
+        """Set the current project DRPID for log output (thread-local). Use None to clear."""
+        cls._thread_local.drpid = drpid
 
     @classmethod
     def clear_current_drpid(cls) -> None:
-        """Clear the current project DRPID from log output."""
-        cls._current_drpid = None
+        """Clear the current project DRPID from log output for this thread."""
+        cls._thread_local.drpid = None
 
     @classmethod
     def initialize(
@@ -73,7 +99,7 @@ class Logger(metaclass=LoggerMeta):
         Initialize the logger with specified settings.
 
         Logs to stdout and appends to a file (default: drp_pipeline.log in cwd).
-        Format omits logger name and includes drpid when set via set_current_drpid().
+        Format omits logger name and includes thread id (T1, T2, ...) and drpid when set via set_current_drpid().
 
         Args:
             log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
@@ -86,7 +112,7 @@ class Logger(metaclass=LoggerMeta):
             return
 
         if log_format is None:
-            log_format = "%(asctime)s - %(levelname)s - %(drpid)s%(message)s"
+            log_format = "%(asctime)s - %(levelname)s - %(thread_id)s%(drpid)s%(message)s"
 
         level = getattr(logging, log_level.upper(), logging.INFO)
         formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")

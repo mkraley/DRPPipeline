@@ -118,50 +118,6 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         self.assertFalse(result)
     
     @patch('collectors.SocrataCollector.sync_playwright')
-    def test_has_large_dataset_warning_true(self, mock_playwright: Mock) -> None:
-        """Test _has_large_dataset_warning returns True when warning present.
-
-        Implementation uses substring check ('Large dataset warning' in text) so
-        it remains valid if Socrata changes the exact wording.
-        """
-        mock_playwright_instance = Mock()
-        mock_browser = Mock()
-        mock_page = Mock()
-        mock_warning = Mock()
-        
-        mock_playwright.return_value.start.return_value = mock_playwright_instance
-        mock_playwright_instance.chromium.launch.return_value = mock_browser
-        mock_browser.new_page.return_value = mock_page
-        
-        self.collector._init_browser()
-        downloader = SocrataDatasetDownloader(self.collector)
-        
-        mock_page.locator.return_value = mock_warning
-        mock_warning.count.return_value = 1
-        mock_warning.first.inner_text.return_value = "Large dataset warning message"
-        
-        result = downloader._has_large_dataset_warning()
-        
-        self.assertTrue(result)
-        mock_page.locator.assert_called_with('div.message-title[slot="title"]')
-    
-    @patch('collectors.SocrataCollector.sync_playwright')
-    def test_has_large_dataset_warning_false(self, mock_playwright: Mock) -> None:
-        """Test _has_large_dataset_warning returns False when no warning."""
-        mock_page, _, _ = setup_mock_playwright(mock_playwright)
-        mock_warning = Mock()
-
-        self.collector._init_browser()
-        downloader = SocrataDatasetDownloader(self.collector)
-
-        mock_page.locator.return_value = mock_warning
-        mock_warning.count.return_value = 0
-        
-        result = downloader._has_large_dataset_warning()
-        
-        self.assertFalse(result)
-    
-    @patch('collectors.SocrataCollector.sync_playwright')
     def test_find_download_button_success(self, mock_playwright: Mock) -> None:
         """Test _find_download_button finds Download button."""
         mock_playwright_instance = Mock()
@@ -306,8 +262,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         # Create test file after download
         test_file = self.temp_dir / "dataset.csv"
         
-        with patch("collectors.SocrataDatasetDownloader.record_warning"), \
-             patch.object(downloader, '_find_download_button', return_value=mock_button.first), \
+        with patch.object(downloader, '_find_download_button', return_value=mock_button.first), \
              patch.object(downloader, '_get_file_extension', return_value="csv"):
             # Manually create file to simulate download (save_as is mocked). This test
             # asserts that _download_file updates _result (dataset_path, file_extensions,
@@ -357,7 +312,6 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         downloader = SocrataDatasetDownloader(self.collector)
 
         with patch.object(downloader, '_click_export_button', return_value=True), \
-             patch.object(downloader, '_has_large_dataset_warning', return_value=False), \
              patch.object(downloader, '_download_file', return_value=True):
             result = downloader.download(self.temp_dir)
 
@@ -385,28 +339,6 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         mock_record_error.assert_called_once_with(1, "Export button not found")
     
     @patch('collectors.SocrataCollector.sync_playwright')
-    def test_download_large_dataset_warning(self, mock_playwright: Mock) -> None:
-        """Test download() returns False when large dataset warning appears."""
-        mock_playwright_instance = Mock()
-        mock_browser = Mock()
-        mock_page = Mock()
-        
-        mock_playwright.return_value.start.return_value = mock_playwright_instance
-        mock_playwright_instance.chromium.launch.return_value = mock_browser
-        mock_browser.new_page.return_value = mock_page
-        
-        self.collector._init_browser()
-        downloader = SocrataDatasetDownloader(self.collector)
-        
-        with patch("collectors.SocrataDatasetDownloader.record_warning") as mock_record_warning, \
-             patch.object(downloader, '_click_export_button', return_value=True), \
-             patch.object(downloader, '_has_large_dataset_warning', return_value=True):
-            result = downloader.download(self.temp_dir)
-        
-        self.assertFalse(result)
-        mock_record_warning.assert_called_once_with(1, "Large dataset warning - download skipped")
-    
-    @patch('collectors.SocrataCollector.sync_playwright')
     def test_download_timeout(self, mock_playwright: Mock) -> None:
         """Test download() handles timeout exception."""
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -424,7 +356,6 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         
         with patch("collectors.SocrataDatasetDownloader.record_error") as mock_record_error, \
              patch.object(downloader, '_click_export_button', return_value=True), \
-             patch.object(downloader, '_has_large_dataset_warning', return_value=False), \
              patch.object(downloader, '_download_file', side_effect=PlaywrightTimeoutError("Timeout")):
             result = downloader.download(self.temp_dir)
         

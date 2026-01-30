@@ -204,7 +204,7 @@ class TestSocrataCollector(unittest.TestCase):
         self.assertIsNone(self.collector._result)
     
     @patch("collectors.SocrataCollector.Storage")
-    @patch.object(SocrataCollector, "collect")
+    @patch.object(SocrataCollector, "_collect")
     def test_run_successful_collection(self, mock_collect: Mock, mock_storage: Mock) -> None:
         """Test run() with successful collection (flat result dict)."""
         mock_storage.get.return_value = {
@@ -235,7 +235,7 @@ class TestSocrataCollector(unittest.TestCase):
         self.assertEqual(call_args[0][0], 123)
         update_fields = call_args[0][1]
 
-        self.assertEqual(update_fields["status"], "collectors")
+        self.assertEqual(update_fields["status"], "collector")
         self.assertEqual(update_fields["title"], "Test Dataset")
         self.assertEqual(update_fields["summary"], "<p>Test description</p>")
         self.assertEqual(update_fields["keywords"], "health, data, test")
@@ -245,7 +245,7 @@ class TestSocrataCollector(unittest.TestCase):
         self.assertIn("collection_notes", update_fields)
     
     @patch("collectors.SocrataCollector.Storage")
-    @patch.object(SocrataCollector, "collect")
+    @patch.object(SocrataCollector, "_collect")
     def test_run_collection_with_errors(
         self, mock_collect: Mock, mock_storage: Mock
     ) -> None:
@@ -266,11 +266,11 @@ class TestSocrataCollector(unittest.TestCase):
         self.assertNotIn("status", update_fields)
     
     @patch("collectors.SocrataCollector.Storage")
-    @patch.object(SocrataCollector, "collect")
+    @patch.object(SocrataCollector, "_collect")
     def test_run_collection_with_warnings(
         self, mock_collect: Mock, mock_storage: Mock
     ) -> None:
-        """Test run() when collect() returns folder_path: status set to collectors."""
+        """Test run() when collect() returns folder_path: status set to collector."""
         mock_storage.get.return_value = {
             "DRPID": 123,
             "source_url": "https://data.cdc.gov/view/test",
@@ -290,11 +290,11 @@ class TestSocrataCollector(unittest.TestCase):
 
         update_call = mock_storage.update_record.call_args
         self.assertIsNotNone(update_call)
-        self.assertEqual(update_call[0][1].get("status"), "collectors")
+        self.assertEqual(update_call[0][1].get("status"), "collector")
     
     @patch("collectors.SocrataCollector.record_error")
     @patch("collectors.SocrataCollector.Storage")
-    @patch.object(SocrataCollector, "collect")
+    @patch.object(SocrataCollector, "_collect")
     def test_run_collection_exception(self, mock_collect: Mock, mock_storage: Mock, mock_record_error: Mock) -> None:
         """Test run() when collect() raises: record_error is invoked."""
         mock_storage.get.return_value = {
@@ -313,7 +313,7 @@ class TestSocrataCollector(unittest.TestCase):
         self.assertIn("Exception during collection for DRPID 123", args[1])
     
     @patch("collectors.SocrataCollector.Storage")
-    @patch.object(SocrataCollector, "collect")
+    @patch.object(SocrataCollector, "_collect")
     def test_run_partial_success_pdf_only(self, mock_collect: Mock, mock_storage: Mock) -> None:
         """Test run() with partial success (PDF but no dataset) using flat result."""
         mock_storage.get.return_value = {
@@ -335,7 +335,7 @@ class TestSocrataCollector(unittest.TestCase):
         update_call = mock_storage.update_record.call_args
         self.assertIsNotNone(update_call)
         update_fields = update_call[0][1]
-        self.assertEqual(update_fields["status"], "collectors")
+        self.assertEqual(update_fields["status"], "collector")
         self.assertNotIn("download_date", update_fields)
 
     # record_error() is in utils.Errors and tested in utils.test_Errors.
