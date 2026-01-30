@@ -58,12 +58,16 @@ class TestOrchestrator(unittest.TestCase):
         mock_sourcing_instance.run.assert_called_once()
         mock_sourcing_instance.run.assert_called_with(-1)
 
+    @patch("orchestration.Orchestrator.record_error")
     @patch("storage.Storage")
     @patch("collectors.SocrataCollector.SocrataCollector")
     def test_run_collectors_appends_error_when_run_raises(
-        self, mock_collector_cls: MagicMock, mock_storage_cls: MagicMock
+        self,
+        mock_collector_cls: MagicMock,
+        mock_storage_cls: MagicMock,
+        mock_record_error: MagicMock,
     ) -> None:
-        """Test run("collectors") appends to errors when run() raises, and continues."""
+        """Test run("collectors") calls record_error when run() raises, and continues."""
         sys.argv = ["test", "noop"]
         Args._initialized = False
         Args.initialize()
@@ -73,16 +77,14 @@ class TestOrchestrator(unittest.TestCase):
             {"DRPID": 1, "source_url": "https://example.com"}
         ]
         mock_storage_cls.initialize.return_value = mock_storage
-        # Mock direct method access via metaclass
         mock_storage_cls.list_eligible_projects = mock_storage.list_eligible_projects
-        mock_storage_cls.append_to_field = mock_storage.append_to_field
-        
-        # Mock collector to raise NotImplementedError
+
         mock_collector_instance = MagicMock()
-        mock_collector_instance.run.side_effect = NotImplementedError("collectors run not yet implemented")
+        mock_collector_instance.run.side_effect = NotImplementedError(
+            "collectors run not yet implemented"
+        )
         mock_collector_cls.return_value = mock_collector_instance
-        
-        # Also patch at orchestrator import level
+
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
             Orchestrator.run("collectors")
 
@@ -90,11 +92,7 @@ class TestOrchestrator(unittest.TestCase):
         mock_storage.list_eligible_projects.assert_called_once_with("sourcing", None)
         mock_collector_cls.assert_called_once()
         mock_collector_instance.run.assert_called_once_with(1)
-        mock_storage.append_to_field.assert_called()
-        calls = [
-            c
-            for c in mock_storage.append_to_field.call_args_list
-            if c[0][1] == "errors"
-        ]
-        self.assertGreaterEqual(len(calls), 1)
-        self.assertIn("not yet implemented", str(calls[0]))
+        mock_record_error.assert_called_once()
+        args = mock_record_error.call_args[0]
+        self.assertEqual(args[0], 1)
+        self.assertIn("not yet implemented", args[1])

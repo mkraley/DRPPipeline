@@ -10,6 +10,7 @@ import sqlite3
 from pathlib import Path
 from typing import Literal, Optional, Dict, Any, Tuple, TYPE_CHECKING
 
+from utils.Errors import record_crash
 from utils.Logger import Logger
 
 if TYPE_CHECKING:
@@ -66,10 +67,10 @@ class StorageSQLLite:
             RuntimeError: If storage is not initialized or connection is not available
         """
         if not self._initialized:
-            raise RuntimeError("Storage has not been initialized. Call initialize() first.")
+            record_crash("Storage has not been initialized. Call initialize() first.")
         
         if self._connection is None:
-            raise RuntimeError("Database connection is not available.")
+            record_crash("Database connection is not available.")
     
     def _execute_query(
         self,
@@ -162,8 +163,7 @@ class StorageSQLLite:
             self._connection = None
             self._initialized = False
             error_msg = f"Failed to initialize database at {self._db_path}: {e}"
-            Logger.error(error_msg)
-            raise RuntimeError(error_msg) from e
+            record_crash(error_msg)
     
     def create_record(self, source_url: str) -> int:
         """

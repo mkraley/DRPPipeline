@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Optional
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
+from utils.Errors import record_error, record_warning
 from utils.Logger import Logger
 
 if TYPE_CHECKING:
@@ -53,7 +54,7 @@ class SocrataDatasetDownloader:
         try:
             # Click Export button
             if not self._click_export_button():
-                self._collector._append_result_note("Export button not found")
+                record_error(self._collector._drpid, "Export button not found")
                 return False
             
             # Wait for dialog
@@ -61,18 +62,18 @@ class SocrataDatasetDownloader:
             
             # Check for large dataset warning
             if self._has_large_dataset_warning():
-                self._collector._append_result_note("Large dataset warning - download skipped")
+                record_warning(self._collector._drpid, "Large dataset warning - download skipped")
                 return False
             
             # Download the file
             return self._download_file(folder_path, timeout)
         
         except PlaywrightTimeoutError:
-            self._collector._append_result_note("Timeout waiting for download")
+            record_error(self._collector._drpid, "Timeout waiting for download")
             return False
         except Exception as e:
             error_msg = f"Error downloading dataset: {str(e)[:100]}"
-            self._collector._append_result_note(error_msg)
+            record_error(self._collector._drpid, error_msg)
             return False
     
     def _click_export_button(self) -> bool:
@@ -128,14 +129,14 @@ class SocrataDatasetDownloader:
         with self._collector._page.expect_download(timeout=timeout) as download_info:
             download_button = self._find_download_button()
             if download_button is None:
-                self._collector._append_result_note("Download button not found in dialog")
+                record_error(self._collector._drpid, "Download button not found in dialog")
                 return False
             
             try:
                 download_button.scroll_into_view_if_needed()
                 download_button.click()
             except Exception as e:
-                self._collector._append_result_note(f"Could not click Download button: {str(e)}")
+                record_error(self._collector._drpid, f"Could not click Download button: {str(e)}")
                 return False
         
         # Save the downloaded file
@@ -171,7 +172,7 @@ class SocrataDatasetDownloader:
         if file_size is not None:
             self._collector._result["file_size"] = str(file_size)
         self._collector._result["download_date"] = datetime.now().strftime("%Y-%m-%d")
-        self._collector._append_result_note(f"Dataset downloaded: {dataset_path.name}")
+        record_warning(self._collector._drpid, f"Dataset downloaded: {dataset_path.name}")
         Logger.info(f"Dataset downloaded: {dataset_path} (size: {file_size} bytes)")
         return True
     

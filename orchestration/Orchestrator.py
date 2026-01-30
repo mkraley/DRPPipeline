@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 
 from storage import Storage
 from utils.Args import Args
-from utils.Logging import record_fatal_error
+from utils.Errors import record_crash, record_error
 from utils.Logger import Logger
 
 
@@ -83,7 +83,7 @@ def _find_module_class(class_name: str) -> type:
         if not was_on_path and project_root_str in sys.path:
             sys.path.remove(project_root_str)
     
-    raise ImportError(
+    record_crash(
         f"Could not find module class '{class_name}' in project tree."
     )
 
@@ -149,11 +149,10 @@ class Orchestrator:
                 try:
                     module_instance.run(drpid)
                 except Exception as exc:
-                    record_fatal_error(
+                    record_error(
                         drpid,
                         f"Orchestrator module={module!r} DRPID={drpid} exception: {exc}",
                     )
-                    Logger.warning(f"Orchestrator module={module!r} DRPID={drpid} exception: {exc}")
                     continue
         
         Logger.info(f"Orchestrator finished module={module!r}")

@@ -10,6 +10,7 @@ Handles preprocessing of Socrata pages:
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+from utils.Errors import record_error, record_warning
 from utils.Logger import Logger
 
 if TYPE_CHECKING:
@@ -62,10 +63,9 @@ class SocrataPageProcessor:
         # Generate PDF
         success = self._generate_pdf(pdf_path)
         if success:
-            self._collector._append_result_note("PDF generated")
-            Logger.info(f"PDF generated: {pdf_path}")
+            Logger.debug(f"PDF generated: {pdf_path}")
         else:
-            self._collector._append_result_note("PDF generation failed")
+            record_error(self._collector._drpid, "PDF generation failed")
             Logger.warning("PDF generation failed")
         
         return success

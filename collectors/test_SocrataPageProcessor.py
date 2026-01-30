@@ -31,6 +31,7 @@ class TestSocrataPageProcessor(unittest.TestCase):
         with patch.object(Args, "base_output_dir", self.temp_dir):
             self.collector = SocrataCollector(headless=True)
             self.collector._result = {}
+            self.collector._drpid = 1
             self.processor = SocrataPageProcessor(self.collector)
     
     def tearDown(self) -> None:
@@ -330,10 +331,11 @@ class TestSocrataPageProcessor(unittest.TestCase):
         mock_page.wait_for_timeout.return_value = None
         mock_page.pdf.return_value = None
         
-        result = processor.generate_pdf(pdf_path)
+        with patch("collectors.SocrataPageProcessor.record_warning") as mock_record_warning:
+            result = processor.generate_pdf(pdf_path)
         
         self.assertTrue(result)
-        self.assertIn("PDF generated", self.collector._result.get("collection_notes", ""))
+        mock_record_warning.assert_called_once_with(1, "PDF generated")
     
     @patch('collectors.SocrataCollector.sync_playwright')
     def test_generate_pdf_updates_result_on_failure(self, mock_playwright: Mock) -> None:
@@ -356,7 +358,8 @@ class TestSocrataPageProcessor(unittest.TestCase):
         mock_page.locator.return_value = Mock(count=lambda: 0)
         mock_page.pdf.side_effect = Exception("PDF failed")
         
-        result = processor.generate_pdf(pdf_path)
+        with patch("collectors.SocrataPageProcessor.record_error") as mock_record_error:
+            result = processor.generate_pdf(pdf_path)
         
         self.assertFalse(result)
-        self.assertIn("PDF generation failed", self.collector._result.get("collection_notes", ""))
+        mock_record_error.assert_called_once_with(1, "PDF generation failed")

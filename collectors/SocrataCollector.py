@@ -16,7 +16,7 @@ from playwright.sync_api import sync_playwright, Page, Browser, Playwright
 
 from storage import Storage
 from utils.Logger import Logger
-from utils.Logging import record_fatal_error
+from utils.Errors import record_error
 from utils.Args import Args
 from utils.url_utils import is_valid_url, access_url
 from utils.file_utils import sanitize_filename, create_output_folder
@@ -24,12 +24,6 @@ from collectors.SocrataPageProcessor import SocrataPageProcessor
 from collectors.SocrataMetadataExtractor import SocrataMetadataExtractor
 from collectors.SocrataDatasetDownloader import SocrataDatasetDownloader
 
-# Storage column names the collector may write (used when transferring result to Storage)
-_STORAGE_FIELDS = frozenset({
-    "folder_path", "title", "agency", "office", "summary", "keywords",
-    "time_start", "time_end", "data_types", "download_date", "collection_notes",
-    "file_size", "status", "status_notes", "warnings", "errors",
-})
 
 
 class SocrataCollector:
@@ -66,20 +60,21 @@ class SocrataCollector:
         Args:
             drpid: The DRPID of the project to process.
         """
+        self._drpid = drpid
         # Get project record from Storage
         record = Storage.get(drpid)
         if record is None:
-            record_fatal_error(
+            record_error(
                 drpid,
                 f"Project record not found for DRPID: {drpid}",
                 update_storage=False,
             )
             return
 
-        # Validate source_url exists
+        # Validate source_url exists in storage
         source_url = record.get("source_url")
         if not source_url:
-            record_fatal_error(
+            record_error(
                 drpid,
                 f"Project record missing source_url for DRPID: {drpid}",
             )
@@ -87,18 +82,18 @@ class SocrataCollector:
 
         try:
             # Call collect() method
-            result = self.collect(source_url, drpid)
+            result = self._collect(source_url, drpid)
 
             # Transfer result dict to Storage
             self._update_storage_from_result(drpid, result)
 
         except Exception as e:
-            record_fatal_error(
+            record_error(
                 drpid,
                 f"Exception during collection for DRPID {drpid}: {str(e)}",
             )
     
-    def collect(self, url: str, drpid: int) -> Dict[str, Any]:
+    def _collect(self, url: str, drpid: int) -> Dict[str, Any]:
         """
         Collect data from a Socrata URL.
         
@@ -120,7 +115,7 @@ class SocrataCollector:
         """
         # Flat result dict using Storage field names; only set keys we have values for
         self._result = {}
-        
+
         # Validate and access URL
         if not self._validate_and_access_url(url):
             return self._result
@@ -130,8 +125,10 @@ class SocrataCollector:
         folder_path = create_output_folder(base_output_dir, drpid)
         if not folder_path:
             error_msg = "Failed to create output folder"
-            self._append_result_note(error_msg)
-            Logger.error(f"{error_msg} for DRPID: {drpid}")
+            record_error(
+                drpid,
+                error_msg,
+            )
             return self._result
         self._result["folder_path"] = str(folder_path)
         
@@ -147,9 +144,10 @@ class SocrataCollector:
             self._download_dataset_and_extract_metadata(folder_path)
             
         except Exception as e:
-            error_msg = f"Collection error: {str(e)}"
-            Logger.exception(error_msg)
-            self._append_result_note(error_msg)
+            record_error(
+                drpid,
+                f"Collection error: {str(e)}",
+            )
         finally:
             self._cleanup_browser()
         
@@ -168,18 +166,21 @@ class SocrataCollector:
             True if URL is valid and accessible, False otherwise
         """
         if not is_valid_url(url):
-            self._result["collection_notes"] = "Invalid URL"
-            Logger.warning(f"Invalid URL: {url}")
+            record_error(
+                self._drpid,
+                f"Invalid URL: {url}",
+            )
             return False
 
         access_success, status_msg = access_url(url)
         if not access_success:
-            self._result["collection_notes"] = status_msg
-            Logger.warning(f"URL access failed: {url} - {status_msg}")
+            record_error(
+                self._drpid,
+                f"URL access failed: {url} - {status_msg}",
+            )
             return False
 
-        self._result["collection_notes"] = status_msg
-        Logger.info(f"Successfully accessed URL: {url}")
+        Logger.debug(f"Successfully accessed URL: {url}")
         return True
     
     def _init_browser_and_load_page(self, url: str) -> bool:
@@ -195,8 +196,9 @@ class SocrataCollector:
             True if successful, False otherwise
         """
         if not self._init_browser():
-            error_msg = "Failed to initialize browser"
-            self._append_result_note(error_msg)
+            record_error(
+                self._drpid,
+                "Failed to initialize browser")
             return False
 
         try:
@@ -205,8 +207,10 @@ class SocrataCollector:
             return True
         except Exception as e:
             error_msg = f"Failed to load page: {str(e)}"
-            self._append_result_note(error_msg)
-            Logger.error(error_msg)
+            record_error(
+                self._drpid,
+                error_msg,
+            )
             return False
     
     def _process_and_generate_pdf(self, folder_path: Path) -> None:
@@ -250,19 +254,6 @@ class SocrataCollector:
         metadata_extractor = SocrataMetadataExtractor(self)
         metadata_extractor.extract_all_metadata()
     
-    def _append_result_note(self, note: str) -> None:
-        """
-        Append a note to the ``collection_notes`` field in the result dict.
-        
-        Args:
-            note: Note to append (e.g. status message, error, warning).
-        """
-        existing = self._result.get("collection_notes")
-        if existing:
-            self._result["collection_notes"] = f"{existing}; {note}"
-        else:
-            self._result["collection_notes"] = note
-    
     def _init_browser(self) -> bool:
         """
         Initialize Playwright browser and page.
@@ -300,44 +291,24 @@ class SocrataCollector:
     def _update_storage_from_result(self, drpid: int, result: Dict[str, Any]) -> None:
         """
         Transfer result dict to Storage.
-        
+
         Only keys that are Storage column names and have non-None values are
-        written. Sets status to "collectors" on success or "Error" on failure,
-        and appends collection_notes to errors/warnings as appropriate.
-        
+        written. Sets status to "collectors" if we have folder_path and no
+        error was already recorded; otherwise preserves existing "Error" status.
+
         Args:
             drpid: The DRPID of the project.
             result: Flat result dict from collect() (Storage field names).
         """
-        collection_notes = result.get("collection_notes") or ""
-        has_folder = bool(result.get("folder_path"))
-        has_success_note = (
-            "PDF generated" in collection_notes or "Dataset downloaded" in collection_notes
-        )
-        notes_lower = collection_notes.lower()
-        has_error_note = (
-            "invalid url" in notes_lower
-            or "connection error" in notes_lower
-            or "failed to" in notes_lower
-            or notes_lower.startswith("error")
-            or " collection error:" in notes_lower
-        )
-
-        # Set status: success if we have folder and some success note and no error
-        if has_error_note:
+        current = Storage.get(drpid)
+        if current and current.get("status") == "Error":
             result = {**result, "status": "Error"}
-            Storage.append_to_field(drpid, "errors", collection_notes)
-        elif has_folder and has_success_note:
+        elif result.get("folder_path"):
             result = {**result, "status": "collectors"}
 
-        # Append to warnings when notes contain warning/skipped (even on success)
-        if "warning" in notes_lower or "skipped" in notes_lower:
-            Storage.append_to_field(drpid, "warnings", collection_notes)
-
-        # Transfer only Storage columns with non-None values
         update_fields = {
             k: v for k, v in result.items()
-            if k in _STORAGE_FIELDS and v is not None
+            if v is not None
         }
         if update_fields:
             Storage.update_record(drpid, update_fields)

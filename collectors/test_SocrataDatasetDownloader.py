@@ -31,6 +31,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         with patch.object(Args, "base_output_dir", self.temp_dir):
             self.collector = SocrataCollector(headless=True)
             self.collector._result = {}
+            self.collector._drpid = 1
             self.downloader = SocrataDatasetDownloader(self.collector)
     
     def tearDown(self) -> None:
@@ -305,7 +306,8 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         # Create test file after download
         test_file = self.temp_dir / "dataset.csv"
         
-        with patch.object(downloader, '_find_download_button', return_value=mock_button.first), \
+        with patch("collectors.SocrataDatasetDownloader.record_warning"), \
+             patch.object(downloader, '_find_download_button', return_value=mock_button.first), \
              patch.object(downloader, '_get_file_extension', return_value="csv"):
             # Manually create file to simulate download (save_as is mocked). This test
             # asserts that _download_file updates _result (dataset_path, file_extensions,
@@ -318,7 +320,6 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         self.assertIn("file_size", self.collector._result)
         self.assertEqual(self.collector._result["file_size"], str(test_file.stat().st_size))
         self.assertIn("download_date", self.collector._result)
-        self.assertIn("Dataset downloaded", self.collector._result.get("collection_notes", ""))
     
     @patch('collectors.SocrataCollector.sync_playwright')
     def test_download_file_no_button(self, mock_playwright: Mock) -> None:
@@ -340,11 +341,12 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         mock_context.__exit__ = Mock(return_value=None)
         mock_page.expect_download.return_value = mock_context
         
-        with patch.object(downloader, '_find_download_button', return_value=None):
+        with patch("collectors.SocrataDatasetDownloader.record_error") as mock_record_error, \
+             patch.object(downloader, '_find_download_button', return_value=None):
             result = downloader._download_file(self.temp_dir, timeout=60000)
         
         self.assertFalse(result)
-        self.assertIn("Download button not found", self.collector._result.get("collection_notes", ""))
+        mock_record_error.assert_called_once_with(1, "Download button not found in dialog")
     
     @patch('collectors.SocrataCollector.sync_playwright')
     def test_download_success(self, mock_playwright: Mock) -> None:
@@ -375,11 +377,12 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         self.collector._init_browser()
         downloader = SocrataDatasetDownloader(self.collector)
         
-        with patch.object(downloader, '_click_export_button', return_value=False):
+        with patch("collectors.SocrataDatasetDownloader.record_error") as mock_record_error, \
+             patch.object(downloader, '_click_export_button', return_value=False):
             result = downloader.download(self.temp_dir)
         
         self.assertFalse(result)
-        self.assertIn("Export button not found", self.collector._result.get("collection_notes", ""))
+        mock_record_error.assert_called_once_with(1, "Export button not found")
     
     @patch('collectors.SocrataCollector.sync_playwright')
     def test_download_large_dataset_warning(self, mock_playwright: Mock) -> None:
@@ -395,12 +398,13 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         self.collector._init_browser()
         downloader = SocrataDatasetDownloader(self.collector)
         
-        with patch.object(downloader, '_click_export_button', return_value=True), \
+        with patch("collectors.SocrataDatasetDownloader.record_warning") as mock_record_warning, \
+             patch.object(downloader, '_click_export_button', return_value=True), \
              patch.object(downloader, '_has_large_dataset_warning', return_value=True):
             result = downloader.download(self.temp_dir)
         
         self.assertFalse(result)
-        self.assertIn("Large dataset warning", self.collector._result.get("collection_notes", ""))
+        mock_record_warning.assert_called_once_with(1, "Large dataset warning - download skipped")
     
     @patch('collectors.SocrataCollector.sync_playwright')
     def test_download_timeout(self, mock_playwright: Mock) -> None:
@@ -418,10 +422,11 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         self.collector._init_browser()
         downloader = SocrataDatasetDownloader(self.collector)
         
-        with patch.object(downloader, '_click_export_button', return_value=True), \
+        with patch("collectors.SocrataDatasetDownloader.record_error") as mock_record_error, \
+             patch.object(downloader, '_click_export_button', return_value=True), \
              patch.object(downloader, '_has_large_dataset_warning', return_value=False), \
              patch.object(downloader, '_download_file', side_effect=PlaywrightTimeoutError("Timeout")):
             result = downloader.download(self.temp_dir)
         
         self.assertFalse(result)
-        self.assertIn("Timeout waiting for download", self.collector._result.get("collection_notes", ""))
+        mock_record_error.assert_called_once_with(1, "Timeout waiting for download")
