@@ -37,34 +37,34 @@ class TestOrchestrator(unittest.TestCase):
         self.assertIn("sourcing", str(cm.exception))
         self.assertIn("collectors", str(cm.exception))
 
+    @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")
-    @patch("sourcing.Sourcing.Sourcing")
     def test_run_sourcing_calls_sourcing_run(
-        self, mock_sourcing_cls: MagicMock, mock_storage_cls: MagicMock
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
     ) -> None:
         """Test run("sourcing") instantiates Sourcing and calls run(-1)."""
         mock_storage = MagicMock()
         mock_storage_cls.initialize.return_value = mock_storage
         mock_storage_cls.get_instance.return_value = mock_storage
         mock_sourcing_instance = MagicMock()
-        mock_sourcing_cls.return_value = mock_sourcing_instance
-        
-        # Also patch at orchestrator import level
+        mock_sourcing_cls = MagicMock(return_value=mock_sourcing_instance)
+        mock_find_class.return_value = mock_sourcing_cls
+
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
             Orchestrator.run("sourcing")
 
         mock_storage_cls.initialize.assert_called_once()
+        mock_find_class.assert_called_once_with("Sourcing")
         mock_sourcing_cls.assert_called_once()
-        mock_sourcing_instance.run.assert_called_once()
-        mock_sourcing_instance.run.assert_called_with(-1)
+        mock_sourcing_instance.run.assert_called_once_with(-1)
 
     @patch("orchestration.Orchestrator.record_error")
+    @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")
-    @patch("collectors.SocrataCollector.SocrataCollector")
     def test_run_collectors_appends_error_when_run_raises(
         self,
-        mock_collector_cls: MagicMock,
         mock_storage_cls: MagicMock,
+        mock_find_class: MagicMock,
         mock_record_error: MagicMock,
     ) -> None:
         """Test run("collectors") calls record_error when run() raises, and continues."""
@@ -83,13 +83,15 @@ class TestOrchestrator(unittest.TestCase):
         mock_collector_instance.run.side_effect = NotImplementedError(
             "collectors run not yet implemented"
         )
-        mock_collector_cls.return_value = mock_collector_instance
+        mock_collector_cls = MagicMock(return_value=mock_collector_instance)
+        mock_find_class.return_value = mock_collector_cls
 
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
             Orchestrator.run("collectors")
 
         mock_storage_cls.initialize.assert_called_once()
         mock_storage.list_eligible_projects.assert_called_once_with("sourcing", None)
+        mock_find_class.assert_called_once_with("SocrataCollector")
         mock_collector_cls.assert_called_once()
         mock_collector_instance.run.assert_called_once_with(1)
         mock_record_error.assert_called_once()

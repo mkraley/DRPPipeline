@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Optional
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from utils.Errors import record_error, record_warning
+from utils.file_utils import format_file_size
 from utils.Logger import Logger
 
 if TYPE_CHECKING:
@@ -178,7 +179,7 @@ class SocrataDatasetDownloader:
         rate_mb_per_sec = size_mb / elapsed_sec if elapsed_sec > 0 else 0.0
         Logger.info(
             f"Dataset downloaded in {elapsed_sec:.1f}s: {dataset_path.name} "
-            f"({dataset_size:,} bytes, {rate_mb_per_sec:.2f} MB/s)"
+            f"({format_file_size(dataset_size)}, {rate_mb_per_sec:.2f} MB/s)"
         )
         
         # Update result (Storage field names)

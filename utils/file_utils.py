@@ -5,6 +5,7 @@ Provides functions for sanitizing filenames and creating output folders.
 """
 
 import re
+import shutil
 import unicodedata
 from pathlib import Path
 from typing import Optional
@@ -86,17 +87,43 @@ def sanitize_filename(name: str, max_length: int = 100) -> str:
     return sanitized
 
 
+def format_file_size(size_bytes: int) -> str:
+    """
+    Format a byte count in human-readable form (KB, MB, GB).
+
+    Args:
+        size_bytes: Size in bytes (non-negative).
+
+    Returns:
+        String like "1.2 MB", "500 KB", "3.4 GB".
+
+    Example:
+        >>> format_file_size(1536)
+        '1.5 KB'
+        >>> format_file_size(1_500_000)
+        '1.4 MB'
+    """
+    if size_bytes < 0:
+        size_bytes = 0
+    for unit, suffix in [(1024**3, "GB"), (1024**2, "MB"), (1024, "KB")]:
+        if size_bytes >= unit:
+            return f"{size_bytes / unit:.1f} {suffix}"
+    return f"{size_bytes} B"
+
+
 def create_output_folder(base_dir: Path, drpid: int) -> Optional[Path]:
     """
     Create output folder for a DRPID.
-    
+
+    If the folder already exists, it and its contents are removed first.
+
     Args:
         base_dir: Base directory for creating folders
         drpid: DRPID for the record
-        
+
     Returns:
         Path to created folder, or None if creation failed
-        
+
     Example:
         >>> from pathlib import Path
         >>> folder = create_output_folder(Path("/tmp"), 123)
@@ -105,8 +132,10 @@ def create_output_folder(base_dir: Path, drpid: int) -> Optional[Path]:
     """
     folder_name = f"DRP{drpid:06d}"
     folder_path = base_dir / folder_name
-    
+
     try:
+        if folder_path.exists():
+            shutil.rmtree(folder_path)
         folder_path.mkdir(parents=True, exist_ok=True)
         return folder_path
     except Exception as e:

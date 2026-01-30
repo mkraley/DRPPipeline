@@ -62,6 +62,18 @@ class TestFileUtils(unittest.TestCase):
         """Test sanitize_filename removes leading/trailing dots."""
         result = file_utils.sanitize_filename("...test...")
         self.assertEqual(result, "test")
+
+    def test_format_file_size_bytes(self) -> None:
+        """Test format_file_size for small sizes in bytes."""
+        self.assertEqual(file_utils.format_file_size(0), "0 B")
+        self.assertEqual(file_utils.format_file_size(500), "500 B")
+
+    def test_format_file_size_kb_mb_gb(self) -> None:
+        """Test format_file_size for KB, MB, GB."""
+        self.assertEqual(file_utils.format_file_size(1536), "1.5 KB")
+        self.assertEqual(file_utils.format_file_size(1024 * 1024), "1.0 MB")
+        self.assertEqual(file_utils.format_file_size(1_500_000), "1.4 MB")
+        self.assertEqual(file_utils.format_file_size(1024**3), "1.0 GB")
     
     def test_create_output_folder(self) -> None:
         """Test create_output_folder creates folder."""

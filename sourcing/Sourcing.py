@@ -44,43 +44,46 @@ class Sourcing:
         # Get num_rows from Args
         num_rows = Args.num_rows
         
-        # Get candidate URLs and skipped count from fetcher
-        urls, skipped_count = self.get_candidate_urls(limit=num_rows)
-        
+        # Get candidate rows (url, office, agency) and skipped count from fetcher
+        rows, skipped_count = self.get_candidate_urls(limit=num_rows)
+
         # Track statistics
         successfully_added = 0
         dupes_in_storage = 0
         dupes_in_datalumos = 0
         assigned_ids: list[int] = []
         checker = DuplicateChecker()
-        
+
         # Check for duplicates before creating records
-        for url in urls:
+        for row in rows:
+            url = row["url"]
             duplicate_reason = None
-            
+
             # Check if URL already exists in storage
             if checker.exists_in_storage(url):
                 dupes_in_storage += 1
                 continue  # Skip to next URL, don't create record
-            
+
             # Check datalumos (commented out for now, but structure ready)
             # if checker.exists_in_datalumos(url):
             #     duplicate_reason = "Duplicate source URL already exists in DataLumos"
             #     dupes_in_datalumos += 1
-            
+
             # Create storage record only if URL is not already in storage
             drpid = Storage.create_record(url)
             assigned_ids.append(drpid)
-            
+
+            update_fields: dict = {
+                "status": "sourcing",
+                "office": row.get("office", ""),
+                "agency": row.get("agency", ""),
+            }
             if duplicate_reason:
-                # Mark as error with duplicate reason
-                Storage.update_record(drpid, {
-                    "status": "Error",
-                    "errors": duplicate_reason
-                })
+                update_fields["status"] = "Error"
+                update_fields["errors"] = duplicate_reason
+                Storage.update_record(drpid, update_fields)
             else:
-                # Successfully added
-                Storage.update_record(drpid, {"status": "sourcing"})
+                Storage.update_record(drpid, update_fields)
                 successfully_added += 1
         
         # Log statistics
@@ -98,14 +101,14 @@ class Sourcing:
                    f"{dupes_in_datalumos} duplicates found in DataLumos, "
                    f"{skipped_count} URLs skipped by filtering")
 
-    def get_candidate_urls(self, limit: int | None = None) -> tuple[list[str], int]:
+    def get_candidate_urls(self, limit: int | None = None) -> tuple[list[dict[str, str]], int]:
         """
-        Obtain candidate source URLs from the configured spreadsheet.
+        Obtain candidate source URLs and Office/Agency from the configured spreadsheet.
 
         Delegates to SpreadsheetCandidateFetcher. Limit from orchestrator.
 
         Returns:
-            Tuple of (list of candidate URLs, count of skipped rows)
+            Tuple of (list of dicts with keys url, office, agency; count of skipped rows)
         """
         fetcher = SpreadsheetCandidateFetcher()
         return fetcher.get_candidate_urls(limit=limit)

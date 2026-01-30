@@ -22,18 +22,18 @@ class SpreadsheetCandidateFetcher:
     All configuration comes from Args: sourcing_spreadsheet_url, sourcing_url_column.
     """
 
-    def get_candidate_urls(self, limit: int | None = None) -> tuple[list[str], int]:
+    def get_candidate_urls(self, limit: int | None = None) -> tuple[list[dict[str, str]], int]:
         """
-        Obtain candidate source URLs from the configured spreadsheet.
+        Obtain candidate source URLs and Office/Agency from the configured spreadsheet.
 
         Fetches the tab as CSV, filters rows with _row_passes_filter, returns
-        non-empty URL column values. Continues until limit filtered rows are found (if set).
+        dicts with url, office, agency. Continues until limit filtered rows are found (if set).
 
         Args:
             limit: Max URLs to return. None = unlimited. Provided by orchestrator.
 
         Returns:
-            Tuple of (list of candidate URLs, count of skipped rows).
+            Tuple of (list of dicts with keys url, office, agency; count of skipped rows).
         """
         spreadsheet_url = Args.sourcing_spreadsheet_url
         sheet_id, gid = parse_spreadsheet_url(spreadsheet_url)
@@ -75,42 +75,42 @@ class SpreadsheetCandidateFetcher:
         Note: This method assumes required columns are present (validated in
         _extract_urls_from_csv). Missing columns would indicate a bug.
         """
-        claimed = "" #(row.get("Claimed (add your name)") or "").strip()
+        claimed = (row.get("Claimed (add your name)") or "").strip()
         download_location = (row.get("Download Location") or "").strip()
         return claimed == "" and download_location == "" and (row.get("URL") or "").strip().startswith("https://data.cdc.gov/")
 
     def _extract_urls_from_csv(
         self, csv_text: str, url_column: str, num_rows: int | None = None
-    ) -> tuple[list[str], int]:
+    ) -> tuple[list[dict[str, str]], int]:
         """
-        Parse CSV, filter rows with _row_passes_filter, collect non-empty URL values.
+        Parse CSV, filter rows with _row_passes_filter, collect url plus Office and Agency.
 
-        Continues processing until num_rows filtered URLs have been collected (if num_rows is set).
+        Continues processing until num_rows filtered rows have been collected (if num_rows is set).
 
         Args:
             csv_text: CSV content to parse.
             url_column: Column name containing URLs.
-            num_rows: Maximum number of filtered URLs to return. None = unlimited.
+            num_rows: Maximum number of filtered rows to return. None = unlimited.
 
         Returns:
-            Tuple of (list of candidate URLs, count of skipped rows).
+            Tuple of (list of dicts with keys url, office, agency; count of skipped rows).
 
         Raises:
             ValueError: If required columns (URL column or filter columns) are missing.
         """
         reader = csv.DictReader(io.StringIO(csv_text))
         fieldnames = reader.fieldnames or []
-        
+
         # Required columns for _row_passes_filter
         required_filter_columns = ["Claimed (add your name)", "Download Location"]
-        
+
         # Check URL column
         if url_column not in fieldnames:
             raise ValueError(
                 f"CSV missing required URL column '{url_column}'. "
                 f"Available columns: {fieldnames}"
             )
-        
+
         # Check filter columns
         missing_filter_columns = [
             col for col in required_filter_columns if col not in fieldnames
@@ -120,22 +120,23 @@ class SpreadsheetCandidateFetcher:
                 f"CSV missing required filter columns: {missing_filter_columns}. "
                 f"Available columns: {fieldnames}"
             )
-        
-        urls: list[str] = []
+
+        rows_out: list[dict[str, str]] = []
         skipped_count = 0
-        
+
         for row in reader:
-            # Stop if we've reached the limit of filtered rows
-            if num_rows is not None and len(urls) >= num_rows:
+            if num_rows is not None and len(rows_out) >= num_rows:
                 break
-            
+
             if not self._row_passes_filter(row):
                 skipped_count += 1
                 continue
-            
+
             raw = row.get(url_column, "")
             url = (raw or "").strip()
             if url:
-                urls.append(url)
-        
-        return (urls, skipped_count)
+                office = (row.get("Office") or "").strip()
+                agency = (row.get("Agency") or "").strip()
+                rows_out.append({"url": url, "office": office, "agency": agency})
+
+        return (rows_out, skipped_count)

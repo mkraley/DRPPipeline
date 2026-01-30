@@ -41,11 +41,15 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
 
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
     def test_get_candidate_urls_returns_filtered_urls(self, mock_fetch: object) -> None:
-        """Test get_candidate_urls fetches CSV, filters rows, returns URL list."""
+        """Test get_candidate_urls fetches CSV, filters rows, returns list of url/office/agency dicts."""
         mock_fetch.return_value = _csv_candidates()
-        urls = self.fetcher.get_candidate_urls()
-        self.assertIsInstance(urls, list)
-        self.assertEqual(urls, ["https://data.cdc.gov/a", "https://data.cdc.gov/d"])
+        rows, skipped = self.fetcher.get_candidate_urls()
+        self.assertIsInstance(rows, list)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["url"], "https://data.cdc.gov/a")
+        self.assertEqual(rows[1]["url"], "https://data.cdc.gov/d")
+        self.assertEqual(rows[0]["office"], "")
+        self.assertEqual(rows[0]["agency"], "")
         mock_fetch.assert_called_once()
 
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
@@ -105,9 +109,10 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         )
         mock_fetch.return_value = csv_with_many
 
-        urls = self.fetcher.get_candidate_urls(limit=2)
-        self.assertEqual(len(urls), 2)
-        self.assertEqual(urls, ["https://data.cdc.gov/a", "https://data.cdc.gov/d"])
+        rows, _ = self.fetcher.get_candidate_urls(limit=2)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["url"], "https://data.cdc.gov/a")
+        self.assertEqual(rows[1]["url"], "https://data.cdc.gov/d")
 
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
     def test_get_candidate_urls_unlimited_when_limit_none(self, mock_fetch: object) -> None:
@@ -120,9 +125,9 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         )
         mock_fetch.return_value = csv_with_many
 
-        urls = self.fetcher.get_candidate_urls(limit=None)
-        self.assertEqual(len(urls), 3)
-        self.assertEqual(urls, ["https://data.cdc.gov/a", "https://data.cdc.gov/d", "https://data.cdc.gov/e"])
+        rows, _ = self.fetcher.get_candidate_urls(limit=None)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual([r["url"] for r in rows], ["https://data.cdc.gov/a", "https://data.cdc.gov/d", "https://data.cdc.gov/e"])
 
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
     def test_get_candidate_urls_stops_early_when_limit_reached(self, mock_fetch: object) -> None:
@@ -138,6 +143,7 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         )
         mock_fetch.return_value = csv_many_rows
 
-        urls = self.fetcher.get_candidate_urls(limit=2)
-        self.assertEqual(len(urls), 2)
-        self.assertEqual(urls, ["https://data.cdc.gov/a", "https://data.cdc.gov/b"])
+        rows, _ = self.fetcher.get_candidate_urls(limit=2)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["url"], "https://data.cdc.gov/a")
+        self.assertEqual(rows[1]["url"], "https://data.cdc.gov/b")

@@ -146,7 +146,10 @@ class Orchestrator:
             
             for proj in projects:
                 drpid = proj["DRPID"]
+                source_url = proj.get("source_url", "")
+                Logger.set_current_drpid(drpid)
                 try:
+                    Logger.info(f"Starting project with source URL {source_url}")
                     module_instance.run(drpid)
                 except Exception as exc:
                     record_error(
@@ -154,5 +157,7 @@ class Orchestrator:
                         f"Orchestrator module={module!r} DRPID={drpid} exception: {exc}",
                     )
                     continue
+                finally:
+                    Logger.clear_current_drpid()
         
         Logger.info(f"Orchestrator finished module={module!r}")
