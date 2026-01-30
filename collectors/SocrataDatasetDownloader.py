@@ -4,6 +4,7 @@ Socrata Dataset Downloader for DRP Pipeline.
 Handles downloading datasets from Socrata pages via Export/Download buttons.
 """
 
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -134,6 +135,7 @@ class SocrataDatasetDownloader:
             
             try:
                 download_button.scroll_into_view_if_needed()
+                start_time = time.perf_counter()
                 download_button.click()
             except Exception as e:
                 record_error(self._collector._drpid, f"Could not click Download button: {str(e)}")
@@ -159,21 +161,30 @@ class SocrataDatasetDownloader:
         
         dataset_path = folder_path / dataset_filename
         download.save_as(dataset_path)
+        elapsed_sec = time.perf_counter() - start_time
         
         # Get file size after saving
-        file_size = None
-        if dataset_path.exists():
-            file_size = dataset_path.stat().st_size
+        dataset_size = dataset_path.stat().st_size if dataset_path.exists() else 0
         
         # Get file extension
         file_extension = self._get_file_extension(dataset_path)
         
+        # Sum downloaded file size plus PDF(s) created earlier in this folder
+        pdf_size = sum(f.stat().st_size for f in folder_path.glob("*.pdf") if f.exists())
+        total_size = dataset_size + pdf_size
+        
+        # Log download time, size, and rate (MB/sec)
+        size_mb = dataset_size / (1024 * 1024)
+        rate_mb_per_sec = size_mb / elapsed_sec if elapsed_sec > 0 else 0.0
+        Logger.info(
+            f"Dataset downloaded in {elapsed_sec:.1f}s: {dataset_path.name} "
+            f"({dataset_size:,} bytes, {rate_mb_per_sec:.2f} MB/s)"
+        )
+        
         # Update result (Storage field names)
-        if file_size is not None:
-            self._collector._result["file_size"] = str(file_size)
+        self._collector._result["file_size"] = str(total_size)
+        self._collector._result["data_types"] = f"pdf, {file_extension}" if file_extension else "pdf"
         self._collector._result["download_date"] = datetime.now().strftime("%Y-%m-%d")
-        record_warning(self._collector._drpid, f"Dataset downloaded: {dataset_path.name}")
-        Logger.info(f"Dataset downloaded: {dataset_path} (size: {file_size} bytes)")
         return True
     
     def _find_download_button(self):

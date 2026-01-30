@@ -8,6 +8,8 @@ and uploading to various repositories, e.g. DataLumos.
 import sys
 from pathlib import Path
 
+import click
+
 from utils.Args import Args
 from utils.Logger import Logger
 
@@ -46,4 +48,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise  # Preserve exit code from --help etc.
+    except click.ClickException as e:
+        print(e.format_message(), file=sys.stderr)
+        sys.exit(e.exit_code)

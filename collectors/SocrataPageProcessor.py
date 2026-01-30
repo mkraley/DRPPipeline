@@ -52,7 +52,7 @@ class SocrataPageProcessor:
         # Get total rows
         total_rows = self._get_total_rows()
         if total_rows:
-            Logger.info(f"Total rows in dataset: {total_rows}")
+            Logger.debug(f"Total columns in dataset: {total_rows}")
         
         # Show all rows
         self._show_all_rows(total_rows)
@@ -238,28 +238,17 @@ class SocrataPageProcessor:
     
     def _hide_collapse_buttons(self) -> None:
         """
-        Hide or remove the forge-button.collapse-button elements.
-        
-        Uses CSS to hide them rather than removing from DOM.
+        Remove the forge-button.collapse-button elements from the DOM.
         """
         try:
             self._collector._page.evaluate("""
                 () => {
                     const buttons = document.querySelectorAll('forge-button.collapse-button');
-                    buttons.forEach(button => {
-                        if (button.shadowRoot) {
-                            const root = button.shadowRoot;
-                            const style = document.createElement('style');
-                            style.textContent = 'display: none !important;';
-                            root.appendChild(style);
-                        } else {
-                            button.style.display = 'none';
-                        }
-                    });
+                    Array.from(buttons).forEach(button => button.remove());
                 }
             """)
         except Exception as e:
-            Logger.debug(f"Could not hide collapse buttons: {e}")
+            Logger.debug(f"Could not remove collapse buttons: {e}")
     
     def _generate_pdf(self, pdf_path: Path) -> bool:
         """
