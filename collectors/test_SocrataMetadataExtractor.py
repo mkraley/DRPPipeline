@@ -28,16 +28,9 @@ class TestSocrataMetadataExtractor(unittest.TestCase):
         Logger.initialize(log_level="WARNING")
         
         self.temp_dir = Path(tempfile.mkdtemp())
-        with patch.object(Args, 'base_output_dir', self.temp_dir):
+        with patch.object(Args, "base_output_dir", self.temp_dir):
             self.collector = SocrataCollector(headless=True)
-            self.collector._result = {
-                'status': None,
-                'pdf_path': None,
-                'dataset_path': None,
-                'metadata': {},
-                'file_extensions': [],
-                'dataset_size': None
-            }
+            self.collector._result = {}
             self.extractor = SocrataMetadataExtractor(self.collector)
     
     def tearDown(self) -> None:
@@ -329,9 +322,11 @@ class TestSocrataMetadataExtractor(unittest.TestCase):
         }
         
         self.assertEqual(result, expected)
-        self.assertEqual(self.collector._result['metadata'], expected)
-    
-    @patch('collectors.SocrataCollector.sync_playwright')
+        self.assertEqual(self.collector._result.get("title"), expected["title"])
+        self.assertEqual(self.collector._result.get("summary"), expected["description"])
+        self.assertEqual(self.collector._result.get("keywords"), expected["keywords"])
+
+    @patch("collectors.SocrataCollector.sync_playwright")
     def test_extract_all_metadata_partial(self, mock_playwright: Mock) -> None:
         """Test extract_all_metadata handles partial metadata."""
         mock_playwright_instance = Mock()
@@ -362,4 +357,6 @@ class TestSocrataMetadataExtractor(unittest.TestCase):
         }
         
         self.assertEqual(result, expected)
-        self.assertEqual(self.collector._result['metadata'], expected)
+        self.assertEqual(self.collector._result.get("title"), expected["title"])
+        self.assertEqual(self.collector._result.get("summary"), expected["description"])
+        self.assertEqual(self.collector._result.get("keywords"), expected["keywords"])

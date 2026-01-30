@@ -4,6 +4,7 @@ Socrata Dataset Downloader for DRP Pipeline.
 Handles downloading datasets from Socrata pages via Export/Download buttons.
 """
 
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -52,7 +53,7 @@ class SocrataDatasetDownloader:
         try:
             # Click Export button
             if not self._click_export_button():
-                self._collector._update_status('Export button not found')
+                self._collector._append_result_note("Export button not found")
                 return False
             
             # Wait for dialog
@@ -60,18 +61,18 @@ class SocrataDatasetDownloader:
             
             # Check for large dataset warning
             if self._has_large_dataset_warning():
-                self._collector._update_status('Large dataset warning - download skipped')
+                self._collector._append_result_note("Large dataset warning - download skipped")
                 return False
             
             # Download the file
             return self._download_file(folder_path, timeout)
         
         except PlaywrightTimeoutError:
-            self._collector._update_status("Timeout waiting for download")
+            self._collector._append_result_note("Timeout waiting for download")
             return False
         except Exception as e:
             error_msg = f"Error downloading dataset: {str(e)[:100]}"
-            self._collector._update_status(error_msg)
+            self._collector._append_result_note(error_msg)
             return False
     
     def _click_export_button(self) -> bool:
@@ -127,14 +128,14 @@ class SocrataDatasetDownloader:
         with self._collector._page.expect_download(timeout=timeout) as download_info:
             download_button = self._find_download_button()
             if download_button is None:
-                self._collector._update_status('Download button not found in dialog')
+                self._collector._append_result_note("Download button not found in dialog")
                 return False
             
             try:
                 download_button.scroll_into_view_if_needed()
                 download_button.click()
             except Exception as e:
-                self._collector._update_status(f'Could not click Download button: {str(e)}')
+                self._collector._append_result_note(f"Could not click Download button: {str(e)}")
                 return False
         
         # Save the downloaded file
@@ -166,14 +167,11 @@ class SocrataDatasetDownloader:
         # Get file extension
         file_extension = self._get_file_extension(dataset_path)
         
-        # Update result
-        self._collector._result['dataset_path'] = str(dataset_path)
-        if file_extension:
-            self._collector._result['file_extensions'].append(file_extension)
+        # Update result (Storage field names)
         if file_size is not None:
-            self._collector._result['dataset_size'] = file_size
-        
-        self._collector._update_status(f"Dataset downloaded: {dataset_path.name}")
+            self._collector._result["file_size"] = str(file_size)
+        self._collector._result["download_date"] = datetime.now().strftime("%Y-%m-%d")
+        self._collector._append_result_note(f"Dataset downloaded: {dataset_path.name}")
         Logger.info(f"Dataset downloaded: {dataset_path} (size: {file_size} bytes)")
         return True
     

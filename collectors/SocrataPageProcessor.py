@@ -62,12 +62,10 @@ class SocrataPageProcessor:
         # Generate PDF
         success = self._generate_pdf(pdf_path)
         if success:
-            self._collector._result['pdf_path'] = str(pdf_path)
-            self._collector._result['file_extensions'].append('PDF')
-            self._collector._update_status("PDF generated")
+            self._collector._append_result_note("PDF generated")
             Logger.info(f"PDF generated: {pdf_path}")
         else:
-            self._collector._update_status("PDF generation failed")
+            self._collector._append_result_note("PDF generation failed")
             Logger.warning("PDF generation failed")
         
         return success

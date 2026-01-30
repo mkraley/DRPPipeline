@@ -28,16 +28,9 @@ class TestSocrataPageProcessor(unittest.TestCase):
         Logger.initialize(log_level="WARNING")
         
         self.temp_dir = Path(tempfile.mkdtemp())
-        with patch.object(Args, 'base_output_dir', self.temp_dir):
+        with patch.object(Args, "base_output_dir", self.temp_dir):
             self.collector = SocrataCollector(headless=True)
-            self.collector._result = {
-                'status': None,
-                'pdf_path': None,
-                'dataset_path': None,
-                'metadata': {},
-                'file_extensions': [],
-                'dataset_size': None
-            }
+            self.collector._result = {}
             self.processor = SocrataPageProcessor(self.collector)
     
     def tearDown(self) -> None:
@@ -340,9 +333,7 @@ class TestSocrataPageProcessor(unittest.TestCase):
         result = processor.generate_pdf(pdf_path)
         
         self.assertTrue(result)
-        self.assertEqual(self.collector._result['pdf_path'], str(pdf_path))
-        self.assertIn('PDF', self.collector._result['file_extensions'])
-        self.assertIn('PDF generated', self.collector._result['status'])
+        self.assertIn("PDF generated", self.collector._result.get("collection_notes", ""))
     
     @patch('collectors.SocrataCollector.sync_playwright')
     def test_generate_pdf_updates_result_on_failure(self, mock_playwright: Mock) -> None:
@@ -368,4 +359,4 @@ class TestSocrataPageProcessor(unittest.TestCase):
         result = processor.generate_pdf(pdf_path)
         
         self.assertFalse(result)
-        self.assertIn('PDF generation failed', self.collector._result['status'])
+        self.assertIn("PDF generation failed", self.collector._result.get("collection_notes", ""))

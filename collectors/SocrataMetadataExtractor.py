@@ -35,26 +35,30 @@ class SocrataMetadataExtractor:
         """
         Extract all available metadata from the page.
         
-        Updates result directly with extracted metadata.
+        Updates collector result with Storage field names: title, summary, keywords.
         
         Returns:
-            Dictionary with keys: title, rows, columns, description, keywords
+            Dictionary with keys: title, summary, keywords (and rows, columns for callers).
         """
         title = self._extract_title()
         rows, columns = self._extract_dataset_metadata()
         description = self._extract_description()
         keywords = self._extract_keywords()
-        
-        metadata = {
-            'title': title,
-            'rows': rows,
-            'columns': columns,
-            'description': description,
-            'keywords': keywords
+
+        if title is not None:
+            self._collector._result["title"] = title
+        if description is not None:
+            self._collector._result["summary"] = description
+        if keywords is not None:
+            self._collector._result["keywords"] = keywords
+
+        return {
+            "title": title,
+            "rows": rows,
+            "columns": columns,
+            "description": description,
+            "keywords": keywords,
         }
-        
-        self._collector._result['metadata'] = metadata
-        return metadata
     
     def _extract_title(self) -> Optional[str]:
         """

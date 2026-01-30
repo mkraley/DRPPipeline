@@ -28,16 +28,9 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         Logger.initialize(log_level="WARNING")
         
         self.temp_dir = Path(tempfile.mkdtemp())
-        with patch.object(Args, 'base_output_dir', self.temp_dir):
+        with patch.object(Args, "base_output_dir", self.temp_dir):
             self.collector = SocrataCollector(headless=True)
-            self.collector._result = {
-                'status': None,
-                'pdf_path': None,
-                'dataset_path': None,
-                'metadata': {},
-                'file_extensions': [],
-                'dataset_size': None
-            }
+            self.collector._result = {}
             self.downloader = SocrataDatasetDownloader(self.collector)
     
     def tearDown(self) -> None:
@@ -322,10 +315,10 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
             result = downloader._download_file(self.temp_dir, timeout=60000)
         
         self.assertTrue(result)
-        self.assertEqual(self.collector._result['dataset_path'], str(test_file))
-        self.assertIn('csv', self.collector._result['file_extensions'])
-        self.assertIsNotNone(self.collector._result['dataset_size'])
-        self.assertIn('Dataset downloaded', self.collector._result['status'])
+        self.assertIn("file_size", self.collector._result)
+        self.assertEqual(self.collector._result["file_size"], str(test_file.stat().st_size))
+        self.assertIn("download_date", self.collector._result)
+        self.assertIn("Dataset downloaded", self.collector._result.get("collection_notes", ""))
     
     @patch('collectors.SocrataCollector.sync_playwright')
     def test_download_file_no_button(self, mock_playwright: Mock) -> None:
@@ -351,7 +344,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
             result = downloader._download_file(self.temp_dir, timeout=60000)
         
         self.assertFalse(result)
-        self.assertIn('Download button not found', self.collector._result['status'])
+        self.assertIn("Download button not found", self.collector._result.get("collection_notes", ""))
     
     @patch('collectors.SocrataCollector.sync_playwright')
     def test_download_success(self, mock_playwright: Mock) -> None:
@@ -386,7 +379,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
             result = downloader.download(self.temp_dir)
         
         self.assertFalse(result)
-        self.assertIn('Export button not found', self.collector._result['status'])
+        self.assertIn("Export button not found", self.collector._result.get("collection_notes", ""))
     
     @patch('collectors.SocrataCollector.sync_playwright')
     def test_download_large_dataset_warning(self, mock_playwright: Mock) -> None:
@@ -407,7 +400,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
             result = downloader.download(self.temp_dir)
         
         self.assertFalse(result)
-        self.assertIn('Large dataset warning', self.collector._result['status'])
+        self.assertIn("Large dataset warning", self.collector._result.get("collection_notes", ""))
     
     @patch('collectors.SocrataCollector.sync_playwright')
     def test_download_timeout(self, mock_playwright: Mock) -> None:
@@ -431,4 +424,4 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
             result = downloader.download(self.temp_dir)
         
         self.assertFalse(result)
-        self.assertIn('Timeout waiting for download', self.collector._result['status'])
+        self.assertIn("Timeout waiting for download", self.collector._result.get("collection_notes", ""))

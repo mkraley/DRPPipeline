@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 
 from storage import Storage
 from utils.Args import Args
+from utils.Logging import record_fatal_error
 from utils.Logger import Logger
 
 
@@ -148,7 +149,10 @@ class Orchestrator:
                 try:
                     module_instance.run(drpid)
                 except Exception as exc:
-                    Storage.append_to_field(drpid, "errors", str(exc))
+                    record_fatal_error(
+                        drpid,
+                        f"Orchestrator module={module!r} DRPID={drpid} exception: {exc}",
+                    )
                     Logger.warning(f"Orchestrator module={module!r} DRPID={drpid} exception: {exc}")
                     continue
         
