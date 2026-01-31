@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
 from urllib.parse import parse_qs, urlparse
 
+import requests
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from utils.Args import Args
@@ -107,13 +108,22 @@ class SocrataDatasetDownloader:
             # When use_url_download, try to construct Socrata export URL from page URL
             # (e.g. .../yctb-fv7w/about_data -> .../api/v3/views/yctb-fv7w/export.csv?...)
             if use_url_download:
-                view_id = _get_socrata_view_id_from_url(page.url())
+                view_id = _get_socrata_view_id_from_url(page.url)
                 if view_id:
-                    return self._download_via_constructed_url(
-                        folder_path, timeout, view_id
-                    )
+                    try:
+                        return self._download_via_constructed_url(
+                            folder_path, timeout, view_id
+                        )
+                    except requests.HTTPError as e:
+                        if e.response is not None and e.response.status_code in (401, 403):
+                            Logger.warning(
+                                "Direct download returned %s (auth required), falling back to Export dialog",
+                                e.response.status_code,
+                            )
+                        else:
+                            raise
 
-            # Fallback: open Export dialog, then _download_file (interception or save_as)
+            # Open Export dialog, then _download_file (browser session; or save_as)
             if not self._click_export_button():
                 record_error(self._collector._drpid, "Export button not found")
                 return False
@@ -124,6 +134,7 @@ class SocrataDatasetDownloader:
             record_error(self._collector._drpid, "Timeout waiting for download")
             return False
         except Exception as e:
+            Logger.exception("Error downloading dataset: %s", e)
             error_msg = f"Error downloading dataset: {str(e)[:100]}"
             record_error(self._collector._drpid, error_msg)
             return False
@@ -136,7 +147,7 @@ class SocrataDatasetDownloader:
         Filename from page title (sanitized), extension .csv.
         """
         page = self._collector._page
-        export_url = _build_socrata_export_url(page.url(), view_id)
+        export_url = _build_socrata_export_url(page.url, view_id)
         cookies = page.context.cookies()
         try:
             stem = sanitize_filename(page.title(), max_length=100) if page.title() else "dataset"
@@ -145,10 +156,13 @@ class SocrataDatasetDownloader:
         dataset_filename = f"{stem}.csv"
         dataset_path = folder_path / dataset_filename
         timeout_sec = (timeout // 1000) if timeout else 3600
+        app_token = getattr(Args, "socrata_app_token", None)
+        extra_headers = {"X-App-Token": app_token} if app_token else None
         bytes_written, ok = download_via_url(
             export_url,
             dataset_path,
             cookies=cookies,
+            headers=extra_headers,
             progress_interval_mb=50.0,
             resume=True,
             timeout_sec=timeout_sec,

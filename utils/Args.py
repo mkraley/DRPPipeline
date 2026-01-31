@@ -70,6 +70,7 @@ class Args(metaclass=ArgsMeta):
         "max_workers": 1,  # Parallel projects when > 1 (e.g. collector); 1 = sequential
         "download_timeout_ms": 30 * 60 * 1000,  # 30 min for large datasets; increase for 10GB+
         "use_url_download": True,  # Get URL from Playwright then download with requests (progress/resume)
+        "socrata_app_token": None,  # Optional; set in config for direct Socrata API download (avoids 403)
         # Upload module settings
         "datalumos_username": None,  # Required for upload; set in config file
         "datalumos_password": None,  # Required for upload; set in config file
