@@ -83,7 +83,8 @@ class DataLumosFormFiller:
         save_btn = self._page.locator(".save-project")
         save_btn.click()
         
-        continue_btn = self._page.get_by_role("link", name="Continue To Project Workspace")
+        # Element has role="button" (not link) per DataLumos markup
+        continue_btn = self._page.get_by_role("button", name="Continue To Project Workspace")
         continue_btn.click()
         
         self.wait_for_obscuring_elements()
@@ -114,7 +115,8 @@ class DataLumosFormFiller:
             self.wait_for_obscuring_elements()
             add_btn.click()
             
-            agency_tab = self._page.get_by_role("link", name="Organization/Agency")
+            # Element: <a href="#org" role="tab">Organization/Agency</a> - use href (role="tab" not "link")
+            agency_tab = self._page.locator('a[href="#org"]')
             self.wait_for_obscuring_elements()
             agency_tab.click()
             
@@ -297,7 +299,7 @@ class DataLumosFormFiller:
         self.wait_for_obscuring_elements()
         edit_btn.click()
         
-        frame = self._page.frame_locator("iframe.wysihtml5-sandbox")
+        frame = self._page.frame_locator("#groupAttr0 iframe.wysihtml5-sandbox")
         body = frame.locator("body")
         body.click()
         self._page.wait_for_timeout(300)

@@ -10,6 +10,48 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 from utils.Logger import Logger
 
 
+def wait_for_human_verification(page: Page, timeout: int = 60000) -> None:
+    """
+    Wait for "Verifying you are human" message to complete.
+    
+    Call after page loads or navigation where verification may appear.
+    Matches chiara_upload behavior: never block - on any error, wait briefly and continue.
+    
+    Args:
+        page: Playwright Page object
+        timeout: Maximum time to wait for verification to disappear (ms)
+    """
+    try:
+        verification_selectors = [
+            "text=Verifying you are human",
+            "//*[contains(text(), 'Verifying you are human')]",
+            "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'verifying') "
+            "and contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'human')]",
+            "[class*='verifying']",
+            "[id*='verifying']",
+        ]
+        
+        for selector in verification_selectors:
+            try:
+                if selector.startswith("//"):
+                    locator = page.locator(f"xpath={selector}")
+                else:
+                    locator = page.locator(selector)
+                
+                if locator.count() > 0 and locator.first.is_visible(timeout=2000):
+                    Logger.info("Human verification detected, waiting for completion...")
+                    locator.first.wait_for(state="hidden", timeout=timeout)
+                    Logger.info("Verification completed")
+                    break
+            except PlaywrightTimeoutError:
+                continue
+        
+        page.wait_for_timeout(2000)  # Additional wait for page stability (matches chiara)
+    except Exception as e:
+        Logger.warning(f"Verification check completed (or not needed): {e}")
+        page.wait_for_timeout(2000)
+
+
 class DataLumosAuthenticator:
     """
     Handles authentication to DataLumos.
@@ -171,45 +213,13 @@ class DataLumosAuthenticator:
         
         return ""
     
-    def wait_for_verification(self, timeout: int = 30000) -> bool:
+    def wait_for_verification(self, timeout: int = 60000) -> bool:
         """
         Wait for "Verifying you are human" message to complete.
         
-        Checks for various forms of verification messages and waits
-        for them to disappear.
-        
-        Args:
-            timeout: Maximum time to wait in milliseconds
-            
-        Returns:
-            True if verification completed or wasn't needed
+        Delegates to wait_for_human_verification().
         """
-        verification_selectors = [
-            "//*[contains(text(), 'Verifying you are human')]",
-            "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'verifying')]",
-            "[class*='verifying']",
-            "[id*='verifying']",
-        ]
-        
-        for selector in verification_selectors:
-            try:
-                # Check if verification element exists
-                if selector.startswith("//"):
-                    locator = self._page.locator(f"xpath={selector}")
-                else:
-                    locator = self._page.locator(selector)
-                
-                # If element is visible, wait for it to disappear
-                if locator.count() > 0 and locator.first.is_visible(timeout=1000):
-                    Logger.debug("Human verification detected, waiting for completion")
-                    locator.first.wait_for(state="hidden", timeout=timeout)
-                    Logger.debug("Verification completed")
-                    break
-            except PlaywrightTimeoutError:
-                continue
-        
-        # Brief additional wait for page stability
-        self._page.wait_for_timeout(500)
+        wait_for_human_verification(self._page, timeout=timeout)
         return True
     
     def is_authenticated(self) -> bool:

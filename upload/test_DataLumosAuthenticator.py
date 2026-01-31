@@ -60,7 +60,7 @@ class TestDataLumosAuthenticator(unittest.TestCase):
         
         self.assertTrue(result)
         # Should have waited for element to become hidden
-        mock_first.wait_for.assert_called_once_with(state="hidden", timeout=30000)
+        mock_first.wait_for.assert_called_once_with(state="hidden", timeout=60000)
 
     def test_is_authenticated_login_page(self) -> None:
         """Test is_authenticated returns False when on login page."""

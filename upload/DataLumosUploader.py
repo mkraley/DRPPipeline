@@ -142,11 +142,16 @@ class DataLumosUploader:
         page.goto(self.WORKSPACE_URL, wait_until="domcontentloaded")
         page.wait_for_load_state("networkidle", timeout=120000)
         
+        from upload.DataLumosAuthenticator import wait_for_human_verification
+        wait_for_human_verification(page, timeout=60000)
+        
         new_project_btn = page.locator(".btn > span:nth-child(3)")
         form_filler.wait_for_obscuring_elements()
         new_project_btn.click()
         
         form_filler.fill_title(self._get_field(project, "title"))
+        
+        wait_for_human_verification(page, timeout=60000)
         
         workspace_id = self._extract_workspace_id(page.url)
         if not workspace_id:
@@ -208,8 +213,23 @@ class DataLumosUploader:
         
         Logger.debug("Initializing Playwright browser")
         self._playwright = sync_playwright().start()
-        self._browser = self._playwright.chromium.launch(headless=self._headless)
-        self._context = self._browser.new_context()
+        self._browser = self._playwright.chromium.launch(
+            headless=self._headless,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+            ],
+        )
+        self._context = self._browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            ),
+            locale="en-US",
+            timezone_id="America/New_York",
+        )
         self._context.set_default_timeout(self._timeout)
         self._page = self._context.new_page()
         return self._page
