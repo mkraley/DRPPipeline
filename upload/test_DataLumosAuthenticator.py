@@ -174,9 +174,9 @@ class TestDataLumosAuthenticatorAuthenticate(unittest.TestCase):
         """Test authenticate raises when email login button not found."""
         mock_login_button = MagicMock()
         
-        # Mock email login button to timeout
+        # Mock email login button - click() times out when element not found
         mock_email_locator = MagicMock()
-        mock_email_locator.wait_for.side_effect = PlaywrightTimeoutError("timeout")
+        mock_email_locator.click.side_effect = PlaywrightTimeoutError("timeout")
         self.mock_page.locator.return_value = mock_email_locator
         
         with patch.object(self.authenticator, '_find_login_button', return_value=mock_login_button):

@@ -34,7 +34,7 @@ MODULES: Dict[str, Dict[str, Any]] = {
     },
     "upload": {
         "prereq": "collector",
-        "class_name": "Upload",
+        "class_name": "DataLumosUploader",
     },
 }
 

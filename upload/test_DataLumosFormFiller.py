@@ -5,8 +5,9 @@ Unit tests for DataLumosFormFiller.
 import unittest
 from unittest.mock import MagicMock
 
+from utils.Args import Args
 from utils.Logger import Logger
-from upload.DataLumosFormFiller import DataLumosFormFiller
+from upload.DataLumosFormFiller import DataLumosFormFiller, _is_empty
 
 
 class TestDataLumosFormFiller(unittest.TestCase):
@@ -26,6 +27,14 @@ class TestDataLumosFormFiller(unittest.TestCase):
         """Test form filler initialization."""
         self.assertEqual(self.form_filler._page, self.mock_page)
         self.assertEqual(self.form_filler._timeout, 5000)
+
+    def test_is_empty_helper(self) -> None:
+        """Test _is_empty helper function."""
+        self.assertTrue(_is_empty(None))
+        self.assertTrue(_is_empty(""))
+        self.assertTrue(_is_empty("   "))
+        self.assertFalse(_is_empty("x"))
+        self.assertFalse(_is_empty("  x  "))
 
     def test_wait_for_obscuring_elements_no_busy(self) -> None:
         """Test wait_for_obscuring_elements when no busy overlay present."""
@@ -130,6 +139,15 @@ class TestDataLumosFormFiller(unittest.TestCase):
 
 class TestDataLumosUploaderHelpers(unittest.TestCase):
     """Test DataLumosUploader helper methods."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Initialize Args and Logger for uploader tests."""
+        import sys
+        sys.argv = ["test", "upload"]
+        Args._initialized = False
+        Args.initialize()
+        Logger.initialize(log_level="WARNING")
 
     def test_extract_workspace_id_found(self) -> None:
         """Test _extract_workspace_id extracts ID from URL."""

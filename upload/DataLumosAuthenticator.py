@@ -72,7 +72,6 @@ class DataLumosAuthenticator:
         Logger.debug("Looking for 'Sign in with Email' button")
         try:
             email_login_button = self._page.locator("#kc-emaillogin")
-            email_login_button.wait_for(state="visible", timeout=self._timeout)
             email_login_button.click()
         except PlaywrightTimeoutError:
             raise RuntimeError("Could not find 'Sign in with Email' button")
@@ -83,7 +82,6 @@ class DataLumosAuthenticator:
         Logger.debug("Filling in username")
         try:
             username_input = self._page.locator("input#username, input[name='username']").first
-            username_input.wait_for(state="visible", timeout=self._timeout)
             username_input.fill(username)
         except PlaywrightTimeoutError:
             raise RuntimeError("Could not find username input field")
@@ -92,7 +90,6 @@ class DataLumosAuthenticator:
         Logger.debug("Filling in password")
         try:
             password_input = self._page.locator("input#password, input[name='password']").first
-            password_input.wait_for(state="visible", timeout=self._timeout)
             password_input.fill(password)
         except PlaywrightTimeoutError:
             raise RuntimeError("Could not find password input field")
@@ -100,13 +97,11 @@ class DataLumosAuthenticator:
         # Click Sign In button
         Logger.debug("Clicking Sign In button")
         try:
-            # Try multiple selectors for the submit button
             submit_button = self._page.locator(
                 "input[type='submit'][value='Sign In'], "
                 "input.pf-c-button.btn.btn-primary[type='submit'], "
                 "button[type='submit']"
             ).first
-            submit_button.wait_for(state="visible", timeout=self._timeout)
             submit_button.click()
         except PlaywrightTimeoutError:
             # Fallback: press Enter on password field

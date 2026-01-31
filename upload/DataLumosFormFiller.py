@@ -12,6 +12,11 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 from utils.Logger import Logger
 
 
+def _is_empty(value: Optional[str]) -> bool:
+    """Return True if value is None, empty, or whitespace-only."""
+    return not value or value.strip() == ""
+
+
 class DataLumosFormFiller:
     """
     Fills form fields on the DataLumos project page.
@@ -23,7 +28,7 @@ class DataLumosFormFiller:
     - Autocomplete/tag inputs (select2)
     """
     
-    def __init__(self, page: Page, timeout: int = 30000) -> None:
+    def __init__(self, page: Page, timeout: int = 2000) -> None:
         """
         Initialize the form filler.
         
@@ -56,13 +61,11 @@ class DataLumosFormFiller:
         all sections are visible.
         """
         collapse_btn = self._page.locator("#expand-init > span:nth-child(2)")
-        collapse_btn.wait_for(state="visible", timeout=self._timeout)
         self.wait_for_obscuring_elements()
         collapse_btn.click()
         self._page.wait_for_timeout(2000)
         
         expand_btn = self._page.locator("#expand-init > span:nth-child(2)")
-        expand_btn.wait_for(state="visible", timeout=self._timeout)
         self.wait_for_obscuring_elements()
         expand_btn.click()
         self._page.wait_for_timeout(2000)
@@ -75,15 +78,12 @@ class DataLumosFormFiller:
             title: Project title text
         """
         title_input = self._page.locator("#title")
-        title_input.wait_for(state="visible", timeout=self._timeout)
         title_input.fill(title)
         
         save_btn = self._page.locator(".save-project")
-        save_btn.wait_for(state="visible", timeout=self._timeout)
         save_btn.click()
         
         continue_btn = self._page.get_by_role("link", name="Continue To Project Workspace")
-        continue_btn.wait_for(state="visible", timeout=100000)
         continue_btn.click()
         
         self.wait_for_obscuring_elements()
@@ -106,22 +106,19 @@ class DataLumosFormFiller:
         )
         
         for value in agencies:
-            if not value or value.strip() == "":
+            if _is_empty(value):
                 continue
             
             value = value.strip()
             add_btn = self._page.locator(add_value_selector)
-            add_btn.wait_for(state="visible", timeout=100000)
             self.wait_for_obscuring_elements()
             add_btn.click()
             
             agency_tab = self._page.get_by_role("link", name="Organization/Agency")
-            agency_tab.wait_for(state="visible", timeout=100000)
             self.wait_for_obscuring_elements()
             agency_tab.click()
             
             org_field = self._page.locator("#orgName")
-            org_field.wait_for(state="visible", timeout=100000)
             org_field.fill(value)
             self._page.wait_for_timeout(500)
             
@@ -129,7 +126,6 @@ class DataLumosFormFiller:
             
             self.wait_for_obscuring_elements()
             submit_btn = self._page.locator(".save-org")
-            submit_btn.wait_for(state="visible", timeout=100000)
             submit_btn.click()
     
     def _dismiss_autocomplete_dropdown(self) -> None:
@@ -156,65 +152,19 @@ class DataLumosFormFiller:
         self._page.wait_for_timeout(300)
     
     def fill_summary(self, summary: str) -> None:
-        """
-        Fill the summary/description field.
-        
-        Handles the WYSIWYG editor which is inside an iframe.
-        
-        Args:
-            summary: Summary text
-        """
-        if not summary or summary.strip() == "":
+        """Fill the summary/description field (WYSIWYG)."""
+        if _is_empty(summary):
             return
-        
-        edit_btn = self._page.locator("#edit-dcterms_description_0 > span:nth-child(2)")
-        edit_btn.wait_for(state="visible", timeout=100000)
-        self.wait_for_obscuring_elements()
-        edit_btn.click()
-        
-        frame = self._page.frame_locator("iframe.wysihtml5-sandbox")
-        body = frame.locator("body")
-        body.wait_for(state="visible", timeout=100000)
-        body.click()
-        self._page.wait_for_timeout(300)
-        
-        body.evaluate(
-            """(el, text) => {
-                el.textContent = text;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-            }""",
-            summary,
-        )
-        self._page.wait_for_timeout(300)
-        
-        self.wait_for_obscuring_elements()
-        save_btn = self._page.locator(".glyphicon-ok").first
-        save_btn.wait_for(state="visible", timeout=100000)
-        self.wait_for_obscuring_elements()
-        save_btn.click()
+        self._fill_wysiwyg("#edit-dcterms_description_0 > span:nth-child(2)", summary, ".glyphicon-ok")
     
     def fill_original_url(self, url: str) -> None:
-        """
-        Fill the original distribution URL field.
-        
-        Args:
-            url: Source URL
-        """
-        if not url or url.strip() == "":
+        """Fill the original distribution URL field."""
+        if _is_empty(url):
             return
-        
-        edit_btn = self._page.locator(
-            "#edit-imeta_sourceURL_0 > span:nth-child(1) > span:nth-child(2)"
+        self._fill_editable_inline(
+            "#edit-imeta_sourceURL_0 > span:nth-child(1) > span:nth-child(2)",
+            url,
         )
-        edit_btn.wait_for(state="visible", timeout=50000)
-        self.wait_for_obscuring_elements()
-        edit_btn.click()
-        
-        url_input = self._page.locator(".editable-input > input:nth-child(1)").first
-        url_input.wait_for(state="visible", timeout=50000)
-        self.wait_for_obscuring_elements()
-        url_input.fill(url)
-        url_input.press("Enter")
     
     def fill_keywords(self, keywords: List[str]) -> None:
         """
@@ -222,9 +172,6 @@ class DataLumosFormFiller:
         
         Uses select2 autocomplete - types each keyword and selects
         the matching suggestion.
-        
-        Args:
-            keywords: List of keywords to add
         """
         for keyword in keywords:
             keyword = keyword.strip(" '")
@@ -234,7 +181,6 @@ class DataLumosFormFiller:
             try:
                 self.wait_for_obscuring_elements()
                 search_field = self._page.locator(".select2-search__field")
-                search_field.wait_for(state="visible", timeout=50000)
                 search_field.click()
                 search_field.fill(keyword)
                 self.wait_for_obscuring_elements()
@@ -242,44 +188,23 @@ class DataLumosFormFiller:
                 option = self._page.locator(
                     f"xpath=//li[contains(@class, 'select2-results__option') and text()='{keyword}']"
                 )
-                option.wait_for(state="visible", timeout=50000)
                 self.wait_for_obscuring_elements()
                 option.click()
             except PlaywrightTimeoutError as e:
                 Logger.warning(f"Could not add keyword '{keyword}': {e}")
     
     def fill_geographic_coverage(self, coverage: str) -> None:
-        """
-        Fill the geographic coverage field.
-        
-        Args:
-            coverage: Geographic coverage text
-        """
-        if not coverage or coverage.strip() == "":
+        """Fill the geographic coverage field."""
+        if _is_empty(coverage):
             return
-        
-        edit_btn = self._page.locator(
-            "#edit-dcterms_location_0 > span:nth-child(1) > span:nth-child(2)"
+        self._fill_editable_inline(
+            "#edit-dcterms_location_0 > span:nth-child(1) > span:nth-child(2)",
+            coverage,
         )
-        edit_btn.wait_for(state="visible", timeout=50000)
-        self.wait_for_obscuring_elements()
-        edit_btn.click()
-        
-        cov_input = self._page.locator(".editable-input > input:nth-child(1)").first
-        cov_input.wait_for(state="visible", timeout=50000)
-        self.wait_for_obscuring_elements()
-        cov_input.fill(coverage)
-        cov_input.press("Enter")
     
     def fill_time_period(self, start: Optional[str], end: Optional[str]) -> None:
-        """
-        Fill the time period fields.
-        
-        Args:
-            start: Start date (YYYY-MM-DD or YYYY-MM or YYYY)
-            end: End date (YYYY-MM-DD or YYYY-MM or YYYY)
-        """
-        if (not start or start.strip() == "") and (not end or end.strip() == ""):
+        """Fill the time period fields."""
+        if _is_empty(start) and _is_empty(end):
             return
         
         add_btn = self._page.locator(
@@ -306,43 +231,23 @@ class DataLumosFormFiller:
         save_btn.click()
     
     def fill_data_types(self, data_type: str) -> None:
-        """
-        Fill the data types field.
-        
-        Selects the appropriate data type by clicking the span containing the text.
-        
-        Args:
-            data_type: Data type to select (e.g. "geographic information system (GIS) data")
-        """
-        if not data_type or data_type.strip() == "":
+        """Fill the data types field by selecting the span containing the text."""
+        if _is_empty(data_type):
             return
         
         edit_btn = self._page.locator("#disco_kindOfData_0 > span:nth-child(2)")
-        edit_btn.wait_for(state="visible", timeout=50000)
         self.wait_for_obscuring_elements()
         edit_btn.click()
         self.wait_for_obscuring_elements()
         
-        datatype_span = self._page.locator(
-            f"xpath=//span[contains(text(), '{data_type}')]"
-        )
-        datatype_span.wait_for(state="visible", timeout=50000)
+        datatype_span = self._page.locator(f"xpath=//span[contains(text(), '{data_type}')]")
         datatype_span.click()
         
         save_btn = self._page.locator(".editable-submit")
-        save_btn.wait_for(state="visible", timeout=50000)
         save_btn.click()
     
     def fill_collection_notes(self, notes: str, download_date: Optional[str] = None) -> None:
-        """
-        Fill the collection notes field.
-        
-        Handles the WYSIWYG editor. Optionally appends download date.
-        
-        Args:
-            notes: Collection notes text
-            download_date: Optional download date to append as "(Downloaded {date})"
-        """
+        """Fill the collection notes field, optionally appending download date."""
         download_part = f"(Downloaded {download_date})" if download_date else ""
         text = (notes or "").strip()
         if text and download_part:
@@ -352,14 +257,48 @@ class DataLumosFormFiller:
         else:
             return
         
-        edit_btn = self._page.locator("#edit-imeta_collectionNotes_0 > span:nth-child(2)")
+        self._fill_wysiwyg(
+            "#edit-imeta_collectionNotes_0 > span:nth-child(2)",
+            combined,
+            ".editable-submit",
+        )
+    
+    def _fill_editable_inline(self, edit_selector: str, value: str) -> None:
+        """
+        Fill an inline-editable field (click edit, type in input, submit).
+        
+        Args:
+            edit_selector: Selector for the edit button
+            value: Value to fill
+        """
+        edit_btn = self._page.locator(edit_selector)
         edit_btn.wait_for(state="visible", timeout=50000)
+        self.wait_for_obscuring_elements()
+        edit_btn.click()
+        
+        url_input = self._page.locator(".editable-input > input:nth-child(1)").first
+        url_input.wait_for(state="visible", timeout=50000)
+        self.wait_for_obscuring_elements()
+        url_input.fill(value)
+        url_input.press("Enter")
+    
+    def _fill_wysiwyg(
+        self, edit_selector: str, text: str, save_selector: str
+    ) -> None:
+        """
+        Fill a WYSIWYG editor field (iframe-based).
+        
+        Args:
+            edit_selector: Selector for the edit button
+            text: Text to set in the editor body
+            save_selector: Selector for the save button
+        """
+        edit_btn = self._page.locator(edit_selector)
         self.wait_for_obscuring_elements()
         edit_btn.click()
         
         frame = self._page.frame_locator("iframe.wysihtml5-sandbox")
         body = frame.locator("body")
-        body.wait_for(state="visible", timeout=50000)
         body.click()
         self._page.wait_for_timeout(300)
         
@@ -368,11 +307,11 @@ class DataLumosFormFiller:
                 el.textContent = text;
                 el.dispatchEvent(new Event('input', { bubbles: true }));
             }""",
-            combined,
+            text,
         )
         self._page.wait_for_timeout(300)
         
         self.wait_for_obscuring_elements()
-        save_btn = self._page.locator(".editable-submit")
-        save_btn.wait_for(state="visible", timeout=50000)
+        save_btn = self._page.locator(save_selector).first
+        self.wait_for_obscuring_elements()
         save_btn.click()

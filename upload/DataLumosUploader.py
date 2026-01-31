@@ -1,57 +1,64 @@
 """
-DataLumos uploader core logic.
+DataLumos uploader module.
 
-Coordinates all upload steps: browser lifecycle, authentication,
-form filling, and file uploads.
+Implements ModuleProtocol to upload collected data to DataLumos.
+Coordinates browser lifecycle, authentication, form filling, and file uploads.
 """
 
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 
+from storage import Storage
+from utils.Args import Args
+from utils.Errors import record_error
 from utils.Logger import Logger
+
+
+def _get_upload_config(name: str, default: Any) -> Any:
+    """Safely get config from Args (handles uninitialized case)."""
+    try:
+        return getattr(Args, name, default)
+    except (RuntimeError, AttributeError):
+        return default
 
 
 class DataLumosUploader:
     """
-    Core uploader class that coordinates DataLumos upload operations.
+    Upload module that uploads collected project data to DataLumos.
     
-    Manages Playwright browser lifecycle and orchestrates:
-    - Authentication via DataLumosAuthenticator
-    - Form filling via DataLumosFormFiller  
-    - File uploads via DataLumosFileUploader
+    Implements ModuleProtocol. For each eligible project (status="collector"),
+    this module: authenticates, creates project, fills form fields,
+    and updates Storage with datalumos_id.
     
-    Usage:
-        uploader = DataLumosUploader(username, password)
-        try:
-            datalumos_id = uploader.upload_project(project_data)
-        finally:
-            uploader.close()
+    Prerequisites: status="collector" and no errors
+    Success status: status="upload"
     """
     
     WORKSPACE_URL = "https://www.datalumos.org/datalumos/workspace"
     
     def __init__(
         self,
-        username: str,
-        password: str,
-        headless: bool = False,
-        timeout: int = 60000,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        headless: Optional[bool] = None,
+        timeout: Optional[int] = None,
     ) -> None:
         """
         Initialize the DataLumos uploader.
         
         Args:
-            username: DataLumos username/email for authentication
-            password: DataLumos password for authentication
+            username: DataLumos username/email (default: from Args)
+            password: DataLumos password (default: from Args)
             headless: Whether to run browser in headless mode
             timeout: Default timeout in milliseconds for operations
         """
-        self._username = username
-        self._password = password
-        self._headless = headless
-        self._timeout = timeout
+        self._username = username if username is not None else _get_upload_config("datalumos_username", None)
+        self._password = password if password is not None else _get_upload_config("datalumos_password", None)
+        self._headless = headless if headless is not None else _get_upload_config("upload_headless", False)
+        self._timeout = timeout if timeout is not None else _get_upload_config("upload_timeout", 60000)
         
         self._playwright: Optional[Playwright] = None
         self._browser: Optional[Browser] = None
@@ -59,30 +66,70 @@ class DataLumosUploader:
         self._page: Optional[Page] = None
         self._authenticated = False
     
-    def upload_project(self, project: Dict[str, Any]) -> str:
+    def run(self, drpid: int) -> None:
+        """
+        Run the upload process for a single project.
+        
+        Implements ModuleProtocol. Gets project from Storage, validates,
+        uploads to DataLumos, and updates Storage on success.
+        
+        Args:
+            drpid: The DRPID of the project to upload.
+        """
+        Logger.info(f"Starting upload for DRPID={drpid}")
+        
+        project = Storage.get(drpid)
+        if project is None:
+            record_error(drpid, f"Project with DRPID={drpid} not found in Storage")
+            return
+        
+        errors = self._validate_project(project)
+        if errors:
+            for error in errors:
+                record_error(drpid, error)
+            return
+        
+        try:
+            datalumos_id = self._upload_project(project)
+            Storage.update_record(drpid, {
+                "datalumos_id": datalumos_id,
+                "status": "upload",
+            })
+            Logger.info(f"Upload completed for DRPID={drpid}, datalumos_id={datalumos_id}")
+        except Exception as e:
+            record_error(drpid, f"Upload failed: {e}")
+            raise
+        finally:
+            self.close()
+    
+    def _validate_project(self, project: Dict[str, Any]) -> list[str]:
+        """Validate required fields. Returns list of error messages."""
+        errors: list[str] = []
+        if not self._get_field(project, "title"):
+            errors.append("Missing required field: title")
+        if not self._get_field(project, "summary"):
+            errors.append("Missing required field: summary")
+        
+        folder = self._get_field(project, "folder_path")
+        if folder:
+            path = Path(folder)
+            if not path.exists():
+                errors.append(f"Folder path does not exist: {folder}")
+            elif not path.is_dir():
+                errors.append(f"Folder path is not a directory: {folder}")
+        
+        return errors
+    
+    def _get_field(self, project: Dict[str, Any], key: str) -> str:
+        """Get and trim a project field. Returns empty string if missing."""
+        return (project.get(key) or "").strip()
+    
+    def _upload_project(self, project: Dict[str, Any]) -> str:
         """
         Upload a project to DataLumos.
         
-        Args:
-            project: Project data dictionary containing fields to upload:
-                - title: Project title (required)
-                - summary: Project summary/description (required)
-                - agency: Government agency name
-                - office: Government office name
-                - source_url: Original distribution URL
-                - keywords: Comma-separated keywords
-                - time_start: Time period start date
-                - time_end: Time period end date
-                - data_types: Data type selection
-                - collection_notes: Collection notes
-                - download_date: Download date for collection notes
-                - folder_path: Path to folder containing files to upload
-                
         Returns:
-            The DataLumos workspace ID (datalumos_id) for the created project
-            
-        Raises:
-            RuntimeError: If upload fails
+            The DataLumos workspace ID.
         """
         page = self._ensure_browser()
         self._ensure_authenticated()
@@ -91,124 +138,71 @@ class DataLumosUploader:
         
         form_filler = DataLumosFormFiller(page, timeout=self._timeout)
         
-        # Navigate to workspace
         Logger.info("Navigating to DataLumos workspace")
         page.goto(self.WORKSPACE_URL, wait_until="domcontentloaded")
         page.wait_for_load_state("networkidle", timeout=120000)
         
-        # Click New Project button
         new_project_btn = page.locator(".btn > span:nth-child(3)")
-        new_project_btn.wait_for(state="visible", timeout=360000)
         form_filler.wait_for_obscuring_elements()
         new_project_btn.click()
         
-        # Fill title (creates project and navigates to workspace)
-        title = (project.get("title") or "").strip()
-        form_filler.fill_title(title)
+        form_filler.fill_title(self._get_field(project, "title"))
         
-        # Extract workspace ID from URL
-        current_url = page.url
-        workspace_id = self._extract_workspace_id(current_url)
+        workspace_id = self._extract_workspace_id(page.url)
         if not workspace_id:
-            raise RuntimeError(f"Could not extract workspace ID from URL: {current_url}")
+            raise RuntimeError(f"Could not extract workspace ID from URL: {page.url}")
         
         Logger.info(f"Created project with workspace ID: {workspace_id}")
         
-        # Expand all form sections
         form_filler.expand_all_sections()
         
-        # Fill agency and office (two add-value calls)
-        agencies: List[str] = []
-        agency = (project.get("agency") or "").strip()
-        office = (project.get("office") or "").strip()
-        if agency:
-            agencies.append(agency)
-        if office:
-            agencies.append(office)
+        agencies = [f for f in [self._get_field(project, "agency"), self._get_field(project, "office")] if f]
         if agencies:
             form_filler.fill_agency(agencies)
         
-        # Fill summary
-        summary = (project.get("summary") or "").strip()
-        form_filler.fill_summary(summary)
+        form_filler.fill_summary(self._get_field(project, "summary"))
+        form_filler.fill_original_url(self._get_field(project, "source_url"))
         
-        # Fill original distribution URL
-        source_url = (project.get("source_url") or "").strip()
-        form_filler.fill_original_url(source_url)
-        
-        # Fill keywords
-        keywords_raw = (project.get("keywords") or "").strip()
+        keywords_raw = self._get_field(project, "keywords")
         if keywords_raw:
-            keywords = self._parse_keywords(keywords_raw)
-            form_filler.fill_keywords(keywords)
+            form_filler.fill_keywords(self._parse_keywords(keywords_raw))
         
-        # Fill geographic coverage (if present in project - not in current schema)
-        geographic = (project.get("geographic_coverage") or "").strip()
+        geographic = self._get_field(project, "geographic_coverage")
         if geographic:
             form_filler.fill_geographic_coverage(geographic)
         
-        # Fill time period
-        time_start = (project.get("time_start") or "").strip()
-        time_end = (project.get("time_end") or "").strip()
+        time_start = self._get_field(project, "time_start")
+        time_end = self._get_field(project, "time_end")
         if time_start or time_end:
             form_filler.fill_time_period(time_start or None, time_end or None)
         
-        # Fill data types
-        data_types = (project.get("data_types") or "").strip()
+        data_types = self._get_field(project, "data_types")
         if data_types:
             form_filler.fill_data_types(data_types)
         
-        # Fill collection notes
-        collection_notes = (project.get("collection_notes") or "").strip()
-        download_date = (project.get("download_date") or "").strip()
-        if collection_notes or download_date:
-            form_filler.fill_collection_notes(collection_notes, download_date or None)
+        notes = self._get_field(project, "collection_notes")
+        download_date = self._get_field(project, "download_date")
+        if notes or download_date:
+            form_filler.fill_collection_notes(notes, download_date or None)
         
-        # File upload handled in Phase 4
-        folder_path = (project.get("folder_path") or "").strip()
+        folder_path = self._get_field(project, "folder_path")
         if folder_path:
             Logger.debug(f"File upload from {folder_path} deferred to Phase 4")
         
         return workspace_id
     
     def _extract_workspace_id(self, url: str) -> Optional[str]:
-        """
-        Extract workspace ID from DataLumos URL.
-        
-        Args:
-            url: Current page URL
-            
-        Returns:
-            Workspace ID string, or None if not found
-        """
+        """Extract workspace ID from DataLumos URL."""
         match = re.search(r"/datalumos/(\d+)", url)
         return match.group(1) if match else None
     
     def _parse_keywords(self, keywords_raw: str) -> List[str]:
-        """
-        Parse keywords string into list of individual keywords.
-        
-        Removes quotes and brackets, splits by comma.
-        
-        Args:
-            keywords_raw: Raw keywords string (e.g. from CSV or DB)
-            
-        Returns:
-            List of trimmed keyword strings
-        """
+        """Parse comma-separated keywords, removing quotes and brackets."""
         cleaned = keywords_raw.replace("'", "").replace("[", "").replace("]", "").replace('"', "")
-        parts = cleaned.split(",")
-        return [p.strip() for p in parts if p.strip()]
+        return [p.strip() for p in cleaned.split(",") if p.strip()]
     
     def _ensure_browser(self) -> Page:
-        """
-        Ensure browser is initialized and return the page.
-        
-        Initializes Playwright and browser if not already done.
-        
-        Returns:
-            The Playwright Page object
-        """
+        """Ensure browser is initialized and return the page."""
         if self._page is not None:
             return self._page
         
@@ -218,18 +212,10 @@ class DataLumosUploader:
         self._context = self._browser.new_context()
         self._context.set_default_timeout(self._timeout)
         self._page = self._context.new_page()
-        
         return self._page
     
     def _ensure_authenticated(self) -> None:
-        """
-        Ensure user is authenticated to DataLumos.
-        
-        Performs authentication if not already done.
-        
-        Raises:
-            RuntimeError: If authentication fails
-        """
+        """Ensure user is authenticated to DataLumos."""
         if self._authenticated:
             return
         
@@ -248,11 +234,7 @@ class DataLumosUploader:
         self._authenticated = True
     
     def close(self) -> None:
-        """
-        Close the browser and clean up resources.
-        
-        Safe to call multiple times.
-        """
+        """Close the browser and clean up resources."""
         if self._page is not None:
             try:
                 self._page.close()
