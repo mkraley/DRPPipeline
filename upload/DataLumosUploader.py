@@ -83,6 +83,15 @@ class DataLumosUploader:
         Raises:
             RuntimeError: If upload fails
         """
+        # TODO: for now
+        try:
+            self._ensure_browser()
+            self._ensure_authenticated()
+            print("Login succeeded. Browser will stay open for a few seconds...")
+            self._page.wait_for_timeout(5000)
+        finally:
+            self.close()
+            
         # TODO: Implement in Phase 2-5
         raise NotImplementedError("DataLumosUploader.upload_project() not yet implemented")
     
@@ -119,8 +128,19 @@ class DataLumosUploader:
         if self._authenticated:
             return
         
-        # TODO: Implement in Phase 2 using DataLumosAuthenticator
-        raise NotImplementedError("Authentication not yet implemented")
+        from upload.DataLumosAuthenticator import DataLumosAuthenticator
+        
+        page = self._ensure_browser()
+        authenticator = DataLumosAuthenticator(page, timeout=self._timeout)
+        
+        if not self._username or not self._password:
+            raise RuntimeError(
+                "DataLumos credentials not configured. "
+                "Set datalumos_username and datalumos_password in config."
+            )
+        
+        authenticator.authenticate(self._username, self._password)
+        self._authenticated = True
     
     def close(self) -> None:
         """
