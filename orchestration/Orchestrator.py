@@ -32,6 +32,10 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": "sourcing",
         "class_name": "SocrataCollector",  
     },
+    "upload": {
+        "prereq": "collector",
+        "class_name": "Upload",
+    },
 }
 
 
