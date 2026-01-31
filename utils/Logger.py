@@ -79,6 +79,11 @@ class Logger(metaclass=LoggerMeta):
     _thread_local = threading.local()
 
     @classmethod
+    def get_thread_id(cls) -> int:
+        """Return the human-friendly thread number (1, 2, 3, ...) for the current thread."""
+        return _get_thread_id()
+
+    @classmethod
     def set_current_drpid(cls, drpid: Optional[int]) -> None:
         """Set the current project DRPID for log output (thread-local). Use None to clear."""
         cls._thread_local.drpid = drpid

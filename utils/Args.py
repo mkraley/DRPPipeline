@@ -68,7 +68,13 @@ class Args(metaclass=ArgsMeta):
         "base_output_dir": r"C:\Documents\DataRescue\DRPData",
         "delete_all_db_entries": False,
         "max_workers": 1,  # Parallel projects when > 1 (e.g. collector); 1 = sequential
-        "download_timeout_ms": 30 * 60 * 1000,  # 30 minutes for large (e.g. 10GB+) downloads
+        "download_timeout_ms": 30 * 60 * 1000,  # 30 min for large datasets; increase for 10GB+
+        "use_url_download": True,  # Get URL from Playwright then download with requests (progress/resume)
+        # Upload module settings
+        "datalumos_username": None,  # Required for upload; set in config file
+        "datalumos_password": None,  # Required for upload; set in config file
+        "upload_headless": False,  # Run browser in headless mode for upload
+        "upload_timeout": 60000,  # Default timeout in ms for upload operations
     }
     
     _config: Dict[str, Any] = {}
@@ -141,6 +147,7 @@ class Args(metaclass=ArgsMeta):
             delete_all_db_entries: bool = typer.Option(False, "--delete-all-db-entries", help="Delete all database entries and reset auto-increment before proceeding"),
             max_workers: Optional[int] = typer.Option(None, "--max-workers", "-w", help="Max concurrent projects for modules with prereq (e.g. collector). Default 1 = sequential."),
             download_timeout_ms: Optional[int] = typer.Option(None, "--download-timeout-ms", help="Download timeout in milliseconds (default 30 min). Use for large datasets."),
+            no_use_url_download: bool = typer.Option(False, "--no-use-url-download", help="Use Playwright save_as instead of capturing URL and downloading with requests (no progress/resume)."),
         ) -> None:
             """Callback to capture Typer parsed values."""
             parsed_values["module"] = module
@@ -160,6 +167,8 @@ class Args(metaclass=ArgsMeta):
                 parsed_values["max_workers"] = max_workers
             if download_timeout_ms is not None:
                 parsed_values["download_timeout_ms"] = download_timeout_ms
+            if no_use_url_download:
+                parsed_values["use_url_download"] = False
 
         # Use a single @app.command() so the first positional (module) is not treated as a
         # subcommand. A Group would require the first token to match a subcommand.
