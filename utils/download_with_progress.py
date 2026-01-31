@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import requests
 
+from utils.file_utils import format_file_size
 from utils.Logger import Logger
 
 
@@ -33,6 +34,7 @@ def download_via_url(
     url: str,
     destination_path: Path,
     cookies: Optional[Union[List[Any], Dict[str, str]]] = None,
+    headers: Optional[Dict[str, str]] = None,
     progress_interval_mb: float = 50.0,
     progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
     resume: bool = True,
@@ -46,6 +48,7 @@ def download_via_url(
         url: Download URL (must support GET; optional Range for resume).
         destination_path: Full path for the output file.
         cookies: Cookies for the request (e.g. from page.context.cookies()).
+        headers: Optional extra headers (e.g. X-App-Token for Socrata).
         progress_interval_mb: Log/callback every N MB (0 = only at start/end).
         progress_callback: Optional callback(bytes_so_far, total_or_none).
         resume: If True and file exists, try to resume with Range header.
@@ -61,9 +64,9 @@ def download_via_url(
 
     existing_size = dest.stat().st_size if dest.exists() else 0
     start_byte = existing_size if resume and existing_size else 0
-    headers: Dict[str, str] = {}
+    request_headers: Dict[str, str] = dict(headers) if headers else {}
     if start_byte > 0:
-        headers["Range"] = f"bytes={start_byte}-"
+        request_headers["Range"] = f"bytes={start_byte}-"
 
     get = (session or requests).get
     timeout_val = (timeout_sec or 30, timeout_sec or 300)
@@ -72,10 +75,13 @@ def download_via_url(
             url,
             stream=True,
             cookies=cookie_dict,
-            headers=headers or None,
+            headers=request_headers or None,
             timeout=timeout_val,
         )
         resp.raise_for_status()
+    except requests.HTTPError:
+        # Re-raise so caller can handle 403/401 (e.g. fall back to browser session)
+        raise
     except requests.RequestException as e:
         Logger.error("Download request failed: %s", e)
         return (0, False)
@@ -124,18 +130,18 @@ def download_via_url(
                         if total is not None:
                             pct = 100.0 * written / total if total else 0
                             Logger.info(
-                                "Download progress: %s MB / %s MB (%.1f%%)",
-                                f"{mb:.1f}",
-                                f"{total / (1024*1024):.1f}",
+                                "Download progress: %s / %s (%.1f%%)",
+                                format_file_size(written),
+                                format_file_size(total),
                                 pct,
                             )
                         else:
-                            Logger.info("Download progress: %s MB received", f"{mb:.1f}")
+                            Logger.info("Download progress: %s received", format_file_size(written))
         elapsed = time.perf_counter() - start_time
         rate = (written - start_byte) / (1024 * 1024) / elapsed if elapsed > 0 else 0
         Logger.info(
-            "Download complete: %s bytes in %.1f s (%.2f MB/s)",
-            written,
+            "Download complete: %s in %.1f s (%.2f MB/s)",
+            format_file_size(written),
             elapsed,
             rate,
         )
