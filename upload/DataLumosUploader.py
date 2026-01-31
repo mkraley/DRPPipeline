@@ -5,7 +5,8 @@ Coordinates all upload steps: browser lifecycle, authentication,
 form filling, and file uploads.
 """
 
-from typing import Any, Dict, Optional
+import re
+from typing import Any, Dict, List, Optional
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 
@@ -83,17 +84,121 @@ class DataLumosUploader:
         Raises:
             RuntimeError: If upload fails
         """
-        # TODO: for now
-        try:
-            self._ensure_browser()
-            self._ensure_authenticated()
-            print("Login succeeded. Browser will stay open for a few seconds...")
-            self._page.wait_for_timeout(5000)
-        finally:
-            self.close()
+        page = self._ensure_browser()
+        self._ensure_authenticated()
+        
+        from upload.DataLumosFormFiller import DataLumosFormFiller
+        
+        form_filler = DataLumosFormFiller(page, timeout=self._timeout)
+        
+        # Navigate to workspace
+        Logger.info("Navigating to DataLumos workspace")
+        page.goto(self.WORKSPACE_URL, wait_until="domcontentloaded")
+        page.wait_for_load_state("networkidle", timeout=120000)
+        
+        # Click New Project button
+        new_project_btn = page.locator(".btn > span:nth-child(3)")
+        new_project_btn.wait_for(state="visible", timeout=360000)
+        form_filler.wait_for_obscuring_elements()
+        new_project_btn.click()
+        
+        # Fill title (creates project and navigates to workspace)
+        title = (project.get("title") or "").strip()
+        form_filler.fill_title(title)
+        
+        # Extract workspace ID from URL
+        current_url = page.url
+        workspace_id = self._extract_workspace_id(current_url)
+        if not workspace_id:
+            raise RuntimeError(f"Could not extract workspace ID from URL: {current_url}")
+        
+        Logger.info(f"Created project with workspace ID: {workspace_id}")
+        
+        # Expand all form sections
+        form_filler.expand_all_sections()
+        
+        # Fill agency and office (two add-value calls)
+        agencies: List[str] = []
+        agency = (project.get("agency") or "").strip()
+        office = (project.get("office") or "").strip()
+        if agency:
+            agencies.append(agency)
+        if office:
+            agencies.append(office)
+        if agencies:
+            form_filler.fill_agency(agencies)
+        
+        # Fill summary
+        summary = (project.get("summary") or "").strip()
+        form_filler.fill_summary(summary)
+        
+        # Fill original distribution URL
+        source_url = (project.get("source_url") or "").strip()
+        form_filler.fill_original_url(source_url)
+        
+        # Fill keywords
+        keywords_raw = (project.get("keywords") or "").strip()
+        if keywords_raw:
+            keywords = self._parse_keywords(keywords_raw)
+            form_filler.fill_keywords(keywords)
+        
+        # Fill geographic coverage (if present in project - not in current schema)
+        geographic = (project.get("geographic_coverage") or "").strip()
+        if geographic:
+            form_filler.fill_geographic_coverage(geographic)
+        
+        # Fill time period
+        time_start = (project.get("time_start") or "").strip()
+        time_end = (project.get("time_end") or "").strip()
+        if time_start or time_end:
+            form_filler.fill_time_period(time_start or None, time_end or None)
+        
+        # Fill data types
+        data_types = (project.get("data_types") or "").strip()
+        if data_types:
+            form_filler.fill_data_types(data_types)
+        
+        # Fill collection notes
+        collection_notes = (project.get("collection_notes") or "").strip()
+        download_date = (project.get("download_date") or "").strip()
+        if collection_notes or download_date:
+            form_filler.fill_collection_notes(collection_notes, download_date or None)
+        
+        # File upload handled in Phase 4
+        folder_path = (project.get("folder_path") or "").strip()
+        if folder_path:
+            Logger.debug(f"File upload from {folder_path} deferred to Phase 4")
+        
+        return workspace_id
+    
+    def _extract_workspace_id(self, url: str) -> Optional[str]:
+        """
+        Extract workspace ID from DataLumos URL.
+        
+        Args:
+            url: Current page URL
             
-        # TODO: Implement in Phase 2-5
-        raise NotImplementedError("DataLumosUploader.upload_project() not yet implemented")
+        Returns:
+            Workspace ID string, or None if not found
+        """
+        match = re.search(r"/datalumos/(\d+)", url)
+        return match.group(1) if match else None
+    
+    def _parse_keywords(self, keywords_raw: str) -> List[str]:
+        """
+        Parse keywords string into list of individual keywords.
+        
+        Removes quotes and brackets, splits by comma.
+        
+        Args:
+            keywords_raw: Raw keywords string (e.g. from CSV or DB)
+            
+        Returns:
+            List of trimmed keyword strings
+        """
+        cleaned = keywords_raw.replace("'", "").replace("[", "").replace("]", "").replace('"', "")
+        parts = cleaned.split(",")
+        return [p.strip() for p in parts if p.strip()]
     
     def _ensure_browser(self) -> Page:
         """
