@@ -106,10 +106,10 @@ class Args(metaclass=ArgsMeta):
         parsed_args = cls._parse_command_line()
         
         # Load config file if provided (middle priority - overrides defaults)
-        # Default to "./DRPPipeline_config.json" if not explicitly provided
+        # Default to "./config.json" if not explicitly provided
         config_path = config_file or parsed_args.get("config")
         if config_path is None:
-            config_path = "./DRPPipeline_config.json"
+            config_path = "./config.json"
         
         if config_path:
             if not isinstance(config_path, Path):
@@ -140,7 +140,7 @@ class Args(metaclass=ArgsMeta):
         def callback(
             ctx: typer.Context,
             module: str = typer.Argument(..., help="Module to run: noop, sourcing, collectors"),
-            config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to configuration file (JSON format). Default: ./DRPPipeline_config.json"),
+            config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to configuration file (JSON format). Default: ./config.json"),
             log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Set the logging level", case_sensitive=False),
             num_rows: Optional[int] = typer.Option(None, "--num-rows", "-n", help="Max projects or candidate URLs per batch; None = unlimited"),
             db_path: Optional[Path] = typer.Option(None, "--db-path", help="Path to SQLite database file"),

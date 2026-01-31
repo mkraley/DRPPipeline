@@ -137,7 +137,7 @@ class TestArgs(unittest.TestCase):
         self.assertTrue(Args._initialized)
         # Should warn about default config file not found
         self.assertIn("not found", stderr_capture.getvalue())
-        self.assertIn("DRPPipeline_config.json", stderr_capture.getvalue())
+        self.assertIn("config.json", stderr_capture.getvalue())
 
         sys.argv = original_argv
         sys.stderr = original_stderr

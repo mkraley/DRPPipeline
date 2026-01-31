@@ -54,10 +54,10 @@ DRPPipeline/
 
 The pipeline can be configured via:
 - **Command line arguments** (highest priority)
-- **Config file** (JSON format, default: `./DRPPipeline_config.json`)
+- **Config file** (JSON format, default: `./config.json`)
 - **Default values** (lowest priority, defined in `Args._defaults`)
 
-**Note:** If `./DRPPipeline_config.json` exists, it will be automatically loaded. If it doesn't exist, a warning is shown but the pipeline continues with defaults and command-line arguments.
+**Note:** If `./config.json` exists, it will be automatically loaded. If it doesn't exist, a warning is shown but the pipeline continues with defaults and command-line arguments.
 
 #### Command Line Arguments
 
@@ -69,7 +69,7 @@ python main.py <module> [options]
 - `module`: Module to run (`noop`, `sourcing`, `collectors`)
 
 **Optional:**
-- `--config, -c`: Path to configuration file (JSON format). Default: `./DRPPipeline_config.json`
+- `--config, -c`: Path to configuration file (JSON format). Default: `./config.json`
 - `--log-level, -l`: Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`)
 - `--num-rows, -n`: Max projects or candidate URLs per batch (None = unlimited)
 - `--db-path`: Path to SQLite database file
@@ -78,7 +78,7 @@ python main.py <module> [options]
 
 #### Config File Format
 
-Create a JSON file named `DRPPipeline_config.json` in the project root (or specify a different path with `--config`):
+Create a JSON file named `config.json` in the project root (or specify a different path with `--config`):
 
 ```json
 {
@@ -92,7 +92,7 @@ Create a JSON file named `DRPPipeline_config.json` in the project root (or speci
 }
 ```
 
-**Default behavior:** The pipeline automatically looks for `./DRPPipeline_config.json` in the current directory. If the file doesn't exist, a warning is displayed but the pipeline continues with default values and command-line arguments.
+**Default behavior:** The pipeline automatically looks for `./config.json` in the current directory. If the file doesn't exist, a warning is displayed but the pipeline continues with default values and command-line arguments.
 
 ## Usage
 
