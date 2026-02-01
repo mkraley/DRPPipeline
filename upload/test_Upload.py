@@ -32,7 +32,7 @@ class TestDataLumosUploader(unittest.TestCase):
         self.temp_dir = Path(tempfile.mkdtemp())
         self.test_db_path = self.temp_dir / "test_drp_pipeline.db"
         self.storage = Storage.initialize("StorageSQLLite", db_path=self.test_db_path)
-        self.uploader = DataLumosUploader(username="", password="")
+        self.uploader = DataLumosUploader()
 
     def tearDown(self) -> None:
         """Clean up after each test."""
@@ -117,7 +117,7 @@ class TestDataLumosUploaderValidation(unittest.TestCase):
         Args._initialized = False
         Args.initialize()
         Logger.initialize(log_level="WARNING")
-        self.uploader = DataLumosUploader(username="", password="")
+        self.uploader = DataLumosUploader()
         self.temp_dir = Path(tempfile.mkdtemp())
 
     def tearDown(self) -> None:

@@ -17,14 +17,6 @@ from utils.Errors import record_error
 from utils.Logger import Logger
 
 
-def _get_upload_config(name: str, default: Any) -> Any:
-    """Safely get config from Args (handles uninitialized case)."""
-    try:
-        return getattr(Args, name, default)
-    except (RuntimeError, AttributeError):
-        return default
-
-
 class DataLumosUploader:
     """
     Upload module that uploads collected project data to DataLumos.
@@ -39,27 +31,8 @@ class DataLumosUploader:
     
     WORKSPACE_URL = "https://www.datalumos.org/datalumos/workspace"
     
-    def __init__(
-        self,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-        headless: Optional[bool] = None,
-        timeout: Optional[int] = None,
-    ) -> None:
-        """
-        Initialize the DataLumos uploader.
-        
-        Args:
-            username: DataLumos username/email (default: from Args)
-            password: DataLumos password (default: from Args)
-            headless: Whether to run browser in headless mode
-            timeout: Default timeout in milliseconds for operations
-        """
-        self._username = username if username is not None else _get_upload_config("datalumos_username", None)
-        self._password = password if password is not None else _get_upload_config("datalumos_password", None)
-        self._headless = headless if headless is not None else _get_upload_config("upload_headless", False)
-        self._timeout = timeout if timeout is not None else _get_upload_config("upload_timeout", 60000)
-        
+    def __init__(self) -> None:
+        """Initialize the DataLumos uploader. Config from Args."""
         self._playwright: Optional[Playwright] = None
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
@@ -88,7 +61,17 @@ class DataLumosUploader:
             for error in errors:
                 record_error(drpid, error)
             return
-        
+
+        source_url = self._get_field(project, "source_url")
+        if source_url:
+            page = self._ensure_browser()
+            from upload.GWDANominator import GWDANominator
+            nominator = GWDANominator(page, timeout=Args.upload_timeout)
+            success, error = nominator.nominate(source_url)
+            if not success:
+                record_error(drpid, error or "GWDA nomination failed")
+                return
+
         try:
             datalumos_id = self._upload_project(project, drpid)
             Storage.update_record(drpid, {
@@ -144,7 +127,7 @@ class DataLumosUploader:
         
         from upload.DataLumosFormFiller import DataLumosFormFiller
         
-        form_filler = DataLumosFormFiller(page, timeout=self._timeout)
+        form_filler = DataLumosFormFiller(page, timeout=Args.upload_timeout)
         
         existing_id = self._get_field(project, "datalumos_id")
         
@@ -213,7 +196,7 @@ class DataLumosUploader:
         folder_path = self._get_field(project, "folder_path")
         if folder_path:
             from upload.DataLumosFileUploader import DataLumosFileUploader
-            file_uploader = DataLumosFileUploader(page, timeout=self._timeout)
+            file_uploader = DataLumosFileUploader(page, timeout=Args.upload_timeout)
             file_uploader.upload_files(folder_path)
 
         return workspace_id
@@ -236,7 +219,7 @@ class DataLumosUploader:
         Logger.debug("Initializing Playwright browser")
         self._playwright = sync_playwright().start()
         self._browser = self._playwright.chromium.launch(
-            headless=self._headless,
+            headless=Args.upload_headless,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--disable-dev-shm-usage",
@@ -252,7 +235,7 @@ class DataLumosUploader:
             locale="en-US",
             timezone_id="America/New_York",
         )
-        self._context.set_default_timeout(self._timeout)
+        self._context.set_default_timeout(Args.upload_timeout)
         self._page = self._context.new_page()
         return self._page
     
@@ -264,15 +247,15 @@ class DataLumosUploader:
         from upload.DataLumosAuthenticator import DataLumosAuthenticator
         
         page = self._ensure_browser()
-        authenticator = DataLumosAuthenticator(page, timeout=self._timeout)
+        authenticator = DataLumosAuthenticator(page, timeout=Args.upload_timeout)
         
-        if not self._username or not self._password:
+        if not Args.datalumos_username or not Args.datalumos_password:
             raise RuntimeError(
                 "DataLumos credentials not configured. "
                 "Set datalumos_username and datalumos_password in config."
             )
         
-        authenticator.authenticate(self._username, self._password)
+        authenticator.authenticate(Args.datalumos_username, Args.datalumos_password)
         self._authenticated = True
     
     def close(self) -> None:

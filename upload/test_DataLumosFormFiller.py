@@ -153,7 +153,7 @@ class TestDataLumosUploaderHelpers(unittest.TestCase):
         """Test _extract_workspace_id extracts ID from URL."""
         from upload.DataLumosUploader import DataLumosUploader
         
-        uploader = DataLumosUploader("user", "pass")
+        uploader = DataLumosUploader()
         url = "https://www.datalumos.org/datalumos/workspace?goToPath=/datalumos/239181"
         result = uploader._extract_workspace_id(url)
         self.assertEqual(result, "239181")
@@ -162,7 +162,7 @@ class TestDataLumosUploaderHelpers(unittest.TestCase):
         """Test _extract_workspace_id returns None when no match."""
         from upload.DataLumosUploader import DataLumosUploader
         
-        uploader = DataLumosUploader("user", "pass")
+        uploader = DataLumosUploader()
         result = uploader._extract_workspace_id("https://example.com/other")
         self.assertIsNone(result)
 
@@ -170,7 +170,7 @@ class TestDataLumosUploaderHelpers(unittest.TestCase):
         """Test _parse_keywords parses comma-separated string."""
         from upload.DataLumosUploader import DataLumosUploader
         
-        uploader = DataLumosUploader("user", "pass")
+        uploader = DataLumosUploader()
         result = uploader._parse_keywords("key1, key2, 'key3', [key4]")
         self.assertEqual(result, ["key1", "key2", "key3", "key4"])
 
@@ -178,7 +178,7 @@ class TestDataLumosUploaderHelpers(unittest.TestCase):
         """Test _parse_keywords returns empty list for empty input."""
         from upload.DataLumosUploader import DataLumosUploader
         
-        uploader = DataLumosUploader("user", "pass")
+        uploader = DataLumosUploader()
         result = uploader._parse_keywords("")
         self.assertEqual(result, [])
 

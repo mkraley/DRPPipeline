@@ -76,6 +76,10 @@ class Args(metaclass=ArgsMeta):
         "datalumos_password": None,  # Required for upload; set in config file
         "upload_headless": False,  # Run browser in headless mode for upload
         "upload_timeout": 60000,  # Default timeout in ms for upload operations
+        # GWDA nomination (before DataLumos upload)
+        "gwda_your_name": "Michael Kraley",
+        "gwda_institution": "Data Rescue Project",
+        "gwda_email": None,  # Uses datalumos_username if not set
     }
     
     _config: Dict[str, Any] = {}
@@ -123,7 +127,11 @@ class Args(metaclass=ArgsMeta):
         
         # Apply command line arguments (highest priority - overrides config file and defaults)
         cls._apply_command_line_args(parsed_args)
-        
+
+        # gwda_email fallback: use datalumos_username if gwda_email not set
+        gwda_email = cls._config.get("gwda_email") or cls._config.get("datalumos_username")
+        cls._config["gwda_email"] = gwda_email
+
         cls._initialized = True
 
     @classmethod
