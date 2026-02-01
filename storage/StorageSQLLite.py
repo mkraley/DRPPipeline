@@ -33,6 +33,11 @@ class StorageSQLLite:
     _schema_sql = """
     CREATE TABLE IF NOT EXISTS projects (
         DRPID INTEGER PRIMARY KEY AUTOINCREMENT,
+        status TEXT,
+        status_notes TEXT,
+        warnings TEXT,
+        errors TEXT,
+        datalumos_id TEXT UNIQUE,
         source_url TEXT NOT NULL UNIQUE,
         folder_path TEXT,
         title TEXT,
@@ -47,12 +52,7 @@ class StorageSQLLite:
         download_date TEXT,
         collection_notes TEXT,
         file_size TEXT,
-        datalumos_id TEXT UNIQUE,
-        published_url TEXT,
-        status TEXT,
-        status_notes TEXT,
-        warnings TEXT,
-        errors TEXT
+        published_url TEXT
     );
     
     CREATE INDEX IF NOT EXISTS idx_source_url ON projects(source_url);

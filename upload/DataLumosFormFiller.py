@@ -111,6 +111,8 @@ class DataLumosFormFiller:
                 continue
             
             value = value.strip()
+            if value == 'CDC':
+                value = 'United States Department of Health and Human Services. Centers for Disease Control and Prevention'
             add_btn = self._page.locator(add_value_selector)
             self.wait_for_obscuring_elements()
             add_btn.click()
@@ -157,7 +159,12 @@ class DataLumosFormFiller:
         """Fill the summary/description field (WYSIWYG)."""
         if _is_empty(summary):
             return
-        self._fill_wysiwyg("#edit-dcterms_description_0 > span:nth-child(2)", summary, ".glyphicon-ok")
+        self._fill_wysiwyg(
+            "#edit-dcterms_description_0", 
+            summary, 
+            "#groupAttr0 iframe.wysihtml5-sandbox", 
+            ".glyphicon-ok"
+        )
     
     def fill_original_url(self, url: str) -> None:
         """Fill the original distribution URL field."""
@@ -269,8 +276,9 @@ class DataLumosFormFiller:
             return
         
         self._fill_wysiwyg(
-            "#edit-imeta_collectionNotes_0 > span:nth-child(2)",
+            "#edit-imeta_collectionNotes_0",
             combined,
+            "#groupAttr1 iframe.wysihtml5-sandbox",
             ".editable-submit",
         )
     
@@ -294,7 +302,7 @@ class DataLumosFormFiller:
         url_input.press("Enter")
     
     def _fill_wysiwyg(
-        self, edit_selector: str, text: str, save_selector: str
+        self, edit_selector: str, text: str, frame_selector: str, save_selector: str
     ) -> None:
         """
         Fill a WYSIWYG editor field (iframe-based).
@@ -308,7 +316,8 @@ class DataLumosFormFiller:
         self.wait_for_obscuring_elements()
         edit_btn.click()
         
-        frame = self._page.frame_locator("#groupAttr0 iframe.wysihtml5-sandbox")
+        frame = self._page.frame_locator(frame_selector)
+        #groupAttr1 > div > div:nth-child(7) > div > div > div > div > div > span.editable-container.editable-inline > div > form > div > div:nth-child(1) > div.editable-input > iframe
         body = frame.locator("body")
         body.click()
         self._page.wait_for_timeout(300)
