@@ -233,7 +233,12 @@ class DataLumosFormFiller:
         save_btn.click()
     
     def fill_data_types(self, data_type: str) -> None:
-        """Fill the data types field by selecting the span containing the text."""
+        """
+        Fill the data types field by selecting the checklist option.
+        
+        After clicking edit, an editable-checklist appears with label+span options.
+        Clicks the label (not span) scoped to the checklist for robustness.
+        """
         if _is_empty(data_type):
             return
         
@@ -242,8 +247,12 @@ class DataLumosFormFiller:
         edit_btn.click()
         self.wait_for_obscuring_elements()
         
-        datatype_span = self._page.locator(f"xpath=//span[contains(text(), '{data_type}')]")
-        datatype_span.click()
+        # Double-quote wrapper handles apostrophes; escape any internal double quotes
+        safe = data_type.replace('"', '\\"')
+        datatype_label = self._page.locator(
+            f'.editable-checklist label:has(span:has-text("{safe}"))'
+        )
+        datatype_label.click()
         
         save_btn = self._page.locator(".editable-submit")
         save_btn.click()

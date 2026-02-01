@@ -43,6 +43,7 @@ class StorageSQLLite:
         time_start TEXT,
         time_end TEXT,
         data_types TEXT,
+        extensions TEXT,
         download_date TEXT,
         collection_notes TEXT,
         file_size TEXT,
@@ -155,7 +156,17 @@ class StorageSQLLite:
             # Create schema
             self._connection.executescript(self._schema_sql)
             self._connection.commit()
-            
+
+            # Migration: add extensions column if missing (existing DBs)
+            try:
+                self._connection.execute(
+                    "ALTER TABLE projects ADD COLUMN extensions TEXT"
+                )
+                self._connection.commit()
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+
             self._initialized = True
             Logger.info(f"Storage initialized: {self._db_path}")
             

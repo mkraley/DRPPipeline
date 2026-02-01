@@ -265,8 +265,8 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         with patch.object(downloader, '_find_download_button', return_value=mock_button.first), \
              patch.object(downloader, '_get_file_extension', return_value="csv"):
             # Manually create file to simulate download (save_as is mocked). This test
-            # asserts that _download_file updates _result (dataset_path, file_extensions,
-            # dataset_size, status) correctly after a successful save.
+            # asserts that _download_file updates _result (file_size, extensions,
+            # download_date) correctly after a successful save.
             test_file.write_text("test,data\n1,2")
             
             result = downloader._download_file(self.temp_dir, timeout=60000)
@@ -274,6 +274,8 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         self.assertTrue(result)
         self.assertIn("file_size", self.collector._result)
         self.assertEqual(self.collector._result["file_size"], str(test_file.stat().st_size))
+        self.assertIn("extensions", self.collector._result)
+        self.assertEqual(self.collector._result["extensions"], "pdf, csv")
         self.assertIn("download_date", self.collector._result)
     
     @patch('collectors.SocrataCollector.sync_playwright')

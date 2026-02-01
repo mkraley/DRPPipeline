@@ -90,7 +90,7 @@ class DataLumosUploader:
             return
         
         try:
-            datalumos_id = self._upload_project(project)
+            datalumos_id = self._upload_project(project, drpid)
             Storage.update_record(drpid, {
                 "datalumos_id": datalumos_id,
                 "status": "upload",
@@ -124,9 +124,17 @@ class DataLumosUploader:
         """Get and trim a project field. Returns empty string if missing."""
         return (project.get(key) or "").strip()
     
-    def _upload_project(self, project: Dict[str, Any]) -> str:
+    def _project_url(self, workspace_id: str) -> str:
+        """Build URL for a DataLumos project page."""
+        return f"{self.WORKSPACE_URL}?goToLevel=project&goToPath=/datalumos/{workspace_id}#"
+
+    def _upload_project(self, project: Dict[str, Any], drpid: int) -> str:
         """
         Upload a project to DataLumos.
+        
+        If project already has datalumos_id, navigates directly to that project
+        and continues with form filling. Otherwise creates a new project, saves
+        datalumos_id to Storage immediately, then fills the form.
         
         Returns:
             The DataLumos workspace ID.
@@ -138,26 +146,38 @@ class DataLumosUploader:
         
         form_filler = DataLumosFormFiller(page, timeout=self._timeout)
         
-        Logger.info("Navigating to DataLumos workspace")
-        page.goto(self.WORKSPACE_URL, wait_until="domcontentloaded")
-        page.wait_for_load_state("networkidle", timeout=120000)
+        existing_id = self._get_field(project, "datalumos_id")
         
-        from upload.DataLumosAuthenticator import wait_for_human_verification
-        wait_for_human_verification(page, timeout=60000)
-        
-        new_project_btn = page.locator(".btn > span:nth-child(3)")
-        form_filler.wait_for_obscuring_elements()
-        new_project_btn.click()
-        
-        form_filler.fill_title(self._get_field(project, "title"))
-        
-        wait_for_human_verification(page, timeout=60000)
-        
-        workspace_id = self._extract_workspace_id(page.url)
-        if not workspace_id:
-            raise RuntimeError(f"Could not extract workspace ID from URL: {page.url}")
-        
-        Logger.info(f"Created project with workspace ID: {workspace_id}")
+        if existing_id:
+            Logger.info(f"Resuming upload for existing project datalumos_id={existing_id}")
+            project_url = self._project_url(existing_id)
+            page.goto(project_url, wait_until="domcontentloaded")
+            page.wait_for_load_state("networkidle", timeout=120000)
+            from upload.DataLumosAuthenticator import wait_for_human_verification
+            wait_for_human_verification(page, timeout=60000)
+            workspace_id = existing_id
+        else:
+            Logger.info("Navigating to DataLumos workspace")
+            page.goto(self.WORKSPACE_URL, wait_until="domcontentloaded")
+            page.wait_for_load_state("networkidle", timeout=120000)
+            
+            from upload.DataLumosAuthenticator import wait_for_human_verification
+            wait_for_human_verification(page, timeout=60000)
+            
+            new_project_btn = page.locator(".btn > span:nth-child(3)")
+            form_filler.wait_for_obscuring_elements()
+            new_project_btn.click()
+            
+            form_filler.fill_title(self._get_field(project, "title"))
+            
+            wait_for_human_verification(page, timeout=60000)
+            
+            workspace_id = self._extract_workspace_id(page.url)
+            if not workspace_id:
+                raise RuntimeError(f"Could not extract workspace ID from URL: {page.url}")
+            
+            Logger.info(f"Created project with workspace ID: {workspace_id}")
+            Storage.update_record(drpid, {"datalumos_id": workspace_id})
         
         form_filler.expand_all_sections()
         
@@ -192,8 +212,10 @@ class DataLumosUploader:
         
         folder_path = self._get_field(project, "folder_path")
         if folder_path:
-            Logger.debug(f"File upload from {folder_path} deferred to Phase 4")
-        
+            from upload.DataLumosFileUploader import DataLumosFileUploader
+            file_uploader = DataLumosFileUploader(page, timeout=self._timeout)
+            file_uploader.upload_files(folder_path)
+
         return workspace_id
     
     def _extract_workspace_id(self, url: str) -> Optional[str]:

@@ -174,7 +174,7 @@ class SocrataDatasetDownloader:
         pdf_size = sum(f.stat().st_size for f in folder_path.glob("*.pdf") if f.exists())
         total_size = bytes_written + pdf_size
         self._collector._result["file_size"] = str(total_size)
-        self._collector._result["data_types"] = f"pdf, {file_extension}" if file_extension else "pdf"
+        self._collector._result["extensions"] = f"pdf, {file_extension}" if file_extension else "pdf"
         self._collector._result["download_date"] = datetime.now().strftime("%Y-%m-%d")
         return True
 
@@ -296,7 +296,7 @@ class SocrataDatasetDownloader:
             pdf_size = sum(f.stat().st_size for f in folder_path.glob("*.pdf") if f.exists())
             total_size = dataset_size + pdf_size
             self._collector._result["file_size"] = str(total_size)
-            self._collector._result["data_types"] = f"pdf, {file_extension}" if file_extension else "pdf"
+            self._collector._result["extensions"] = f"pdf, {file_extension}" if file_extension else "pdf"
             self._collector._result["download_date"] = datetime.now().strftime("%Y-%m-%d")
             return True
         else:
@@ -351,7 +351,7 @@ class SocrataDatasetDownloader:
         total_size = dataset_size + pdf_size
 
         self._collector._result["file_size"] = str(total_size)
-        self._collector._result["data_types"] = f"pdf, {file_extension}" if file_extension else "pdf"
+        self._collector._result["extensions"] = f"pdf, {file_extension}" if file_extension else "pdf"
         self._collector._result["download_date"] = datetime.now().strftime("%Y-%m-%d")
         return True
 
