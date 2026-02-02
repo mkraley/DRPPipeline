@@ -9,7 +9,9 @@ Logic derived from chiara_upload.update_google_sheet().
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from utils.Args import Args
 from utils.Logger import Logger
+from utils.file_utils import format_file_size
 
 try:
     from google.oauth2 import service_account
@@ -48,25 +50,18 @@ class GoogleSheetUpdater:
 
     def update(
         self,
-        sheet_id: str,
-        credentials_path: Path,
-        sheet_name: str,
         source_url: str,
         workspace_id: str,
         project: Dict[str, Any],
-        username: str = "mkraley",
     ) -> tuple[bool, Optional[str]]:
         """
         Update the Google Sheet row matching source_url with publishing data.
+        Reads Args for google_sheet_id, google_credentials, google_sheet_name, google_username.
 
         Args:
-            sheet_id: Google Sheet ID (from URL).
-            credentials_path: Path to service account credentials JSON.
-            sheet_name: Worksheet/tab name.
             source_url: Source URL to match in the URL column.
             workspace_id: DataLumos workspace ID (for Download Location).
             project: Project dict (download_date, file_size, extensions).
-            username: Value for "Claimed" column.
 
         Returns:
             (True, None) on success, (False, error_message) on failure.
@@ -76,6 +71,10 @@ class GoogleSheetUpdater:
                 "Google Sheets API not installed. "
                 "Install with: pip install google-api-python-client google-auth google-auth-httplib2"
             )
+
+        sheet_id = Args.google_sheet_id
+        credentials_path = Path(Args.google_credentials) if Args.google_credentials else None
+        sheet_name = Args.google_sheet_name
 
         if not sheet_id or not credentials_path:
             return False, "Google Sheet ID and credentials path are required"
@@ -108,6 +107,7 @@ class GoogleSheetUpdater:
 
             Logger.debug(f"Updating Google Sheet row {row_number}")
 
+            username = Args.google_username
             update_requests = self._build_update_requests(
                 sheet_name, row_number, column_map, workspace_id, project, username
             )
@@ -280,8 +280,13 @@ class GoogleSheetUpdater:
                 "values": [[download_location]],
             })
 
-        file_size = (project.get("file_size") or "").strip()
-        _add("Dataset Size", file_size)
+        file_size_raw = (project.get("file_size") or "").strip()
+        if file_size_raw:
+            try:
+                file_size_display = format_file_size(int(float(file_size_raw)))
+            except (ValueError, TypeError):
+                file_size_display = file_size_raw
+            _add("Dataset Size", file_size_display)
 
         extensions = (project.get("extensions") or "").strip()
         _add("File extensions of data uploads", extensions)

@@ -156,14 +156,14 @@ class DataLumosFormFiller:
         self._page.wait_for_timeout(300)
     
     def fill_summary(self, summary: str) -> None:
-        """Fill the summary/description field (WYSIWYG)."""
+        """Fill the summary/description field (WYSIWYG). Preserves HTML markup."""
         if _is_empty(summary):
             return
         self._fill_wysiwyg(
-            "#edit-dcterms_description_0", 
-            summary, 
-            "#groupAttr0 iframe.wysihtml5-sandbox", 
-            ".glyphicon-ok"
+            "#edit-dcterms_description_0",
+            summary,
+            "#groupAttr0 iframe.wysihtml5-sandbox",
+            ".glyphicon-ok",
         )
     
     def fill_original_url(self, url: str) -> None:
@@ -274,7 +274,6 @@ class DataLumosFormFiller:
             combined = download_part
         else:
             return
-        
         self._fill_wysiwyg(
             "#edit-imeta_collectionNotes_0",
             combined,
@@ -306,25 +305,28 @@ class DataLumosFormFiller:
     ) -> None:
         """
         Fill a WYSIWYG editor field (iframe-based).
-        
+
+        Sets the iframe body's innerHTML so HTML markup (paragraphs, links,
+        bold, etc.) is rendered as rich text rather than literal tags.
+
         Args:
             edit_selector: Selector for the edit button
-            text: Text to set in the editor body
+            text: HTML or plain text to set in the editor body
+            frame_selector: Selector for the editor iframe
             save_selector: Selector for the save button
         """
         edit_btn = self._page.locator(edit_selector)
         self.wait_for_obscuring_elements()
         edit_btn.click()
-        
+
         frame = self._page.frame_locator(frame_selector)
-        #groupAttr1 > div > div:nth-child(7) > div > div > div > div > div > span.editable-container.editable-inline > div > form > div > div:nth-child(1) > div.editable-input > iframe
         body = frame.locator("body")
         body.click()
         self._page.wait_for_timeout(300)
-        
+
         body.evaluate(
-            """(el, text) => {
-                el.textContent = text;
+            """(el, html) => {
+                el.innerHTML = html;
                 el.dispatchEvent(new Event('input', { bubbles: true }));
             }""",
             text,

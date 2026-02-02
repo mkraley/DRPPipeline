@@ -100,8 +100,8 @@ class SocrataDatasetDownloader:
         Updates result with download status, path, extension, and size.
         """
         if timeout is None:
-            timeout = getattr(Args, "download_timeout_ms", 30 * 60 * 1000) or 30 * 60 * 1000
-        use_url_download = getattr(Args, "use_url_download", True)
+            timeout = Args.download_timeout_ms or 30 * 60 * 1000
+        use_url_download = Args.use_url_download
         page = self._collector._page
 
         try:
@@ -156,7 +156,7 @@ class SocrataDatasetDownloader:
         dataset_filename = f"{stem}.csv"
         dataset_path = folder_path / dataset_filename
         timeout_sec = (timeout // 1000) if timeout else 3600
-        app_token = getattr(Args, "socrata_app_token", None)
+        app_token = Args.socrata_app_token
         extra_headers = {"X-App-Token": app_token} if app_token else None
         bytes_written, ok = download_via_url(
             export_url,
@@ -214,7 +214,7 @@ class SocrataDatasetDownloader:
         Returns:
             True if successful, False otherwise
         """
-        use_url_download = getattr(Args, "use_url_download", True)
+        use_url_download = Args.use_url_download
         page = self._collector._page
         download_button = self._find_download_button()
         if download_button is None:

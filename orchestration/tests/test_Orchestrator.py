@@ -36,6 +36,7 @@ class TestOrchestrator(unittest.TestCase):
         self.assertIn("noop", str(cm.exception))
         self.assertIn("sourcing", str(cm.exception))
         self.assertIn("collector", str(cm.exception))
+        self.assertIn("cleanup_inprogress", str(cm.exception))
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")
@@ -57,6 +58,26 @@ class TestOrchestrator(unittest.TestCase):
         mock_find_class.assert_called_once_with("Sourcing")
         mock_sourcing_cls.assert_called_once()
         mock_sourcing_instance.run.assert_called_once_with(-1)
+
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
+    def test_run_cleanup_inprogress_calls_run_minus_one(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
+    ) -> None:
+        """Test run('cleanup_inprogress') instantiates CleanupInProgress and calls run(-1)."""
+        mock_storage = MagicMock()
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.get_instance.return_value = mock_storage
+        mock_cleanup_instance = MagicMock()
+        mock_cleanup_cls = MagicMock(return_value=mock_cleanup_instance)
+        mock_find_class.return_value = mock_cleanup_cls
+
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
+            Orchestrator.run("cleanup_inprogress")
+
+        mock_find_class.assert_called_once_with("CleanupInProgress")
+        mock_cleanup_cls.assert_called_once()
+        mock_cleanup_instance.run.assert_called_once_with(-1)
 
     @patch("orchestration.Orchestrator.record_error")
     @patch("orchestration.Orchestrator._find_module_class")

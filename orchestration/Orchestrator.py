@@ -40,6 +40,10 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": "upload",
         "class_name": "DataLumosPublisher",
     },
+    "cleanup_inprogress": {
+        "prereq": None,
+        "class_name": "CleanupInProgress",
+    },
 }
 
 
@@ -152,7 +156,7 @@ class Orchestrator:
             # Modules with prereq: call run(drpid) for each eligible project
             projects = Storage.list_eligible_projects(prereq, num_rows)
             Logger.info(f"Orchestrator module={module!r} eligible projects={len(projects)}")
-            max_workers = getattr(Args, "max_workers", 1) or 1
+            max_workers = Args.max_workers or 1
             max_workers = max(1, int(max_workers))
 
             def run_one(proj: Dict[str, Any]) -> None:

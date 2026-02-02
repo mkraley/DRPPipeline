@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from storage import Storage
+from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from utils.Args import Args
 from utils.Errors import record_crash, record_error
 from utils.Logger import Logger
@@ -31,18 +32,14 @@ class DataLumosPublisher:
     and status="publisher".
 
     Prerequisites: status="upload" and no errors
-    Success status: status="publisher"
+    Success status: status="publisher"; status="updated_inventory" after Google Sheet update (if configured).
     """
 
     WORKSPACE_URL = "https://www.datalumos.org/datalumos/workspace"
 
     def __init__(self) -> None:
         """Initialize the DataLumos publisher. Config from Args."""
-        self._playwright: Optional[Playwright] = None
-        self._browser: Optional[Browser] = None
-        self._context: Optional[BrowserContext] = None
-        self._page: Optional[Page] = None
-        self._authenticated = False
+        self._session = DataLumosBrowserSession()
 
     def run(self, drpid: int) -> None:
         """
@@ -68,8 +65,8 @@ class DataLumosPublisher:
             return
 
         try:
-            page = self._ensure_browser()
-            self._ensure_authenticated()
+            page = self._session.ensure_browser()
+            self._session.ensure_authenticated()
 
             project_url = self._project_url(workspace_id)
             page.goto(project_url, wait_until="domcontentloaded")
@@ -95,7 +92,7 @@ class DataLumosPublisher:
             record_error(drpid, f"Publish failed: {e}")
             raise
         finally:
-            self.close()
+            self._session.close()
 
     def _get_field(self, project: Dict[str, Any], key: str) -> str:
         """Get and trim a project field. Returns empty string if missing."""
@@ -110,14 +107,12 @@ class DataLumosPublisher:
         Missing credentials file or missing Google Sheets libraries: record_crash (fatal).
         Other failures (e.g. API error, row not found): append warning and continue.
         """
-        sheet_id = getattr(Args, "google_sheet_id", None) or ""
-        credentials_path = getattr(Args, "google_credentials", None)
-        if not sheet_id or not credentials_path:
+        if not Args.google_sheet_id or not Args.google_credentials:
             return
 
         from pathlib import Path
 
-        cred_path = Path(credentials_path) if isinstance(credentials_path, str) else credentials_path
+        cred_path = Path(Args.google_credentials) if isinstance(Args.google_credentials, str) else Args.google_credentials
         if not cred_path.exists():
             record_crash(
                 f"Google Sheet update configured but credentials file not found: {cred_path}. "
@@ -129,22 +124,17 @@ class DataLumosPublisher:
             Logger.warning("Google Sheet update skipped: no source_url")
             return
 
-        sheet_name = getattr(Args, "google_sheet_name", None) or "CDC"
-        username = getattr(Args, "google_username", None) or "mkraley"
-
         from publisher.GoogleSheetUpdater import GoogleSheetUpdater
 
         updater = GoogleSheetUpdater()
         success, error_message = updater.update(
-            sheet_id=sheet_id,
-            credentials_path=cred_path,
-            sheet_name=sheet_name,
             source_url=source_url,
             workspace_id=workspace_id,
             project=project,
-            username=username,
         )
-        if not success and error_message:
+        if success:
+            Storage.update_record(drpid, {"status": "updated_inventory"})
+        elif error_message:
             msg_lower = error_message.lower()
             if "not installed" in msg_lower:
                 record_crash(
@@ -271,83 +261,3 @@ class DataLumosPublisher:
             raise RuntimeError(f"Error message on page: {err_text}")
 
         return True, None
-
-    def _ensure_browser(self) -> Page:
-        """Ensure browser is initialized and return the page."""
-        if self._page is not None:
-            return self._page
-
-        Logger.debug("Initializing Playwright browser")
-        self._playwright = sync_playwright().start()
-        self._browser = self._playwright.chromium.launch(
-            headless=Args.upload_headless,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-            ],
-        )
-        self._context = self._browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-            ),
-            locale="en-US",
-            timezone_id="America/New_York",
-        )
-        self._context.set_default_timeout(Args.upload_timeout)
-        self._page = self._context.new_page()
-        return self._page
-
-    def _ensure_authenticated(self) -> None:
-        """Ensure user is authenticated to DataLumos."""
-        if self._authenticated:
-            return
-
-        from upload.DataLumosAuthenticator import DataLumosAuthenticator
-
-        page = self._ensure_browser()
-        authenticator = DataLumosAuthenticator(page, timeout=Args.upload_timeout)
-
-        if not Args.datalumos_username or not Args.datalumos_password:
-            raise RuntimeError(
-                "DataLumos credentials not configured. "
-                "Set datalumos_username and datalumos_password in config."
-            )
-
-        authenticator.authenticate(Args.datalumos_username, Args.datalumos_password)
-        self._authenticated = True
-
-    def close(self) -> None:
-        """Close the browser and clean up resources."""
-        if self._page is not None:
-            try:
-                self._page.close()
-            except Exception:
-                pass
-            self._page = None
-
-        if self._context is not None:
-            try:
-                self._context.close()
-            except Exception:
-                pass
-            self._context = None
-
-        if self._browser is not None:
-            try:
-                self._browser.close()
-            except Exception:
-                pass
-            self._browser = None
-
-        if self._playwright is not None:
-            try:
-                self._playwright.stop()
-            except Exception:
-                pass
-            self._playwright = None
-
-        self._authenticated = False
-        Logger.debug("Browser resources cleaned up")

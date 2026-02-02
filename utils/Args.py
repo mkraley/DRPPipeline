@@ -57,6 +57,7 @@ class Args(metaclass=ArgsMeta):
     
     # Default values (lowest priority)
     _defaults: Dict[str, Any] = {
+        "config_file": None,  # Set from --config when provided
         "log_level": "INFO",
         "sourcing_spreadsheet_url": (
             "https://docs.google.com/spreadsheets/d/1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY/edit?gid=101637367#gid=101637367"
@@ -133,6 +134,10 @@ class Args(metaclass=ArgsMeta):
         # Apply command line arguments (highest priority - overrides config file and defaults)
         cls._apply_command_line_args(parsed_args)
 
+        # config_file: same as config (--config) for code that reads Args.config_file
+        if "config" in cls._config and cls._config["config"] is not None:
+            cls._config["config_file"] = cls._config["config"]
+
         # gwda_email fallback: use datalumos_username if gwda_email not set
         gwda_email = cls._config.get("gwda_email") or cls._config.get("datalumos_username")
         cls._config["gwda_email"] = gwda_email
@@ -152,7 +157,7 @@ class Args(metaclass=ArgsMeta):
         
         def callback(
             ctx: typer.Context,
-            module: str = typer.Argument(..., help="Module to run: noop, sourcing, collector, upload, publisher"),
+            module: str = typer.Argument(..., help="Module to run: noop, sourcing, collector, upload, publisher, cleanup_inprogress"),
             config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to configuration file (JSON format). Default: ./config.json"),
             log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Set the logging level", case_sensitive=False),
             num_rows: Optional[int] = typer.Option(None, "--num-rows", "-n", help="Max projects or candidate URLs per batch; None = unlimited"),

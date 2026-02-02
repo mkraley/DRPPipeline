@@ -2,10 +2,14 @@
 Unit tests for GoogleSheetUpdater (publisher module).
 """
 
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+from utils.Args import Args
+from utils.Logger import Logger
 
 from publisher.GoogleSheetUpdater import (
     DOWNLOAD_LOCATION_TEMPLATE,
@@ -20,6 +24,21 @@ skip_if_no_google = unittest.skipIf(not _GOOGLE_AVAILABLE, "Google Sheets API no
 
 class TestGoogleSheetUpdater(unittest.TestCase):
     """Test cases for GoogleSheetUpdater."""
+
+    def setUp(self) -> None:
+        """Initialize Args and Logger so updater can read Args."""
+        sys.argv = ["test", "publisher"]
+        Args._initialized = False
+        Args._config = {}
+        Args._parsed_args = {}
+        Args.initialize()
+        Logger.initialize(log_level="WARNING")
+
+    def tearDown(self) -> None:
+        """Reset Args."""
+        Args._initialized = False
+        Args._config = {}
+        Args._parsed_args = {}
 
     def test_column_index_to_letter(self) -> None:
         """Test _column_index_to_letter for A, B, Z, AA."""
@@ -37,19 +56,35 @@ class TestGoogleSheetUpdater(unittest.TestCase):
             "https://www.datalumos.org/datalumos/project/239181/version/V1/view",
         )
 
+    def test_build_update_requests_formats_file_size(self) -> None:
+        """Test _build_update_requests formats raw byte count as user-friendly size."""
+        updater = GoogleSheetUpdater()
+        column_map = {
+            "URL": "A",
+            "Claimed": "B",
+            "Data Added": "C",
+            "Download Location": "D",
+            "Date Downloaded": "E",
+            "Dataset Size": "F",
+            "File extensions of data uploads": "G",
+            "Metadata availability info": "H",
+            "Dataset Download Possible?": "I",
+            "Nominated to EOT / USGWDA": "J",
+        }
+        project = {"file_size": "10485760", "download_date": "2025-01-15", "extensions": "csv"}
+        requests = updater._build_update_requests(
+            "CDC", 2, column_map, "239181", project, "testuser"
+        )
+        dataset_size_requests = [r for r in requests if "F2" in r.get("range", "")]
+        self.assertEqual(len(dataset_size_requests), 1)
+        self.assertEqual(dataset_size_requests[0]["values"], [["10.0 MB"]])
+
     @patch("publisher.GoogleSheetUpdater._GOOGLE_SHEETS_AVAILABLE", True)
     def test_update_missing_sheet_id(self) -> None:
-        """Test update returns error when sheet_id is empty."""
+        """Test update returns error when Args.google_sheet_id is empty."""
         updater = GoogleSheetUpdater()
-        cred = Path(tempfile.gettempdir()) / "nonexistent.json"
-        success, msg = updater.update(
-            sheet_id="",
-            credentials_path=cred,
-            sheet_name="CDC",
-            source_url="https://example.com",
-            workspace_id="123",
-            project={},
-        )
+        with patch.object(Args, "google_sheet_id", ""), patch.object(Args, "google_credentials", None):
+            success, msg = updater.update("https://example.com", "123", {})
         self.assertFalse(success)
         self.assertIn("required", (msg or "").lower())
 
@@ -58,14 +93,8 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         """Test update returns error when source_url is empty."""
         updater = GoogleSheetUpdater()
         cred = Path(tempfile.gettempdir()) / "nonexistent.json"
-        success, msg = updater.update(
-            sheet_id="abc123",
-            credentials_path=cred,
-            sheet_name="CDC",
-            source_url="",
-            workspace_id="123",
-            project={},
-        )
+        with patch.object(Args, "google_sheet_id", "abc123"), patch.object(Args, "google_credentials", cred):
+            success, msg = updater.update("", "123", {})
         self.assertFalse(success)
         self.assertIn("source url", (msg or "").lower())
 
@@ -73,15 +102,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
     def test_update_google_sheets_not_available(self) -> None:
         """Test update returns error when Google Sheets API is not installed."""
         updater = GoogleSheetUpdater()
-        cred = Path(tempfile.gettempdir()) / "creds.json"
-        success, msg = updater.update(
-            sheet_id="abc",
-            credentials_path=cred,
-            sheet_name="CDC",
-            source_url="https://example.com",
-            workspace_id="123",
-            project={},
-        )
+        success, msg = updater.update("https://example.com", "123", {})
         self.assertFalse(success)
         self.assertIn("not installed", msg.lower())
 
@@ -141,19 +162,18 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         cred_path.write_text("{}")
 
         updater = GoogleSheetUpdater()
-        success, msg = updater.update(
-            sheet_id="sheet123",
-            credentials_path=cred_path,
-            sheet_name="CDC",
-            source_url="https://example.com/data",
-            workspace_id="239181",
-            project={
-                "download_date": "2025-01-15",
-                "file_size": "10 MB",
-                "extensions": "csv, zip",
-            },
-            username="testuser",
-        )
+        with patch.object(Args, "google_sheet_id", "sheet123"), patch.object(
+            Args, "google_credentials", cred_path
+        ), patch.object(Args, "google_sheet_name", "CDC"), patch.object(Args, "google_username", "testuser"):
+            success, msg = updater.update(
+                "https://example.com/data",
+                "239181",
+                {
+                    "download_date": "2025-01-15",
+                    "file_size": "10 MB",
+                    "extensions": "csv, zip",
+                },
+            )
 
         cred_path.unlink(missing_ok=True)
 

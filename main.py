@@ -32,9 +32,8 @@ def setup() -> None:
     Logger.debug(f"Python version: {sys.version}")
     
     # Log configuration info
-    config_file = getattr(Args, 'config_file', None)
-    if config_file:
-        Logger.info(f"Using config file: {config_file}")
+    if Args.config_file:
+        Logger.info(f"Using config file: {Args.config_file}")
     Logger.info(f"Log level: {log_level}")
 
 

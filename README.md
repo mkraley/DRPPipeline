@@ -18,6 +18,7 @@ DRPPipeline/
 ├── debug/              # Debug scripts
 ├── duplicate_checking/ # Duplicate detection (e.g., DataLumos search)
 ├── orchestration/      # Central orchestrator and module protocol
+├── cleanup_inprogress/ # Delete DataLumos projects in 'Deposit In Progress' state
 ├── publisher/          # DataLumos publish module (after upload)
 ├── sourcing/           # Source URL discovery and project creation
 ├── storage/            # Database storage (SQLite implementation)
@@ -68,7 +69,7 @@ python main.py <module> [options]
 ```
 
 **Required:**
-- `module`: Module to run (`noop`, `sourcing`, `collector`, `upload`, `publisher`)
+- `module`: Module to run (`noop`, `sourcing`, `collector`, `upload`, `publisher`, `cleanup_inprogress`)
 
 **Optional:**
 - `--config, -c`: Path to configuration file (JSON format). Default: `./config.json`
@@ -163,6 +164,13 @@ Processes eligible projects through the publisher module. Projects must have `st
 
 ```bash
 python main.py publisher --num-rows 5
+```
+
+#### `cleanup_inprogress`
+Finds all projects in the DataLumos workspace that are in **Deposit In Progress** state and deletes them. Uses the same browser session and credentials as upload/publisher (`datalumos_username`, `datalumos_password`). Navigates to the workspace, clicks "Hide inactive", iterates over the project list, and for each project in Deposit In Progress uses the more dropdown → Delete Project → confirmation dialog. Does not read or write the pipeline database.
+
+```bash
+python main.py cleanup_inprogress
 ```
 
 ### Database
