@@ -80,6 +80,11 @@ class Args(metaclass=ArgsMeta):
         "gwda_your_name": "Michael Kraley",
         "gwda_institution": "Data Rescue Project",
         "gwda_email": None,  # Uses datalumos_username if not set
+        # Publisher: Google Sheet update (optional; after publish)
+        "google_sheet_id": None,  # Google Sheet ID from URL; set in config to enable
+        "google_credentials": None,  # Path to service account JSON; required if google_sheet_id set
+        "google_sheet_name": "CDC",  # Worksheet/tab name
+        "google_username": "mkraley",  # Value for "Claimed" column
     }
     
     _config: Dict[str, Any] = {}

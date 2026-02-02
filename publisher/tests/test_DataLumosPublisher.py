@@ -120,6 +120,66 @@ class TestDataLumosPublisher(unittest.TestCase):
         self.assertEqual(record.get("status"), "publisher")
         self.assertEqual(record.get("published_url"), expected_url)
 
+    @patch("publisher.DataLumosPublisher.DataLumosPublisher._update_google_sheet_if_configured")
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
+    @patch("publisher.DataLumosPublisher.DataLumosPublisher._ensure_authenticated")
+    @patch("publisher.DataLumosPublisher.DataLumosPublisher._ensure_browser")
+    def test_run_calls_google_sheet_update_when_configured(
+        self,
+        mock_ensure_browser: MagicMock,
+        mock_ensure_authenticated: MagicMock,
+        mock_publish_workspace: MagicMock,
+        mock_wait_for_human: MagicMock,
+        mock_update_sheet: MagicMock,
+    ) -> None:
+        """Test run calls _update_google_sheet_if_configured after successful publish."""
+        drpid = Storage.create_record("https://example.com/test")
+        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "upload"})
+        mock_page = MagicMock()
+        mock_ensure_browser.return_value = mock_page
+        mock_ensure_authenticated.return_value = None
+        mock_publish_workspace.return_value = (True, None)
+
+        with patch("publisher.DataLumosPublisher.record_error"):
+            self.publisher.run(drpid)
+
+        call_args = mock_update_sheet.call_args[0]
+        self.assertEqual(call_args[0], drpid)
+        self.assertIsInstance(call_args[1], dict)
+        self.assertEqual(call_args[1].get("datalumos_id"), "239181")
+        self.assertEqual(call_args[2], "239181")
+
+    @patch("publisher.DataLumosPublisher.record_crash")
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
+    @patch("publisher.DataLumosPublisher.DataLumosPublisher._ensure_authenticated")
+    @patch("publisher.DataLumosPublisher.DataLumosPublisher._ensure_browser")
+    def test_run_crashes_when_google_sheet_configured_but_credentials_missing(
+        self,
+        mock_ensure_browser: MagicMock,
+        mock_ensure_authenticated: MagicMock,
+        mock_publish_workspace: MagicMock,
+        mock_wait_for_human: MagicMock,
+        mock_record_crash: MagicMock,
+    ) -> None:
+        """Test run calls record_crash when Google Sheet is configured but credentials file missing."""
+        drpid = Storage.create_record("https://example.com/test")
+        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "upload"})
+        mock_page = MagicMock()
+        mock_ensure_browser.return_value = mock_page
+        mock_ensure_authenticated.return_value = None
+        mock_publish_workspace.return_value = (True, None)
+
+        with patch.object(Args, "google_sheet_id", "sheet123"), patch.object(
+            Args, "google_credentials", str(Path(tempfile.gettempdir()) / "nonexistent_creds.json")
+        ), patch("publisher.DataLumosPublisher.record_error"):
+            mock_record_crash.side_effect = RuntimeError("crash")
+            with self.assertRaises(RuntimeError):
+                self.publisher.run(drpid)
+            mock_record_crash.assert_called_once()
+            self.assertIn("credentials", mock_record_crash.call_args[0][0].lower())
+
     def test_close_no_browser(self) -> None:
         """Test close() is safe when browser was never started."""
         self.publisher.close()

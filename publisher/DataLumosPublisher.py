@@ -12,7 +12,7 @@ from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_
 
 from storage import Storage
 from utils.Args import Args
-from utils.Errors import record_error
+from utils.Errors import record_crash, record_error
 from utils.Logger import Logger
 
 
@@ -89,6 +89,8 @@ class DataLumosPublisher:
                 "status": "publisher",
             })
             Logger.info(f"Publish completed for DRPID={drpid}, published_url={published_url}")
+
+            self._update_google_sheet_if_configured(drpid, project, workspace_id)
         except Exception as e:
             record_error(drpid, f"Publish failed: {e}")
             raise
@@ -98,6 +100,62 @@ class DataLumosPublisher:
     def _get_field(self, project: Dict[str, Any], key: str) -> str:
         """Get and trim a project field. Returns empty string if missing."""
         return (project.get(key) or "").strip()
+
+    def _update_google_sheet_if_configured(
+        self, drpid: int, project: Dict[str, Any], workspace_id: str
+    ) -> None:
+        """
+        If Google Sheet ID and credentials are configured, update the sheet
+        with publishing results (Claimed, Data Added, Download Location, etc.).
+        Missing credentials file or missing Google Sheets libraries: record_crash (fatal).
+        Other failures (e.g. API error, row not found): append warning and continue.
+        """
+        sheet_id = getattr(Args, "google_sheet_id", None) or ""
+        credentials_path = getattr(Args, "google_credentials", None)
+        if not sheet_id or not credentials_path:
+            return
+
+        from pathlib import Path
+
+        cred_path = Path(credentials_path) if isinstance(credentials_path, str) else credentials_path
+        if not cred_path.exists():
+            record_crash(
+                f"Google Sheet update configured but credentials file not found: {cred_path}. "
+                "Set google_credentials to a valid path or leave unset to skip sheet update."
+            )
+
+        source_url = self._get_field(project, "source_url")
+        if not source_url:
+            Logger.warning("Google Sheet update skipped: no source_url")
+            return
+
+        sheet_name = getattr(Args, "google_sheet_name", None) or "CDC"
+        username = getattr(Args, "google_username", None) or "mkraley"
+
+        from publisher.GoogleSheetUpdater import GoogleSheetUpdater
+
+        updater = GoogleSheetUpdater()
+        success, error_message = updater.update(
+            sheet_id=sheet_id,
+            credentials_path=cred_path,
+            sheet_name=sheet_name,
+            source_url=source_url,
+            workspace_id=workspace_id,
+            project=project,
+            username=username,
+        )
+        if not success and error_message:
+            msg_lower = error_message.lower()
+            if "not installed" in msg_lower:
+                record_crash(
+                    "Google Sheet update configured but Google Sheets API libraries are not installed. "
+                    "Install with: pip install google-api-python-client google-auth google-auth-httplib2 "
+                    "or leave google_sheet_id/google_credentials unset to skip sheet update."
+                )
+            Logger.warning(f"Google Sheet update failed: {error_message}")
+            Storage.append_to_field(
+                drpid, "warnings", f"Google Sheet update failed: {error_message}"
+            )
 
     def _project_url(self, workspace_id: str) -> str:
         """Build URL for a DataLumos project page."""

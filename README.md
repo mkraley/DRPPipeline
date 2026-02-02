@@ -90,7 +90,11 @@ Create a JSON file named `config.json` in the project root (or specify a differe
   "storage_implementation": "StorageSQLLite",
   "sourcing_spreadsheet_url": "https://docs.google.com/spreadsheets/d/...",
   "sourcing_url_column": "URL",
-  "base_output_dir": "C:\\Documents\\DataRescue\\DRPData"
+  "base_output_dir": "C:\\Documents\\DataRescue\\DRPData",
+  "google_sheet_id": "1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY",
+  "google_credentials": "C:\\path\\to\\service-account.json",
+  "google_sheet_name": "CDC",
+  "google_username": "mkraley"
 }
 ```
 
@@ -155,7 +159,7 @@ python main.py upload --num-rows 5
 ```
 
 #### `publisher`
-Processes eligible projects through the publisher module. Projects must have `status="upload"` and a valid `datalumos_id`. Runs the DataLumos publish workflow (Publish Project → review → Proceed to Publish → Publish Data → Back to Project) and sets `published_url` and `status="publisher"`.
+Processes eligible projects through the publisher module. Projects must have `status="upload"` and a valid `datalumos_id`. Runs the DataLumos publish workflow (Publish Project → review → Proceed to Publish → Publish Data → Back to Project) and sets `published_url` and `status="publisher"`. Optionally updates a Google Sheet (master inventory) with Claimed, Data Added, Download Location, etc., when `google_sheet_id` and `google_credentials` are set in config.
 
 ```bash
 python main.py publisher --num-rows 5
