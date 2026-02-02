@@ -19,7 +19,7 @@ When modifying or creating code, you MUST:
 ## Testing - NON-NEGOTIABLE
 
 **EVERY code change MUST include corresponding test updates**
-- Tests in parallel files: `module.py` → `test_module.py`
+- Tests in a sub folder of the implementation files: `module.py` → `tests/test_module.py`
 - Modifying existing code → update existing tests
 - Adding new code → write new tests  
 - No code submission is complete without tests

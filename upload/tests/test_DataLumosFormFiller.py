@@ -87,7 +87,6 @@ class TestDataLumosFormFiller(unittest.TestCase):
         with unittest.mock.patch.object(self.form_filler, 'wait_for_obscuring_elements'):
             self.form_filler.fill_agency(["", "  ", "valid"])
         
-        # Should only process "valid" - add button clicked once
         self.mock_page.locator.assert_called()
 
     def test_fill_summary_skips_empty(self) -> None:
@@ -107,7 +106,6 @@ class TestDataLumosFormFiller(unittest.TestCase):
     def test_fill_keywords_skips_short(self) -> None:
         """Test fill_keywords skips keywords with 2 or fewer chars."""
         with unittest.mock.patch.object(self.form_filler, 'wait_for_obscuring_elements'):
-            # Should not raise - short keywords are skipped
             self.form_filler.fill_keywords(["ab", "a", "valid_keyword"])
 
     def test_fill_geographic_coverage_skips_empty(self) -> None:

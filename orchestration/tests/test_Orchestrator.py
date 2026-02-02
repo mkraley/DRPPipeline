@@ -35,7 +35,7 @@ class TestOrchestrator(unittest.TestCase):
         self.assertIn("unknown", str(cm.exception))
         self.assertIn("noop", str(cm.exception))
         self.assertIn("sourcing", str(cm.exception))
-        self.assertIn("collectors", str(cm.exception))
+        self.assertIn("collector", str(cm.exception))
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")
@@ -67,7 +67,7 @@ class TestOrchestrator(unittest.TestCase):
         mock_find_class: MagicMock,
         mock_record_error: MagicMock,
     ) -> None:
-        """Test run("collectors") calls record_error when run() raises, and continues."""
+        """Test run("collector") calls record_error when run() raises, and continues."""
         sys.argv = ["test", "noop"]
         Args._initialized = False
         Args.initialize()
@@ -81,13 +81,13 @@ class TestOrchestrator(unittest.TestCase):
 
         mock_collector_instance = MagicMock()
         mock_collector_instance.run.side_effect = NotImplementedError(
-            "collectors run not yet implemented"
+            "collector run not yet implemented"
         )
         mock_collector_cls = MagicMock(return_value=mock_collector_instance)
         mock_find_class.return_value = mock_collector_cls
 
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
-            Orchestrator.run("collectors")
+            Orchestrator.run("collector")
 
         mock_storage_cls.initialize.assert_called_once()
         mock_storage.list_eligible_projects.assert_called_once_with("sourcing", None)

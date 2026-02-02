@@ -38,7 +38,6 @@ class TestDataLumosAuthenticator(unittest.TestCase):
 
     def test_wait_for_verification_no_verification_present(self) -> None:
         """Test wait_for_verification returns True when no verification needed."""
-        # Mock locator that returns count of 0 (no verification elements)
         mock_locator = MagicMock()
         mock_locator.count.return_value = 0
         self.mock_page.locator.return_value = mock_locator
@@ -48,7 +47,6 @@ class TestDataLumosAuthenticator(unittest.TestCase):
 
     def test_wait_for_verification_verification_present_and_completes(self) -> None:
         """Test wait_for_verification waits for verification to complete."""
-        # Mock locator that finds a verification element
         mock_locator = MagicMock()
         mock_locator.count.return_value = 1
         mock_first = MagicMock()
@@ -59,12 +57,10 @@ class TestDataLumosAuthenticator(unittest.TestCase):
         result = self.authenticator.wait_for_verification()
         
         self.assertTrue(result)
-        # Should have waited for element to become hidden
         mock_first.wait_for.assert_called_once_with(state="hidden", timeout=60000)
 
     def test_is_authenticated_login_page(self) -> None:
         """Test is_authenticated returns False when on login page."""
-        # Mock being on the login page
         type(self.mock_page).url = PropertyMock(return_value="https://example.com/login")
         
         result = self.authenticator.is_authenticated()
@@ -83,7 +79,6 @@ class TestDataLumosAuthenticator(unittest.TestCase):
             return_value="https://www.datalumos.org/datalumos/workspace"
         )
         
-        # Mock locator that doesn't find indicators (but URL is good)
         mock_locator = MagicMock()
         mock_locator.first.is_visible.side_effect = PlaywrightTimeoutError("timeout")
         self.mock_page.locator.return_value = mock_locator
@@ -97,7 +92,6 @@ class TestDataLumosAuthenticator(unittest.TestCase):
             return_value="https://example.com/dashboard"
         )
         
-        # Mock finding a logout link
         mock_locator = MagicMock()
         mock_first = MagicMock()
         mock_first.is_visible.return_value = True
@@ -162,7 +156,6 @@ class TestDataLumosAuthenticatorAuthenticate(unittest.TestCase):
 
     def test_authenticate_no_login_button_raises(self) -> None:
         """Test authenticate raises when login button not found."""
-        # Mock _find_login_button to return None
         with patch.object(self.authenticator, '_find_login_button', return_value=None):
             with patch.object(self.authenticator, 'wait_for_verification'):
                 with self.assertRaises(RuntimeError) as context:
@@ -174,7 +167,6 @@ class TestDataLumosAuthenticatorAuthenticate(unittest.TestCase):
         """Test authenticate raises when email login button not found."""
         mock_login_button = MagicMock()
         
-        # Mock email login button - click() times out when element not found
         mock_email_locator = MagicMock()
         mock_email_locator.click.side_effect = PlaywrightTimeoutError("timeout")
         self.mock_page.locator.return_value = mock_email_locator
@@ -194,7 +186,6 @@ class TestDataLumosAuthenticatorAuthenticate(unittest.TestCase):
         mock_password_input = MagicMock()
         mock_submit_button = MagicMock()
         
-        # Set up locator to return different mocks based on selector
         def locator_side_effect(selector):
             if "kc-emaillogin" in selector:
                 return mock_email_button

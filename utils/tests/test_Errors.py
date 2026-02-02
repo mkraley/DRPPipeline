@@ -7,6 +7,10 @@ from unittest.mock import Mock, patch
 
 from utils.Errors import record_crash, record_error, record_warning
 
+# Module-level mocks for patch decorators (must be defined before use in decorators)
+_mock_storage = Mock()
+_mock_logger = Mock()
+
 
 class TestRecordCrash(unittest.TestCase):
     """Test record_crash."""
@@ -28,9 +32,9 @@ class TestRecordError(unittest.TestCase):
         """record_error(update_storage=True) sets status and appends error."""
         record_error(123, "boom", update_storage=True)
 
-        mock_logger.error.assert_called_once_with("boom")
-        mock_storage.update_record.assert_called_once_with(123, {"status": "Error"})
-        mock_storage.append_to_field.assert_called_once_with(123, "errors", "boom")
+        _mock_logger.error.assert_called_once_with("boom")
+        _mock_storage.update_record.assert_called_once_with(123, {"status": "Error"})
+        _mock_storage.append_to_field.assert_called_once_with(123, "errors", "boom")
 
     @patch("utils.Errors.Logger")
     @patch("utils.Errors.Storage")

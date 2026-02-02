@@ -126,13 +126,19 @@ class TestArgs(unittest.TestCase):
 
         original_argv = sys.argv.copy()
         original_stderr = sys.stderr
+        original_cwd = Path.cwd()
 
         stderr_capture = StringIO()
         sys.stderr = stderr_capture
 
-        sys.argv = ["test", "noop"]  # No --config specified, should use default
-        Args._initialized = False
-        Args.initialize()
+        # Run from a temp dir where default config.json does not exist
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import os
+            os.chdir(tmpdir)
+            sys.argv = ["test", "noop"]  # No --config specified, should use default
+            Args._initialized = False
+            Args.initialize()
+            os.chdir(original_cwd)
 
         self.assertTrue(Args._initialized)
         # Should warn about default config file not found
@@ -236,7 +242,7 @@ class TestArgs(unittest.TestCase):
         Args.initialize()
         self.assertEqual(Args.module, "collectors")
         self.assertEqual(Args.num_rows, 5)
-        self.assertEqual(Args.db_path, "C:\\data\\drp.db")
+        self.assertEqual(Path(Args.db_path), Path("C:/data/drp.db"))
         self.assertEqual(Args.storage_implementation, "StorageSQLLite")
 
 

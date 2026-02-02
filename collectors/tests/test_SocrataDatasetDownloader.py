@@ -13,7 +13,7 @@ from utils.Logger import Logger
 
 from collectors.SocrataCollector import SocrataCollector
 from collectors.SocrataDatasetDownloader import SocrataDatasetDownloader
-from collectors.test_utils import setup_mock_playwright
+from collectors.tests.test_utils import setup_mock_playwright
 
 
 class TestSocrataDatasetDownloader(unittest.TestCase):
@@ -262,7 +262,8 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         # Create test file after download
         test_file = self.temp_dir / "dataset.csv"
         
-        with patch.object(downloader, '_find_download_button', return_value=mock_button.first), \
+        with patch.object(Args, 'use_url_download', False), \
+             patch.object(downloader, '_find_download_button', return_value=mock_button.first), \
              patch.object(downloader, '_get_file_extension', return_value="csv"):
             # Manually create file to simulate download (save_as is mocked). This test
             # asserts that _download_file updates _result (file_size, extensions,
@@ -313,7 +314,8 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         self.collector._init_browser()
         downloader = SocrataDatasetDownloader(self.collector)
 
-        with patch.object(downloader, '_click_export_button', return_value=True), \
+        with patch.object(Args, 'use_url_download', False), \
+             patch.object(downloader, '_click_export_button', return_value=True), \
              patch.object(downloader, '_download_file', return_value=True):
             result = downloader.download(self.temp_dir)
 
@@ -325,6 +327,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         mock_playwright_instance = Mock()
         mock_browser = Mock()
         mock_page = Mock()
+        mock_page.url = "https://data.cityofnewyork.us/view/abc123/about_data"
         
         mock_playwright.return_value.start.return_value = mock_playwright_instance
         mock_playwright_instance.chromium.launch.return_value = mock_browser
@@ -334,6 +337,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         downloader = SocrataDatasetDownloader(self.collector)
         
         with patch("collectors.SocrataDatasetDownloader.record_error") as mock_record_error, \
+             patch.object(Args, 'use_url_download', False), \
              patch.object(downloader, '_click_export_button', return_value=False):
             result = downloader.download(self.temp_dir)
         
@@ -356,7 +360,8 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         self.collector._init_browser()
         downloader = SocrataDatasetDownloader(self.collector)
         
-        with patch("collectors.SocrataDatasetDownloader.record_error") as mock_record_error, \
+        with patch.object(Args, 'use_url_download', False), \
+             patch("collectors.SocrataDatasetDownloader.record_error") as mock_record_error, \
              patch.object(downloader, '_click_export_button', return_value=True), \
              patch.object(downloader, '_download_file', side_effect=PlaywrightTimeoutError("Timeout")):
             result = downloader.download(self.temp_dir)

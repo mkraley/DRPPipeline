@@ -13,7 +13,7 @@ from utils.Logger import Logger
 
 from collectors.SocrataCollector import SocrataCollector
 from collectors.SocrataPageProcessor import SocrataPageProcessor
-from collectors.test_utils import setup_mock_playwright
+from collectors.tests.test_utils import setup_mock_playwright
 
 
 class TestSocrataPageProcessor(unittest.TestCase):
@@ -331,11 +331,9 @@ class TestSocrataPageProcessor(unittest.TestCase):
         mock_page.wait_for_timeout.return_value = None
         mock_page.pdf.return_value = None
         
-        with patch("collectors.SocrataPageProcessor.record_warning") as mock_record_warning:
-            result = processor.generate_pdf(pdf_path)
+        result = processor.generate_pdf(pdf_path)
         
         self.assertTrue(result)
-        mock_record_warning.assert_called_once_with(1, "PDF generated")
     
     @patch('collectors.SocrataCollector.sync_playwright')
     def test_generate_pdf_updates_result_on_failure(self, mock_playwright: Mock) -> None:

@@ -13,7 +13,7 @@ from utils.Args import Args
 from utils.Logger import Logger
 
 from collectors.SocrataCollector import SocrataCollector
-from collectors.test_utils import setup_mock_playwright
+from collectors.tests.test_utils import setup_mock_playwright
 
 
 class TestSocrataCollector(unittest.TestCase):

@@ -75,7 +75,7 @@ class SpreadsheetCandidateFetcher:
         Note: This method assumes required columns are present (validated in
         _extract_urls_from_csv). Missing columns would indicate a bug.
         """
-        claimed = "" #(row.get("Claimed (add your name)") or "").strip()
+        claimed = (row.get("Claimed (add your name)") or "").strip()
         download_location = (row.get("Download Location") or "").strip()
         return claimed == "" and download_location == "" and (row.get("URL") or "").strip().startswith("https://data.cdc.gov/")
 
