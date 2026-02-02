@@ -18,8 +18,10 @@ DRPPipeline/
 ├── debug/              # Debug scripts
 ├── duplicate_checking/ # Duplicate detection (e.g., DataLumos search)
 ├── orchestration/      # Central orchestrator and module protocol
+├── publisher/          # DataLumos publish module (after upload)
 ├── sourcing/           # Source URL discovery and project creation
 ├── storage/            # Database storage (SQLite implementation)
+├── upload/             # DataLumos upload module
 ├── utils/              # Utilities (Args, Logger, file/URL utils)
 ├── main.py             # Main entry point
 └── requirements.txt    # Python dependencies
@@ -66,7 +68,7 @@ python main.py <module> [options]
 ```
 
 **Required:**
-- `module`: Module to run (`noop`, `sourcing`, `collectors`)
+- `module`: Module to run (`noop`, `sourcing`, `collector`, `upload`, `publisher`)
 
 **Optional:**
 - `--config, -c`: Path to configuration file (JSON format). Default: `./config.json`
@@ -101,13 +103,13 @@ Create a JSON file named `config.json` in the project root (or specify a differe
 Run a module:
 ```bash
 python main.py sourcing
-python main.py collectors
+python main.py collector
 ```
 
 Run with options:
 ```bash
 python main.py sourcing --num-rows 10 --log-level DEBUG
-python main.py collectors --db-path /path/to/database.db
+python main.py collector --db-path /path/to/database.db
 ```
 
 ### Modules
@@ -132,11 +134,11 @@ python main.py sourcing --num-rows 50
 3. Verifies source URL availability
 4. Creates database records with generated DRPIDs
 
-#### `collectors`
+#### `collector`
 Processes eligible projects through the collectors module. Projects must have `status="sourcing"` and no errors.
 
 ```bash
-python main.py collectors --num-rows 20
+python main.py collector --num-rows 20
 ```
 
 **Process:**
@@ -144,6 +146,20 @@ python main.py collectors --num-rows 20
 2. For each project, collects data and metadata
 3. Updates project status on success
 4. Appends warnings/errors as appropriate
+
+#### `upload`
+Processes eligible projects through the upload module. Projects must have `status="collector"` and no errors. Uploads collected data and metadata to DataLumos (browser automation). Requires `datalumos_username` and `datalumos_password` in config.
+
+```bash
+python main.py upload --num-rows 5
+```
+
+#### `publisher`
+Processes eligible projects through the publisher module. Projects must have `status="upload"` and a valid `datalumos_id`. Runs the DataLumos publish workflow (Publish Project → review → Proceed to Publish → Publish Data → Back to Project) and sets `published_url` and `status="publisher"`.
+
+```bash
+python main.py publisher --num-rows 5
+```
 
 ### Database
 

@@ -36,6 +36,10 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": "collector",
         "class_name": "DataLumosUploader",
     },
+    "publisher": {
+        "prereq": "upload",
+        "class_name": "DataLumosPublisher",
+    },
 }
 
 

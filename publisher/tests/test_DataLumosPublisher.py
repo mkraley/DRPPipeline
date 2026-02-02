@@ -1,0 +1,128 @@
+"""
+Unit tests for DataLumosPublisher (publisher module).
+"""
+
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+from storage import Storage
+from utils.Args import Args
+from utils.Logger import Logger
+
+from publisher.DataLumosPublisher import DataLumosPublisher, PUBLISHED_URL_TEMPLATE
+
+
+class TestDataLumosPublisher(unittest.TestCase):
+    """Test cases for DataLumosPublisher module."""
+
+    def setUp(self) -> None:
+        """Set up test environment before each test."""
+        self._original_argv = sys.argv.copy()
+        sys.argv = ["test", "publisher"]
+
+        Args._initialized = False
+        Args._config = {}
+        Args._parsed_args = {}
+        Args.initialize()
+        Logger.initialize(log_level="WARNING")
+
+        self.temp_dir = Path(tempfile.mkdtemp())
+        self.test_db_path = self.temp_dir / "test_drp_pipeline.db"
+        self.storage = Storage.initialize("StorageSQLLite", db_path=self.test_db_path)
+        self.publisher = DataLumosPublisher()
+
+    def tearDown(self) -> None:
+        """Clean up after each test."""
+        sys.argv = self._original_argv
+        self.storage.close()
+        Storage.reset()
+        Args._initialized = False
+        Args._config = {}
+        Args._parsed_args = {}
+        if self.temp_dir.exists():
+            import shutil
+            try:
+                shutil.rmtree(self.temp_dir)
+            except OSError:
+                pass
+
+    def test_get_field(self) -> None:
+        """Test _get_field returns trimmed value or empty string."""
+        project = {"datalumos_id": "  12345  ", "missing": None}
+        self.assertEqual(self.publisher._get_field(project, "datalumos_id"), "12345")
+        self.assertEqual(self.publisher._get_field(project, "missing"), "")
+
+    def test_project_url(self) -> None:
+        """Test _project_url builds correct workspace URL."""
+        url = self.publisher._project_url("239181")
+        self.assertIn("datalumos/239181", url)
+        self.assertIn("goToLevel=project", url)
+
+    def test_published_url_template(self) -> None:
+        """Test PUBLISHED_URL_TEMPLATE format."""
+        url = PUBLISHED_URL_TEMPLATE.format(workspace_id="239181")
+        self.assertEqual(
+            url,
+            "https://www.datalumos.org/datalumos/project/239181/version/V1/view",
+        )
+
+    def test_run_project_not_found(self) -> None:
+        """Test run records error when project not found."""
+        with patch("publisher.DataLumosPublisher.record_error") as mock_record_error:
+            self.publisher.run(9999)
+            mock_record_error.assert_called_once()
+            args = mock_record_error.call_args[0]
+            self.assertEqual(args[0], 9999)
+            self.assertIn("not found", args[1])
+
+    def test_run_missing_datalumos_id(self) -> None:
+        """Test run records error when datalumos_id is missing."""
+        drpid = Storage.create_record("https://example.com/test")
+        # Project has no datalumos_id (only source_url from create_record)
+
+        with patch("publisher.DataLumosPublisher.record_error") as mock_record_error:
+            self.publisher.run(drpid)
+            mock_record_error.assert_called_once()
+            args = mock_record_error.call_args[0]
+            self.assertEqual(args[0], drpid)
+            self.assertIn("datalumos_id", args[1])
+
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
+    @patch("publisher.DataLumosPublisher.DataLumosPublisher._ensure_authenticated")
+    @patch("publisher.DataLumosPublisher.DataLumosPublisher._ensure_browser")
+    def test_run_success_updates_storage(
+        self,
+        mock_ensure_browser: MagicMock,
+        mock_ensure_authenticated: MagicMock,
+        mock_publish_workspace: MagicMock,
+        mock_wait_for_human: MagicMock,
+    ) -> None:
+        """Test run updates Storage with published_url and status on success."""
+        drpid = Storage.create_record("https://example.com/test")
+        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "upload"})
+
+        mock_page = MagicMock()
+        mock_ensure_browser.return_value = mock_page
+        mock_ensure_authenticated.return_value = None
+        mock_publish_workspace.return_value = (True, None)
+
+        with patch("publisher.DataLumosPublisher.record_error"):
+            self.publisher.run(drpid)
+
+        mock_publish_workspace.assert_called_once_with(mock_page, drpid)
+        expected_url = "https://www.datalumos.org/datalumos/project/239181/version/V1/view"
+        record = Storage.get(drpid)
+        self.assertIsNotNone(record)
+        self.assertEqual(record.get("status"), "publisher")
+        self.assertEqual(record.get("published_url"), expected_url)
+
+    def test_close_no_browser(self) -> None:
+        """Test close() is safe when browser was never started."""
+        self.publisher.close()
+        self.assertIsNone(self.publisher._page)
+        self.assertIsNone(self.publisher._playwright)
+        self.assertFalse(self.publisher._authenticated)
