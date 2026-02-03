@@ -87,6 +87,12 @@ See [Usage](docs/Usage.md) for database fields and eligibility rules.
 
 For full configuration and command-line options, see [Setup](docs/Setup.md).
 
+## Credits
+
+Almost all of the code was written by Cursor
+
+The original implementation for much of the uploader was done by @chiara using selenium. 
+
 ## License
 
 [Add license information here]
