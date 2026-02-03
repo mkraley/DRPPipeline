@@ -30,7 +30,8 @@ MODULES: Dict[str, Dict[str, Any]] = {
     },
     "collector": {
         "prereq": "sourcing",
-        "class_name": "SocrataCollector",  
+        # "class_name": "SocrataCollector",  
+        "class_name": "CatalogDataCollector",  
     },
     "upload": {
         "prereq": "collector",
