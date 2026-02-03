@@ -9,15 +9,31 @@ A modular pipeline for collecting data from various sources (e.g., government we
 
 The DRP Pipeline is a Python-based data collection and processing system that:
 
-- **Sources** candidate URLs from spreadsheets
+- **Sources** candidate URLs from inventory spreadsheets (e.g. Data_Inventories)
 - **Collects** data and metadata from web sources (e.g., Socrata)
 - **Tracks** project status and progress in a SQLite database
-- **Uploads** to DataLumos and **publishes** projects
-- Supports optional **cleanup** of in-progress DataLumos projects and **inventory** updates (e.g., Google Sheets)
+- **Uploads** to repositories (e.g., DataLumos)
+- **Publishes** projects, i.e., final committment in the repository
+- **Updates** the original inventory spreadsheet
 
 Projects move through a series of modules in order; each module updates status so the next can process eligible projects.
 
-## Project structure
+## Terminology
+-  project - all the work done on behalf of a single source url - named after a datalumos project
+-  asset - an individual file. projects usually have more than one file
+-  metadata - information not contained in a file - often represents information extracted from a landing page
+-  a stage in the pipeline that does a specific function, such as collection or uploading
+-  batch - a set of projects run through a specific module
+
+## Architecture
+
+The code is broken up into a set of modules, each of which performs a step of the pipeline. There can be multiple modules for a given function, e.g. separate collectors for source websites that have different formatting.
+
+The work of the pipeline is coodinated via a SQLLite database. Metadata about each project is initialized by the **sourcing** module. More detailed info, e.g. metadata and files, is then **collected**. The metadata itself is stored in the database; files are kept on local disk and pointed to by a field in the database. Project contents are then **uploaded** to the repository. When all is complete, the project is **published** and the original source spreadsheet is **updated**.
+
+Not all modules need to be used. For example, data can be collected by other means, a spreadsheet that contains the structure can then be imported into a sqllite database and then uploaded and published.
+
+## Project directory structure
 
 ```
 DRPPipeline/
@@ -44,12 +60,12 @@ DRPPipeline/
 | **sourcing** | Fetches candidate URLs from a spreadsheet, checks duplicates, creates DB records. |
 | **collector** | Collects data and metadata for projects (e.g., Socrata); updates status. |
 | **upload** | Uploads collected data to DataLumos via browser automation. |
-| **publisher** | Runs DataLumos publish workflow; optionally updates inventory (e.g., Google Sheet). |
-| **cleanup_inprogress** | Deletes DataLumos workspace projects in “Deposit In Progress” state (no DB changes). |
+| **publisher** | Runs DataLumos publish workflow; also updates source inventory|
+| **cleanup_inprogress** | Standalone utility that deletes DataLumos workspace projects in “Deposit In Progress” state (no DB changes). |
 
 Each module (except `noop` and `cleanup_inprogress`) advances project `status` so the next module can run on eligible projects. See [Usage](docs/Usage.md) for how to run them and how the database is used.
 
-## Architecture
+## Implementation details
 
 - **Module protocol** — Modules implement `run(drpid: int)` and use the shared **Storage** singleton to read/update project data. Sourcing runs once with `drpid=-1`; others are invoked per eligible project.
 - **Orchestrator** — Resolves the requested module by name, loads its class, and runs it (once for no-prereq modules, or over the list of eligible projects for prereq-based modules). Uses `Args` for config and `num_rows` for batch limits.

@@ -89,3 +89,7 @@ Common options:
 - **Publisher (optional):** `google_sheet_id`, `google_credentials`, `google_sheet_name`, `google_username` for inventory sheet updates
 
 See [README](../README.md) and module descriptions for context. Command-line values override config file values.
+
+### Google credentials
+
+In order to update the source inventory sheet, we need google credentials. See [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md)
