@@ -4,6 +4,10 @@ Logging configuration with singleton pattern.
 Provides a centralized logger accessible via class methods.
 All standard logging.Logger methods are accessible directly.
 
+When log_color is True and stdout is a TTY, the severity (levelname) is colored
+in the terminal only: DEBUG=gray, INFO=white, WARNING=orange, ERROR=red,
+exception (crash)=bright purple. The log file is never colored.
+
 Example usage:
     from utils.Logger import Logger
     
@@ -23,6 +27,14 @@ import sys
 import threading
 from pathlib import Path
 from typing import Dict, Optional, Union
+
+# ANSI codes: only the severity field is wrapped; reset after it
+_RESET = "\033[0m"
+_GRAY = "\033[90m"           # DEBUG
+_WHITE = "\033[37m"          # INFO
+_ORANGE = "\033[38;5;208m"   # WARNING (256-color); fallback \033[33m
+_RED = "\033[31m"            # ERROR
+_PURPLE = "\033[95m"         # Exception/crash (bright magenta)
 
 # Human-friendly thread id: map threading.get_ident() -> 1, 2, 3, ...
 _thread_id_lock = threading.Lock()
@@ -44,6 +56,33 @@ def _get_thread_id() -> int:
 def _get_current_drpid() -> Optional[int]:
     """Return the current thread's drpid for log tagging (thread-safe)."""
     return getattr(Logger._thread_local, "drpid", None)
+
+
+class _ColoredLevelFormatter(logging.Formatter):
+    """Formats like the base formatter but colors only the levelname when outputting to a TTY."""
+
+    def __init__(self, fmt: Optional[str] = None, datefmt: Optional[str] = None) -> None:
+        super().__init__(fmt, datefmt)
+
+    def format(self, record: logging.LogRecord) -> str:
+        levelname = record.levelname
+        exc_info = getattr(record, "exc_info", None)
+        if levelname == "DEBUG":
+            colored = f"{_GRAY}{levelname}{_RESET}"
+        elif levelname == "INFO":
+            colored = f"{_WHITE}{levelname}{_RESET}"
+        elif levelname == "WARNING":
+            colored = f"{_ORANGE}{levelname}{_RESET}"
+        elif levelname == "ERROR" and exc_info:
+            colored = f"{_PURPLE}{levelname}{_RESET}"
+        elif levelname == "ERROR":
+            colored = f"{_RED}{levelname}{_RESET}"
+        elif levelname == "CRITICAL":
+            colored = f"{_PURPLE}{levelname}{_RESET}"
+        else:
+            colored = levelname
+        record.colored_levelname = colored
+        return super().format(record)
 
 
 class _DrpidFilter(logging.Filter):
@@ -99,12 +138,14 @@ class Logger(metaclass=LoggerMeta):
         log_level: str = "INFO",
         log_format: Optional[str] = None,
         log_file: Optional[Union[str, Path, bool]] = None,
+        log_color: bool = False,
     ) -> None:
         """
         Initialize the logger with specified settings.
 
         Logs to stdout and appends to a file (default: drp_pipeline.log in cwd).
         Format omits logger name and includes thread id (T1, T2, ...) and drpid when set via set_current_drpid().
+        When log_color is True and stdout is a TTY, the severity field is colored in the terminal only.
 
         Args:
             log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
@@ -112,6 +153,7 @@ class Logger(metaclass=LoggerMeta):
                 Default includes %(drpid)s (set by filter when current drpid is set).
             log_file: Path for log file. If None, uses drp_pipeline.log in current
                 working directory. Pass False to disable file logging.
+            log_color: If True and stdout is a TTY, color the levelname in stream output (DEBUG=gray, etc.).
         """
         if cls._initialized:
             return
@@ -120,7 +162,7 @@ class Logger(metaclass=LoggerMeta):
             log_format = "%(asctime)s - %(levelname)s - %(thread_id)s%(drpid)s%(message)s"
 
         level = getattr(logging, log_level.upper(), logging.INFO)
-        formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
+        plain_formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
 
         cls._logger = logging.getLogger("DRPPipeline")
         cls._logger.handlers.clear()
@@ -129,10 +171,14 @@ class Logger(metaclass=LoggerMeta):
         cls._logger.propagate = False
         cls._logger.addFilter(_DrpidFilter())
 
+        use_color = log_color and sys.stdout.isatty()
+        stream_format = log_format.replace("%(levelname)s", "%(colored_levelname)s") if use_color else log_format
+        stream_formatter = _ColoredLevelFormatter(stream_format, datefmt="%Y-%m-%d %H:%M:%S") if use_color else plain_formatter
+
         # Stdout handler
         stream_handler = logging.StreamHandler(sys.stdout)
         stream_handler.setLevel(level)
-        stream_handler.setFormatter(formatter)
+        stream_handler.setFormatter(stream_formatter)
         cls._logger.addHandler(stream_handler)
 
         # File handler (append)
@@ -143,7 +189,7 @@ class Logger(metaclass=LoggerMeta):
             log_path.parent.mkdir(parents=True, exist_ok=True)
             file_handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
             file_handler.setLevel(level)
-            file_handler.setFormatter(formatter)
+            file_handler.setFormatter(plain_formatter)
             cls._logger.addHandler(file_handler)
 
         cls._initialized = True

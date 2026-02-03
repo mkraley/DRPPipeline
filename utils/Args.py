@@ -59,6 +59,7 @@ class Args(metaclass=ArgsMeta):
     _defaults: Dict[str, Any] = {
         "config_file": None,  # Set from --config when provided
         "log_level": "INFO",
+        "log_color": True,  # Set True with --log-color to color severity in terminal (only when TTY)
         "sourcing_spreadsheet_url": (
             "https://docs.google.com/spreadsheets/d/1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY/edit?gid=101637367#gid=101637367"
         ),
@@ -167,6 +168,7 @@ class Args(metaclass=ArgsMeta):
             max_workers: Optional[int] = typer.Option(None, "--max-workers", "-w", help="Max concurrent projects for modules with prereq (e.g. collector). Default 1 = sequential."),
             download_timeout_ms: Optional[int] = typer.Option(None, "--download-timeout-ms", help="Download timeout in milliseconds (default 30 min). Use for large datasets."),
             no_use_url_download: bool = typer.Option(False, "--no-use-url-download", help="Use Playwright save_as instead of capturing URL and downloading with requests (no progress/resume)."),
+            log_color: bool = typer.Option(False, "--log-color", help="Color the log severity in terminal (DEBUG=gray, WARNING=orange, ERROR=red, exception=purple). Only applies when stdout is a TTY."),
         ) -> None:
             """Callback to capture Typer parsed values."""
             parsed_values["module"] = module
@@ -188,6 +190,8 @@ class Args(metaclass=ArgsMeta):
                 parsed_values["download_timeout_ms"] = download_timeout_ms
             if no_use_url_download:
                 parsed_values["use_url_download"] = False
+            if log_color:
+                parsed_values["log_color"] = True
 
         # Use a single @app.command() so the first positional (module) is not treated as a
         # subcommand. A Group would require the first token to match a subcommand.

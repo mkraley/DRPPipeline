@@ -26,7 +26,8 @@ def setup() -> None:
     
     # Initialize logger using config (Args already initialized above)
     log_level = Args.log_level
-    Logger.initialize(log_level=log_level)
+    log_color = getattr(Args, "log_color", False)
+    Logger.initialize(log_level=log_level, log_color=log_color)
     
     Logger.info("DRP Pipeline starting...")
     Logger.debug(f"Python version: {sys.version}")

@@ -93,7 +93,7 @@ class TestCleanupInProgress(unittest.TestCase):
         page.locator.assert_any_call("ul.list-group")
 
     def test_get_project_ids_from_list_extracts_ids(self) -> None:
-        """Test _get_project_ids_from_list extracts workspace ID from href."""
+        """Test _get_project_ids_from_list extracts workspace ID from link text (datalumos-244787)."""
         page = MagicMock()
         list_group = MagicMock()
         list_group.count.return_value = 1
@@ -101,7 +101,7 @@ class TestCleanupInProgress(unittest.TestCase):
         items.count.return_value = 1
         link = MagicMock()
         link.count.return_value = 1
-        link.get_attribute.return_value = "https://www.datalumos.org/datalumos/workspace?goToPath=/datalumos/111"
+        link.inner_text.return_value = "datalumos-244787"
         li = MagicMock()
         li.locator.return_value.first = link
         items.nth.return_value = li
@@ -109,17 +109,20 @@ class TestCleanupInProgress(unittest.TestCase):
         page.locator.return_value = list_group
 
         result = self.cleanup._get_project_ids_from_list(page)
-        self.assertEqual(result, ["111"])
+        self.assertEqual(result, ["244787"])
 
-    def test_get_project_ids_from_list_skips_li_without_link(self) -> None:
-        """Test _get_project_ids_from_list skips li when no datalumos link."""
+    def test_get_project_ids_from_list_skips_li_without_datalumos_id_in_text(self) -> None:
+        """Test _get_project_ids_from_list skips li when link text has no datalumos-<id>."""
         page = MagicMock()
         list_group = MagicMock()
         list_group.count.return_value = 1
         items = MagicMock()
         items.count.return_value = 1
+        link = MagicMock()
+        link.count.return_value = 1
+        link.inner_text.return_value = "Other label"
         li = MagicMock()
-        li.locator.return_value.first = MagicMock(count=MagicMock(return_value=0))
+        li.locator.return_value.first = link
         items.nth.return_value = li
         list_group.locator.return_value = items
         page.locator.return_value = list_group

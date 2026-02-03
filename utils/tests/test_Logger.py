@@ -8,8 +8,9 @@ import tempfile
 import unittest
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
-from utils.Logger import Logger
+from utils.Logger import Logger, _ColoredLevelFormatter
 
 
 class TestLogger(unittest.TestCase):
@@ -114,6 +115,36 @@ class TestLogger(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             Logger.get_logger()
         self.assertIn("not been initialized", str(cm.exception))
+
+    def test_initialize_with_log_color_uses_plain_formatter_when_not_tty(self) -> None:
+        """When log_color=True but stdout is not a TTY, stream still uses plain formatter (no ANSI)."""
+        Logger.initialize(log_level="INFO", log_color=True, log_file=False)
+        stream_handler = next(h for h in Logger._logger.handlers if hasattr(h.stream, "write"))
+        self.assertIsInstance(stream_handler.formatter, logging.Formatter)
+        self.assertNotIsInstance(stream_handler.formatter, _ColoredLevelFormatter)
+
+    @patch("utils.Logger.sys.stdout")
+    def test_initialize_with_log_color_uses_colored_formatter_when_tty(
+        self, mock_stdout: unittest.mock.MagicMock
+    ) -> None:
+        """When log_color=True and stdout.isatty(), stream uses ColoredLevelFormatter."""
+        mock_stdout.isatty.return_value = True
+        Logger.initialize(log_level="INFO", log_color=True, log_file=False)
+        stream_handler = next(h for h in Logger._logger.handlers if hasattr(h.stream, "write"))
+        self.assertIsInstance(stream_handler.formatter, _ColoredLevelFormatter)
+
+    def test_colored_formatter_sets_colored_levelname(self) -> None:
+        """_ColoredLevelFormatter sets record.colored_levelname and it contains the level name."""
+        fmt = "%(colored_levelname)s - %(message)s"
+        formatter = _ColoredLevelFormatter(fmt)
+        record = logging.LogRecord("name", logging.INFO, "", 0, "hello", (), None)
+        record.thread_id = ""
+        record.drpid = ""
+        result = formatter.format(record)
+        self.assertIn("INFO", result)
+        self.assertIn("hello", result)
+        self.assertTrue(hasattr(record, "colored_levelname"))
+        self.assertIn("INFO", record.colored_levelname)
 
 
 if __name__ == "__main__":

@@ -74,6 +74,7 @@ python main.py <module> [options]
 **Optional:**
 - `--config, -c`: Path to configuration file (JSON format). Default: `./config.json`
 - `--log-level, -l`: Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`)
+- `--log-color`: Color the log severity in the terminal (DEBUG=gray, WARNING=orange, ERROR=red, exception=purple). Only when stdout is a TTY.
 - `--num-rows, -n`: Max projects or candidate URLs per batch (None = unlimited)
 - `--db-path`: Path to SQLite database file
 - `--storage`: Storage implementation (default: `StorageSQLLite`)

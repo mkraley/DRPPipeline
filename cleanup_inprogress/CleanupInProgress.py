@@ -75,7 +75,7 @@ class CleanupInProgress:
             Logger.warning("Hide inactive control not found or not clickable")
 
     def _get_project_ids_from_list(self, page: Page) -> List[str]:
-        """Return workspace IDs from ul.list-group > li links (href like .../datalumos/123)."""
+        """Return workspace IDs from ul.list-group > li > a; ID is in link text (e.g. datalumos-244787)."""
         ids: List[str] = []
         list_group = page.locator("ul.list-group")
         if list_group.count() == 0:
@@ -84,11 +84,11 @@ class CleanupInProgress:
         count = items.count()
         for idx in range(count):
             li = items.nth(idx)
-            link = li.locator("a[href*='/datalumos/']").first
+            link = li.locator("a").first
             if link.count() == 0:
                 continue
-            href = link.get_attribute("href") or ""
-            match = re.search(r"/datalumos/(\d+)", href)
+            text = link.inner_text() or ""
+            match = re.search(r"datalumos-(\d+)", text)
             if match:
                 ids.append(match.group(1))
         return ids
@@ -114,19 +114,20 @@ class CleanupInProgress:
         if not self._open_more_dropdown(page, workspace_id):
             return
 
-        delete_btn = page.locator(
-            "ul.dropdown-menu.dropdown-sm >> li >> a:has-text('Delete Project')"
-        ).first
-        if delete_btn.count() == 0:
+        # Dropdown ul is sibling of the more button; the li containing "Delete Project" has class="disabled" when disabled
+        delete_li_loc = page.locator(
+            "div.btn-group:has(button:has-text('more')) >> ul.dropdown-menu.dropdown-sm >> li:has-text('Delete Project')"
+        )
+        if delete_li_loc.count() == 0:
             Logger.error(f"Cleanup In Progress: Delete Project menu item not found for {workspace_id}")
             return
-        parent_li = delete_btn.locator("xpath=..")
-        if parent_li.get_attribute("class") and "disabled" in (parent_li.get_attribute("class") or ""):
+        delete_li = delete_li_loc.first
+        if "disabled" in (delete_li.get_attribute("class") or ""):
             Logger.error(f"Cleanup In Progress: Delete Project is disabled for {workspace_id}")
             return
 
         try:
-            delete_btn.click()
+            delete_li.locator("a").first.click()
             page.wait_for_timeout(500)
         except PlaywrightTimeoutError:
             Logger.error(f"Cleanup In Progress: could not click Delete Project for {workspace_id}")
@@ -145,20 +146,16 @@ class CleanupInProgress:
         Logger.info(f"Cleanup In Progress: deleted project {workspace_id}")
 
     def _open_more_dropdown(self, page: Page, workspace_id: str) -> bool:
-        """Open the 'more' dropdown that contains Delete Project. Return False if not found."""
-        dropdown = page.locator(".dropdown:has(ul.dropdown-menu.dropdown-sm)")
-        if dropdown.count() == 0:
-            Logger.error(f"Cleanup In Progress: more dropdown not found for {workspace_id}")
-            return False
-        toggle = dropdown.locator("button, a[href]").first
-        if toggle.count() == 0:
-            Logger.error(f"Cleanup In Progress: more dropdown toggle not found for {workspace_id}")
+        """Open the 'more' dropdown by clicking the more button. Return False if not found."""
+        more_btn = page.locator("button:has-text('more')")
+        if more_btn.count() == 0:
+            Logger.error(f"Cleanup In Progress: more button not found for {workspace_id}")
             return False
         try:
-            toggle.click()
+            more_btn.first.click()
             page.wait_for_timeout(400)
         except PlaywrightTimeoutError:
-            Logger.error(f"Cleanup In Progress: could not open more dropdown for {workspace_id}")
+            Logger.error(f"Cleanup In Progress: could not click more button for {workspace_id}")
             return False
         return True
 
