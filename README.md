@@ -1,283 +1,75 @@
 # DRP Pipeline
 
-A modular pipeline for collecting data from various sources (e.g., government websites) and uploading to various repositories (e.g., DataLumos).
+A modular pipeline for collecting data from various sources (e.g., government websites) and uploading to repositories such as DataLumos.
+
+- **[Setup](docs/Setup.md)** — Prerequisites, installation, and configuration  
+- **[Usage](docs/Usage.md)** — Running modules, database, and examples  
 
 ## Overview
 
 The DRP Pipeline is a Python-based data collection and processing system that:
-- Sources candidate URLs from spreadsheets
-- Collects data and metadata from web sources
-- Manages project status and progress in a SQLite database
-- Processes projects through a series of modules (sourcing, collectors, etc.)
 
-## Project Structure
+- **Sources** candidate URLs from spreadsheets
+- **Collects** data and metadata from web sources (e.g., Socrata)
+- **Tracks** project status and progress in a SQLite database
+- **Uploads** to DataLumos and **publishes** projects
+- Supports optional **cleanup** of in-progress DataLumos projects and **inventory** updates (e.g., Google Sheets)
+
+Projects move through a series of modules in order; each module updates status so the next can process eligible projects.
+
+## Project structure
 
 ```
 DRPPipeline/
-├── collectors/          # Data collection modules (e.g., SocrataCollector)
+├── collectors/          # Data collection (e.g., SocrataCollector)
+├── cleanup_inprogress/ # Delete DataLumos projects in Deposit In Progress
 ├── debug/              # Debug scripts
+├── docs/               # Setup, Usage, design docs
 ├── duplicate_checking/ # Duplicate detection (e.g., DataLumos search)
-├── orchestration/      # Central orchestrator and module protocol
-├── cleanup_inprogress/ # Delete DataLumos projects in 'Deposit In Progress' state
-├── publisher/          # DataLumos publish module (after upload)
-├── sourcing/           # Source URL discovery and project creation
-├── storage/            # Database storage (SQLite implementation)
-├── upload/             # DataLumos upload module
-├── utils/              # Utilities (Args, Logger, file/URL utils)
-├── main.py             # Main entry point
-└── requirements.txt    # Python dependencies
+├── orchestration/     # Orchestrator and module protocol
+├── publisher/         # DataLumos publish and optional Google Sheet update
+├── sourcing/          # Source URL discovery and project creation
+├── storage/           # Database storage (SQLite)
+├── upload/            # DataLumos upload (browser automation)
+├── utils/             # Args, Logger, file/URL utilities
+├── main.py            # Entry point
+└── requirements.txt   # Dependencies
 ```
 
-## Setup
+## Modules
 
-### Prerequisites
+| Module | Purpose |
+|--------|--------|
+| **noop** | No-op; useful for testing. |
+| **sourcing** | Fetches candidate URLs from a spreadsheet, checks duplicates, creates DB records. |
+| **collector** | Collects data and metadata for projects (e.g., Socrata); updates status. |
+| **upload** | Uploads collected data to DataLumos via browser automation. |
+| **publisher** | Runs DataLumos publish workflow; optionally updates inventory (e.g., Google Sheet). |
+| **cleanup_inprogress** | Deletes DataLumos workspace projects in “Deposit In Progress” state (no DB changes). |
 
-- Python 3.13 or later
-- pip (Python package manager)
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd DRPPipeline
-   ```
-
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. Install Playwright browsers (required for web scraping):
-   ```bash
-   playwright install
-   ```
-
-### Configuration
-
-The pipeline can be configured via:
-- **Command line arguments** (highest priority)
-- **Config file** (JSON format, default: `./config.json`)
-- **Default values** (lowest priority, defined in `Args._defaults`)
-
-**Note:** If `./config.json` exists, it will be automatically loaded. If it doesn't exist, a warning is shown but the pipeline continues with defaults and command-line arguments.
-
-#### Command Line Arguments
-
-```bash
-python main.py <module> [options]
-```
-
-**Required:**
-- `module`: Module to run (`noop`, `sourcing`, `collector`, `upload`, `publisher`, `cleanup_inprogress`)
-
-**Optional:**
-- `--config, -c`: Path to configuration file (JSON format). Default: `./config.json`
-- `--log-level, -l`: Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`)
-- `--log-color`: Color the log severity in the terminal (DEBUG=gray, WARNING=orange, ERROR=red, exception=purple). Only when stdout is a TTY.
-- `--num-rows, -n`: Max projects or candidate URLs per batch (None = unlimited)
-- `--db-path`: Path to SQLite database file
-- `--storage`: Storage implementation (default: `StorageSQLLite`)
-- `--delete-all-db-entries`: Delete all database entries and reset auto-increment before proceeding (removes all records, IDs will start at 1)
-
-#### Config File Format
-
-Create a JSON file named `config.json` in the project root (or specify a different path with `--config`):
-
-```json
-{
-  "log_level": "INFO",
-  "num_rows": 10,
-  "db_path": "drp_pipeline.db",
-  "storage_implementation": "StorageSQLLite",
-  "sourcing_spreadsheet_url": "https://docs.google.com/spreadsheets/d/...",
-  "sourcing_url_column": "URL",
-  "base_output_dir": "C:\\Documents\\DataRescue\\DRPData",
-  "google_sheet_id": "1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY",
-  "google_credentials": "C:\\path\\to\\service-account.json",
-  "google_sheet_name": "CDC",
-  "google_username": "mkraley"
-}
-```
-
-**Default behavior:** The pipeline automatically looks for `./config.json` in the current directory. If the file doesn't exist, a warning is displayed but the pipeline continues with default values and command-line arguments.
-
-## Usage
-
-### Basic Usage
-
-Run a module:
-```bash
-python main.py sourcing
-python main.py collector
-```
-
-Run with options:
-```bash
-python main.py sourcing --num-rows 10 --log-level DEBUG
-python main.py collector --db-path /path/to/database.db
-```
-
-### Modules
-
-#### `noop`
-No-op module that does nothing. Useful for testing or when you need to satisfy the module requirement without running actual pipeline logic.
-
-```bash
-python main.py noop
-```
-
-#### `sourcing`
-Discovers candidate source URLs from a configured spreadsheet, performs duplicate checks, and creates database records for new projects.
-
-```bash
-python main.py sourcing --num-rows 50
-```
-
-**Process:**
-1. Fetches URLs from the configured spreadsheet
-2. Checks for duplicates (in local DB and DataLumos)
-3. Verifies source URL availability
-4. Creates database records with generated DRPIDs
-
-#### `collector`
-Processes eligible projects through the collectors module. Projects must have `status="sourcing"` and no errors.
-
-```bash
-python main.py collector --num-rows 20
-```
-
-**Process:**
-1. Finds projects with `status="sourcing"` and no errors
-2. For each project, collects data and metadata
-3. Updates project status on success
-4. Appends warnings/errors as appropriate
-
-#### `upload`
-Processes eligible projects through the upload module. Projects must have `status="collector"` and no errors. Uploads collected data and metadata to DataLumos (browser automation). Requires `datalumos_username` and `datalumos_password` in config.
-
-```bash
-python main.py upload --num-rows 5
-```
-
-#### `publisher`
-Processes eligible projects through the publisher module. Projects must have `status="upload"` and a valid `datalumos_id`. Runs the DataLumos publish workflow (Publish Project → review → Proceed to Publish → Publish Data → Back to Project) and sets `published_url` and `status="publisher"`. Optionally updates a Google Sheet (master inventory) with Claimed, Data Added, Download Location, etc., when `google_sheet_id` and `google_credentials` are set in config.
-
-```bash
-python main.py publisher --num-rows 5
-```
-
-#### `cleanup_inprogress`
-Finds all projects in the DataLumos workspace that are in **Deposit In Progress** state and deletes them. Uses the same browser session and credentials as upload/publisher (`datalumos_username`, `datalumos_password`). Navigates to the workspace, clicks "Hide inactive", iterates over the project list, and for each project in Deposit In Progress uses the more dropdown → Delete Project → confirmation dialog. Does not read or write the pipeline database.
-
-```bash
-python main.py cleanup_inprogress
-```
-
-### Database
-
-The pipeline uses SQLite to track project status and metadata. By default, the database is created at `drp_pipeline.db` in the current working directory.
-
-**Key Fields:**
-- `DRPID`: Unique project identifier
-- `source_url`: Source URL for the project
-- `status`: Last successfully completed module name
-- `warnings`: Newline-separated warning messages
-- `errors`: Newline-separated error messages (projects with errors are ineligible for further processing)
-
-**Eligibility Rules:**
-- Projects are eligible for a module if:
-  - `status == <prerequisite_module>` (e.g., `status="sourcing"` for collectors)
-  - `errors IS NULL OR errors = ''` (warnings are allowed)
+Each module (except `noop` and `cleanup_inprogress`) advances project `status` so the next module can run on eligible projects. See [Usage](docs/Usage.md) for how to run them and how the database is used.
 
 ## Architecture
 
-### Module Protocol
+- **Module protocol** — Modules implement `run(drpid: int)` and use the shared **Storage** singleton to read/update project data. Sourcing runs once with `drpid=-1`; others are invoked per eligible project.
+- **Orchestrator** — Resolves the requested module by name, loads its class, and runs it (once for no-prereq modules, or over the list of eligible projects for prereq-based modules). Uses `Args` for config and `num_rows` for batch limits.
+- **Storage** — SQLite-backed singleton; exposes `initialize`, `create_record`, `get`, `update_record`, `append_to_field`, `list_eligible_projects`, etc.
 
-All modules implement `ModuleProtocol` with a `run(drpid: int)` method:
-- Modules access Storage directly using the DRPID
-- Modules update status, errors, and warnings directly to Storage
-- For sourcing (no prerequisite), orchestrator passes `drpid=-1`
-
-### Storage Singleton
-
-Storage is a singleton accessible via class methods:
-```python
-from storage import Storage
-
-Storage.initialize("StorageSQLLite", db_path="db.db")
-Storage.create_record("https://example.com")
-Storage.update_record(drpid, {"status": "sourcing"})
-Storage.append_to_field(drpid, "warnings", "Warning message")
-```
-
-### Orchestrator
-
-The orchestrator:
-- Dynamically discovers module classes by name
-- Manages module execution and error handling
-- Tracks project eligibility and status
-- Limits batch sizes via `num_rows`
+See [Usage](docs/Usage.md) for database fields and eligibility rules.
 
 ## Development
 
-### Running Tests
-
-```bash
-python -m unittest discover -p "test_*.py"
-```
-
-### Adding a New Module
-
-1. Create a class that implements `ModuleProtocol`:
-   ```python
-   class MyModule:
-       def run(self, drpid: int) -> None:
-           # Get project data
-           project = Storage.get(drpid)
-           # Process project
-           # Update status on success
-           Storage.update_record(drpid, {"status": "mymodule"})
-   ```
-
-2. Register in `orchestration/Orchestrator.py`:
-   ```python
-   MODULES = {
-       "mymodule": {
-           "prereq": "sourcing",  # or None for no prerequisite
-           "class_name": "MyModule",
-       },
-   }
-   ```
-
-3. The orchestrator will automatically discover the class by name.
-
-### Code Style
-
-- Follow PEP 8
-- Use type hints
-- Write unit tests for new functionality
-- Default values should be in `Args._defaults`, not in client code
+- **Tests:** `python -m pytest` or `python -m unittest discover -p "test_*.py"`
+- **New module:** Implement a class with `run(drpid: int)`, register it in `orchestration/Orchestrator.py` under `MODULES`, and add the module to the `module` argument in `Args`. The orchestrator discovers the class by name. See `.cursorrules` and existing modules for style (type hints, docstrings, one class per file, tests).
+- **Code style:** PEP 8, type hints, unit tests; defaults in `Args._defaults`.
 
 ## Troubleshooting
 
-### Import Errors
+- **ImportError (module class not found):** Ensure the class name matches the `MODULES` entry and the module is in the project tree (not only in tests).
+- **Database:** Ensure `db_path` is writable; projects with non-empty `errors` are not eligible for later modules.
+- **Playwright:** Run `playwright install`; use `upload_headless: false` in config for visible browser debugging.
 
-If you see `ImportError: Could not find module class 'X' in project tree`:
-- Ensure the class name matches exactly (case-sensitive)
-- Verify the module file is in the project tree (not in `__pycache__` or test files)
-- Check that the class is defined in the module
-
-### Database Issues
-
-- Ensure the database path is writable
-- Check that `db_path` is set correctly (defaults to `drp_pipeline.db` in current directory)
-- Projects with errors won't be processed further - check the `errors` field
-
-### Playwright Issues
-
-- Run `playwright install` to install browser binaries
-- For debugging, set `headless=False` in collector initialization
+For full configuration and command-line options, see [Setup](docs/Setup.md).
 
 ## License
 
