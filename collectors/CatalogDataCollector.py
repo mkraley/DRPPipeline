@@ -289,6 +289,7 @@ class CatalogDataCollector:
         """
         entries: List[Tuple[str, str, str]] = []
         has_success = False
+        hrefs = [h for h, _ in links]
         for href, title in links:
             title_clean = title.strip() or "(no title)"
             actual_url = href
@@ -300,6 +301,9 @@ class CatalogDataCollector:
                     entries.append((title_clean, "404", ""))
                     continue
                 actual_url, data_format = resolved
+                # Skip if resolved URL is a duplicate of another link's href
+                if actual_url in hrefs:
+                    continue
 
             status_code, content_type, error_msg = fetch_url_head(actual_url)
             if status_code == 404 or status_code < 0:
