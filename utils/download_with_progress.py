@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import requests
 
 from utils.file_utils import format_file_size
+from utils.url_utils import BROWSER_HEADERS
 from utils.Logger import Logger
 
 
@@ -64,7 +65,10 @@ def download_via_url(
 
     existing_size = dest.stat().st_size if dest.exists() else 0
     start_byte = existing_size if resume and existing_size else 0
-    request_headers: Dict[str, str] = dict(headers) if headers else {}
+    request_headers: Dict[str, str] = {
+        **BROWSER_HEADERS,
+        **(headers or {}),
+    }
     if start_byte > 0:
         request_headers["Range"] = f"bytes={start_byte}-"
 
@@ -75,7 +79,7 @@ def download_via_url(
             url,
             stream=True,
             cookies=cookie_dict,
-            headers=request_headers or None,
+            headers=request_headers,
             timeout=timeout_val,
         )
         resp.raise_for_status()

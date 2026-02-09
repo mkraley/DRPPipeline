@@ -1,46 +1,38 @@
 """
-Socrata Collector for DRP Pipeline.
+Catalog Data Collector for DRP Pipeline.
 
-Collects data from Socrata-hosted pages (e.g., data.cdc.gov):
-- Pre-processes HTML (expands "read more" links)
-- Harvests metadata (rows, columns, description, keywords)
-- Converts HTML to PDF
-- Downloads datasets
+Collects data from catalog.data.gov dataset pages:
+- Validates and accesses source_url (source page)
+- Locates "Downloads & Resources" section
+- Follows each download link, records file type and title for non-404s
+- Writes results to status_notes (no PDF, dataset download, or metadata)
 """
 
 from contextlib import suppress
-from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 
 from playwright.sync_api import sync_playwright, Page, Browser, Playwright
 
 from storage import Storage
 from utils.Logger import Logger
 from utils.Errors import record_error
-from utils.Args import Args
-from utils.url_utils import is_valid_url, access_url
-from utils.file_utils import sanitize_filename, create_output_folder
-from collectors.SocrataPageProcessor import SocrataPageProcessor
-from collectors.SocrataMetadataExtractor import SocrataMetadataExtractor
-from collectors.SocrataDatasetDownloader import SocrataDatasetDownloader
-
+from utils.url_utils import is_valid_url, access_url, fetch_url_head, infer_file_type
 
 
 class CatalogDataCollector:
     """
-    Collector for Catalog.data.gov-hosted data pages.
-    
-    Handles collection of data from Catalog.data.gov sites including:
-    - URL validation and access
-    - PDF generation from HTML pages
-    - Dataset download (using Socrata API)
-    - Metadata extraction
+    Collector for catalog.data.gov dataset pages.
+
+    Extracts download resource links from the "Downloads & Resources" section,
+    follows each link, and records file type and title for non-404 responses.
     """
-    
+
+    _DOWNLOADS_SECTION_HEADING = "Downloads & Resources"
+
     def __init__(self, headless: bool = True) -> None:
         """
-        Initialize SocrataCollector.
-        
+        Initialize CatalogDataCollector.
+
         Args:
             headless: If False, run browser in visible mode for debugging
         """
@@ -49,19 +41,18 @@ class CatalogDataCollector:
         self._browser: Optional[Browser] = None
         self._page: Optional[Page] = None
         self._result: Optional[Dict[str, Any]] = None
-    
+
     def run(self, drpid: int) -> None:
         """
-        Run the collectors module for a single project (ModuleProtocol interface).
-        
-        Gets project record from Storage, calls collect() with source_url,
-        and updates Storage with collection results.
-        
+        Run the collector for a single project (ModuleProtocol interface).
+
+        Gets project record from Storage, calls _collect() with source_url,
+        and updates Storage with status_notes.
+
         Args:
             drpid: The DRPID of the project to process.
         """
         self._drpid = drpid
-        # Get project record from Storage
         record = Storage.get(drpid)
         if record is None:
             record_error(
@@ -71,7 +62,6 @@ class CatalogDataCollector:
             )
             return
 
-        # Validate source_url exists in storage
         source_url = record.get("source_url")
         if not source_url:
             record_error(
@@ -81,235 +71,303 @@ class CatalogDataCollector:
             return
 
         try:
-            # Call collect() method
             result = self._collect(source_url, drpid)
-
-            # Transfer result dict to Storage
             self._update_storage_from_result(drpid, result)
-
-        except Exception as e:
+        except Exception as exc:
             record_error(
                 drpid,
-                f"Exception during collection for DRPID {drpid}: {str(e)}",
+                f"Exception during collection for DRPID {drpid}: {str(exc)}",
             )
-    
+
     def _collect(self, url: str, drpid: int) -> Dict[str, Any]:
         """
-        Collect data from a Socrata URL.
-        
-        Main entry point for collection. Performs all collection steps:
-        1. Validates and accesses URL
-        2. Creates output folder (named based on DRPID)
-        3. Generates PDF (with original page title, sanitized)
-        4. Downloads dataset (with original filename, sanitized)
-        5. Extracts metadata
-        
+        Collect download resource info from a catalog.data.gov source page.
+
+        Loads the source page, finds "Downloads & Resources", extracts links
+        from the sibling <ul>, follows each link, and records file type + title
+        for non-404 responses.
+
         Args:
-            url: Source URL to collect from
+            url: Source URL (catalog.data.gov dataset page)
             drpid: DRPID for the record
-            
+
         Returns:
-            Flat dict with Storage field names: folder_path, title, summary,
-            keywords, collection_notes, file_size, download_date, status, etc.
-            Only non-None entries are transferred to Storage.
+            Dict with status_notes (and optionally status) for Storage update.
         """
-        # Flat result dict using Storage field names; only set keys we have values for
         self._result = {}
 
-        # Validate and access URL
         if not self._validate_and_access_url(url):
             return self._result
-        
-        # Create output folder (named based on DRPID)
-        base_output_dir = Path(Args.base_output_dir)
-        folder_path = create_output_folder(base_output_dir, drpid)
-        if not folder_path:
-            error_msg = "Failed to create output folder"
-            record_error(
-                drpid,
-                error_msg,
-            )
-            return self._result
-        self._result["folder_path"] = str(folder_path)
-        
+
         try:
-            # Initialize browser and load page
             if not self._init_browser_and_load_page(url):
                 return self._result
-            
-            # Process page and generate PDF
-            self._process_and_generate_pdf(folder_path)
-            
-            # Download dataset and extract metadata
-            self._download_dataset_and_extract_metadata(folder_path)
-            
-        except Exception as e:
-            record_error(
-                drpid,
-                f"Collection error: {str(e)}",
-            )
+
+            links = self._extract_download_links()
+            if links is None:
+                return self._result
+
+            if not links:
+                record_error(
+                    drpid,
+                    "Downloads & Resources section has no links",
+                )
+                return self._result
+
+            resources = self._follow_links_and_collect_resources(links)
+            if resources is None:
+                return self._result
+
+            status_notes = self._format_status_notes(resources)
+            self._result["status_notes"] = status_notes
+            Logger.info(f"Downloads & Resources:{status_notes}")
         finally:
             self._cleanup_browser()
-        
+
         return self._result
-    
+
     def _validate_and_access_url(self, url: str) -> bool:
         """
         Validate URL and check accessibility.
-        
-        Updates result status on failure.
-        
+
         Args:
             url: URL to validate and access
-            
+
         Returns:
-            True if URL is valid and accessible, False otherwise
+            True if valid and accessible, False otherwise
         """
         if not is_valid_url(url):
-            record_error(
-                self._drpid,
-                f"Invalid URL: {url}",
-            )
+            record_error(self._drpid, f"Invalid URL: {url}")
             return False
 
         access_success, status_msg = access_url(url)
         if not access_success:
-            record_error(
-                self._drpid,
-                f"URL access failed: {url} - {status_msg}",
-            )
+            record_error(self._drpid, f"URL access failed: {url} - {status_msg}")
             return False
 
         Logger.debug(f"Successfully accessed URL: {url}")
         return True
-    
+
     def _init_browser_and_load_page(self, url: str) -> bool:
         """
-        Initialize browser and load the page.
-        
-        Updates result status on failure.
-        
+        Initialize Playwright browser and load the source page.
+
         Args:
             url: URL to load
-            
+
         Returns:
             True if successful, False otherwise
         """
         if not self._init_browser():
-            record_error(
-                self._drpid,
-                "Failed to initialize browser")
+            record_error(self._drpid, "Failed to initialize browser")
             return False
 
         try:
             self._page.goto(url, wait_until="domcontentloaded", timeout=120000)
             self._page.wait_for_timeout(500)
             return True
-        except Exception as e:
-            error_msg = f"Failed to load page: {str(e)}"
+        except Exception as exc:
+            record_error(self._drpid, f"Failed to load page: {str(exc)}")
+            return False
+
+    def _extract_download_links(self) -> Optional[List[Tuple[str, str]]]:
+        """
+        Find "Downloads & Resources" h3, its sibling ul, and extract (href, text) from li>a.
+
+        Returns:
+            List of (href, link_text) tuples, or None if section not found.
+        """
+        script = """
+        () => {
+            function getDirectText(el) {
+                let t = '';
+                for (let i = 0; i < el.childNodes.length; i++) {
+                    if (el.childNodes[i].nodeType === 3)
+                        t += el.childNodes[i].textContent;
+                }
+                return t.trim().replace(/\\s+/g, ' ');
+            }
+            const h3s = document.querySelectorAll('h3');
+            const h3 = Array.from(h3s).find(h =>
+                h.textContent && h.textContent.trim() === 'Downloads & Resources'
+            );
+            if (!h3) return null;
+            const ul = h3.nextElementSibling;
+            if (!ul || ul.tagName !== 'UL') return null;
+            const links = [];
+            ul.querySelectorAll('li a').forEach(a => {
+                if (a.href) {
+                    links.push({
+                        href: a.href,
+                        text: getDirectText(a)
+                    });
+                }
+            });
+            return links;
+        }
+        """
+        result = self._page.evaluate(script)
+        if result is None:
             record_error(
                 self._drpid,
-                error_msg,
+                f"Source page missing '<h3>Downloads & Resources</h3>' or sibling <ul>",
             )
-            return False
-    
-    def _process_and_generate_pdf(self, folder_path: Path) -> None:
+            return None
+        raw_links = [(item["href"], item["text"]) for item in result]
+        return self._dedupe_links(raw_links)
+
+    def _dedupe_links(
+        self, links: List[Tuple[str, str]]
+    ) -> List[Tuple[str, str]]:
         """
-        Process page and generate PDF.
-        
-        PDF filename uses the original page title (sanitized).
-        
+        Remove duplicate links by href (first occurrence wins).
+
         Args:
-            folder_path: Folder where PDF should be saved
-        """
-        page_processor = SocrataPageProcessor(self)
-        
-        # Get page title for PDF filename
-        try:
-            page_title = self._page.title()
-            if page_title:
-                pdf_filename = sanitize_filename(page_title, max_length=100) + ".pdf"
-            else:
-                # Fallback if no title
-                pdf_filename = "page.pdf"
-        except Exception:
-            pdf_filename = "page.pdf"
-        
-        pdf_path = folder_path / pdf_filename
-        page_processor.generate_pdf(pdf_path)
-    
-    def _download_dataset_and_extract_metadata(self, folder_path: Path) -> None:
-        """
-        Download dataset and extract metadata.
-        
-        Dataset filename uses the original filename from the download (sanitized).
-        
-        Args:
-            folder_path: Folder where dataset should be saved
-        """
-        dataset_downloader = SocrataDatasetDownloader(self)
-        dataset_downloader.download(folder_path)
-        
-        # Extract metadata
-        metadata_extractor = SocrataMetadataExtractor(self)
-        metadata_extractor.extract_all_metadata()
-    
-    def _init_browser(self) -> bool:
-        """
-        Initialize Playwright browser and page.
-        
+            links: List of (href, text) tuples
+
         Returns:
-            True if successful, False otherwise
+            Deduplicated list preserving order
         """
+        seen: set[str] = set()
+        deduped: List[Tuple[str, str]] = []
+        for href, text in links:
+            if href not in seen:
+                seen.add(href)
+                deduped.append((href, text))
+        return deduped
+
+    def _resolve_catalog_resource_page(
+        self, catalog_url: str
+    ) -> Optional[Tuple[str, Optional[str]]]:
+        """
+        Load a catalog.data.gov resource page and extract #res_url link.
+
+        Args:
+            catalog_url: URL of catalog.data.gov resource page
+
+        Returns:
+            (actual_download_url, data_format) or None if #res_url not found.
+        """
+        try:
+            self._page.goto(catalog_url, wait_until="domcontentloaded", timeout=30000)
+            self._page.wait_for_timeout(300)
+        except Exception:
+            return None
+
+        script = """
+        () => {
+            const a = document.getElementById('res_url');
+            if (!a || !a.href) return null;
+            return {
+                href: a.href,
+                dataFormat: a.getAttribute('data-format') || null
+            };
+        }
+        """
+        result = self._page.evaluate(script)
+        if result is None:
+            return None
+        data_format = result.get("dataFormat")
+        if data_format:
+            data_format = str(data_format).lower().strip()
+        return (result["href"], data_format)
+
+    def _follow_links_and_collect_resources(
+        self, links: List[Tuple[str, str]]
+    ) -> Optional[List[Tuple[str, str]]]:
+        """
+        Follow each link with HEAD request; record (title, result) for all links.
+
+        For hrefs starting with https://catalog.data.gov, loads the resource page
+        and follows the #res_url link instead.
+
+        Args:
+            links: List of (href, link_text) from _extract_download_links
+
+        Returns:
+            List of (title, result, url) for all links, or None if all 404.
+        """
+        entries: List[Tuple[str, str, str]] = []
+        has_success = False
+        for href, title in links:
+            title_clean = title.strip() or "(no title)"
+            actual_url = href
+            data_format: Optional[str] = None
+
+            if href.startswith("https://catalog.data.gov"):
+                resolved = self._resolve_catalog_resource_page(href)
+                if resolved is None:
+                    entries.append((title_clean, "404", ""))
+                    continue
+                actual_url, data_format = resolved
+
+            status_code, content_type, error_msg = fetch_url_head(actual_url)
+            if status_code == 404 or status_code < 0:
+                entries.append((title_clean, "404", ""))
+            else:
+                file_type = (
+                    data_format
+                    if data_format
+                    else infer_file_type(actual_url, content_type)
+                )
+                entries.append((title_clean, file_type, actual_url))
+                has_success = True
+
+        if not has_success:
+            record_error(
+                self._drpid,
+                "All download links returned 404",
+            )
+            return None
+        return entries
+
+    def _format_status_notes(
+        self, entries: List[Tuple[str, str, str]]
+    ) -> str:
+        """Format resource list for status_notes (title -> result, with URL for success)."""
+        lines = []
+        for title, result, url in entries:
+            line = f"  {title} -> {result}"
+            if url:
+                line += f" {url}"
+            lines.append(line)
+        return "\n" + "\n".join(lines)
+
+    def _init_browser(self) -> bool:
+        """Initialize Playwright browser and page."""
         try:
             self._playwright = sync_playwright().start()
             self._browser = self._playwright.chromium.launch(
                 headless=self._headless,
-                slow_mo=500 if not self._headless else 0
+                slow_mo=500 if not self._headless else 0,
             )
             self._page = self._browser.new_page()
             return True
-        except Exception as e:
-            Logger.error(f"Failed to initialize browser: {e}")
+        except Exception as exc:
+            Logger.error(f"Failed to initialize browser: {exc}")
             self._cleanup_browser()
             return False
-    
+
     def _cleanup_browser(self) -> None:
         """Clean up browser resources."""
         if self._browser:
             with suppress(Exception):
                 self._browser.close()
             self._browser = None
-        
         if self._playwright:
             with suppress(Exception):
                 self._playwright.stop()
             self._playwright = None
-        
         self._page = None
-    
-    def _update_storage_from_result(self, drpid: int, result: Dict[str, Any]) -> None:
+
+    def _update_storage_from_result(
+        self, drpid: int, result: Dict[str, Any]
+    ) -> None:
         """
-        Transfer result dict to Storage.
+        Transfer result dict to Storage (status_notes and optional status).
 
-        Only keys that are Storage column names and have non-None values are
-        written. Sets status: "Error" if already recorded; else keeps result status
-        (e.g. "collector - file pending" when download skipped); else "collector" if
-        we have folder_path.
-
-        Args:
-            drpid: The DRPID of the project.
-            result: Flat result dict from collect() (Storage field names).
+        Does not set status to "collector" since we do not produce folder_path.
         """
-        current = Storage.get(drpid)
-        if current and current.get("status") == "Error":
-            result = {**result, "status": "Error"}
-        elif not result.get("status") and result.get("folder_path"):
-            result = {**result, "status": "collector"}
-
-        update_fields = {
-            k: v for k, v in result.items()
-            if v is not None
-        }
+        update_fields = {k: v for k, v in result.items() if v is not None}
         if update_fields:
             Storage.update_record(drpid, update_fields)

@@ -139,7 +139,8 @@ class Orchestrator:
             Storage.clear_all_records()
         
         num_rows: Optional[int] = Args.num_rows
-        Logger.info(f"Orchestrator running module={module!r} num_rows={num_rows}")
+        start_row: Optional[int] = Args.start_row
+        Logger.info(f"Orchestrator running module={module!r} num_rows={num_rows} start_row={start_row}")
         
         # Handle noop directly
         if module == "noop":
@@ -155,7 +156,7 @@ class Orchestrator:
             module_instance.run(-1)
         else:
             # Modules with prereq: call run(drpid) for each eligible project
-            projects = Storage.list_eligible_projects(prereq, num_rows)
+            projects = Storage.list_eligible_projects(prereq, num_rows, start_row)
             Logger.info(f"Orchestrator module={module!r} eligible projects={len(projects)}")
             max_workers = Args.max_workers or 1
             max_workers = max(1, int(max_workers))

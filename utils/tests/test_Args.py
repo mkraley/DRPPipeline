@@ -245,6 +245,14 @@ class TestArgs(unittest.TestCase):
         self.assertEqual(Path(Args.db_path), Path("C:/data/drp.db"))
         self.assertEqual(Args.storage_implementation, "StorageSQLLite")
 
+    def test_start_row_from_cli(self) -> None:
+        """Test --start-row from CLI."""
+        import sys
+        sys.argv = ["test", "collector", "--start-row", "10"]
+        Args._initialized = False
+        Args.initialize()
+        self.assertEqual(Args.start_row, 10)
+
 
 if __name__ == "__main__":
     unittest.main()

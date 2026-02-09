@@ -9,9 +9,16 @@ Collectors handle the collection of data from various sources:
 - Download files
 """
 
+from .CatalogDataCollector import CatalogDataCollector
 from .SocrataCollector import SocrataCollector
 from .SocrataPageProcessor import SocrataPageProcessor
 from .SocrataMetadataExtractor import SocrataMetadataExtractor
 from .SocrataDatasetDownloader import SocrataDatasetDownloader
 
-__all__ = ['SocrataCollector', 'SocrataPageProcessor', 'SocrataMetadataExtractor', 'SocrataDatasetDownloader']
+__all__ = [
+    'CatalogDataCollector',
+    'SocrataCollector',
+    'SocrataPageProcessor',
+    'SocrataMetadataExtractor',
+    'SocrataDatasetDownloader',
+]

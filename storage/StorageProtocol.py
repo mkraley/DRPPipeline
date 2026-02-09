@@ -102,20 +102,34 @@ class StorageProtocol(Protocol):
         ...
     
     def list_eligible_projects(
-        self, prereq_status: Optional[str], limit: Optional[int]
+        self,
+        prereq_status: Optional[str],
+        limit: Optional[int],
+        start_row: Optional[int] = None,
     ) -> list[Dict[str, Any]]:
         """
         List projects eligible for the next module: status == prereq_status and no errors.
 
-        Order by DRPID ASC. Optionally limit the number of rows. Return full row dicts.
-        Only the orchestrator should call this; when prereq_status is None, return [].
+        Order by DRPID ASC. Optionally limit the number of rows. Optionally skip
+        first (start_row - 1) rows when start_row is set (1-origin).
 
         Args:
             prereq_status: Required status (e.g. "sourcing" for collectors). None -> [].
             limit: Max rows to return. None = no limit.
+            start_row: If set, skip first (start_row - 1) rows of the full table (1-origin).
+                       Counts all rows, not just eligible ones.
 
         Returns:
             List of full row dicts (all columns, including None for nulls).
+        """
+        ...
+
+    def list_records_with_status_notes(self) -> list[Dict[str, Any]]:
+        """
+        List all records that have non-null, non-empty status_notes.
+
+        Returns:
+            List of full row dicts (DRPID, source_url, status_notes, etc.) ordered by DRPID ASC.
         """
         ...
 

@@ -379,34 +379,46 @@ class StorageSQLLite:
         return self._db_path
 
     def list_eligible_projects(
-        self, prereq_status: Optional[str], limit: Optional[int]
+        self,
+        prereq_status: Optional[str],
+        limit: Optional[int],
+        start_row: Optional[int] = None,
     ) -> list[Dict[str, Any]]:
         """
         List projects eligible for the next module: status == prereq_status and no errors.
 
-        Order by DRPID ASC. Optionally limit the number of rows. Return full row dicts.
-        When prereq_status is None, return [].
+        Order by DRPID ASC. Optionally limit the number of rows. Optionally skip
+        first (start_row - 1) rows when start_row is set (1-origin).
 
         Args:
             prereq_status: Required status (e.g. "sourcing" for collectors). None -> [].
             limit: Max rows to return. None = no limit.
+            start_row: If set, skip first (start_row - 1) rows of the full table (1-origin).
+                   Row count is over all projects ORDER BY DRPID, not just eligible ones.
 
         Returns:
             List of full row dicts (all columns, including None for nulls).
         """
         if prereq_status is None:
             return []
+        params: list[Any] = [prereq_status]
+        min_drpid_clause = ""
+        if start_row is not None and start_row > 1:
+            # Get DRPID at position start_row (1-origin) in full table
+            subq = "SELECT DRPID FROM projects ORDER BY DRPID LIMIT 1 OFFSET ?"
+            min_drpid_clause = " AND DRPID >= (" + subq + ")"
+            params.append(start_row - 1)
         query = (
             "SELECT * FROM projects "
-            "WHERE status = ? AND (errors IS NULL OR errors = '') "
-            "ORDER BY DRPID ASC"
+            "WHERE status = ? AND (errors IS NULL OR errors = '')"
+            + min_drpid_clause
+            + " ORDER BY DRPID ASC"
         )
-        params: Tuple[Any, ...] = (prereq_status,)
         if limit is not None:
             query += " LIMIT ?"
-            params = (prereq_status, limit)
+            params.append(limit)
         cursor = self._execute_query(
-            query, params, operation_name="list_eligible_projects", commit=False
+            query, tuple(params), operation_name="list_eligible_projects", commit=False
         )
         rows = cursor.fetchall()
         column_names = [d[0] for d in cursor.description]
@@ -414,6 +426,25 @@ class StorageSQLLite:
         for row in rows:
             result.append(dict(zip(column_names, row)))
         return result
+
+    def list_records_with_status_notes(self) -> list[Dict[str, Any]]:
+        """
+        List all records that have non-null, non-empty status_notes.
+
+        Returns:
+            List of full row dicts ordered by DRPID ASC.
+        """
+        query = (
+            "SELECT * FROM projects "
+            "WHERE status_notes IS NOT NULL AND TRIM(status_notes) != '' "
+            "ORDER BY DRPID ASC"
+        )
+        cursor = self._execute_query(
+            query, None, operation_name="list_records_with_status_notes", commit=False
+        )
+        rows = cursor.fetchall()
+        column_names = [d[0] for d in cursor.description]
+        return [dict(zip(column_names, row)) for row in rows]
 
     def append_to_field(
         self, drpid: int, field: Literal["warnings", "errors"], text: str

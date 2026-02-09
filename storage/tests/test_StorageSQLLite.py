@@ -516,6 +516,28 @@ class TestStorageSQLLite(unittest.TestCase):
         self.assertEqual(out[0]["DRPID"], 1)
         self.assertEqual(out[1]["DRPID"], 2)
 
+    def test_list_eligible_projects_respects_start_row(self) -> None:
+        """Test list_eligible_projects skips first (start_row - 1) rows of full table."""
+        self.storage.initialize(db_path=self.test_db_path)
+        for i in range(5):
+            self.storage.create_record(f"https://example.com/{i}")
+            self.storage.update_record(i + 1, {"status": "sourcing"})
+        out = self.storage.list_eligible_projects("sourcing", None, start_row=3)
+        self.assertEqual(len(out), 3)
+        self.assertEqual([r["DRPID"] for r in out], [3, 4, 5])
+
+    def test_list_eligible_projects_start_row_counts_all_rows(self) -> None:
+        """Test start_row uses full table row count, not just eligible rows."""
+        self.storage.initialize(db_path=self.test_db_path)
+        for i in range(5):
+            self.storage.create_record(f"https://example.com/{i}")
+        self.storage.update_record(1, {"status": "sourcing"})
+        self.storage.update_record(3, {"status": "sourcing"})
+        self.storage.update_record(5, {"status": "sourcing"})
+        # Rows 2,4 have other status. Full table: 1,2,3,4,5. start_row=4 -> DRPID>=4
+        out = self.storage.list_eligible_projects("sourcing", None, start_row=4)
+        self.assertEqual([r["DRPID"] for r in out], [5])
+
     def test_list_eligible_projects_order_by_drpid(self) -> None:
         """Test list_eligible_projects returns rows ordered by DRPID ASC."""
         self.storage.initialize(db_path=self.test_db_path)
@@ -575,3 +597,18 @@ class TestStorageSQLLite(unittest.TestCase):
         r = self.storage.get(1)
         # Leading spaces preserved, trailing space from last entry stripped
         self.assertEqual(r["warnings"], " warning1 \n warning2")
+
+    def test_list_records_with_status_notes(self) -> None:
+        """Test list_records_with_status_notes returns only records with non-empty status_notes."""
+        self.storage.initialize(db_path=self.test_db_path)
+        self.storage.create_record("https://a.com")
+        self.storage.create_record("https://b.com")
+        self.storage.create_record("https://c.com")
+        self.storage.update_record(1, {"status_notes": "  CSV -> csv\n  JSON -> 404"})
+        self.storage.update_record(3, {"status_notes": "  X -> html https://x.com"})
+        out = self.storage.list_records_with_status_notes()
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0]["DRPID"], 1)
+        self.assertIn("CSV", out[0]["status_notes"])
+        self.assertEqual(out[1]["DRPID"], 3)
+        self.assertIn("https://x.com", out[1]["status_notes"])
