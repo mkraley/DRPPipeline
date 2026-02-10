@@ -5,7 +5,82 @@ Unit tests for the Interactive Collector Flask app.
 import unittest
 from unittest.mock import patch
 
-from interactive_collector.app import app, _status_label
+from interactive_collector.app import (
+    app,
+    _base_url_for_page,
+    _inject_base_into_html,
+    _rewrite_links_to_app,
+    _status_label,
+)
+
+
+class TestBaseInjection(unittest.TestCase):
+    """Tests for base URL and HTML injection."""
+
+    def test_base_url_for_page_with_path(self) -> None:
+        """Base URL ends with slash for path URLs."""
+        self.assertEqual(
+            _base_url_for_page("https://catalog.data.gov/dataset/accessgudid-1f586"),
+            "https://catalog.data.gov/dataset/",
+        )
+
+    def test_base_url_for_page_already_trailing_slash(self) -> None:
+        """URL that already ends with / is returned as-is (directory as page)."""
+        self.assertEqual(
+            _base_url_for_page("https://example.com/folder/"),
+            "https://example.com/folder/",
+        )
+
+    def test_inject_base_into_html(self) -> None:
+        """Base tag is inserted after <head>."""
+        html_body = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body></body></html>"
+        result = _inject_base_into_html(html_body, "https://example.com/folder/page")
+        self.assertIn("<base href=\"https://example.com/folder/", result)
+        self.assertIn("<head>", result)
+        self.assertIn("<meta charset=", result)
+
+
+class TestRewriteLinks(unittest.TestCase):
+    """Tests for _rewrite_links_to_app."""
+
+    def test_rewrites_relative_link(self) -> None:
+        """Relative href is resolved and rewritten to app URL."""
+        html = '<a href="/dataset/other">Link</a>'
+        result = _rewrite_links_to_app(
+            html,
+            "https://catalog.data.gov/dataset/accessgudid-1f586",
+            "http://127.0.0.1:5000",
+        )
+        self.assertIn("target=\"_top\"", result)
+        self.assertIn("http://127.0.0.1:5000/?url=", result)
+        self.assertIn("catalog.data.gov", result)
+
+    def test_rewrites_absolute_http_link(self) -> None:
+        """Absolute http href is rewritten to app URL."""
+        html = '<a href="https://catalog.data.gov/other">Link</a>'
+        result = _rewrite_links_to_app(html, "https://catalog.data.gov/page", "http://localhost:5000")
+        self.assertIn("http://localhost:5000/?url=", result)
+        self.assertIn("https%3A%2F%2Fcatalog.data.gov%2Fother", result)
+
+    def test_leaves_anchor_unchanged(self) -> None:
+        """Hash-only href is left unchanged."""
+        html = '<a href="#section">Jump</a>'
+        result = _rewrite_links_to_app(html, "https://example.com/page", "http://app")
+        self.assertIn('href="#section"', result)
+        self.assertNotIn("http://app", result)
+
+    def test_leaves_mailto_unchanged(self) -> None:
+        """mailto: href is left unchanged."""
+        html = '<a href="mailto:foo@example.com">Email</a>'
+        result = _rewrite_links_to_app(html, "https://example.com/page", "http://app")
+        self.assertIn('href="mailto:foo@example.com"', result)
+
+    def test_does_not_rewrite_link_stylesheet(self) -> None:
+        """<link href="..."> for CSS is left unchanged so styles load from original server."""
+        html = '<link rel="stylesheet" href="/static/style.css">'
+        result = _rewrite_links_to_app(html, "https://catalog.data.gov/dataset/x", "http://127.0.0.1:5000")
+        self.assertIn('href="/static/style.css"', result)
+        self.assertNotIn("127.0.0.1:5000", result)
 
 
 class TestStatusLabel(unittest.TestCase):
