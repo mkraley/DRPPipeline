@@ -159,7 +159,7 @@ class Args(metaclass=ArgsMeta):
         
         def callback(
             ctx: typer.Context,
-            module: str = typer.Argument(..., help="Module to run: noop, sourcing, collector, upload, publisher, cleanup_inprogress"),
+            module: str = typer.Argument(..., help="Module to run: noop, sourcing, collector, upload, publisher, cleanup_inprogress, interactive_collector"),
             config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to configuration file (JSON format). Default: ./config.json"),
             log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Set the logging level", case_sensitive=False),
             num_rows: Optional[int] = typer.Option(None, "--num-rows", "-n", help="Max projects or candidate URLs per batch; None = unlimited"),

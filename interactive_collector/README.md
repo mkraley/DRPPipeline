@@ -1,6 +1,6 @@
 # Interactive Collector
 
-Standalone tool to fetch URLs and explore links. It runs independently from the DRP Pipeline but reuses pipeline code (URL fetch, 404 and logical-404 detection).
+Standalone tool to fetch URLs and explore links. It reuses pipeline code (URL fetch, 404 and logical-404 detection) and can be driven by the DRP Pipeline from the database (first eligible project with prereq=sourcing, no errors).
 
 ## Phase 1 — Done
 
@@ -15,11 +15,19 @@ Standalone tool to fetch URLs and explore links. It runs independently from the 
 - **Follow links**: Links in the page are rewritten so that clicking opens the target in the **Linked** pane and keeps the source page visible in **Source**.
 - **Base tag** injection so relative CSS/JS/images load; only `<a href="...">` is rewritten (stylesheets etc. unchanged).
 
+## Pipeline integration — Done
+
+- **DB-driven**: The app uses the pipeline database (Storage) when available. On first load with no URL, it asks Storage for the first eligible project (prereq=sourcing, no errors) and populates the Source pane and **DRPID** in the top bar.
+- **Next**: When a project is loaded, a **Next** button appears; it fetches the next eligible project (by DRPID) and loads it.
+- **Load by DRPID**: Enter a DRPID in the **Load DRPID** field and click **Load** to fetch that project’s record and load its source URL.
+- **Run from orchestrator**: Use module `interactive_collector`. The orchestrator sets the app’s DB path (same as pipeline) and starts the Flask app; the app then loads the first eligible project from Storage. No environment variables are used.
+- **Standalone**: Run `python -m interactive_collector`; the app uses `drp_pipeline.db` in the current directory by default. If there are no eligible projects, the form is shown with no DRPID.
+
 ## Phase 3 — Next
 
 - **Persistence**: Optional save/load or clear of scoreboard (or persist to pipeline DB).
 - **Export**: Export scoreboard or visited-URL list (e.g. for pipeline input).
-- **Pipeline integration**: Feed collected URLs/status into the DRP pipeline.
+- **Pipeline integration (further)**: Feed collected URLs/status back into the DRP pipeline (e.g. update record after collection).
 - **Polish**: Clear scoreboard button, invalid-URL handling in link-click flow, optional back/forward.
 
 ## Requirements
@@ -29,6 +37,8 @@ Standalone tool to fetch URLs and explore links. It runs independently from the 
 
 ## Run from repository root
 
+**Standalone (form-driven):**
+
 From the DRPPipeline repo root:
 
 ```text
@@ -36,6 +46,16 @@ python -m interactive_collector
 ```
 
 Then open **http://127.0.0.1:5000/** in a browser. Use the form to enter a URL and click **Go**. Click links in the Source (or Linked) pane to open them in the Linked pane; the scoreboard shows a tree of visited URLs and 404s.
+
+**Pipeline-driven (DB-driven):**
+
+From the repo root, run the pipeline with module `interactive_collector` (same DB and args as other modules):
+
+```text
+python main.py --module interactive_collector [--db-path drp_pipeline.db]
+```
+
+The orchestrator finds the first project eligible for collection (prereq=sourcing, no errors), sets the initial URL and DRPID, and starts the app. Open **http://127.0.0.1:5000/**; the Source pane shows that project’s URL and the top bar shows **DRPID: &lt;id&gt;**.
 
 ## Running tests
 
@@ -53,4 +73,4 @@ Or run the whole project test suite; `utils.tests.test_url_utils` includes tests
 - `__main__.py` — Entrypoint for `python -m interactive_collector`.
 - `tests/` — Unit tests for the app and helpers.
 
-The tool imports from `utils.url_utils` (`is_valid_url`, `fetch_page_body`). Pipeline integration is planned for later.
+The tool imports from `utils.url_utils` (`is_valid_url`, `fetch_page_body`) and uses `storage.Storage` to read the pipeline DB (first/next eligible, load by DRPID). The orchestrator sets `app.config["DRP_DB_PATH"]` so the app uses the same database.

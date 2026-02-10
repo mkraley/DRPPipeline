@@ -37,6 +37,7 @@ class TestOrchestrator(unittest.TestCase):
         self.assertIn("sourcing", str(cm.exception))
         self.assertIn("collector", str(cm.exception))
         self.assertIn("cleanup_inprogress", str(cm.exception))
+        self.assertIn("interactive_collector", str(cm.exception))
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")
@@ -119,3 +120,13 @@ class TestOrchestrator(unittest.TestCase):
         args = mock_record_error.call_args[0]
         self.assertEqual(args[0], 1)
         self.assertIn("not yet implemented", args[1])
+
+    @patch("interactive_collector.app.app.run")
+    def test_run_interactive_collector_starts_app(self, mock_app_run: MagicMock) -> None:
+        """Test run('interactive_collector') starts Flask app (uses Args like rest of pipeline)."""
+        Orchestrator.run("interactive_collector")
+        mock_app_run.assert_called_once()
+        call_kw = mock_app_run.call_args[1]
+        self.assertEqual(call_kw.get("host"), "127.0.0.1")
+        self.assertEqual(call_kw.get("port"), 5000)
+        self.assertFalse(call_kw.get("debug"))

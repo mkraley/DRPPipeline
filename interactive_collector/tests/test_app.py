@@ -3,7 +3,8 @@ Unit tests for the Interactive Collector Flask app.
 """
 
 import unittest
-from unittest.mock import patch
+from typing import Dict
+from unittest.mock import MagicMock, patch
 
 from interactive_collector.app import (
     app,
@@ -11,6 +12,7 @@ from interactive_collector.app import (
     _inject_base_into_html,
     _rewrite_links_to_app,
     _status_label,
+    _unique_pdf_basename,
 )
 
 
@@ -117,6 +119,36 @@ class TestRewriteLinks(unittest.TestCase):
         self.assertIn("resource", result)
         self.assertIn("abc", result)
 
+    def test_rewrite_includes_drpid_when_given(self) -> None:
+        """When drpid is passed, rewritten links include drpid= for current project."""
+        html = '<a href="https://example.com/other">Link</a>'
+        result = _rewrite_links_to_app(
+            html,
+            "https://example.com/page",
+            "http://127.0.0.1:5000",
+            source_url="https://example.com/page",
+            current_page_url="https://example.com/page",
+            drpid="12",
+        )
+        self.assertIn("drpid=12", result)
+        self.assertIn("linked_url=", result)
+
+
+class TestUniquePdfBasename(unittest.TestCase):
+    """Tests for _unique_pdf_basename."""
+
+    def test_first_use_no_suffix(self) -> None:
+        """First use of a base returns sanitized base.pdf."""
+        used: Dict[str, int] = {}
+        self.assertEqual(_unique_pdf_basename("My Page", used), "My_Page.pdf")
+
+    def test_duplicate_gets_suffix(self) -> None:
+        """Duplicate base names get _1, _2 suffix."""
+        used: Dict[str, int] = {}
+        self.assertEqual(_unique_pdf_basename("Dataset", used), "Dataset.pdf")
+        self.assertEqual(_unique_pdf_basename("Dataset", used), "Dataset_1.pdf")
+        self.assertEqual(_unique_pdf_basename("Dataset", used), "Dataset_2.pdf")
+
 
 class TestStatusLabel(unittest.TestCase):
     """Tests for _status_label helper."""
@@ -147,14 +179,81 @@ class TestAppRoutes(unittest.TestCase):
         app_module._scoreboard = []
         self.client = app.test_client()
 
-    def test_index_no_url_returns_form(self) -> None:
-        """GET / with no url param returns form and empty panes."""
+    @patch("storage.Storage")
+    def test_index_no_url_returns_form(self, mock_storage_cls: MagicMock) -> None:
+        """GET / with no url param returns form and empty panes when no eligible project in Storage."""
+        mock_storage_cls.list_eligible_projects.side_effect = [[], []]  # ensure_storage, get_first_eligible
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Interactive Collector", response.data)
         self.assertIn(b"name=\"url\"", response.data)
         self.assertIn(b"Go", response.data)
         self.assertIn(b"Scoreboard", response.data)
+        # No current project DRPID block (avoid matching "Load DRPID:" label)
+        self.assertNotIn(b'class="drpid"', response.data)
+
+    @patch("interactive_collector.app.fetch_page_body")
+    @patch("storage.Storage")
+    def test_index_first_eligible_from_storage_loads_url_and_shows_drpid(
+        self, mock_storage_cls: MagicMock, mock_fetch_page_body: unittest.mock.Mock
+    ) -> None:
+        """When Storage has eligible projects, GET / (no params) loads first and shows DRPID."""
+        mock_fetch_page_body.return_value = (
+            200,
+            "<html><body>Dataset page</body></html>",
+            "text/html",
+            False,
+        )
+        project = {"DRPID": 7, "source_url": "https://catalog.data.gov/dataset/foo"}
+        # First call: _ensure_storage probe (None, 0); second: _get_first_eligible ("sourcing", 1)
+        mock_storage_cls.list_eligible_projects.side_effect = [[], [project]]
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"DRPID: 7", response.data)
+        self.assertIn(b"https://catalog.data.gov/dataset/foo", response.data)
+        self.assertIn(b"Dataset page", response.data)
+        mock_fetch_page_body.assert_called_once_with("https://catalog.data.gov/dataset/foo")
+
+    @patch("storage.Storage")
+    def test_index_next_eligible_redirects_to_next_project(
+        self, mock_storage_cls: MagicMock
+    ) -> None:
+        """GET /?next=1&current_drpid=1 redirects to URL and drpid of next eligible project."""
+        next_project = {"DRPID": 5, "source_url": "https://example.com/next"}
+        # First call: _ensure_storage (None, 0); second: _get_next_eligible_after ("sourcing", 200)
+        mock_storage_cls.list_eligible_projects.side_effect = [
+            [],
+            [
+                {"DRPID": 1, "source_url": "https://example.com/first"},
+                next_project,
+            ],
+        ]
+
+        response = self.client.get("/", query_string={"next": "1", "current_drpid": "1"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("url=", response.location)
+        self.assertIn("drpid=5", response.location)
+        self.assertIn("example.com/next", response.location)
+
+    @patch("storage.Storage")
+    def test_index_load_drpid_redirects_to_project_url(
+        self, mock_storage_cls: MagicMock
+    ) -> None:
+        """GET /?load_drpid=3 redirects to that project's source_url with drpid=3."""
+        mock_storage_cls.get.return_value = {
+            "DRPID": 3,
+            "source_url": "https://catalog.data.gov/dataset/bar",
+        }
+
+        response = self.client.get("/", query_string={"load_drpid": "3"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("url=", response.location)
+        self.assertIn("drpid=3", response.location)
+        self.assertIn("catalog.data.gov", response.location)
 
     def test_index_invalid_url_returns_message(self) -> None:
         """GET / with invalid url shows Invalid URL and message."""
@@ -301,3 +400,31 @@ class TestAppRoutes(unittest.TestCase):
         self.assertIn(b"linked_url=", response.data)
         self.assertIn(b"source_url=", response.data)
         self.assertIn(b'<a ', response.data)
+
+    def test_save_redirects_when_no_folder_path(self) -> None:
+        """POST /save with no folder_path redirects to index."""
+        response = self.client.post(
+            "/save",
+            data={"folder_path": "", "scoreboard_urls_json": "[]", "save_url": ["0"]},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/", response.location)
+
+    def test_save_redirects_when_no_indices(self) -> None:
+        """POST /save with no save_url checkboxes redirects to index."""
+        response = self.client.post(
+            "/save",
+            data={"folder_path": "C:\\tmp\\DRP000001", "scoreboard_urls_json": "[]"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/", response.location)
+
+    def test_scoreboard_render_with_save_form_includes_checkbox_name(self) -> None:
+        """When for_save_form=True, checkboxes have name=save_url and value=index."""
+        import interactive_collector.app as app_module
+        app_module._scoreboard.clear()
+        app_module._scoreboard.append({"url": "https://example.com", "referrer": None, "status_label": "OK", "is_dupe": False})
+        from interactive_collector.app import _scoreboard_render_html
+        html = _scoreboard_render_html("http://127.0.0.1:5000", "https://example.com", drpid="1", for_save_form=True)
+        self.assertIn(b'name="save_url"', html.encode("utf-8"))
+        self.assertIn(b'value="0"', html.encode("utf-8"))

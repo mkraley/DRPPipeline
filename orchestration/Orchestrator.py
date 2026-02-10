@@ -45,6 +45,10 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": None,
         "class_name": "CleanupInProgress",
     },
+    "interactive_collector": {
+        "prereq": "sourcing",
+        "class_name": None,  # Handled directly: start Flask app with first eligible URL
+    },
 }
 
 
@@ -146,7 +150,15 @@ class Orchestrator:
         if module == "noop":
             Logger.info(f"Orchestrator finished module={module!r}")
             return
-        
+
+        # Handle interactive_collector: set DB path and start Flask app (app loads first eligible from Storage)
+        if module == "interactive_collector":
+            from interactive_collector.app import app as interactive_app
+            Logger.info("Starting interactive collector (open http://127.0.0.1:5000/)")
+            interactive_app.run(host="127.0.0.1", port=5000, debug=False)
+            Logger.info(f"Orchestrator finished module={module!r}")
+            return
+
         # Load and instantiate module class
         module_class = _find_module_class(class_name)
         module_instance = module_class()
