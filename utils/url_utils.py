@@ -4,6 +4,7 @@ Utilities for URL validation and access.
 Provides functions for validating URLs and checking their availability.
 """
 
+import re
 from typing import Dict, Optional, Tuple
 import requests
 
@@ -320,3 +321,41 @@ def fetch_page_body(
         if "Failed to establish a new connection" in err_str:
             return 404, "", None, False
         return -1, "", None, False
+
+
+def resolve_catalog_resource_url(catalog_url: str, timeout: int = 30) -> Optional[str]:
+    """
+    Resolve a catalog.data.gov resource page URL to the actual download URL.
+
+    Fetches the HTML page and reads the <a id="res_url"> element's href, which
+    points to the real file (S3, data.gov redirect, etc.). Does not use a browser;
+    uses the same fetch as fetch_page_body. Returns None if the page is 404 or
+    logical 404, or if #res_url is missing.
+
+    Args:
+        catalog_url: URL of a catalog.data.gov resource page (e.g. .../dataset/.../resource/...).
+        timeout: Request timeout in seconds.
+
+    Returns:
+        The resolved download URL, or None.
+    """
+    if not catalog_url.startswith("https://catalog.data.gov"):
+        return None
+    status_code, body, content_type, is_logical_404 = fetch_page_body(catalog_url, timeout=timeout)
+    if status_code == 404 or is_logical_404:
+        return None
+    if not body or not content_type or "text/html" not in content_type.lower():
+        return None
+    # Match <a id="res_url" href="..."> or id then href in either order
+    match = re.search(
+        r'<a\s+[^>]*id\s*=\s*["\']res_url["\'][^>]*href\s*=\s*["\']([^"\']+)["\']',
+        body, re.I | re.DOTALL
+    )
+    if not match:
+        match = re.search(
+            r'<a\s+[^>]*href\s*=\s*["\']([^"\']+)["\'][^>]*id\s*=\s*["\']res_url["\']',
+            body, re.I | re.DOTALL
+        )
+    if match:
+        return match.group(1).strip()
+    return None

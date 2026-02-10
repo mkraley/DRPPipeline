@@ -412,3 +412,40 @@ class TestUrlUtils(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body, "")
         self.assertEqual(ct, "text/html")
+
+
+class TestResolveCatalogResourceUrl(unittest.TestCase):
+    """Tests for resolve_catalog_resource_url."""
+
+    @patch("utils.url_utils.fetch_page_body")
+    def test_returns_res_url_href_when_present(self, mock_fetch: Mock) -> None:
+        """When HTML contains <a id=\"res_url\" href=\"...\">, returns that href."""
+        mock_fetch.return_value = (
+            200,
+            '<html><body><a id="res_url" href="https://data.example.com/file.csv">Download</a></body></html>',
+            "text/html",
+            False,
+        )
+        result = url_utils.resolve_catalog_resource_url("https://catalog.data.gov/dataset/x/resource/y")
+        self.assertEqual(result, "https://data.example.com/file.csv")
+
+    @patch("utils.url_utils.fetch_page_body")
+    def test_returns_none_for_non_catalog_url(self, mock_fetch: Mock) -> None:
+        """Non-catalog URL returns None without calling fetch."""
+        result = url_utils.resolve_catalog_resource_url("https://example.com/page")
+        self.assertIsNone(result)
+        mock_fetch.assert_not_called()
+
+    @patch("utils.url_utils.fetch_page_body")
+    def test_returns_none_for_404(self, mock_fetch: Mock) -> None:
+        """404 or logical 404 returns None."""
+        mock_fetch.return_value = (404, "Not found", "text/html", False)
+        result = url_utils.resolve_catalog_resource_url("https://catalog.data.gov/dataset/x/resource/y")
+        self.assertIsNone(result)
+
+    @patch("utils.url_utils.fetch_page_body")
+    def test_returns_none_when_res_url_missing(self, mock_fetch: Mock) -> None:
+        """When #res_url is missing from HTML, returns None."""
+        mock_fetch.return_value = (200, "<html><body>No link here</body></html>", "text/html", False)
+        result = url_utils.resolve_catalog_resource_url("https://catalog.data.gov/dataset/x/resource/y")
+        self.assertIsNone(result)

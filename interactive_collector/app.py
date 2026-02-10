@@ -12,7 +12,7 @@ from urllib.parse import quote, urljoin
 
 from flask import Flask, request, render_template_string
 
-from utils.url_utils import is_valid_url, fetch_page_body
+from utils.url_utils import is_valid_url, fetch_page_body, resolve_catalog_resource_url
 
 app = Flask(__name__)
 
@@ -27,16 +27,22 @@ _INDEX_HTML = """<!DOCTYPE html>
   .top { padding: 8px; background: #eee; border-bottom: 1px solid #ccc; }
   .top input[type="url"] { width: 50%; min-width: 300px; }
   .main { display: flex; height: calc(100vh - 50px); }
-  .scoreboard { width: 220px; min-width: 180px; overflow: auto; padding: 8px; border-right: 1px solid #ccc; background: #fafafa; font-size: 12px; }
+  .scoreboard { width: 220px; min-width: 180px; max-width: 50%; resize: horizontal; overflow: auto; padding: 8px; border-right: 1px solid #ccc; background: #fafafa; font-size: 12px; }
   .scoreboard h3 { margin: 0 0 8px 0; }
   .scoreboard ul { list-style: none; padding-left: 12px; margin: 0; }
   .scoreboard li { margin: 4px 0; word-break: break-all; }
   .scoreboard .url { color: #06c; }
+  .scoreboard a.url { text-decoration: none; }
+  .scoreboard a.url:hover { text-decoration: underline; }
   .scoreboard .status-404 { color: #c00; }
   .scoreboard .status-ok { color: #080; }
+  .scoreboard-cb { margin-right: 6px; vertical-align: middle; }
   .panes { flex: 1; display: flex; flex-direction: row; min-width: 0; }
-  .pane { flex: 1; min-width: 0; min-height: 0; border: 1px solid #ccc; margin: 4px; display: flex; flex-direction: column; }
-  .pane-header { padding: 4px 8px; background: #e8e8e8; font-size: 12px; font-weight: bold; }
+  .pane { flex: 1; min-width: 120px; min-height: 0; border: 1px solid #ccc; margin: 4px; display: flex; flex-direction: column; overflow: hidden; }
+  .pane.source-pane { resize: horizontal; max-width: 80%; }
+  .pane-header { padding: 4px 8px; background: #e8e8e8; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pane-header-label { font-weight: bold; }
+  .pane-header-url { font-weight: normal; }
   .pane-iframe { flex: 1; width: 100%; border: none; min-height: 200px; }
   .pane-empty { flex: 1; padding: 16px; color: #666; font-size: 14px; }
 </style>
@@ -55,8 +61,8 @@ _INDEX_HTML = """<!DOCTYPE html>
       {{ scoreboard_html | safe }}
     </div>
     <div class="panes">
-      <div class="pane">
-        <div class="pane-header">Source</div>
+      <div class="pane source-pane">
+        <div class="pane-header" title="{{ (source_display_url or '') | e }}">Source: {{ (source_display_url or '—') | e }}</div>
         {% if source_srcdoc %}
         <iframe name="source" class="pane-iframe" srcdoc="{{ source_srcdoc | safe }}" sandbox="allow-same-origin allow-scripts allow-forms allow-top-navigation-by-user-activation" title="Source page"></iframe>
         {% else %}
@@ -64,7 +70,7 @@ _INDEX_HTML = """<!DOCTYPE html>
         {% endif %}
       </div>
       <div class="pane">
-        <div class="pane-header">Linked</div>
+        <div class="pane-header" title="{{ (linked_display_url or '') | e }}"><span class="pane-header-label">Linked:</span> <span class="pane-header-url">{{ (linked_display_url or '—') | e }}</span></div>
         {% if linked_srcdoc %}
         <iframe name="linked" class="pane-iframe" srcdoc="{{ linked_srcdoc | safe }}" sandbox="allow-same-origin allow-scripts allow-forms allow-top-navigation-by-user-activation" title="Linked page"></iframe>
         {% else %}
@@ -117,6 +123,7 @@ def _rewrite_links_to_app(
         absolute_url = urljoin(page_url, href_value)
         if not absolute_url.startswith("http://") and not absolute_url.startswith("https://"):
             return match.group(0)
+        # Resolve catalog links when clicked (in the route), not here, to avoid slow page loads.
         params = (
             "source_url=" + quote(source_url, safe="")
             + "&linked_url=" + quote(absolute_url, safe="")
@@ -163,43 +170,55 @@ def _status_label(status_code: int, is_logical_404: bool) -> str:
 
 
 def _scoreboard_add(url: str, referrer: Optional[str], status_label: str) -> None:
-    """Append a node to the in-memory scoreboard."""
-    _scoreboard.append({"url": url, "referrer": referrer, "status_label": status_label})
+    """Append a node to the in-memory scoreboard. Marks as dupe if this URL is already present at any level."""
+    existing_urls = {n["url"] for n in _scoreboard}
+    is_dupe = url in existing_urls
+    _scoreboard.append({"url": url, "referrer": referrer, "status_label": status_label, "is_dupe": is_dupe})
 
 
 def _scoreboard_tree() -> List[Dict[str, Any]]:
-    """Return scoreboard as a tree (each node has url, status_label, children)."""
-    by_url: Dict[str, Dict[str, Any]] = {}
-    for n in _scoreboard:
-        url = n["url"]
-        if url not in by_url:
-            by_url[url] = {"url": url, "status_label": n["status_label"], "children": []}
-        else:
-            by_url[url]["status_label"] = n["status_label"]
-    roots: List[Dict[str, Any]] = []
-    for n in _scoreboard:
-        url = n["url"]
-        referrer = n["referrer"]
-        node = by_url[url]
-        if not referrer or referrer not in by_url:
-            if node not in roots:
-                roots.append(node)
-        else:
-            by_url[referrer]["children"].append(node)
+    """Return scoreboard as a tree. One node per entry (no merging by URL) so original stays OK, dupes shown separately."""
+    nodes = [
+        {"url": n["url"], "referrer": n["referrer"], "status_label": n["status_label"], "is_dupe": n.get("is_dupe", False), "children": []}
+        for n in _scoreboard
+    ]
+    url_to_first_idx: Dict[str, int] = {}
+    for i, n in enumerate(nodes):
+        if n["url"] not in url_to_first_idx:
+            url_to_first_idx[n["url"]] = i
+    for n in nodes:
+        ref = n["referrer"]
+        if ref and ref in url_to_first_idx:
+            nodes[url_to_first_idx[ref]]["children"].append(n)
+    roots = [n for n in nodes if n["referrer"] is None or n["referrer"] not in url_to_first_idx]
     return roots
 
 
-def _scoreboard_render_html() -> str:
-    """Render scoreboard tree as HTML (nested ul)."""
+def _scoreboard_render_html(app_root: str, current_source_url: str) -> str:
+    """Render scoreboard tree as HTML (nested ul). Checkbox checked for original source and OK non-dupes."""
     roots = _scoreboard_tree()
     if not roots:
         return "<p><em>No pages yet.</em></p>"
 
+    original_source_url = next((n["url"] for n in _scoreboard if n.get("referrer") is None), _scoreboard[0]["url"] if _scoreboard else "")
+
     def render_node(node: Dict[str, Any]) -> str:
-        url_short = node["url"][:80] + ("..." if len(node["url"]) > 80 else "")
+        url = node["url"]
+        url_short = url[:80] + ("..." if len(url) > 80 else "")
         status = node["status_label"]
+        is_dupe = node.get("is_dupe", False)
+        status_display = status + " (dupe)" if is_dupe else status
         status_class = "status-404" if "404" in status else "status-ok"
-        line = f'<li><span class="url" title="{html.escape(node["url"])}">{html.escape(url_short)}</span> <span class="{status_class}">({html.escape(status)})</span></li>'
+        referrer = node.get("referrer") or current_source_url
+        is_ok = "OK" in status
+        checked = (url == original_source_url and is_ok) or (is_ok and not is_dupe)
+        cb = f'<input type="checkbox" class="scoreboard-cb" {"checked" if checked else ""} />'
+        if current_source_url:
+            params = f"source_url={quote(current_source_url)}&linked_url={quote(url)}&referrer={quote(referrer)}&from_scoreboard=1"
+            link = f'<a class="url" href="{html.escape(app_root)}/?{params}" title="{html.escape(url)}">{html.escape(url_short)}</a>'
+        else:
+            link = f'<span class="url" title="{html.escape(url)}">{html.escape(url_short)}</span>'
+        line = f'<li>{cb} {link} <span class="{status_class}">({html.escape(status_display)})</span></li>'
         if node.get("children"):
             children_html = "".join(render_node(c) for c in node["children"])
             line += f"<ul>{children_html}</ul>"
@@ -247,17 +266,21 @@ def index() -> str:
     source_url_param = request.args.get("source_url", "").strip()
     linked_url_param = request.args.get("linked_url", "").strip()
     referrer_param = request.args.get("referrer", "").strip()
+    from_scoreboard = request.args.get("from_scoreboard", "").strip()
 
     # Initial load: single url=
     if url_param and not source_url_param and not linked_url_param:
+        _scoreboard.clear()
         if not is_valid_url(url_param):
             return render_template_string(
                 _INDEX_HTML,
                 initial_url=html.escape(url_param),
-                scoreboard_html=_scoreboard_render_html(),
+                scoreboard_html=_scoreboard_render_html(app_root, ""),
                 source_srcdoc=None,
                 linked_srcdoc=None,
                 source_pane_message="Invalid URL. Provide a valid http:// or https:// URL.",
+                source_display_url=None,
+                linked_display_url=None,
             )
         safe_srcdoc, body_message, status_label = _prepare_pane_content(
             url_param, app_root, url_param
@@ -269,10 +292,12 @@ def index() -> str:
         return render_template_string(
             _INDEX_HTML,
             initial_url=html.escape(url_param),
-            scoreboard_html=_scoreboard_render_html(),
+            scoreboard_html=_scoreboard_render_html(app_root, url_param),
             source_srcdoc=source_srcdoc,
             linked_srcdoc=None,
             source_pane_message=body_message,
+            source_display_url=url_param,
+            linked_display_url=None,
         )
 
     # Link click: source_url + linked_url + referrer
@@ -281,35 +306,54 @@ def index() -> str:
             return render_template_string(
                 _INDEX_HTML,
                 initial_url=html.escape(source_url_param),
-                scoreboard_html=_scoreboard_render_html(),
+                scoreboard_html=_scoreboard_render_html(app_root, source_url_param),
                 source_srcdoc=None,
                 linked_srcdoc=None,
                 source_pane_message=None,
+                source_display_url=None,
+                linked_display_url=None,
             )
-        # Fetch both panes
+        # Fetch both panes. For catalog.data.gov links, resolve on click and show the resolved URL in the Linked pane (skip the relay).
         src_srcdoc, _, src_status = _prepare_pane_content(
             source_url_param, app_root, source_url_param
         )
+        linked_url_for_fetch = linked_url_param
+        linked_display_url = linked_url_param
+        resolved_linked: Optional[str] = None
+        if linked_url_param.startswith("https://catalog.data.gov"):
+            resolved_linked = resolve_catalog_resource_url(linked_url_param)
+            if resolved_linked:
+                linked_url_for_fetch = resolved_linked
+                linked_display_url = resolved_linked
         linked_srcdoc, _, linked_status = _prepare_pane_content(
-            linked_url_param, app_root, source_url_param
+            linked_url_for_fetch, app_root, source_url_param
         )
         if not any(n["url"] == source_url_param for n in _scoreboard):
             _scoreboard_add(source_url_param, None, src_status)
-        _scoreboard_add(linked_url_param, referrer_param, linked_status)
+        if not from_scoreboard:
+            if resolved_linked:
+                _scoreboard_add(resolved_linked, referrer_param, linked_status)
+            elif not linked_url_param.startswith("https://catalog.data.gov"):
+                _scoreboard_add(linked_url_param, referrer_param, linked_status)
+        # else: from_scoreboard click — don't add new entry or check dupe
         return render_template_string(
             _INDEX_HTML,
             initial_url=html.escape(source_url_param),
-            scoreboard_html=_scoreboard_render_html(),
+            scoreboard_html=_scoreboard_render_html(app_root, source_url_param),
             source_srcdoc=src_srcdoc,
             linked_srcdoc=linked_srcdoc,
+            source_display_url=source_url_param,
+            linked_display_url=linked_display_url,
         )
 
     # No URL: show form and empty panes
     return render_template_string(
         _INDEX_HTML,
         initial_url="",
-        scoreboard_html=_scoreboard_render_html(),
+        scoreboard_html=_scoreboard_render_html(app_root, ""),
         source_srcdoc=None,
         linked_srcdoc=None,
         source_pane_message=None,
+        source_display_url=None,
+        linked_display_url=None,
     )

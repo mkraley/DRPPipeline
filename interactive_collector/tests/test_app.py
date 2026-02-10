@@ -102,6 +102,21 @@ class TestRewriteLinks(unittest.TestCase):
         self.assertIn('href="/static/style.css"', result)
         self.assertNotIn("127.0.0.1:5000", result)
 
+    def test_rewrites_catalog_link_without_pre_resolving(self) -> None:
+        """Catalog.data.gov link is rewritten with the catalog URL; resolution happens on click in the route."""
+        html = '<a href="https://catalog.data.gov/dataset/x/resource/abc">CSV</a>'
+        result = _rewrite_links_to_app(
+            html,
+            "https://catalog.data.gov/dataset/x",
+            "http://127.0.0.1:5000",
+            source_url="https://catalog.data.gov/dataset/x",
+            current_page_url="https://catalog.data.gov/dataset/x",
+        )
+        self.assertIn("linked_url=", result)
+        self.assertIn("catalog.data.gov", result)
+        self.assertIn("resource", result)
+        self.assertIn("abc", result)
+
 
 class TestStatusLabel(unittest.TestCase):
     """Tests for _status_label helper."""
@@ -169,6 +184,9 @@ class TestAppRoutes(unittest.TestCase):
         self.assertIn(b"<iframe", response.data)
         self.assertIn(b"srcdoc=", response.data)
         self.assertIn(b"Hello", response.data)
+        self.assertIn(b"Source:", response.data)
+        self.assertIn(b"Linked:", response.data)
+        self.assertIn(b"example.com", response.data)
         mock_fetch_page_body.assert_called_once_with("https://example.com")
 
     @patch("interactive_collector.app.fetch_page_body")
@@ -249,3 +267,37 @@ class TestAppRoutes(unittest.TestCase):
         self.assertIn(b"example.com/source", response.data)
         self.assertIn(b"example.com/linked", response.data)
         self.assertEqual(mock_fetch_page_body.call_count, 2)
+
+    @patch("interactive_collector.app.fetch_page_body")
+    def test_scoreboard_cleared_when_new_initial_url(
+        self, mock_fetch_page_body: unittest.mock.Mock
+    ) -> None:
+        """Entering a new URL in the form (Go) clears the scoreboard and shows only that URL."""
+        mock_fetch_page_body.return_value = (
+            200,
+            "<html><body>Page</body></html>",
+            "text/html",
+            False,
+        )
+        self.client.get("/", query_string={"url": "https://example.com/first"})
+        response = self.client.get("/", query_string={"url": "https://example.com/second"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"example.com/second", response.data)
+        self.assertNotIn(b"example.com/first", response.data)
+
+    @patch("interactive_collector.app.fetch_page_body")
+    def test_scoreboard_entries_are_links_when_source_set(
+        self, mock_fetch_page_body: unittest.mock.Mock
+    ) -> None:
+        """With a source URL loaded, scoreboard entries are clickable links to the Linked pane."""
+        mock_fetch_page_body.return_value = (
+            200,
+            "<html><body>Hi</body></html>",
+            "text/html",
+            False,
+        )
+        response = self.client.get("/", query_string={"url": "https://example.com"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"linked_url=", response.data)
+        self.assertIn(b"source_url=", response.data)
+        self.assertIn(b'<a ', response.data)

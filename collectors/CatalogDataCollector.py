@@ -16,7 +16,7 @@ from playwright.sync_api import sync_playwright, Page, Browser, Playwright
 from storage import Storage
 from utils.Logger import Logger
 from utils.Errors import record_error
-from utils.url_utils import is_valid_url, access_url, fetch_url_head, infer_file_type
+from utils.url_utils import is_valid_url, access_url, fetch_url_head, fetch_page_body, infer_file_type
 
 
 class CatalogDataCollector:
@@ -240,7 +240,14 @@ class CatalogDataCollector:
         self, catalog_url: str
     ) -> Optional[Tuple[str, Optional[str]]]:
         """
-        Load a catalog.data.gov resource page and extract #res_url link.
+        Turn a catalog.data.gov resource page URL into the real download URL.
+
+        For links that point at catalog resource pages (HTML with metadata), this
+        loads the page and reads the <a id="res_url"> element, which holds the
+        actual file URL (S3, data.gov redirect, etc.). Returns that URL and
+        data-format so the collector can call fetch_url_head on the real file
+        and record the correct format. Skips loading (returns None) if the catalog
+        page is HTTP 404 or logical 404.
 
         Args:
             catalog_url: URL of catalog.data.gov resource page
@@ -248,6 +255,9 @@ class CatalogDataCollector:
         Returns:
             (actual_download_url, data_format) or None if #res_url not found.
         """
+        status_code, _body, _content_type, is_logical_404 = fetch_page_body(catalog_url)
+        if status_code == 404 or is_logical_404:
+            return None
         try:
             self._page.goto(catalog_url, wait_until="domcontentloaded", timeout=30000)
             self._page.wait_for_timeout(300)

@@ -2,13 +2,25 @@
 
 Standalone tool to fetch URLs and explore links. It runs independently from the DRP Pipeline but reuses pipeline code (URL fetch, 404 and logical-404 detection).
 
-## Phase 1 (current)
+## Phase 1 — Done
 
 - Enter a single URL; the tool fetches the page and displays it.
-- Result page shows **Status** (OK, 404, or 404 logical), **Content-Type**, and the response body.
+- Result shows **Status** (OK, 404, or 404 logical) and the response body (or a message for binary/invalid).
 - **Logical 404**: same detection as the pipeline (e.g. HTTP 200 with “page not found” style content).
 
-Later phases will add: clickable links in the page, a second pane for linked pages, and a hierarchical scoreboard of visited URLs and 404s.
+## Phase 2 — Done (current)
+
+- **Three-pane layout**: Scoreboard (left), Source and Linked panes side by side.
+- **Scoreboard**: Hierarchical list of visited URLs (by referrer) with status (OK, 404, 404 logical).
+- **Follow links**: Links in the page are rewritten so that clicking opens the target in the **Linked** pane and keeps the source page visible in **Source**.
+- **Base tag** injection so relative CSS/JS/images load; only `<a href="...">` is rewritten (stylesheets etc. unchanged).
+
+## Phase 3 — Next
+
+- **Persistence**: Optional save/load or clear of scoreboard (or persist to pipeline DB).
+- **Export**: Export scoreboard or visited-URL list (e.g. for pipeline input).
+- **Pipeline integration**: Feed collected URLs/status into the DRP pipeline.
+- **Polish**: Clear scoreboard button, invalid-URL handling in link-click flow, optional back/forward.
 
 ## Requirements
 
@@ -23,7 +35,7 @@ From the DRPPipeline repo root:
 python -m interactive_collector
 ```
 
-Then open **http://127.0.0.1:5000/** in a browser. Use the form to enter a URL and click **Fetch**.
+Then open **http://127.0.0.1:5000/** in a browser. Use the form to enter a URL and click **Go**. Click links in the Source (or Linked) pane to open them in the Linked pane; the scoreboard shows a tree of visited URLs and 404s.
 
 ## Running tests
 
@@ -37,7 +49,7 @@ Or run the whole project test suite; `utils.tests.test_url_utils` includes tests
 
 ## Project layout
 
-- `app.py` — Flask app and single route (form + fetch result).
+- `app.py` — Flask app (single route: form, scoreboard, Source/Linked panes; link rewriting and base injection).
 - `__main__.py` — Entrypoint for `python -m interactive_collector`.
 - `tests/` — Unit tests for the app and helpers.
 
