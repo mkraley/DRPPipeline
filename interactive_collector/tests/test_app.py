@@ -44,41 +44,61 @@ class TestRewriteLinks(unittest.TestCase):
     """Tests for _rewrite_links_to_app."""
 
     def test_rewrites_relative_link(self) -> None:
-        """Relative href is resolved and rewritten to app URL."""
+        """Relative href is resolved and rewritten with source_url, linked_url, referrer."""
         html = '<a href="/dataset/other">Link</a>'
         result = _rewrite_links_to_app(
             html,
             "https://catalog.data.gov/dataset/accessgudid-1f586",
             "http://127.0.0.1:5000",
+            source_url="https://catalog.data.gov/dataset/accessgudid-1f586",
+            current_page_url="https://catalog.data.gov/dataset/accessgudid-1f586",
         )
         self.assertIn("target=\"_top\"", result)
-        self.assertIn("http://127.0.0.1:5000/?url=", result)
+        self.assertIn("source_url=", result)
+        self.assertIn("linked_url=", result)
+        self.assertIn("referrer=", result)
         self.assertIn("catalog.data.gov", result)
 
     def test_rewrites_absolute_http_link(self) -> None:
-        """Absolute http href is rewritten to app URL."""
+        """Absolute http href is rewritten with pane params."""
         html = '<a href="https://catalog.data.gov/other">Link</a>'
-        result = _rewrite_links_to_app(html, "https://catalog.data.gov/page", "http://localhost:5000")
-        self.assertIn("http://localhost:5000/?url=", result)
+        result = _rewrite_links_to_app(
+            html,
+            "https://catalog.data.gov/page",
+            "http://localhost:5000",
+            source_url="https://catalog.data.gov/",
+            current_page_url="https://catalog.data.gov/page",
+        )
+        self.assertIn("http://localhost:5000/?", result)
+        self.assertIn("linked_url=", result)
         self.assertIn("https%3A%2F%2Fcatalog.data.gov%2Fother", result)
 
     def test_leaves_anchor_unchanged(self) -> None:
         """Hash-only href is left unchanged."""
         html = '<a href="#section">Jump</a>'
-        result = _rewrite_links_to_app(html, "https://example.com/page", "http://app")
+        result = _rewrite_links_to_app(
+            html, "https://example.com/page", "http://app",
+            source_url="https://example.com/", current_page_url="https://example.com/page",
+        )
         self.assertIn('href="#section"', result)
-        self.assertNotIn("http://app", result)
+        self.assertNotIn("linked_url=", result)
 
     def test_leaves_mailto_unchanged(self) -> None:
         """mailto: href is left unchanged."""
         html = '<a href="mailto:foo@example.com">Email</a>'
-        result = _rewrite_links_to_app(html, "https://example.com/page", "http://app")
+        result = _rewrite_links_to_app(
+            html, "https://example.com/page", "http://app",
+            source_url="https://example.com/", current_page_url="https://example.com/page",
+        )
         self.assertIn('href="mailto:foo@example.com"', result)
 
     def test_does_not_rewrite_link_stylesheet(self) -> None:
         """<link href="..."> for CSS is left unchanged so styles load from original server."""
         html = '<link rel="stylesheet" href="/static/style.css">'
-        result = _rewrite_links_to_app(html, "https://catalog.data.gov/dataset/x", "http://127.0.0.1:5000")
+        result = _rewrite_links_to_app(
+            html, "https://catalog.data.gov/dataset/x", "http://127.0.0.1:5000",
+            source_url="https://catalog.data.gov/", current_page_url="https://catalog.data.gov/dataset/x",
+        )
         self.assertIn('href="/static/style.css"', result)
         self.assertNotIn("127.0.0.1:5000", result)
 
@@ -107,17 +127,19 @@ class TestAppRoutes(unittest.TestCase):
     """Tests for Flask app routes."""
 
     def setUp(self) -> None:
-        """Create test client."""
+        """Create test client and clear scoreboard so tests don't affect each other."""
+        import interactive_collector.app as app_module
+        app_module._scoreboard = []
         self.client = app.test_client()
 
     def test_index_no_url_returns_form(self) -> None:
-        """GET / with no url param returns form without result."""
+        """GET / with no url param returns form and empty panes."""
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Interactive Collector", response.data)
         self.assertIn(b"name=\"url\"", response.data)
-        self.assertIn(b"Fetch", response.data)
-        self.assertNotIn(b"Result", response.data)
+        self.assertIn(b"Go", response.data)
+        self.assertIn(b"Scoreboard", response.data)
 
     def test_index_invalid_url_returns_message(self) -> None:
         """GET / with invalid url shows Invalid URL and message."""
@@ -127,10 +149,10 @@ class TestAppRoutes(unittest.TestCase):
         self.assertIn(b"valid http", response.data)
 
     @patch("interactive_collector.app.fetch_page_body")
-    def test_index_valid_url_shows_result(
+    def test_index_valid_url_shows_source_pane(
         self, mock_fetch_page_body: unittest.mock.Mock
     ) -> None:
-        """GET / with valid url fetches and shows status and body."""
+        """GET / with valid url fetches and shows source pane with body; scoreboard has root."""
         mock_fetch_page_body.return_value = (
             200,
             "<html><body>Hello</body></html>",
@@ -141,7 +163,7 @@ class TestAppRoutes(unittest.TestCase):
             "/", query_string={"url": "https://example.com"}
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Result", response.data)
+        self.assertIn(b"Scoreboard", response.data)
         self.assertIn(b"OK", response.data)
         self.assertIn(b"https://example.com", response.data)
         self.assertIn(b"<iframe", response.data)
@@ -188,7 +210,7 @@ class TestAppRoutes(unittest.TestCase):
     def test_index_binary_content_shows_message_not_body(
         self, mock_fetch_page_body: unittest.mock.Mock
     ) -> None:
-        """GET / with binary Content-Type shows message instead of body."""
+        """GET / with binary Content-Type shows message in source pane, no iframe."""
         mock_fetch_page_body.return_value = (
             200,
             "",
@@ -200,4 +222,30 @@ class TestAppRoutes(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Binary content (application/pdf). Not displayed.", response.data)
-        self.assertNotIn(b"<iframe", response.data)
+        # Source pane shows message div, not srcdoc iframe
+        self.assertIn(b"pane-empty", response.data)
+
+    @patch("interactive_collector.app.fetch_page_body")
+    def test_index_link_click_shows_both_panes_and_scoreboard(
+        self, mock_fetch_page_body: unittest.mock.Mock
+    ) -> None:
+        """GET / with source_url, linked_url, referrer fills both panes and scoreboard."""
+        def fetch_side_effect(url: str) -> tuple:
+            if "source" in url or url == "https://example.com/source":
+                return (200, "<html><body>Source page</body></html>", "text/html", False)
+            return (200, "<html><body>Linked page</body></html>", "text/html", False)
+        mock_fetch_page_body.side_effect = fetch_side_effect
+        response = self.client.get(
+            "/",
+            query_string={
+                "source_url": "https://example.com/source",
+                "linked_url": "https://example.com/linked",
+                "referrer": "https://example.com/source",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Source page", response.data)
+        self.assertIn(b"Linked page", response.data)
+        self.assertIn(b"example.com/source", response.data)
+        self.assertIn(b"example.com/linked", response.data)
+        self.assertEqual(mock_fetch_page_body.call_count, 2)

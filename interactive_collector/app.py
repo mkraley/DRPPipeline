@@ -1,12 +1,13 @@
 """
 Flask app for Interactive Collector.
 
-Phase 1: Single route to fetch a URL and display status and body.
+Multi-pane layout: scoreboard (left), Source pane, Linked pane.
+Links open in the Linked pane so you can see where you came from.
 """
 
 import html
 import re
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import quote, urljoin
 
 from flask import Flask, request, render_template_string
@@ -15,27 +16,63 @@ from utils.url_utils import is_valid_url, fetch_page_body
 
 app = Flask(__name__)
 
+# In-memory scoreboard: list of {url, referrer, status_label}. Referrer None = root.
+_scoreboard: List[Dict[str, Any]] = []
+
 _INDEX_HTML = """<!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"><title>Interactive Collector</title></head>
+<head><meta charset="UTF-8"><title>Interactive Collector</title>
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  .top { padding: 8px; background: #eee; border-bottom: 1px solid #ccc; }
+  .top input[type="url"] { width: 50%; min-width: 300px; }
+  .main { display: flex; height: calc(100vh - 50px); }
+  .scoreboard { width: 220px; min-width: 180px; overflow: auto; padding: 8px; border-right: 1px solid #ccc; background: #fafafa; font-size: 12px; }
+  .scoreboard h3 { margin: 0 0 8px 0; }
+  .scoreboard ul { list-style: none; padding-left: 12px; margin: 0; }
+  .scoreboard li { margin: 4px 0; word-break: break-all; }
+  .scoreboard .url { color: #06c; }
+  .scoreboard .status-404 { color: #c00; }
+  .scoreboard .status-ok { color: #080; }
+  .panes { flex: 1; display: flex; flex-direction: row; min-width: 0; }
+  .pane { flex: 1; min-width: 0; min-height: 0; border: 1px solid #ccc; margin: 4px; display: flex; flex-direction: column; }
+  .pane-header { padding: 4px 8px; background: #e8e8e8; font-size: 12px; font-weight: bold; }
+  .pane-iframe { flex: 1; width: 100%; border: none; min-height: 200px; }
+  .pane-empty { flex: 1; padding: 16px; color: #666; font-size: 14px; }
+</style>
+</head>
 <body>
-  <h1>Interactive Collector</h1>
-  <form method="get" action="/">
-    <label for="url">URL:</label>
-    <input type="url" id="url" name="url" size="60" placeholder="https://example.com" />
-    <button type="submit">Fetch</button>
-  </form>
-  {% if result %}
-  <h2>Result</h2>
-  <p><strong>URL:</strong> {{ result.url }}</p>
-  <p><strong>Status:</strong> {{ result.status_label }}</p>
-  <p><strong>Content-Type:</strong> {{ result.content_type or "—" }}</p>
-  {% if result.body_message %}
-  <p>{{ result.body_message }}</p>
-  {% else %}
-  <iframe srcdoc="{{ result.safe_srcdoc | safe }}" style="border:1px solid #ccc; width:100%; height:70vh;" sandbox="allow-same-origin allow-scripts" title="Fetched page"></iframe>
-  {% endif %}
-  {% endif %}
+  <div class="top">
+    <form method="get" action="/">
+      <label for="url">URL:</label>
+      <input type="url" id="url" name="url" value="{{ initial_url or '' }}" size="60" placeholder="https://example.com" />
+      <button type="submit">Go</button>
+    </form>
+  </div>
+  <div class="main">
+    <div class="scoreboard">
+      <h3>Scoreboard</h3>
+      {{ scoreboard_html | safe }}
+    </div>
+    <div class="panes">
+      <div class="pane">
+        <div class="pane-header">Source</div>
+        {% if source_srcdoc %}
+        <iframe name="source" class="pane-iframe" srcdoc="{{ source_srcdoc | safe }}" sandbox="allow-same-origin allow-scripts allow-forms allow-top-navigation-by-user-activation" title="Source page"></iframe>
+        {% else %}
+        <div class="pane-empty">{{ source_pane_message or "Enter a URL and click Go, or click a link to open it in the Linked pane." }}</div>
+        {% endif %}
+      </div>
+      <div class="pane">
+        <div class="pane-header">Linked</div>
+        {% if linked_srcdoc %}
+        <iframe name="linked" class="pane-iframe" srcdoc="{{ linked_srcdoc | safe }}" sandbox="allow-same-origin allow-scripts allow-forms allow-top-navigation-by-user-activation" title="Linked page"></iframe>
+        {% else %}
+        <div class="pane-empty">Click a link in Source (or Linked) to open it here.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
 </body>
 </html>
 """
@@ -56,13 +93,18 @@ def _inject_base_into_html(html_body: str, page_url: str) -> str:
     return re.sub(r"(<head[^>]*>)", r"\1" + base_tag, html_body, count=1, flags=re.IGNORECASE)
 
 
-def _rewrite_links_to_app(html_body: str, page_url: str, app_root_url: str) -> str:
+def _rewrite_links_to_app(
+    html_body: str,
+    page_url: str,
+    app_root_url: str,
+    source_url: str,
+    current_page_url: str,
+) -> str:
     """
-    Rewrite <a href="..."> only (not <link> or others) to point at our app so clicks don't
-    load external sites in the iframe (X-Frame-Options). Leaves link/script href/src unchanged
-    so CSS/JS still load from the original server.
+    Rewrite <a href="..."> so clicks load in the Linked pane. Builds
+    ?source_url=...&linked_url=...&referrer=... so the new page opens in Linked
+    and both panes are re-rendered. Only rewrites http/https links.
     """
-    # Match only <a ...> opening tags so we don't rewrite <link href="..."> etc.
     def repl(match: re.Match) -> str:
         before_href = match.group(1)
         quote_char = match.group(2)
@@ -75,9 +117,14 @@ def _rewrite_links_to_app(html_body: str, page_url: str, app_root_url: str) -> s
         absolute_url = urljoin(page_url, href_value)
         if not absolute_url.startswith("http://") and not absolute_url.startswith("https://"):
             return match.group(0)
-        app_url = app_root_url.rstrip("/") + "/?url=" + quote(absolute_url, safe="")
+        params = (
+            "source_url=" + quote(source_url, safe="")
+            + "&linked_url=" + quote(absolute_url, safe="")
+            + "&referrer=" + quote(current_page_url, safe="")
+        )
+        app_url = app_root_url.rstrip("/") + "/?" + params
         escaped = app_url.replace("&", "&amp;").replace('"', "&quot;")
-        return f"<a {before_href} target=\"_top\" href={quote_char}{escaped}{quote_char} {after_href}>"
+        return f'<a {before_href} target="_top" href={quote_char}{escaped}{quote_char} {after_href}>'
 
     return re.sub(
         r"<a\s+([^>]*?)href\s*=\s*([\"'])([^\"']*)\2([^>]*)>",
@@ -115,56 +162,154 @@ def _status_label(status_code: int, is_logical_404: bool) -> str:
     return str(status_code)
 
 
-@app.route("/")
-def index() -> str:
+def _scoreboard_add(url: str, referrer: Optional[str], status_label: str) -> None:
+    """Append a node to the in-memory scoreboard."""
+    _scoreboard.append({"url": url, "referrer": referrer, "status_label": status_label})
+
+
+def _scoreboard_tree() -> List[Dict[str, Any]]:
+    """Return scoreboard as a tree (each node has url, status_label, children)."""
+    by_url: Dict[str, Dict[str, Any]] = {}
+    for n in _scoreboard:
+        url = n["url"]
+        if url not in by_url:
+            by_url[url] = {"url": url, "status_label": n["status_label"], "children": []}
+        else:
+            by_url[url]["status_label"] = n["status_label"]
+    roots: List[Dict[str, Any]] = []
+    for n in _scoreboard:
+        url = n["url"]
+        referrer = n["referrer"]
+        node = by_url[url]
+        if not referrer or referrer not in by_url:
+            if node not in roots:
+                roots.append(node)
+        else:
+            by_url[referrer]["children"].append(node)
+    return roots
+
+
+def _scoreboard_render_html() -> str:
+    """Render scoreboard tree as HTML (nested ul)."""
+    roots = _scoreboard_tree()
+    if not roots:
+        return "<p><em>No pages yet.</em></p>"
+
+    def render_node(node: Dict[str, Any]) -> str:
+        url_short = node["url"][:80] + ("..." if len(node["url"]) > 80 else "")
+        status = node["status_label"]
+        status_class = "status-404" if "404" in status else "status-ok"
+        line = f'<li><span class="url" title="{html.escape(node["url"])}">{html.escape(url_short)}</span> <span class="{status_class}">({html.escape(status)})</span></li>'
+        if node.get("children"):
+            children_html = "".join(render_node(c) for c in node["children"])
+            line += f"<ul>{children_html}</ul>"
+        return line
+
+    items = "".join(render_node(r) for r in roots)
+    return f"<ul>{items}</ul>"
+
+
+def _prepare_pane_content(
+    url_param: str,
+    app_root: str,
+    source_url: str,
+) -> tuple[Optional[str], Optional[str], str]:
     """
-    Show URL form or fetch the given URL and display result.
-
-    Query param `url`: when present and valid, fetches the URL and displays
-    status (OK / 404 / 404 logical) and body. Otherwise shows the form only.
+    Fetch url_param, inject base, rewrite links. Returns (safe_srcdoc, body_message, status_label).
     """
-    url_param: Optional[str] = request.args.get("url", "").strip()
-    if not url_param:
-        return render_template_string(_INDEX_HTML, result=None)
-
-    if not is_valid_url(url_param):
-        return render_template_string(
-            _INDEX_HTML,
-            result={
-                "url": html.escape(url_param),
-                "status_label": "Invalid URL",
-                "content_type": None,
-                "body_message": "Provide a valid http:// or https:// URL.",
-                "safe_srcdoc": "",
-            },
-        )
-
     status_code, body, content_type, is_logical_404 = fetch_page_body(url_param)
     status_label = _status_label(status_code, is_logical_404)
 
     if not _is_displayable_text(content_type) and content_type:
-        body_message = f"Binary content ({html.escape(content_type)}). Not displayed."
-        safe_srcdoc = ""
-    elif (body or "").strip() == "" and _is_displayable_text(content_type):
-        body_message = "Content could not be displayed (possibly binary or wrong encoding)."
-        safe_srcdoc = ""
-    else:
-        body_message = None
-        # Inject <base href> so relative CSS/JS/images load from the fetched page's origin
-        body_with_base = _inject_base_into_html(body or "", url_param)
-        # Rewrite links to go through our app so the iframe doesn't load external URLs (X-Frame-Options)
-        app_root = request.url_root.rstrip("/") or request.host_url.rstrip("/")
-        body_rewritten = _rewrite_links_to_app(body_with_base, url_param, app_root)
-        # Escape for safe use inside srcdoc="..." attribute (don't escape < > so iframe renders HTML)
-        safe_srcdoc = body_rewritten.replace("&", "&amp;").replace('"', "&quot;")
+        return None, f"Binary content ({html.escape(content_type)}). Not displayed.", status_label
+    if (body or "").strip() == "" and _is_displayable_text(content_type):
+        return None, "Content could not be displayed (possibly binary or wrong encoding).", status_label
 
+    body_with_base = _inject_base_into_html(body or "", url_param)
+    body_rewritten = _rewrite_links_to_app(
+        body_with_base, url_param, app_root, source_url, url_param
+    )
+    safe_srcdoc = body_rewritten.replace("&", "&amp;").replace('"', "&quot;")
+    return safe_srcdoc, None, status_label
+
+
+@app.route("/")
+def index() -> str:
+    """
+    Three-pane layout: scoreboard, Source, Linked.
+
+    Initial: ?url=... -> fetch url, show in Source; add root to scoreboard.
+    Link click: ?source_url=...&linked_url=...&referrer=... -> fetch both, show in Source and Linked;
+    add (linked_url, referrer) to scoreboard.
+    """
+    app_root = request.url_root.rstrip("/") or request.host_url.rstrip("/")
+    url_param = request.args.get("url", "").strip()
+    source_url_param = request.args.get("source_url", "").strip()
+    linked_url_param = request.args.get("linked_url", "").strip()
+    referrer_param = request.args.get("referrer", "").strip()
+
+    # Initial load: single url=
+    if url_param and not source_url_param and not linked_url_param:
+        if not is_valid_url(url_param):
+            return render_template_string(
+                _INDEX_HTML,
+                initial_url=html.escape(url_param),
+                scoreboard_html=_scoreboard_render_html(),
+                source_srcdoc=None,
+                linked_srcdoc=None,
+                source_pane_message="Invalid URL. Provide a valid http:// or https:// URL.",
+            )
+        safe_srcdoc, body_message, status_label = _prepare_pane_content(
+            url_param, app_root, url_param
+        )
+        _scoreboard_add(url_param, None, status_label)
+        source_srcdoc = safe_srcdoc if body_message is None else None
+        if body_message and safe_srcdoc is None:
+            source_srcdoc = None
+        return render_template_string(
+            _INDEX_HTML,
+            initial_url=html.escape(url_param),
+            scoreboard_html=_scoreboard_render_html(),
+            source_srcdoc=source_srcdoc,
+            linked_srcdoc=None,
+            source_pane_message=body_message,
+        )
+
+    # Link click: source_url + linked_url + referrer
+    if source_url_param and linked_url_param and referrer_param:
+        if not is_valid_url(source_url_param) or not is_valid_url(linked_url_param):
+            return render_template_string(
+                _INDEX_HTML,
+                initial_url=html.escape(source_url_param),
+                scoreboard_html=_scoreboard_render_html(),
+                source_srcdoc=None,
+                linked_srcdoc=None,
+                source_pane_message=None,
+            )
+        # Fetch both panes
+        src_srcdoc, _, src_status = _prepare_pane_content(
+            source_url_param, app_root, source_url_param
+        )
+        linked_srcdoc, _, linked_status = _prepare_pane_content(
+            linked_url_param, app_root, source_url_param
+        )
+        if not any(n["url"] == source_url_param for n in _scoreboard):
+            _scoreboard_add(source_url_param, None, src_status)
+        _scoreboard_add(linked_url_param, referrer_param, linked_status)
+        return render_template_string(
+            _INDEX_HTML,
+            initial_url=html.escape(source_url_param),
+            scoreboard_html=_scoreboard_render_html(),
+            source_srcdoc=src_srcdoc,
+            linked_srcdoc=linked_srcdoc,
+        )
+
+    # No URL: show form and empty panes
     return render_template_string(
         _INDEX_HTML,
-        result={
-            "url": html.escape(url_param),
-            "status_label": status_label,
-            "content_type": content_type or "—",
-            "safe_srcdoc": safe_srcdoc,
-            "body_message": body_message,
-        },
+        initial_url="",
+        scoreboard_html=_scoreboard_render_html(),
+        source_srcdoc=None,
+        linked_srcdoc=None,
+        source_pane_message=None,
     )
