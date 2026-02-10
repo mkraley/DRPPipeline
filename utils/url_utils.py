@@ -4,7 +4,7 @@ Utilities for URL validation and access.
 Provides functions for validating URLs and checking their availability.
 """
 
-from typing import Dict, Tuple, Optional
+from typing import Dict, Optional, Tuple
 import requests
 
 # Headers to mimic a real browser and avoid abuse/filter blocks.
@@ -144,6 +144,23 @@ def _html_body_looks_like_not_found(body: str) -> bool:
     return any(phrase in lower for phrase in _HTML_NOT_FOUND_PHRASES)
 
 
+def body_looks_like_not_found(body: str) -> bool:
+    """
+    Return True if HTML body contains not-found error phrases (logical 404).
+
+    Uses the same phrases as internal 404 detection (e.g. "page not found",
+    "the page you requested could not be found"). Intended for callers that
+    fetch full page body and need to classify logical 404s.
+
+    Args:
+        body: Raw HTML body text to check.
+
+    Returns:
+        True if body looks like a not-found error page, False otherwise.
+    """
+    return _html_body_looks_like_not_found(body)
+
+
 def fetch_url_head(
     url: str, timeout: int = 30
 ) -> Tuple[int, Optional[str], Optional[str]]:
@@ -199,3 +216,107 @@ def fetch_url_head(
         if "Failed to establish a new connection" in err_str:
             return 404, None, err_str
         return -1, None, err_str
+
+
+# Binary magic bytes: do not decode as text even if Content-Type says text.
+_BINARY_MAGIC_PREFIXES = (
+    b"\x1f\x8b",  # gzip
+    b"%PDF",
+    b"\x89PNG",
+    b"PK\x03\x04",  # ZIP
+    b"\xff\xd8\xff",  # JPEG
+)
+
+
+def _raw_looks_binary(raw: bytes) -> bool:
+    """Return True if raw content looks like binary (e.g. compressed or PDF)."""
+    if len(raw) < 2:
+        return False
+    return any(raw.startswith(prefix) for prefix in _BINARY_MAGIC_PREFIXES)
+
+
+def _decoded_looks_like_garbage(text: str) -> bool:
+    """Return True if decoded text has too few printable chars (likely binary decoded as text)."""
+    if not text or len(text) < 10:
+        return False
+    # Use Unicode notion of printable so UTF-8 HTML (curly quotes, em-dash, etc.) passes
+    printable = sum(1 for c in text if c.isprintable() or c in "\t\n\r")
+    return (printable / len(text)) < 0.7
+
+
+def _is_text_content_type(content_type: Optional[str]) -> bool:
+    """Return True if content type is typically decodable as text (e.g. HTML, JSON, XML)."""
+    if not content_type:
+        return False
+    ct = content_type.lower().strip()
+    if ct.startswith("text/"):
+        return True
+    if ct in (
+        "application/xml",
+        "application/json",
+        "application/javascript",
+        "application/xhtml+xml",
+    ):
+        return True
+    return False
+
+
+def fetch_page_body(
+    url: str, timeout: int = 30
+) -> Tuple[int, str, Optional[str], bool]:
+    """
+    Fetch a URL with GET and return status, body, content-type, and logical-404 flag.
+
+    Uses BROWSER_HEADERS. Connection failures and HTTP 404 are returned as
+    status 404 with is_logical_404 False. A 200 response with HTML body
+    that contains "page not found" style content is returned as status 404
+    with is_logical_404 True so callers can distinguish logical 404s.
+
+    Only decodes the response body when Content-Type indicates text (e.g. text/html,
+    application/json). For binary types (PDF, images, etc.) body is returned empty
+    to avoid decoding garbage.
+
+    Args:
+        url: URL to fetch.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        Tuple of (status_code, body, content_type, is_logical_404).
+        - status_code: HTTP status or 404 for connection/not-found, -1 for other errors.
+        - body: Response body text (empty on connection/other errors or for binary content).
+        - content_type: Parsed Content-Type (None if missing or on error).
+        - is_logical_404: True only when status is 404 due to body content (200 + not-found phrases).
+    """
+    # Prefer gzip/deflate only so response is always decompressed by requests (no Brotli)
+    headers = {**BROWSER_HEADERS, "Accept-Encoding": "gzip, deflate"}
+    try:
+        response = requests.get(
+            url,
+            timeout=timeout,
+            allow_redirects=True,
+            headers=headers,
+        )
+        content_type = response.headers.get("Content-Type")
+        if content_type and ";" in content_type:
+            content_type = content_type.split(";")[0].strip()
+
+        raw = response.content
+        if not _is_text_content_type(content_type) or _raw_looks_binary(raw):
+            body = ""
+        else:
+            body = raw.decode("utf-8", errors="replace")
+            if _decoded_looks_like_garbage(body):
+                body = ""
+
+        if response.status_code == 404:
+            return 404, body, content_type, False
+        if response.status_code == 200 and content_type and "text/html" in content_type.lower():
+            if _html_body_looks_like_not_found(body):
+                return 404, body, content_type, True
+        return response.status_code, body, content_type, False
+    except Exception as exc:
+        cause = exc.__cause__ if exc.__cause__ is not None else exc
+        err_str = str(cause)
+        if "Failed to establish a new connection" in err_str:
+            return 404, "", None, False
+        return -1, "", None, False

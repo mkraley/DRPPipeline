@@ -4,6 +4,7 @@
 typer>=0.9.0
 playwright>=1.49.0
 requests>=2.31.0
+flask>=3.0.0
 
 # Optional: for publisher Google Sheet update (master inventory)
 google-api-python-client>=2.100.0

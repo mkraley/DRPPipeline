@@ -156,6 +156,7 @@ class TestUrlUtils(unittest.TestCase):
             "https://example.com/data.csv",
             timeout=30,
             allow_redirects=True,
+            headers=url_utils.BROWSER_HEADERS,
         )
 
     @patch('utils.url_utils.requests.head')
@@ -262,3 +263,152 @@ class TestUrlUtils(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(ct, "text/html")
         self.assertIsNone(err)
+
+    def test_body_looks_like_not_found_true(self) -> None:
+        """Test body_looks_like_not_found returns True for not-found phrases."""
+        self.assertTrue(
+            url_utils.body_looks_like_not_found(
+                "<html><body>Sorry, the page you requested could not be found.</body></html>"
+            )
+        )
+        self.assertTrue(
+            url_utils.body_looks_like_not_found("PAGE NOT FOUND")
+        )
+
+    def test_body_looks_like_not_found_false(self) -> None:
+        """Test body_looks_like_not_found returns False for normal content."""
+        self.assertFalse(
+            url_utils.body_looks_like_not_found("<html><body>Dataset download</body></html>")
+        )
+        self.assertFalse(url_utils.body_looks_like_not_found(""))
+
+    @patch("utils.url_utils.requests.get")
+    def test_fetch_page_body_success(self, mock_get: Mock) -> None:
+        """Test fetch_page_body returns 200, body, content-type, and False for logical 404."""
+        mock_resp = Mock()
+        mock_resp.status_code = 200
+        mock_resp.content = b"<html><body>OK</body></html>"
+        mock_resp.headers = {"Content-Type": "text/html; charset=utf-8"}
+        mock_get.return_value = mock_resp
+
+        status, body, ct, is_logical = url_utils.fetch_page_body("https://example.com/page")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body, "<html><body>OK</body></html>")
+        self.assertEqual(ct, "text/html")
+        self.assertFalse(is_logical)
+        expected_headers = {**url_utils.BROWSER_HEADERS, "Accept-Encoding": "gzip, deflate"}
+        mock_get.assert_called_once_with(
+            "https://example.com/page",
+            timeout=30,
+            allow_redirects=True,
+            headers=expected_headers,
+        )
+
+    @patch("utils.url_utils.requests.get")
+    def test_fetch_page_body_http_404(self, mock_get: Mock) -> None:
+        """Test fetch_page_body returns 404, body, and is_logical_404 False for HTTP 404."""
+        mock_resp = Mock()
+        mock_resp.status_code = 404
+        mock_resp.content = b"<html><body>Not found</body></html>"
+        mock_resp.headers = {"Content-Type": "text/html"}
+        mock_get.return_value = mock_resp
+
+        status, body, ct, is_logical = url_utils.fetch_page_body("https://example.com/missing")
+
+        self.assertEqual(status, 404)
+        self.assertIn("Not found", body)
+        self.assertFalse(is_logical)
+
+    @patch("utils.url_utils.requests.get")
+    def test_fetch_page_body_logical_404(self, mock_get: Mock) -> None:
+        """Test fetch_page_body returns 404 and is_logical_404 True for 200 HTML with not-found body."""
+        mock_resp = Mock()
+        mock_resp.status_code = 200
+        mock_resp.content = (
+            b"<html><body>Sorry, the page you requested could not be found.</body></html>"
+        )
+        mock_resp.headers = {"Content-Type": "text/html; charset=utf-8"}
+        mock_get.return_value = mock_resp
+
+        status, body, ct, is_logical = url_utils.fetch_page_body("https://example.com/ghost")
+
+        self.assertEqual(status, 404)
+        self.assertTrue(is_logical)
+        self.assertEqual(ct, "text/html")
+
+    @patch("utils.url_utils.requests.get")
+    def test_fetch_page_body_connection_error_as_404(self, mock_get: Mock) -> None:
+        """Test connection error returns 404, empty body, is_logical_404 False."""
+        mock_get.side_effect = ConnectionError(
+            "Failed to establish a new connection: [Errno 111] Connection refused"
+        )
+
+        status, body, ct, is_logical = url_utils.fetch_page_body("https://example.com/x")
+
+        self.assertEqual(status, 404)
+        self.assertEqual(body, "")
+        self.assertIsNone(ct)
+        self.assertFalse(is_logical)
+
+    @patch("utils.url_utils.requests.get")
+    def test_fetch_page_body_other_exception(self, mock_get: Mock) -> None:
+        """Test other exception returns -1, empty body."""
+        mock_get.side_effect = Exception("Timeout")
+
+        status, body, ct, is_logical = url_utils.fetch_page_body("https://example.com/x")
+
+        self.assertEqual(status, -1)
+        self.assertEqual(body, "")
+        self.assertIsNone(ct)
+        self.assertFalse(is_logical)
+
+    @patch("utils.url_utils.requests.get")
+    def test_fetch_page_body_binary_content_returns_empty_body(self, mock_get: Mock) -> None:
+        """Test binary Content-Type returns empty body to avoid decoded garbage."""
+        mock_resp = Mock()
+        mock_resp.status_code = 200
+        mock_resp.content = b"\x00\x01\x02PDF\xff\xfe"
+        mock_resp.headers = {"Content-Type": "application/pdf"}
+        mock_get.return_value = mock_resp
+
+        status, body, ct, is_logical = url_utils.fetch_page_body("https://example.com/doc.pdf")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body, "")
+        self.assertEqual(ct, "application/pdf")
+        self.assertFalse(is_logical)
+
+    @patch("utils.url_utils.requests.get")
+    def test_fetch_page_body_gzip_magic_returns_empty_body(self, mock_get: Mock) -> None:
+        """Test gzip magic bytes (mis-labeled as text) returns empty body."""
+        mock_resp = Mock()
+        mock_resp.status_code = 200
+        mock_resp.content = b"\x1f\x8b\x08\x00" + b"x" * 100
+        mock_resp.headers = {"Content-Type": "text/html; charset=utf-8"}
+        mock_get.return_value = mock_resp
+
+        status, body, ct, is_logical = url_utils.fetch_page_body("https://example.com/page")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body, "")
+        self.assertEqual(ct, "text/html")
+
+    @patch("utils.url_utils.requests.get")
+    def test_fetch_page_body_decoded_garbage_returns_empty_body(self, mock_get: Mock) -> None:
+        """Test decoded body with few printable chars is treated as garbage and cleared."""
+        mock_resp = Mock()
+        mock_resp.status_code = 200
+        mock_resp.content = (
+            b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f"
+            b"\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f"
+            b"xyz"
+        )
+        mock_resp.headers = {"Content-Type": "text/html"}
+        mock_get.return_value = mock_resp
+
+        status, body, ct, is_logical = url_utils.fetch_page_body("https://example.com/page")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body, "")
+        self.assertEqual(ct, "text/html")
