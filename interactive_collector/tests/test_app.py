@@ -367,6 +367,35 @@ class TestAppRoutes(unittest.TestCase):
         self.assertIn(b"example.com/linked", response.data)
         self.assertEqual(mock_fetch_page_body.call_count, 2)
 
+    @patch("interactive_collector.app._ensure_output_folder_for_drpid")
+    @patch("interactive_collector.app.fetch_page_body")
+    def test_index_link_click_binary_linked_shows_download_button(
+        self,
+        mock_fetch_page_body: unittest.mock.Mock,
+        mock_ensure_output_folder: unittest.mock.Mock,
+    ) -> None:
+        """When linked pane shows binary content and drpid is set, ensure folder and show Download button."""
+        def fetch_side_effect(url: str) -> tuple:
+            if "zip" in url or "linked" in url:
+                return (200, b"binary", "application/zip", False)
+            return (200, "<html><body>Source</body></html>", "text/html", False)
+        mock_fetch_page_body.side_effect = fetch_side_effect
+        mock_ensure_output_folder.return_value = "C:\\out\\DRP000001"
+        response = self.client.get(
+            "/",
+            query_string={
+                "source_url": "https://example.com/source",
+                "linked_url": "https://accessgudid.nlm.nih.gov/release_files/download/gudid_daily_update_20260209.zip",
+                "referrer": "https://example.com/source",
+                "drpid": "1",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Binary content (application/zip). Not displayed.", response.data)
+        self.assertIn(b"Downloading to output folder", response.data)
+        self.assertIn(b'id="auto-download-binary-form"', response.data)
+        mock_ensure_output_folder.assert_called_once()
+
     @patch("interactive_collector.app.fetch_page_body")
     def test_scoreboard_cleared_when_new_initial_url(
         self, mock_fetch_page_body: unittest.mock.Mock

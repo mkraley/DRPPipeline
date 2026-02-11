@@ -20,10 +20,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote, urljoin
 
+import requests
 from flask import Flask, redirect, request, render_template_string, url_for
 
 from utils.file_utils import create_output_folder, sanitize_filename
-from utils.url_utils import is_valid_url, fetch_page_body, resolve_catalog_resource_url
+from utils.url_utils import is_valid_url, fetch_page_body, resolve_catalog_resource_url, BROWSER_HEADERS
 
 app = Flask(__name__)
 
@@ -35,8 +36,27 @@ DEFAULT_BASE_OUTPUT_DIR = r"C:\Documents\DataRescue\DRPData"
 # In-memory scoreboard: list of {url, referrer, status_label}. Referrer None = root.
 _scoreboard: List[Dict[str, Any]] = []
 
-# Per-DRPID result: folder_path (and optionally more) for Save.
+# Per-DRPID result: folder_path, downloads list, dataset_size for Save.
 _result_by_drpid: Dict[int, Dict[str, Any]] = {}
+
+# Content-Type to file extension for downloads (lowercase type -> extension with dot).
+_CONTENT_TYPE_EXT: Dict[str, str] = {
+    "application/pdf": ".pdf",
+    "text/csv": ".csv",
+    "application/csv": ".csv",
+    "application/zip": ".zip",
+    "application/x-zip-compressed": ".zip",
+    "application/json": ".json",
+    "application/xml": ".xml",
+    "text/xml": ".xml",
+    "text/plain": ".txt",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+}
 
 
 def _get_db_path() -> Path:
@@ -225,7 +245,29 @@ _INDEX_HTML = """<!DOCTYPE html>
         {% if linked_srcdoc %}
         <iframe name="linked" class="pane-iframe" srcdoc="{{ linked_srcdoc | safe }}" sandbox="allow-same-origin allow-scripts allow-forms allow-top-navigation-by-user-activation" title="Linked page"></iframe>
         {% else %}
-        <div class="pane-empty">{{ linked_pane_message or "Click a link in Source (or Linked) to open it here." }}</div>
+        <div class="pane-empty">
+          {% if linked_is_binary and folder_path and linked_binary_url %}
+          <p>{{ linked_pane_message }}</p>
+          <p>Downloading to output folder…</p>
+          <form id="auto-download-binary-form" method="post" action="{{ url_for('download_file') }}" target="download-progress-iframe" style="display:none;">
+            <input type="hidden" name="url" value="{{ linked_binary_url | e }}" />
+            <input type="hidden" name="drpid" value="{{ (drpid or '') | e }}" />
+            <input type="hidden" name="referrer" value="{{ (linked_binary_referrer or '') | e }}" />
+          </form>
+          <iframe name="download-progress-iframe" id="download-progress-iframe" style="display:block;width:100%;height:120px;border:1px solid #ccc;margin-top:8px;background:#fff;" title="Download progress"></iframe>
+          <script>
+          (function(){
+            var iframe = document.getElementById("download-progress-iframe");
+            var f = document.getElementById("auto-download-binary-form");
+            var submitted = false;
+            if (iframe) iframe.onload = function() { if (submitted) window.location.reload(); };
+            if (f) { f.submit(); submitted = true; }
+          })();
+          </script>
+          {% else %}
+          {{ linked_pane_message or "Click a link in Source (or Linked) to open it here." }}
+          {% endif %}
+        </div>
         {% endif %}
       </div>
     </div>
@@ -243,15 +285,123 @@ _INDEX_HTML = """<!DOCTYPE html>
     var modal = document.getElementById("save-progress-modal");
     var messageEl = document.getElementById("save-progress-message");
     var okBtn = document.getElementById("save-progress-ok");
-    if (!form) return;
-    form.addEventListener("submit", function(ev) {
-      ev.preventDefault();
+    var reloadOnClose = false;
+
+    function showModal(title) {
+      if (!modal) { alert(title || "Progress"); return; }
+      var strong = modal.querySelector("strong");
+      if (strong) strong.textContent = title || "Progress";
       modal.classList.add("show");
-      messageEl.textContent = "Starting...";
-      okBtn.style.display = "none";
-      var formData = new FormData(form);
-      fetch("{{ url_for('save') }}", { method: "POST", body: formData })
+      if (okBtn) okBtn.style.display = "none";
+    }
+    function hideModal() {
+      if (modal) modal.classList.remove("show");
+      if (reloadOnClose) {
+        reloadOnClose = false;
+        window.location.reload();
+      }
+    }
+
+    if (form) {
+      form.addEventListener("submit", function(ev) {
+        ev.preventDefault();
+        showModal("Saving PDFs");
+        messageEl.textContent = "Starting...";
+        var formData = new FormData(form);
+        fetch("{{ url_for('save') }}", { method: "POST", body: formData })
+          .then(function(res) {
+            if (!res.body) throw new Error("No body");
+            var reader = res.body.getReader();
+            var decoder = new TextDecoder();
+            var buf = "";
+            function read() {
+              return reader.read().then(function(r) {
+                if (r.done) return;
+                buf += decoder.decode(r.value, { stream: true });
+                var lines = buf.split("\\n");
+                buf = lines.pop();
+                for (var i = 0; i < lines.length; i++) {
+                  var line = lines[i];
+                  if (line.startsWith("SAVING\\t")) {
+                    var parts = line.split("\\t");
+                    if (parts.length >= 4) messageEl.textContent = "Saving " + parts[1] + " " + parts[2] + "/" + parts[3];
+                  } else if (line.startsWith("SUMMARY\\t")) {
+                    try {
+                      var summary = JSON.parse(line.slice(8));
+                      var s = "Downloaded files:\\n";
+                      for (var j = 0; j < summary.length; j++) {
+                        var f = summary[j];
+                        var sz = (f.size !== undefined) ? (f.size < 1024 ? f.size + " B" : (f.size < 1024*1024 ? (f.size/1024).toFixed(1) + " KB" : (f.size/(1024*1024)).toFixed(1) + " MB") : "";
+                        s += (f.filename || f.path || "?") + " — " + sz + "\\n";
+                      }
+                      messageEl.textContent = s;
+                    } catch (_) {}
+                  } else if (line.startsWith("TOTAL_SIZE\\t")) {
+                    var total = parseInt(line.split("\\t")[1], 10) || 0;
+                    var totalStr = total < 1024 ? total + " B" : (total < 1024*1024 ? (total/1024).toFixed(1) + " KB" : (total/(1024*1024)).toFixed(1) + " MB");
+                    messageEl.textContent = (messageEl.textContent || "") + "\\nTotal size: " + totalStr;
+                  } else if (line.startsWith("DONE\\t")) {
+                    var n = line.split("\\t")[1] || "0";
+                    messageEl.textContent = (messageEl.textContent ? messageEl.textContent + "\\n\\n" : "") + "Saved " + n + " file(s).";
+                    okBtn.style.display = "inline-block";
+                    return;
+                  } else if (line.startsWith("ERROR\\t")) {
+                    messageEl.textContent = "Error: " + (line.split("\\t")[1] || "unknown");
+                    okBtn.style.display = "inline-block";
+                    return;
+                  }
+                }
+                return read();
+              });
+            }
+            return read();
+          })
+          .catch(function(e) {
+            messageEl.textContent = "Error: " + (e.message || "request failed");
+            okBtn.style.display = "inline-block";
+          });
+      });
+    }
+
+    function runDownloadBinary(btn) {
+      window.__downloadBinaryClicked = true;
+      try {
+        showModal("Downloading file");
+      } catch (e) {
+        alert("Download: " + (e.message || e));
+        return;
+      }
+      if (!modal || !messageEl) {
+        alert("Downloading file (modal not found)");
+        return;
+      }
+      if (!btn) return;
+      var url = btn.getAttribute("data-url");
+      var referrer = btn.getAttribute("data-referrer") || "";
+      var drpid = (btn.getAttribute("data-drpid") || "").trim();
+      if (!drpid) {
+        var el = document.querySelector('input[name="drpid"]');
+        drpid = el ? (el.value || "").trim() : "";
+      }
+      if (!url || !drpid) {
+        messageEl.textContent = "No project (DRPID) set. Load a project (Load DRPID) first.";
+        if (okBtn) okBtn.style.display = "inline-block";
+        return;
+      }
+      messageEl.textContent = "Downloading...";
+      var fd = new FormData();
+      fd.append("url", url);
+      fd.append("drpid", drpid);
+      fd.append("referrer", referrer);
+      var downloadUrl = "{{ url_for('download_file') }}";
+      fetch(downloadUrl, { method: "POST", body: fd })
         .then(function(res) {
+          if (!res.ok) {
+            return res.text().then(function(t) {
+              messageEl.textContent = "Error " + res.status + ": " + (t || res.statusText || "request failed");
+              okBtn.style.display = "inline-block";
+            });
+          }
           if (!res.body) throw new Error("No body");
           var reader = res.body.getReader();
           var decoder = new TextDecoder();
@@ -264,13 +414,16 @@ _INDEX_HTML = """<!DOCTYPE html>
               buf = lines.pop();
               for (var i = 0; i < lines.length; i++) {
                 var line = lines[i];
-                if (line.startsWith("SAVING\\t")) {
-                  var parts = line.split("\\t");
-                  if (parts.length >= 4) messageEl.textContent = "Saving " + parts[1] + " " + parts[2] + "/" + parts[3];
+                if (line.startsWith("SAVING\\t")) messageEl.textContent = "Downloading " + line.split("\\t")[1];
+                else if (line.startsWith("PROGRESS\\t")) {
+                  var p = line.split("\\t");
+                  var w = parseInt(p[1], 10);
+                  var t = p[2];
+                  messageEl.textContent = t ? "Downloaded " + (w < 1024 ? w + " B" : (w < 1024*1024 ? (w/1024).toFixed(1) + " KB" : (w/(1024*1024)).toFixed(1) + " MB")) + " / " + (parseInt(t,10) < 1024*1024 ? (parseInt(t,10)/1024).toFixed(1) + " KB" : (parseInt(t,10)/(1024*1024)).toFixed(1) + " MB") : "Downloaded " + (w < 1024 ? w + " B" : (w/(1024*1024)).toFixed(1) + " MB");
                 } else if (line.startsWith("DONE\\t")) {
-                  var n = line.split("\\t")[1] || "0";
-                  messageEl.textContent = "Saved " + n + " file(s).";
+                  messageEl.textContent = "Download complete.";
                   okBtn.style.display = "inline-block";
+                  reloadOnClose = true;
                   return;
                 } else if (line.startsWith("ERROR\\t")) {
                   messageEl.textContent = "Error: " + (line.split("\\t")[1] || "unknown");
@@ -287,10 +440,23 @@ _INDEX_HTML = """<!DOCTYPE html>
           messageEl.textContent = "Error: " + (e.message || "request failed");
           okBtn.style.display = "inline-block";
         });
-    });
-    okBtn.addEventListener("click", function() {
-      modal.classList.remove("show");
-    });
+    }
+    window.__downloadBinary = runDownloadBinary;
+
+    var downloadBtn = document.getElementById("btn-download-binary");
+    if (downloadBtn) {
+      downloadBtn.addEventListener("click", function(ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        runDownloadBinary(ev.currentTarget);
+      });
+    }
+    document.addEventListener("click", function(ev) {
+      var btn = ev.target && ev.target.closest && ev.target.closest(".btn-download-binary");
+      if (btn) { ev.preventDefault(); ev.stopPropagation(); runDownloadBinary(btn); }
+    }, true);
+
+    if (okBtn) okBtn.addEventListener("click", function() { hideModal(); });
   })();
   </script>
 </body>
@@ -376,6 +542,65 @@ def _is_displayable_text(content_type: Optional[str]) -> bool:
     return False
 
 
+def _extension_from_content_type(content_type: Optional[str]) -> str:
+    """Return extension with leading dot from Content-Type, or empty string."""
+    if not content_type or ";" in content_type:
+        content_type = (content_type or "").split(";")[0].strip().lower()
+    return _CONTENT_TYPE_EXT.get(content_type, "")
+
+
+def _filename_from_content_disposition(header_value: Optional[str]) -> Optional[str]:
+    """Extract filename from Content-Disposition header (filename= or filename*=)."""
+    if not header_value:
+        return None
+    # filename*=UTF-8''encoded
+    if "filename*=" in header_value:
+        try:
+            part = header_value.split("filename*=")[-1].strip().strip(";")
+            if part.lower().startswith("utf-8''"):
+                from urllib.parse import unquote
+                return unquote(part[7:])
+            return part.strip("\"'")
+        except Exception:
+            pass
+    # filename="name"
+    if "filename=" in header_value:
+        try:
+            part = header_value.split("filename=", 1)[-1].strip().strip(";").strip("\"'")
+            if part:
+                return part
+        except Exception:
+            pass
+    return None
+
+
+def _filename_from_url(url: str) -> str:
+    """Last path segment or 'download'."""
+    from urllib.parse import urlparse, unquote
+    path = urlparse(url).path or ""
+    name = (path.rstrip("/").split("/")[-1] or "download")
+    return unquote(name)
+
+
+def _unique_download_basename(base: str, ext: str, used: Dict[str, int]) -> str:
+    """Return unique sanitized basename: base.ext or base_1.ext, etc."""
+    if not base or base == "download":
+        base = "download"
+    base = sanitize_filename(base, max_length=80)
+    if ext and not base.lower().endswith(ext.lower()):
+        base = base + ext
+    key = base.lower()
+    n = used.get(key, 0)
+    used[key] = n + 1
+    if n == 0:
+        return base
+    # insert _n before the extension
+    if "." in base:
+        stem, suffix = base.rsplit(".", 1)
+        return f"{stem}_{n}.{suffix}"
+    return f"{base}_{n}"
+
+
 def _status_label(status_code: int, is_logical_404: bool) -> str:
     """Return human-readable status for display."""
     if status_code == 404:
@@ -394,10 +619,44 @@ def _scoreboard_add(url: str, referrer: Optional[str], status_label: str) -> Non
     _scoreboard.append({"url": url, "referrer": referrer, "status_label": status_label, "is_dupe": is_dupe})
 
 
+def _scoreboard_add_download(
+    url: str,
+    referrer: Optional[str],
+    file_path: str,
+    file_size: int,
+    extension: str,
+    filename: Optional[str] = None,
+) -> None:
+    """Append a downloaded-file entry to the scoreboard (no checkbox, DL flag + extension)."""
+    _scoreboard.append({
+        "url": url,
+        "referrer": referrer,
+        "status_label": "DL",
+        "is_dupe": False,
+        "is_download": True,
+        "file_path": file_path,
+        "file_size": file_size,
+        "extension": extension or "",
+        "filename": filename or "",
+    })
+
+
 def _scoreboard_tree() -> List[Dict[str, Any]]:
     """Return scoreboard as a tree. One node per entry (no merging by URL) so original stays OK, dupes shown separately."""
     nodes = [
-        {"url": n["url"], "referrer": n["referrer"], "status_label": n["status_label"], "is_dupe": n.get("is_dupe", False), "idx": i, "children": []}
+        {
+            "url": n["url"],
+            "referrer": n["referrer"],
+            "status_label": n["status_label"],
+            "is_dupe": n.get("is_dupe", False),
+            "idx": i,
+            "children": [],
+            "is_download": n.get("is_download", False),
+            "file_path": n.get("file_path"),
+            "file_size": n.get("file_size", 0),
+            "extension": n.get("extension", ""),
+            "filename": n.get("filename", ""),
+        }
         for i, n in enumerate(_scoreboard)
     ]
     url_to_first_idx: Dict[str, int] = {}
@@ -417,8 +676,9 @@ def _scoreboard_render_html(
     current_source_url: str,
     drpid: Optional[str] = None,
     for_save_form: bool = False,
+    linked_url_not_checked: Optional[str] = None,
 ) -> str:
-    """Render scoreboard tree as HTML (nested ul). Checkbox checked for original source and OK non-dupes."""
+    """Render scoreboard tree as HTML (nested ul). Checkbox checked for original source and OK non-dupes (except linked_url_not_checked)."""
     roots = _scoreboard_tree()
     if not roots:
         return "<p><em>No pages yet.</em></p>"
@@ -430,17 +690,27 @@ def _scoreboard_render_html(
         url_short = url[:80] + ("..." if len(url) > 80 else "")
         status = node["status_label"]
         is_dupe = node.get("is_dupe", False)
-        status_display = status + " (dupe)" if is_dupe else status
-        status_class = "status-404" if "404" in status else "status-ok"
+        is_download = node.get("is_download", False)
+        ext = (node.get("extension") or "").strip()
+        if is_download and ext and not ext.startswith("."):
+            ext = "." + ext
+        status_display = (status + " " + ext).strip() if is_download else (status + " (dupe)" if is_dupe else status)
+        status_class = "status-404" if "404" in status and not is_download else "status-ok"
         referrer = node.get("referrer") or current_source_url
         is_ok = "OK" in status
-        checked = (url == original_source_url and is_ok) or (is_ok and not is_dupe)
+        base_checked = (url == original_source_url and is_ok) or (is_ok and not is_dupe)
+        checked = base_checked and (not linked_url_not_checked or url != linked_url_not_checked)
         idx = node.get("idx", 0)
-        if for_save_form:
+        if is_download:
+            cb = ""  # No checkbox for downloads
+        elif for_save_form:
             cb = f'<input type="checkbox" class="scoreboard-cb" name="save_url" value="{idx}" {"checked" if checked else ""} />'
         else:
             cb = f'<input type="checkbox" class="scoreboard-cb" {"checked" if checked else ""} />'
-        if current_source_url:
+        if is_download:
+            display_text = (node.get("filename") or "").strip() or url_short
+            link = f'<span class="url" title="{html.escape(url)}">{html.escape(display_text)}</span>'
+        elif current_source_url:
             params = f"source_url={quote(current_source_url)}&linked_url={quote(url)}&referrer={quote(referrer)}&from_scoreboard=1"
             if drpid:
                 params += f"&drpid={quote(drpid, safe='')}"
@@ -625,17 +895,27 @@ def index() -> str:
         )
         if not any(n["url"] == source_url_param for n in _scoreboard):
             _scoreboard_add(source_url_param, None, src_status)
-        if not from_scoreboard:
-            if resolved_linked:
-                _scoreboard_add(resolved_linked, referrer_param, linked_status)
-            elif not linked_url_param.startswith("https://catalog.data.gov"):
-                _scoreboard_add(linked_url_param, referrer_param, linked_status)
-        # else: from_scoreboard click — don't add new entry or check dupe
+        linked_is_binary = (
+            linked_srcdoc is None
+            and linked_pane_message
+            and "Binary content" in (linked_pane_message or "")
+        )
+        if not from_scoreboard and not linked_is_binary:
+            _scoreboard_add(linked_url_for_fetch, referrer_param, linked_status)
+        # else: from_scoreboard click, or binary (DL entry added when download completes)
         folder_path = _folder_path_for_drpid(display_drpid)
+        if folder_path is None and display_drpid:
+            try:
+                folder_path = _ensure_output_folder_for_drpid(app, int(display_drpid))
+            except (ValueError, TypeError):
+                pass
         return render_template_string(
             _INDEX_HTML,
             initial_url=html.escape(source_url_param),
-            scoreboard_html=_scoreboard_render_html(app_root, source_url_param, drpid=display_drpid, for_save_form=bool(folder_path)),
+            scoreboard_html=_scoreboard_render_html(
+                app_root, source_url_param, drpid=display_drpid, for_save_form=bool(folder_path),
+                linked_url_not_checked=linked_url_for_fetch if linked_is_binary else None,
+            ),
             source_srcdoc=src_srcdoc,
             linked_srcdoc=linked_srcdoc,
             source_pane_message=src_pane_message,
@@ -645,6 +925,9 @@ def index() -> str:
             drpid=display_drpid,
             folder_path=folder_path,
             scoreboard_urls_json=json.dumps([n["url"] for n in _scoreboard]),
+            linked_is_binary=linked_is_binary,
+            linked_binary_url=linked_url_for_fetch if linked_is_binary else None,
+            linked_binary_referrer=referrer_param if linked_is_binary else None,
         )
 
     # No URL: show form and empty panes
@@ -739,6 +1022,130 @@ def _generate_save_progress(
     yield f"DONE\t{len(saved)}\n"
 
 
+# Progress report interval for large file downloads (MB).
+_DOWNLOAD_PROGRESS_INTERVAL_MB = 50.0
+
+
+def _generate_download_progress(
+    url: str,
+    folder_path_str: str,
+    drpid: int,
+    referrer: Optional[str],
+):
+    """
+    Generator that yields progress lines for a single file download.
+    Yields: SAVING\\t{basename}\\n, PROGRESS\\t{written}\\t{total}\\n, then DONE\\t{basename}\\t{size}\\t{ext}\\n or ERROR\\t{msg}\\n.
+    """
+    folder_path = Path(folder_path_str)
+    if not folder_path.is_dir():
+        yield f"ERROR\tOutput folder not found\n"
+        return
+    try:
+        resp = requests.get(url, stream=True, headers=BROWSER_HEADERS, timeout=(30, 300))
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        yield f"ERROR\t{str(e)[:200]}\n"
+        return
+
+    content_type = (resp.headers.get("Content-Type") or "").split(";")[0].strip()
+    content_disp = resp.headers.get("Content-Disposition")
+    content_length: Optional[int] = None
+    try:
+        cl = resp.headers.get("Content-Length")
+        if cl is not None:
+            content_length = int(cl)
+    except ValueError:
+        pass
+
+    filename = _filename_from_content_disposition(content_disp) or _filename_from_url(url)
+    ext = _extension_from_content_type(content_type)
+    if filename and "." in filename:
+        pass  # keep ext from filename
+    else:
+        if ext and filename:
+            filename = filename + (ext if ext.startswith(".") else "." + ext)
+        elif ext:
+            filename = "download" + (ext if ext.startswith(".") else "." + ext)
+    base = filename
+    if "." in base:
+        base = base.rsplit(".", 1)[0]
+        ext_from_name = "." + filename.rsplit(".", 1)[-1]
+        if not ext:
+            ext = ext_from_name
+    else:
+        if not ext:
+            ext = ""
+
+    used: Dict[str, int] = {p.name.lower(): 1 for p in folder_path.iterdir() if p.is_file()}
+    basename = _unique_download_basename(base, ext, used)
+    dest = folder_path / basename
+
+    yield f"SAVING\t{basename}\n"
+    chunk_size = 1024 * 1024  # 1 MB
+    written = 0
+    last_yield_mb = 0.0
+    try:
+        with open(dest, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=chunk_size):
+                if not chunk:
+                    break
+                f.write(chunk)
+                written += len(chunk)
+                mb = written / (1024 * 1024)
+                if (mb - last_yield_mb) >= _DOWNLOAD_PROGRESS_INTERVAL_MB or (content_length and written >= content_length):
+                    last_yield_mb = mb
+                    total_str = str(content_length) if content_length is not None else ""
+                    yield f"PROGRESS\t{written}\t{total_str}\n"
+    except OSError as e:
+        yield f"ERROR\t{str(e)[:200]}\n"
+        return
+
+    ext_display = ext.lstrip(".")
+    yield f"DONE\t{basename}\t{written}\t{ext_display}\n"
+
+    _result_by_drpid.setdefault(drpid, {}).setdefault("downloads", []).append({
+        "url": url,
+        "path": str(dest),
+        "size": written,
+        "extension": ext_display,
+        "filename": basename,
+    })
+    _scoreboard_add_download(url, referrer, str(dest), written, ext_display, filename=basename)
+
+
+@app.route("/download-file", methods=["POST"])
+def download_file() -> Any:
+    """
+    Download a non-HTML URL to the project output folder; streams progress (SAVING, PROGRESS, DONE).
+    Expects url, drpid, referrer (optional). Uses folder_path from _result_by_drpid.
+    """
+    url = (request.form.get("url") or "").strip()
+    drpid_str = (request.form.get("drpid") or "").strip()
+    referrer = (request.form.get("referrer") or "").strip() or None
+
+    if not url or not is_valid_url(url):
+        return "Invalid URL", 400
+    try:
+        drpid = int(drpid_str)
+    except (ValueError, TypeError):
+        return "Invalid DRPID", 400
+
+    folder_path = _result_by_drpid.get(drpid, {}).get("folder_path")
+    if not folder_path:
+        return "No output folder for this project", 400
+
+    def stream() -> Any:
+        for line in _generate_download_progress(url, folder_path, drpid, referrer):
+            yield line
+
+    from flask import Response
+    return Response(
+        stream(),
+        mimetype="text/plain; charset=utf-8",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
 @app.route("/save", methods=["POST"])
 def save() -> Any:
     """
@@ -761,8 +1168,14 @@ def save() -> Any:
     if not folder_path.is_dir():
         return redirect(url_for("index"))
 
+    drpid_val: Optional[int] = None
+    try:
+        drpid_val = int((request.form.get("drpid") or "").strip())
+    except (ValueError, TypeError):
+        pass
+
     def stream() -> Any:
-        for line in _generate_save_progress(folder_path, urls, indices):
+        for line in _generate_save_progress(folder_path, urls, indices, drpid=drpid_val):
             yield line
 
     from flask import Response
