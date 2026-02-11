@@ -188,6 +188,8 @@ _INDEX_HTML = """<!DOCTYPE html>
   .pane.source-pane { resize: horizontal; max-width: 80%; }
   .pane-header { padding: 4px 8px; background: #e8e8e8; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pane-header-label { font-weight: bold; }
+  .pane-back { margin-right: 6px; font-weight: normal; }
+  .pane-header-sep { margin-right: 4px; }
   .pane-header-url { font-weight: normal; }
   .pane-iframe { flex: 1; width: 100%; border: none; min-height: 200px; }
   .pane-empty { flex: 1; padding: 16px; color: #666; font-size: 14px; }
@@ -241,32 +243,12 @@ _INDEX_HTML = """<!DOCTYPE html>
         {% endif %}
       </div>
       <div class="pane">
-        <div class="pane-header" title="{{ (linked_display_url or '') | e }}"><span class="pane-header-label">Linked:</span> <span class="pane-header-url">{{ (linked_display_url or '—') | e }}</span></div>
+        <div class="pane-header" title="{{ (linked_display_url or '') | e }}"><span class="pane-header-label">Linked:</span>{% if linked_back_url %} <a href="{{ linked_back_url | e }}" class="pane-back" title="Back to previous page">← Back</a><span class="pane-header-sep"> </span>{% endif %}<span class="pane-header-url">{{ (linked_display_url or '—') | e }}</span></div>
         {% if linked_srcdoc %}
         <iframe name="linked" class="pane-iframe" srcdoc="{{ linked_srcdoc | safe }}" sandbox="allow-same-origin allow-scripts allow-forms allow-top-navigation-by-user-activation" title="Linked page"></iframe>
         {% else %}
         <div class="pane-empty">
-          {% if linked_is_binary and folder_path and linked_binary_url %}
-          <p>{{ linked_pane_message }}</p>
-          <p>Downloading to output folder…</p>
-          <form id="auto-download-binary-form" method="post" action="{{ url_for('download_file') }}" target="download-progress-iframe" style="display:none;">
-            <input type="hidden" name="url" value="{{ linked_binary_url | e }}" />
-            <input type="hidden" name="drpid" value="{{ (drpid or '') | e }}" />
-            <input type="hidden" name="referrer" value="{{ (linked_binary_referrer or '') | e }}" />
-          </form>
-          <iframe name="download-progress-iframe" id="download-progress-iframe" style="display:block;width:100%;height:120px;border:1px solid #ccc;margin-top:8px;background:#fff;" title="Download progress"></iframe>
-          <script>
-          (function(){
-            var iframe = document.getElementById("download-progress-iframe");
-            var f = document.getElementById("auto-download-binary-form");
-            var submitted = false;
-            if (iframe) iframe.onload = function() { if (submitted) window.location.reload(); };
-            if (f) { f.submit(); submitted = true; }
-          })();
-          </script>
-          {% else %}
           {{ linked_pane_message or "Click a link in Source (or Linked) to open it here." }}
-          {% endif %}
         </div>
         {% endif %}
       </div>
@@ -279,6 +261,114 @@ _INDEX_HTML = """<!DOCTYPE html>
       <button type="button" id="save-progress-ok">Close</button>
     </div>
   </div>
+  {% if show_auto_download %}
+  <span id="auto-download-data" data-url="{{ linked_binary_url | e }}" data-drpid="{{ (drpid or '') | e }}" data-referrer="{{ (linked_binary_referrer or '') | e }}" style="display:none"></span>
+  <script>
+  (function(){
+    var el = document.getElementById("auto-download-data");
+    if (!el) return;
+    var url = el.getAttribute("data-url") || "";
+    var drpid = (el.getAttribute("data-drpid") || "").trim();
+    var referrer = el.getAttribute("data-referrer") || "";
+    if (!url || !drpid) return;
+    var modal = document.getElementById("save-progress-modal");
+    var msg = document.getElementById("save-progress-message");
+    var closeBtn = document.getElementById("save-progress-ok");
+    if (!modal || !msg) return;
+    var titleEl = modal.querySelector("strong");
+    if (titleEl) titleEl.textContent = "Downloading file";
+    modal.classList.add("show");
+    if (closeBtn) closeBtn.style.display = "none";
+    msg.textContent = "Downloading...";
+    var reloadOnClose = false;
+    if (closeBtn) closeBtn.onclick = function() {
+      modal.classList.remove("show");
+      if (reloadOnClose) {
+        var u = new URL(window.location.href);
+        u.searchParams.set("downloaded", "1");
+        window.location.href = u.toString();
+      }
+    };
+    var fd = new FormData();
+    fd.append("url", url);
+    fd.append("drpid", drpid);
+    fd.append("referrer", referrer);
+    fetch("{{ url_for('download_file') }}", { method: "POST", body: fd })
+      .then(function(res) {
+        if (!res.ok) {
+          return res.text().then(function(t) {
+            msg.textContent = "Error " + res.status + ": " + (t || res.statusText || "request failed");
+            if (closeBtn) closeBtn.style.display = "inline-block";
+          });
+        }
+        if (!res.body) throw new Error("No body");
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder();
+        var buf = "";
+        function read() {
+          return reader.read().then(function(r) {
+            if (r.done) return;
+            buf += decoder.decode(r.value, { stream: true });
+            var lines = buf.split("\\n");
+            buf = lines.pop();
+            for (var i = 0; i < lines.length; i++) {
+              var line = lines[i];
+              if (line.startsWith("SAVING\\t")) msg.textContent = "Downloading " + (line.split("\\t")[1] || "");
+              else if (line.startsWith("PROGRESS\\t")) {
+                var p = line.split("\\t");
+                var w = parseInt(p[1], 10);
+                var t = p[2];
+                msg.textContent = t ? "Downloaded " + (w < 1024 ? w + " B" : (w < 1024*1024 ? (w/1024).toFixed(1) + " KB" : (w/(1024*1024)).toFixed(1) + " MB")) + " / " + (parseInt(t,10) < 1024*1024 ? (parseInt(t,10)/1024).toFixed(1) + " KB" : (parseInt(t,10)/(1024*1024)).toFixed(1) + " MB") : "Downloaded " + (w < 1024 ? w + " B" : (w/(1024*1024)).toFixed(1) + " MB");
+              } else if (line.startsWith("DONE\\t")) {
+                var doneParts = line.split("\\t");
+                var savedName = doneParts[1] ? doneParts[1].trim() : "";
+                var extDisplay = (doneParts[3] && doneParts[3].trim()) ? " " + doneParts[3].trim() : "";
+                msg.textContent = savedName ? "Download complete. Saved as " + savedName : "Download complete.";
+                if (closeBtn) closeBtn.style.display = "inline-block";
+                var parentLi = null;
+                var urls = document.querySelectorAll(".scoreboard .url");
+                for (var i = 0; i < urls.length; i++) {
+                  if (urls[i].getAttribute("title") === referrer) {
+                    parentLi = urls[i].closest("li");
+                    break;
+                  }
+                }
+                var ul = parentLi ? (parentLi.querySelector("ul") || (function() { var u = document.createElement("ul"); parentLi.appendChild(u); return u; })()) : document.querySelector(".scoreboard ul");
+                if (ul) {
+                  var li = document.createElement("li");
+                  var spanUrl = document.createElement("span");
+                  spanUrl.className = "url";
+                  spanUrl.title = savedName;
+                  spanUrl.textContent = savedName || "file";
+                  var spanStatus = document.createElement("span");
+                  spanStatus.className = "status-ok";
+                  spanStatus.textContent = "(DL" + extDisplay + ")";
+                  li.appendChild(spanUrl);
+                  li.appendChild(document.createTextNode(" "));
+                  li.appendChild(spanStatus);
+                  ul.appendChild(li);
+                } else {
+                  reloadOnClose = true;
+                }
+                return;
+              } else if (line.startsWith("ERROR\\t")) {
+                msg.textContent = "Error: " + (line.split("\\t")[1] || "unknown");
+                if (closeBtn) closeBtn.style.display = "inline-block";
+                return;
+              }
+            }
+            return read();
+          });
+        }
+        return read();
+      })
+      .catch(function(e) {
+        msg.textContent = "Error: " + (e.message || "request failed");
+        if (closeBtn) closeBtn.style.display = "inline-block";
+      });
+  })();
+  </script>
+  {% endif %}
   <script>
   (function() {
     var form = document.getElementById("scoreboard-save-form");
@@ -829,6 +919,7 @@ def index() -> str:
                 drpid=display_drpid,
                 folder_path=folder_path,
                 scoreboard_urls_json=json.dumps([n["url"] for n in _scoreboard]),
+                show_auto_download=False,
             )
         safe_srcdoc, body_message, status_label = _prepare_pane_content(
             url_param, app_root, url_param, drpid=display_drpid
@@ -856,9 +947,11 @@ def index() -> str:
             source_pane_message=body_message,
             source_display_url=url_param,
             linked_display_url=None,
+            linked_back_url=None,
             drpid=display_drpid,
             folder_path=folder_path,
             scoreboard_urls_json=scoreboard_urls_json,
+            show_auto_download=False,
         )
 
     # Link click: source_url + linked_url + referrer
@@ -877,6 +970,7 @@ def index() -> str:
                 drpid=display_drpid,
                 folder_path=folder_path,
                 scoreboard_urls_json=json.dumps([n["url"] for n in _scoreboard]),
+                show_auto_download=False,
             )
         # Fetch both panes. For catalog.data.gov links, resolve on click and show the resolved URL in the Linked pane (skip the relay).
         src_srcdoc, src_pane_message, src_status = _prepare_pane_content(
@@ -909,6 +1003,42 @@ def index() -> str:
                 folder_path = _ensure_output_folder_for_drpid(app, int(display_drpid))
             except (ValueError, TypeError):
                 pass
+        linked_srcdoc_for_display = linked_srcdoc
+        linked_display_url_when_binary: Optional[str] = None
+        if linked_is_binary and referrer_param:
+            if referrer_param == source_url_param:
+                linked_srcdoc_for_display = src_srcdoc
+                linked_display_url_when_binary = source_url_param
+            elif is_valid_url(referrer_param):
+                ref_srcdoc, _ref_msg, _ref_status = _prepare_pane_content(
+                    referrer_param, app_root, source_url_param, drpid=display_drpid
+                )
+                if ref_srcdoc:
+                    linked_srcdoc_for_display = ref_srcdoc
+                    linked_display_url_when_binary = referrer_param
+                else:
+                    linked_srcdoc_for_display = src_srcdoc
+                    linked_display_url_when_binary = source_url_param
+            else:
+                linked_srcdoc_for_display = src_srcdoc
+                linked_display_url_when_binary = source_url_param
+        elif linked_is_binary:
+            linked_srcdoc_for_display = src_srcdoc
+            linked_display_url_when_binary = source_url_param
+        if linked_display_url_when_binary is not None:
+            linked_display_url = linked_display_url_when_binary
+        show_auto_download = (
+            linked_is_binary
+            and bool(folder_path)
+            and bool(linked_url_for_fetch)
+            and not request.args.get("downloaded")
+        )
+        linked_back_url = None
+        if linked_srcdoc_for_display and referrer_param and referrer_param != source_url_param:
+            _kwargs = {"source_url": source_url_param, "linked_url": referrer_param, "referrer": source_url_param, "from_scoreboard": "1"}
+            if display_drpid:
+                _kwargs["drpid"] = display_drpid
+            linked_back_url = url_for("index", **_kwargs)
         return render_template_string(
             _INDEX_HTML,
             initial_url=html.escape(source_url_param),
@@ -917,17 +1047,19 @@ def index() -> str:
                 linked_url_not_checked=linked_url_for_fetch if linked_is_binary else None,
             ),
             source_srcdoc=src_srcdoc,
-            linked_srcdoc=linked_srcdoc,
+            linked_srcdoc=linked_srcdoc_for_display,
             source_pane_message=src_pane_message,
             linked_pane_message=linked_pane_message,
             source_display_url=source_url_param,
             linked_display_url=linked_display_url,
+            linked_back_url=linked_back_url,
             drpid=display_drpid,
             folder_path=folder_path,
             scoreboard_urls_json=json.dumps([n["url"] for n in _scoreboard]),
             linked_is_binary=linked_is_binary,
             linked_binary_url=linked_url_for_fetch if linked_is_binary else None,
             linked_binary_referrer=referrer_param if linked_is_binary else None,
+            show_auto_download=show_auto_download,
         )
 
     # No URL: show form and empty panes
@@ -941,9 +1073,11 @@ def index() -> str:
         source_pane_message=None,
         source_display_url=None,
         linked_display_url=None,
+        linked_back_url=None,
         drpid=display_drpid,
         folder_path=folder_path,
         scoreboard_urls_json=json.dumps([n["url"] for n in _scoreboard]),
+        show_auto_download=False,
     )
 
 

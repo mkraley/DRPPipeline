@@ -374,7 +374,7 @@ class TestAppRoutes(unittest.TestCase):
         mock_fetch_page_body: unittest.mock.Mock,
         mock_ensure_output_folder: unittest.mock.Mock,
     ) -> None:
-        """When linked pane shows binary content and drpid is set, ensure folder and show Download button."""
+        """When linked is binary, Linked pane shows source page and auto-download runs in modal."""
         def fetch_side_effect(url: str) -> tuple:
             if "zip" in url or "linked" in url:
                 return (200, b"binary", "application/zip", False)
@@ -391,9 +391,8 @@ class TestAppRoutes(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Binary content (application/zip). Not displayed.", response.data)
-        self.assertIn(b"Downloading to output folder", response.data)
-        self.assertIn(b'id="auto-download-binary-form"', response.data)
+        self.assertIn(b"Source", response.data)
+        self.assertIn(b'id="auto-download-data"', response.data)
         mock_ensure_output_folder.assert_called_once()
 
     @patch("interactive_collector.app.fetch_page_body")
