@@ -2,14 +2,19 @@
 Unit tests for the Interactive Collector Flask app.
 """
 
+import tempfile
 import unittest
+from pathlib import Path
 from typing import Dict
 from unittest.mock import MagicMock, patch
 
 from interactive_collector.app import (
     app,
     _base_url_for_page,
+    _folder_extensions_and_size,
+    _format_file_size,
     _inject_base_into_html,
+    _normalize_date_yyyy_mm_dd,
     _rewrite_links_to_app,
     _status_label,
     _unique_pdf_basename,
@@ -170,6 +175,62 @@ class TestStatusLabel(unittest.TestCase):
         self.assertEqual(_status_label(-1, False), "Error (-1)")
 
 
+class TestNormalizeDate(unittest.TestCase):
+    """Tests for _normalize_date_yyyy_mm_dd (preload download_date as YYYY-MM-DD)."""
+
+    def test_empty_returns_none(self) -> None:
+        self.assertIsNone(_normalize_date_yyyy_mm_dd(""))
+        self.assertIsNone(_normalize_date_yyyy_mm_dd("   "))
+
+    def test_year_only_returns_jan_1(self) -> None:
+        self.assertEqual(_normalize_date_yyyy_mm_dd("2024"), "2024-01-01")
+
+    def test_iso_date_unchanged(self) -> None:
+        self.assertEqual(_normalize_date_yyyy_mm_dd("2024-06-15"), "2024-06-15")
+
+    def test_single_digit_month_day_padded(self) -> None:
+        self.assertEqual(_normalize_date_yyyy_mm_dd("2024-1-5"), "2024-01-05")
+
+    def test_invalid_returns_none(self) -> None:
+        self.assertIsNone(_normalize_date_yyyy_mm_dd("not-a-date"))
+
+
+class TestFormatFileSize(unittest.TestCase):
+    """Tests for _format_file_size (human-friendly size)."""
+
+    def test_bytes(self) -> None:
+        self.assertEqual(_format_file_size(0), "0 B")
+        self.assertEqual(_format_file_size(500), "500 B")
+
+    def test_kb(self) -> None:
+        self.assertEqual(_format_file_size(1024), "1.0 KB")
+        self.assertEqual(_format_file_size(1536), "1.5 KB")
+
+    def test_mb(self) -> None:
+        self.assertEqual(_format_file_size(1024 * 1024), "1.0 MB")
+        self.assertEqual(_format_file_size(1024 * 1024 * 2), "2.0 MB")
+
+
+class TestFolderExtensionsAndSize(unittest.TestCase):
+    """Tests for _folder_extensions_and_size."""
+
+    def test_empty_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            exts, size = _folder_extensions_and_size(Path(d))
+        self.assertEqual(exts, [])
+        self.assertEqual(size, 0)
+
+    def test_collects_extensions_and_total_size(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d)
+            (p / "a.pdf").write_bytes(b"x" * 100)
+            (p / "b.csv").write_bytes(b"y" * 50)
+            (p / "c.PDF").write_bytes(b"z" * 30)
+            exts, size = _folder_extensions_and_size(p)
+        self.assertEqual(sorted(exts), ["csv", "pdf"])
+        self.assertEqual(size, 180)
+
+
 class TestAppRoutes(unittest.TestCase):
     """Tests for Flask app routes."""
 
@@ -205,8 +266,9 @@ class TestAppRoutes(unittest.TestCase):
             False,
         )
         project = {"DRPID": 7, "source_url": "https://catalog.data.gov/dataset/foo"}
-        # First call: _ensure_storage probe (None, 0); second: _get_first_eligible ("sourcing", 1)
-        mock_storage_cls.list_eligible_projects.side_effect = [[], [project]]
+        # list_eligible_projects: _ensure_storage, _get_first_eligible, then _get_project_by_drpid -> _ensure_storage
+        mock_storage_cls.list_eligible_projects.side_effect = [[], [project], []]
+        mock_storage_cls.get.return_value = project
 
         response = self.client.get("/")
 
@@ -367,6 +429,49 @@ class TestAppRoutes(unittest.TestCase):
         self.assertIn(b"example.com/linked", response.data)
         self.assertEqual(mock_fetch_page_body.call_count, 2)
 
+    @patch("interactive_collector.app.fetch_page_body")
+    def test_index_link_click_with_referrer_not_source_shows_back_link(
+        self, mock_fetch_page_body: unittest.mock.Mock
+    ) -> None:
+        """When referrer != source (navigated from Linked pane), Back link is present."""
+        def fetch_side_effect(url: str) -> tuple:
+            return (200, "<html><body>Page</body></html>", "text/html", False)
+        mock_fetch_page_body.side_effect = fetch_side_effect
+        response = self.client.get(
+            "/",
+            query_string={
+                "source_url": "https://example.com/source",
+                "linked_url": "https://example.com/linked",
+                "referrer": "https://example.com/mid",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"pane-back", response.data)
+        self.assertIn(b"Back", response.data)
+        self.assertIn(b"linked_url=", response.data)
+
+    @patch("interactive_collector.app.fetch_page_body")
+    def test_index_includes_metadata_draft_script_when_drpid_and_folder(
+        self, mock_fetch_page_body: unittest.mock.Mock
+    ) -> None:
+        """When folder_path and drpid exist, page includes metadata draft restore/save script."""
+        mock_fetch_page_body.return_value = (
+            200,
+            "<html><body>Page</body></html>",
+            "text/html",
+            False,
+        )
+        import interactive_collector.app as app_module
+        with patch.object(app_module, "_ensure_output_folder_for_drpid", return_value="C:\\out\\1"):
+            response = self.client.get(
+                                "/",
+                                query_string={"url": "https://example.com", "drpid": "1"},
+                            )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"metadata_draft_", response.data)
+        self.assertIn(b"saveDraft", response.data)
+        self.assertIn(b"restoreDraft", response.data)
+
     @patch("interactive_collector.app._ensure_output_folder_for_drpid")
     @patch("interactive_collector.app.fetch_page_body")
     def test_index_link_click_binary_linked_shows_download_button(
@@ -446,6 +551,60 @@ class TestAppRoutes(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 302)
         self.assertIn("/", response.location)
+
+    def test_save_with_no_indices_preserves_return_to_in_redirect(self) -> None:
+        """POST /save with no indices but return_to query redirects to index + return_to."""
+        response = self.client.post(
+            "/save",
+            data={
+                "folder_path": "C:\\tmp\\DRP000001",
+                "scoreboard_urls_json": "[]",
+                "return_to": "?source_url=https%3A%2F%2Fexample.com%2F&drpid=1",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("source_url=", response.location)
+        self.assertIn("drpid=1", response.location)
+
+    @patch("storage.Storage")
+    def test_save_with_metadata_and_no_indices_updates_storage(
+        self, mock_storage_cls: MagicMock
+    ) -> None:
+        """POST /save with drpid and metadata fields (no PDF indices) updates Storage and redirects."""
+        mock_storage_cls.list_eligible_projects.return_value = []
+        with tempfile.TemporaryDirectory() as d:
+            response = self.client.post(
+                "/save",
+                data={
+                    "drpid": "1",
+                    "folder_path": d,
+                    "scoreboard_urls_json": "[]",
+                    "metadata_title": "Test Title",
+                    "metadata_agency": "Test Agency",
+                    "metadata_summary": "<p>Summary</p>",
+                    "metadata_keywords": "a; b",
+                    "metadata_time_start": "2020",
+                    "metadata_time_end": "2024-06-01",
+                    "metadata_download_date": "2024-01-15",
+                    "return_to": "?drpid=1",
+                },
+            )
+        self.assertEqual(response.status_code, 302)
+        mock_storage_cls.update_record.assert_called_once()
+        call_args = mock_storage_cls.update_record.call_args[0]
+        self.assertEqual(call_args[0], 1)
+        values = call_args[1]
+        self.assertEqual(values.get("status"), "collector")
+        self.assertIsNone(values.get("errors"))
+        self.assertEqual(values.get("title"), "Test Title")
+        self.assertEqual(values.get("agency"), "Test Agency")
+        self.assertEqual(values.get("summary"), "<p>Summary</p>")
+        self.assertEqual(values.get("keywords"), "a; b")
+        self.assertEqual(values.get("time_start"), "2020")
+        self.assertEqual(values.get("time_end"), "2024-06-01")
+        self.assertEqual(values.get("download_date"), "2024-01-15")
+        self.assertIn("extensions", values)
+        self.assertIn("file_size", values)
 
     def test_scoreboard_render_with_save_form_includes_checkbox_name(self) -> None:
         """When for_save_form=True, checkboxes have name=save_url and value=index."""

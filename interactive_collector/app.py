@@ -16,6 +16,7 @@ Save button converts checked scoreboard pages to PDF in that folder.
 import html
 import json
 import re
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote, urljoin
@@ -145,6 +146,29 @@ def _ensure_output_folder_for_drpid(flask_app: Flask, drpid: int) -> Optional[st
     return path_str
 
 
+def _normalize_date_yyyy_mm_dd(s: str) -> Optional[str]:
+    """Convert a date string to YYYY-MM-DD for display; return None if not parseable."""
+    s = (s or "").strip()
+    if not s:
+        return None
+    if re.match(r"^\d{4}$", s):
+        return f"{s}-01-01"
+    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})", s)
+    if m:
+        try:
+            y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            dt = date(y, mo, d)
+            return dt.strftime("%Y-%m-%d")
+        except (ValueError, TypeError):
+            pass
+    try:
+        dt = datetime.strptime(s[:10], "%Y-%m-%d")
+        return dt.strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
 def _folder_path_for_drpid(display_drpid: Optional[str]) -> Optional[str]:
     """Return folder_path from _result_by_drpid for the given display_drpid, or None."""
     if not display_drpid:
@@ -154,6 +178,32 @@ def _folder_path_for_drpid(display_drpid: Optional[str]) -> Optional[str]:
         return _result_by_drpid.get(drpid, {}).get("folder_path")
     except (ValueError, TypeError):
         return None
+
+
+def _folder_extensions_and_size(folder_path: Path) -> tuple[List[str], int]:
+    """Return (sorted list of unique extensions without leading dot, total size in bytes)."""
+    exts: set[str] = set()
+    total = 0
+    try:
+        for p in folder_path.iterdir():
+            if p.is_file():
+                total += p.stat().st_size
+                if p.suffix:
+                    exts.add(p.suffix.lstrip(".").lower())
+    except OSError:
+        pass
+    return (sorted(exts), total)
+
+
+def _format_file_size(size_bytes: int) -> str:
+    """Format byte count as human-friendly string (e.g. '1.2 MB')."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    if size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
 
 
 _INDEX_HTML = """<!DOCTYPE html>
@@ -166,8 +216,29 @@ _INDEX_HTML = """<!DOCTYPE html>
   .top .top-sep { margin: 0 8px; color: #999; }
   .top input[type="url"] { width: 50%; min-width: 300px; }
   .main { display: flex; height: calc(100vh - 50px); }
-  .scoreboard { width: 220px; min-width: 180px; max-width: 50%; resize: horizontal; overflow: auto; padding: 8px; border-right: 1px solid #ccc; background: #fafafa; font-size: 12px; }
+  .left-col { display: flex; flex-direction: column; width: 440px; min-width: 180px; max-width: 50%; background: #fafafa; min-height: 0; flex-shrink: 0; }
+  .scoreboard { flex: 0 0 auto; height: 200px; min-height: 60px; overflow: auto; padding: 8px; font-size: 12px; }
   .scoreboard h3 { margin: 0 0 8px 0; }
+  .splitter { flex-shrink: 0; background: #e0e0e0; transition: background 0.1s; }
+  .splitter:hover { background: #b0b0b0; }
+  .splitter-v { width: 6px; cursor: col-resize; min-width: 6px; }
+  .splitter-h { height: 6px; cursor: row-resize; min-height: 6px; }
+  .metadata-pane { flex: 1; min-height: 120px; overflow: auto; padding: 8px; font-size: 12px; }
+  .metadata-pane h3 { margin: 0 0 8px 0; }
+  .metadata-pane label { display: block; margin-top: 8px; margin-bottom: 2px; font-weight: 600; }
+  .metadata-pane input[type="text"], .metadata-pane input[type="date"] { width: 100%; box-sizing: border-box; padding: 4px; max-width: 100%; }
+  .metadata-pane textarea { width: 100%; box-sizing: border-box; padding: 4px; padding-bottom: 14px; max-width: 100%; resize: none; font-family: inherit; font-size: 12px; min-height: 2.5em; }
+  .metadata-richtext-wrap { width: 100%; box-sizing: border-box; max-width: 100%; border: 1px solid #ccc; border-radius: 2px; background: #fff; position: relative; }
+  .metadata-richtext-toolbar { padding: 2px 4px; border-bottom: 1px solid #ccc; background: #f0f0f0; display: flex; gap: 2px; flex-wrap: wrap; }
+  .metadata-richtext-toolbar button { padding: 2px 8px; font-size: 12px; cursor: pointer; border: 1px solid #aaa; background: #fff; border-radius: 2px; }
+  .metadata-richtext-toolbar button:hover { background: #e8e8e8; }
+  .metadata-richtext-editor { width: 100%; box-sizing: border-box; min-height: 60px; height: 200px; overflow-y: auto; padding: 6px 8px; padding-bottom: 14px; font-family: inherit; font-size: 12px; outline: none; }
+  .metadata-richtext-editor:empty::before { content: attr(data-placeholder); color: #999; }
+  .metadata-pane .metadata-richtext { width: 100%; box-sizing: border-box; min-height: 60px; padding: 4px; font-family: inherit; }
+  .resizer-wrap { position: relative; display: inline-block; width: 100%; }
+  .triangle-resizer { position: absolute; right: 2px; bottom: 2px; width: 0; height: 0; border-left: 6px solid transparent; border-top: 8px solid #888; cursor: nwse-resize; z-index: 1; }
+  .triangle-resizer:hover { border-top-color: #555; }
+  .metadata-keywords-wrap { position: relative; width: 100%; }
   .scoreboard ul { list-style: none; padding-left: 12px; margin: 0; }
   .scoreboard li { margin: 4px 0; word-break: break-all; }
   .scoreboard .url { color: #06c; }
@@ -220,19 +291,160 @@ _INDEX_HTML = """<!DOCTYPE html>
     </form>
   </div>
   <div class="main">
-    <div class="scoreboard">
-      <h3>Scoreboard{% if folder_path %} <button type="submit" form="scoreboard-save-form" class="btn-save">Save</button>{% endif %}</h3>
-      {% if folder_path %}
-      <form id="scoreboard-save-form" method="post" action="{{ url_for('save') }}">
-        <input type="hidden" name="drpid" value="{{ drpid or '' }}" />
-        <input type="hidden" name="folder_path" value="{{ (folder_path or '') | e }}" />
-        <input type="hidden" name="scoreboard_urls_json" value="{{ scoreboard_urls_json | e }}" />
+    <div class="left-col" id="left-col">
+      <div class="scoreboard" id="scoreboard">
+        <h3>Scoreboard{% if folder_path %} <button type="submit" form="scoreboard-save-form" class="btn-save">Save</button>{% endif %}</h3>
+        {% if folder_path %}
+        <form id="scoreboard-save-form" method="post" action="{{ url_for('save') }}">
+          <input type="hidden" name="drpid" value="{{ drpid or '' }}" />
+          <input type="hidden" name="folder_path" value="{{ (folder_path or '') | e }}" />
+          <input type="hidden" name="scoreboard_urls_json" value="{{ scoreboard_urls_json | e }}" />
+          <input type="hidden" name="return_to" id="save-return-to" value="" />
+          {{ scoreboard_html | safe }}
+        </form>
+        {% else %}
         {{ scoreboard_html | safe }}
-      </form>
-      {% else %}
-      {{ scoreboard_html | safe }}
-      {% endif %}
+        {% endif %}
+      </div>
+      <div class="splitter splitter-h" id="splitter-scoreboard" title="Drag to resize scoreboard"></div>
+      <div class="metadata-pane">
+        <h3>Metadata</h3>
+        <label for="metadata-title">Title</label>
+        <input type="text" id="metadata-title" name="metadata_title" form="scoreboard-save-form" value="{{ (metadata_title or '') | e }}" />
+        <label for="metadata-summary-editor">Description</label>
+        <input type="hidden" id="metadata-summary" name="metadata_summary" form="scoreboard-save-form" value="" />
+          <div class="metadata-richtext-wrap resizer-wrap" id="summary-wrap">
+            <div class="metadata-richtext-toolbar" aria-label="Formatting">
+              <button type="button" data-cmd="bold" title="Bold">B</button>
+              <button type="button" data-cmd="italic" title="Italic">I</button>
+              <button type="button" data-cmd="underline" title="Underline">U</button>
+              <button type="button" data-cmd="insertUnorderedList" title="Bullet list">• List</button>
+            </div>
+            <div id="metadata-summary-editor" class="metadata-richtext-editor" contenteditable="true" data-placeholder="Summary" role="textbox"></div>
+            <div class="triangle-resizer" id="resize-summary" title="Drag to resize" aria-label="Resize"></div>
+          </div>
+          <script>
+          (function() {
+            var editor = document.getElementById("metadata-summary-editor");
+            var hidden = document.getElementById("metadata-summary");
+            var initial = {{ (metadata_summary or '') | tojson }};
+            if (initial && typeof initial === "string") editor.innerHTML = initial;
+            function sync() { if (hidden) hidden.value = editor.innerHTML; }
+            editor.addEventListener("input", sync);
+            editor.addEventListener("blur", sync);
+            document.querySelectorAll(".metadata-richtext-toolbar button").forEach(function(btn) {
+              btn.addEventListener("click", function() {
+                var cmd = this.getAttribute("data-cmd");
+                editor.focus();
+                document.execCommand(cmd, false, null);
+                sync();
+              });
+            });
+            sync();
+          })();
+          </script>
+          <label for="metadata-keywords">Keywords</label>
+          <div class="metadata-keywords-wrap" id="keywords-wrap">
+            <textarea id="metadata-keywords" name="metadata_keywords" form="scoreboard-save-form" rows="2">{{ (metadata_keywords or '') | e }}</textarea>
+            <div class="triangle-resizer" id="resize-keywords" title="Drag to resize" aria-label="Resize"></div>
+          </div>
+          <script>
+          (function() {
+            var kw = document.getElementById("metadata-keywords");
+            if (kw) kw.addEventListener("paste", function(e) {
+              e.preventDefault();
+              var text = (e.clipboardData || window.clipboardData).getData("text/plain") || "";
+              var trimmed = text.replace(/\\s+/g, " ").trim();
+              if (/\\s/.test(trimmed) && !/[;,]/.test(trimmed)) {
+                var parts = trimmed.split(/\\s+/).filter(Boolean);
+                text = parts.join("; ");
+              }
+              var start = kw.selectionStart, end = kw.selectionEnd, val = kw.value;
+              kw.value = val.slice(0, start) + text + val.slice(end);
+              kw.selectionStart = kw.selectionEnd = start + text.length;
+            });
+          })();
+          </script>
+          <label for="metadata-agency">Agency</label>
+          <input type="text" id="metadata-agency" name="metadata_agency" form="scoreboard-save-form" value="{{ (metadata_agency or '') | e }}" />
+          <label for="metadata-office">Office</label>
+          <input type="text" id="metadata-office" name="metadata_office" form="scoreboard-save-form" value="{{ (metadata_office or '') | e }}" />
+          <label for="metadata-time-start">Start Date</label>
+          <input type="text" id="metadata-time-start" name="metadata_time_start" form="scoreboard-save-form" value="{{ (metadata_time_start or '') | e }}" placeholder="YYYY-MM-DD or YYYY" />
+          <label for="metadata-time-end">End Date</label>
+          <input type="text" id="metadata-time-end" name="metadata_time_end" form="scoreboard-save-form" value="{{ (metadata_time_end or '') | e }}" placeholder="YYYY-MM-DD or YYYY" />
+          <label for="metadata-download-date">Download date</label>
+          <input type="text" id="metadata-download-date" name="metadata_download_date" form="scoreboard-save-form" value="{{ (metadata_download_date or '') | e }}" placeholder="YYYY-MM-DD" />
+          <script>
+          (function() {
+            var KEY_PREFIX = "metadata_draft_";
+            function getDrpid() {
+              var el = document.querySelector("input[name=\"drpid\"]");
+              return el ? (el.value || "").trim() : "";
+            }
+            function getDraft() {
+              var drpid = getDrpid();
+              if (!drpid) return null;
+              try {
+                var raw = sessionStorage.getItem(KEY_PREFIX + drpid);
+                return raw ? JSON.parse(raw) : null;
+              } catch (e) { return null; }
+            }
+            function saveDraft() {
+              var drpid = getDrpid();
+              if (!drpid) return;
+              var summaryEl = document.getElementById("metadata-summary-editor");
+              var hidden = document.getElementById("metadata-summary");
+              var summary = (summaryEl ? summaryEl.innerHTML : "") || (hidden ? hidden.value : "");
+              var draft = {
+                title: (document.getElementById("metadata-title") && document.getElementById("metadata-title").value) || "",
+                summary: summary,
+                keywords: (document.getElementById("metadata-keywords") && document.getElementById("metadata-keywords").value) || "",
+                agency: (document.getElementById("metadata-agency") && document.getElementById("metadata-agency").value) || "",
+                office: (document.getElementById("metadata-office") && document.getElementById("metadata-office").value) || "",
+                time_start: (document.getElementById("metadata-time-start") && document.getElementById("metadata-time-start").value) || "",
+                time_end: (document.getElementById("metadata-time-end") && document.getElementById("metadata-time-end").value) || "",
+                download_date: (document.getElementById("metadata-download-date") && document.getElementById("metadata-download-date").value) || ""
+              };
+              try { sessionStorage.setItem(KEY_PREFIX + drpid, JSON.stringify(draft)); } catch (e) {}
+            }
+            function restoreDraft() {
+              var draft = getDraft();
+              if (!draft) return;
+              var titleEl = document.getElementById("metadata-title");
+              if (titleEl && draft.title !== undefined) titleEl.value = draft.title;
+              var summaryEl = document.getElementById("metadata-summary-editor");
+              var hidden = document.getElementById("metadata-summary");
+              if (draft.summary !== undefined) {
+                if (summaryEl) summaryEl.innerHTML = draft.summary;
+                if (hidden) hidden.value = draft.summary;
+              }
+              var kw = document.getElementById("metadata-keywords");
+              if (kw && draft.keywords !== undefined) kw.value = draft.keywords;
+              var agency = document.getElementById("metadata-agency");
+              if (agency && draft.agency !== undefined) agency.value = draft.agency;
+              var office = document.getElementById("metadata-office");
+              if (office && draft.office !== undefined) office.value = draft.office;
+              var ts = document.getElementById("metadata-time-start");
+              if (ts && draft.time_start !== undefined) ts.value = draft.time_start;
+              var te = document.getElementById("metadata-time-end");
+              if (te && draft.time_end !== undefined) te.value = draft.time_end;
+              var dd = document.getElementById("metadata-download-date");
+              if (dd && draft.download_date !== undefined) dd.value = draft.download_date;
+            }
+            restoreDraft();
+            var form = document.getElementById("scoreboard-save-form");
+            if (form) {
+              form.addEventListener("input", saveDraft);
+              form.addEventListener("change", saveDraft);
+            }
+            var editor = document.getElementById("metadata-summary-editor");
+            if (editor) editor.addEventListener("input", saveDraft);
+          })();
+          </script>
+      </div>
     </div>
+    <div class="splitter splitter-v" id="splitter-left-col" title="Drag to resize left column"></div>
     <div class="panes">
       <div class="pane source-pane">
         <div class="pane-header" title="{{ (source_display_url or '') | e }}">Source: {{ (source_display_url or '—') | e }}</div>
@@ -254,6 +466,91 @@ _INDEX_HTML = """<!DOCTYPE html>
       </div>
     </div>
   </div>
+  <script>
+  (function() {
+    function dragSplitter(splitterEl, onMove) {
+      if (!splitterEl) return;
+      splitterEl.addEventListener("mousedown", function(e) {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        function move(e2) { onMove(e2); }
+        function stop() { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", stop); document.body.style.cursor = ""; document.body.style.userSelect = ""; }
+        document.body.style.cursor = getComputedStyle(splitterEl).cursor;
+        document.body.style.userSelect = "none";
+        document.addEventListener("mousemove", move);
+        document.addEventListener("mouseup", stop);
+      });
+    }
+    var leftCol = document.getElementById("left-col");
+    var main = leftCol && leftCol.closest(".main");
+    dragSplitter(document.getElementById("splitter-left-col"), function(e) {
+      if (!leftCol || !main) return;
+      var r = main.getBoundingClientRect();
+      var w = Math.max(180, Math.min(r.width * 0.5, e.clientX - r.left));
+      leftCol.style.width = w + "px";
+    });
+    var scoreboard = document.getElementById("scoreboard");
+    dragSplitter(document.getElementById("splitter-scoreboard"), function(e) {
+      if (!scoreboard) return;
+      var r = scoreboard.getBoundingClientRect();
+      var h = Math.max(60, e.clientY - r.top);
+      scoreboard.style.height = h + "px";
+    });
+    function dragTriangleResizer(gripId, targetId, minH, setHeight) {
+      var grip = document.getElementById(gripId);
+      var target = document.getElementById(targetId);
+      if (!grip || !target) return;
+      grip.addEventListener("mousedown", function(e) {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        var startY = e.clientY, startH = target.offsetHeight;
+        function move(e2) {
+          var dy = e2.clientY - startY;
+          var newH = Math.max(minH, startH + dy);
+          target.style.height = newH + "px";
+          if (setHeight) setHeight(target, newH);
+        }
+        function stop() {
+          document.removeEventListener("mousemove", move);
+          document.removeEventListener("mouseup", stop);
+          document.body.style.cursor = "";
+          document.body.style.userSelect = "";
+        }
+        document.body.style.cursor = "nwse-resize";
+        document.body.style.userSelect = "none";
+        document.addEventListener("mousemove", move);
+        document.addEventListener("mouseup", stop);
+      });
+    }
+    dragTriangleResizer("resize-summary", "metadata-summary-editor", 60, function(el, h) { el.style.maxHeight = h + "px"; });
+    dragTriangleResizer("resize-keywords", "metadata-keywords", 28);
+  })();
+  </script>
+  <script>
+  (function() {
+    var dirty = false;
+    var savingMetadata = false;
+    var saveForm = document.getElementById("scoreboard-save-form");
+    if (saveForm) {
+      saveForm.addEventListener("submit", function() { savingMetadata = true; });
+      ["input", "change"].forEach(function(ev) {
+        saveForm.addEventListener(ev, function() { dirty = true; }, true);
+      });
+    }
+    var editor = document.getElementById("metadata-summary-editor");
+    if (editor) editor.addEventListener("input", function() { dirty = true; });
+    window.addEventListener("beforeunload", function(e) {
+      if (dirty && !savingMetadata) e.returnValue = "Are you sure you want to leave? Your changes may not be saved.";
+    });
+    document.querySelectorAll("form[method=\"get\"]").forEach(function(f) {
+      if (f.querySelector("input[name=\"url\"]") || f.querySelector("input[name=\"next\"]") || f.querySelector("input[name=\"load_drpid\"]")) {
+        f.addEventListener("submit", function(ev) {
+          if (dirty && !savingMetadata && !confirm("Are you sure you want to leave? Your changes may not be saved.")) ev.preventDefault();
+        });
+      }
+    });
+  })();
+  </script>
   <div id="save-progress-modal">
     <div id="save-progress-dialog">
       <strong>Saving PDFs</strong>
@@ -395,11 +692,17 @@ _INDEX_HTML = """<!DOCTYPE html>
     if (form) {
       form.addEventListener("submit", function(ev) {
         ev.preventDefault();
+        var returnTo = document.getElementById("save-return-to");
+        if (returnTo) returnTo.value = window.location.search || "";
         showModal("Saving PDFs");
         messageEl.textContent = "Starting...";
         var formData = new FormData(form);
-        fetch("{{ url_for('save') }}", { method: "POST", body: formData })
+        fetch("{{ url_for('save') }}", { method: "POST", body: formData, redirect: "follow" })
           .then(function(res) {
+            if (res.redirected && res.url) {
+              window.location.href = res.url;
+              return;
+            }
             if (!res.body) throw new Error("No body");
             var reader = res.body.getReader();
             var decoder = new TextDecoder();
@@ -817,29 +1120,76 @@ def _scoreboard_render_html(
     return f"<ul>{items}</ul>"
 
 
+def _metadata_for_template(flask_app: Flask, display_drpid: Optional[str], src_h1: Optional[str] = None) -> Dict[str, str]:
+    """Build metadata dict for the index template (title, summary, keywords, agency, office, download_date)."""
+    project: Optional[Dict[str, Any]] = None
+    if display_drpid:
+        try:
+            project = _get_project_by_drpid(flask_app, int(display_drpid))
+        except (ValueError, TypeError):
+            pass
+    title = (src_h1 or "").strip() or ((project.get("title") or "") if project else "") or ""
+    summary = (project.get("summary") or "") if project else ""
+    keywords = (project.get("keywords") or "") if project else ""
+    agency = (project.get("agency") or "") if project else ""
+    office = (project.get("office") or "") if project else ""
+    download_date = (project.get("download_date") or "") if project else ""
+    if not download_date and display_drpid:
+        download_date = date.today().isoformat()
+    else:
+        download_date = _normalize_date_yyyy_mm_dd(download_date) or download_date
+    time_start = (project.get("time_start") or "") if project else ""
+    time_end = (project.get("time_end") or "") if project else ""
+    return {
+        "metadata_title": title,
+        "metadata_summary": summary,
+        "metadata_keywords": keywords,
+        "metadata_agency": agency,
+        "metadata_office": office,
+        "metadata_download_date": download_date,
+        "metadata_time_start": time_start,
+        "metadata_time_end": time_end,
+    }
+
+
+def _h1_from_html(html_body: Any) -> str:
+    """Extract text of the first <h1> in the HTML; empty string if none."""
+    if isinstance(html_body, bytes):
+        html_body = html_body.decode("utf-8", errors="replace")
+    if not (html_body or "").strip():
+        return ""
+    m = re.search(r"<h1[^>]*>(.*?)</h1>", html_body, re.DOTALL | re.IGNORECASE)
+    if not m:
+        return ""
+    inner = m.group(1).strip()
+    inner = re.sub(r"<[^>]+>", "", inner)
+    return (inner or "").strip()
+
+
 def _prepare_pane_content(
     url_param: str,
     app_root: str,
     source_url: str,
     drpid: Optional[str] = None,
-) -> tuple[Optional[str], Optional[str], str]:
+) -> tuple[Optional[str], Optional[str], str, str]:
     """
-    Fetch url_param, inject base, rewrite links. Returns (safe_srcdoc, body_message, status_label).
+    Fetch url_param, inject base, rewrite links. Returns (safe_srcdoc, body_message, status_label, h1_text).
     """
     status_code, body, content_type, is_logical_404 = fetch_page_body(url_param)
     status_label = _status_label(status_code, is_logical_404)
+    h1_text = _h1_from_html(body or "") if body else ""
 
     if not _is_displayable_text(content_type) and content_type:
-        return None, f"Binary content ({html.escape(content_type)}). Not displayed.", status_label
+        return None, f"Binary content ({html.escape(content_type)}). Not displayed.", status_label, ""
     if (body or "").strip() == "" and _is_displayable_text(content_type):
-        return None, "Content could not be displayed (possibly binary or wrong encoding).", status_label
+        return None, "Content could not be displayed (possibly binary or wrong encoding).", status_label, ""
 
     body_with_base = _inject_base_into_html(body or "", url_param)
     body_rewritten = _rewrite_links_to_app(
         body_with_base, url_param, app_root, source_url, url_param, drpid=drpid
     )
     safe_srcdoc = body_rewritten.replace("&", "&amp;").replace('"', "&quot;")
-    return safe_srcdoc, None, status_label
+    return safe_srcdoc, None, status_label, h1_text
 
 
 @app.route("/")
@@ -916,12 +1266,14 @@ def index() -> str:
                 source_pane_message="Invalid URL. Provide a valid http:// or https:// URL.",
                 source_display_url=None,
                 linked_display_url=None,
+                linked_back_url=None,
                 drpid=display_drpid,
                 folder_path=folder_path,
                 scoreboard_urls_json=json.dumps([n["url"] for n in _scoreboard]),
                 show_auto_download=False,
+                **_metadata_for_template(app, display_drpid, None),
             )
-        safe_srcdoc, body_message, status_label = _prepare_pane_content(
+        safe_srcdoc, body_message, status_label, src_h1 = _prepare_pane_content(
             url_param, app_root, url_param, drpid=display_drpid
         )
         _scoreboard_add(url_param, None, status_label)
@@ -952,6 +1304,7 @@ def index() -> str:
             folder_path=folder_path,
             scoreboard_urls_json=scoreboard_urls_json,
             show_auto_download=False,
+            **_metadata_for_template(app, display_drpid, src_h1),
         )
 
     # Link click: source_url + linked_url + referrer
@@ -967,13 +1320,15 @@ def index() -> str:
                 source_pane_message=None,
                 source_display_url=None,
                 linked_display_url=None,
+                linked_back_url=None,
                 drpid=display_drpid,
                 folder_path=folder_path,
                 scoreboard_urls_json=json.dumps([n["url"] for n in _scoreboard]),
                 show_auto_download=False,
+                **_metadata_for_template(app, display_drpid, None),
             )
         # Fetch both panes. For catalog.data.gov links, resolve on click and show the resolved URL in the Linked pane (skip the relay).
-        src_srcdoc, src_pane_message, src_status = _prepare_pane_content(
+        src_srcdoc, src_pane_message, src_status, src_h1 = _prepare_pane_content(
             source_url_param, app_root, source_url_param, drpid=display_drpid
         )
         linked_url_for_fetch = linked_url_param
@@ -984,7 +1339,7 @@ def index() -> str:
             if resolved_linked:
                 linked_url_for_fetch = resolved_linked
                 linked_display_url = resolved_linked
-        linked_srcdoc, linked_pane_message, linked_status = _prepare_pane_content(
+        linked_srcdoc, linked_pane_message, linked_status, _ = _prepare_pane_content(
             linked_url_for_fetch, app_root, source_url_param, drpid=display_drpid
         )
         if not any(n["url"] == source_url_param for n in _scoreboard):
@@ -1010,7 +1365,7 @@ def index() -> str:
                 linked_srcdoc_for_display = src_srcdoc
                 linked_display_url_when_binary = source_url_param
             elif is_valid_url(referrer_param):
-                ref_srcdoc, _ref_msg, _ref_status = _prepare_pane_content(
+                ref_srcdoc, _ref_msg, _ref_status, _ = _prepare_pane_content(
                     referrer_param, app_root, source_url_param, drpid=display_drpid
                 )
                 if ref_srcdoc:
@@ -1060,6 +1415,7 @@ def index() -> str:
             linked_binary_url=linked_url_for_fetch if linked_is_binary else None,
             linked_binary_referrer=referrer_param if linked_is_binary else None,
             show_auto_download=show_auto_download,
+            **_metadata_for_template(app, display_drpid, src_h1),
         )
 
     # No URL: show form and empty panes
@@ -1078,6 +1434,7 @@ def index() -> str:
         folder_path=folder_path,
         scoreboard_urls_json=json.dumps([n["url"] for n in _scoreboard]),
         show_auto_download=False,
+        **_metadata_for_template(app, display_drpid, None),
     )
 
 
@@ -1280,27 +1637,74 @@ def download_file() -> Any:
     )
 
 
+def _save_metadata_from_request() -> None:
+    """Update the project record from request form (metadata + folder stats). Idempotent if no drpid."""
+    drpid_str = (request.form.get("drpid") or "").strip()
+    folder_path_str = (request.form.get("folder_path") or "").strip()
+    if not drpid_str:
+        return
+    try:
+        drpid = int(drpid_str)
+    except (ValueError, TypeError):
+        return
+    _ensure_storage(app)
+    from storage import Storage
+    values: Dict[str, Any] = {
+        "status": "collector",
+        "errors": None,
+        "title": (request.form.get("metadata_title") or "").strip(),
+        "agency": (request.form.get("metadata_agency") or "").strip(),
+        "office": (request.form.get("metadata_office") or "").strip(),
+        "summary": (request.form.get("metadata_summary") or "").strip(),
+        "keywords": (request.form.get("metadata_keywords") or "").strip(),
+        "time_start": (request.form.get("metadata_time_start") or "").strip(),
+        "time_end": (request.form.get("metadata_time_end") or "").strip(),
+        "download_date": (request.form.get("metadata_download_date") or "").strip(),
+    }
+    if folder_path_str:
+        folder_path = Path(folder_path_str)
+        if folder_path.is_dir():
+            exts_list, total_bytes = _folder_extensions_and_size(folder_path)
+            values["extensions"] = ", ".join(exts_list) if exts_list else ""
+            values["file_size"] = _format_file_size(total_bytes)
+        else:
+            values["extensions"] = ""
+            values["file_size"] = ""
+    else:
+        values["extensions"] = ""
+        values["file_size"] = ""
+    try:
+        Storage.update_record(drpid, values)
+    except ValueError:
+        pass
+
+
 @app.route("/save", methods=["POST"])
 def save() -> Any:
     """
-    Save checked scoreboard pages as PDFs; streams progress (SAVING url n/t, DONE count).
-    Expects folder_path, scoreboard_urls_json, and save_url (list of indices).
+    Save metadata to DB and optionally save checked scoreboard pages as PDFs.
+    Always updates metadata from form. If save_url indices present, streams PDF progress;
+    else redirects to index with return_to query so the user stays on the same view.
     """
+    _save_metadata_from_request()
     folder_path_str = (request.form.get("folder_path") or "").strip()
     urls_json = (request.form.get("scoreboard_urls_json") or "[]").strip()
     indices = request.form.getlist("save_url")
+    return_to = (request.form.get("return_to") or "").strip()
+    if return_to and not return_to.startswith("?"):
+        return_to = "?" + return_to
 
     if not folder_path_str or not indices:
-        return redirect(url_for("index"))
+        return redirect(url_for("index") + (return_to or ""))
 
     try:
         urls = json.loads(urls_json)
     except json.JSONDecodeError:
-        return redirect(url_for("index"))
+        return redirect(url_for("index") + (return_to or ""))
 
     folder_path = Path(folder_path_str)
     if not folder_path.is_dir():
-        return redirect(url_for("index"))
+        return redirect(url_for("index") + (return_to or ""))
 
     drpid_val: Optional[int] = None
     try:
@@ -1309,7 +1713,7 @@ def save() -> Any:
         pass
 
     def stream() -> Any:
-        for line in _generate_save_progress(folder_path, urls, indices, drpid=drpid_val):
+        for line in _generate_save_progress(folder_path, urls, indices):
             yield line
 
     from flask import Response
