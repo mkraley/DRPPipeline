@@ -10,6 +10,7 @@ import { MetadataForm } from "./components/MetadataForm";
 import { SourcePane } from "./components/SourcePane";
 import { LinkedPane } from "./components/LinkedPane";
 import { SaveProgressModal } from "./components/SaveProgressModal";
+import { DownloadProgressModal } from "./components/DownloadProgressModal";
 import { useCollectorStore } from "./store";
 import { useHistorySync } from "./useHistorySync";
 import { useLinkInterceptor } from "./useLinkInterceptor";
@@ -80,6 +81,7 @@ export default function App() {
         </div>
       </div>
       <SaveProgressModal />
+      <DownloadProgressModal />
     </div>
   );
 }

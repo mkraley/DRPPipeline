@@ -47,6 +47,11 @@ interface CollectorState {
   error: string | null;
   saveProgress: string;
   saveModalOpen: boolean;
+  linkedIsBinary: boolean;
+  linkedBinaryUrl: string | null;
+  linkedBinaryReferrer: string | null;
+  downloadProgress: string;
+  downloadModalOpen: boolean;
 }
 
 interface CollectorActions {
@@ -59,6 +64,9 @@ interface CollectorActions {
   closeSaveModal: () => void;
   loadProject: (drpid: number) => Promise<void>;
   loadNext: () => Promise<void>;
+  downloadBinary: () => Promise<void>;
+  closeDownloadModal: () => void;
+  refreshScoreboard: () => Promise<void>;
 }
 
 const API = "/api";
@@ -119,6 +127,11 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
   error: null,
   saveProgress: "",
   saveModalOpen: false,
+  linkedIsBinary: false,
+  linkedBinaryUrl: null,
+  linkedBinaryReferrer: null,
+  downloadProgress: "",
+  downloadModalOpen: false,
 
   setDrpid: (v) => set({ drpid: v }),
 
@@ -179,6 +192,9 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
         sourceMessage: data.body_message,
         linkedSrcdoc: null,
         linkedMessage: null,
+        linkedIsBinary: false,
+        linkedBinaryUrl: null,
+        linkedBinaryReferrer: null,
         scoreboard: data.scoreboard,
         scoreboardUrls: data.scoreboard_urls,
         folderPath: data.folder_path,
@@ -207,6 +223,9 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
         body_message: string | null;
         scoreboard: ScoreboardNode[];
         scoreboard_urls: string[];
+        is_binary?: boolean;
+        linked_binary_url?: string | null;
+        folder_path?: string | null;
       }>(`${API}/load-page`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -219,16 +238,24 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
         }),
       });
       const checked = defaultCheckedIndices(data.scoreboard, sourceUrl);
+      const isBinary = Boolean(data.is_binary && data.linked_binary_url);
       set({
         linkedUrl: data.linked_display_url,
         linkedSrcdoc: data.srcdoc,
         linkedMessage: data.body_message,
         scoreboard: data.scoreboard,
         scoreboardUrls: data.scoreboard_urls,
+        folderPath: data.folder_path ?? get().folderPath,
         checkedIndices: checked,
+        linkedIsBinary: isBinary,
+        linkedBinaryUrl: isBinary ? data.linked_binary_url! : null,
+        linkedBinaryReferrer: isBinary ? referrer : null,
         loading: false,
         error: null,
       });
+      if (isBinary && data.folder_path && drpid) {
+        get().downloadBinary();
+      }
     } catch (e) {
       set({
         loading: false,
@@ -297,6 +324,84 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
   },
 
   closeSaveModal: () => set({ saveModalOpen: false }),
+
+  closeDownloadModal: () => set({ downloadModalOpen: false }),
+
+  refreshScoreboard: async () => {
+    try {
+      const data = await fetchJson<{ scoreboard: ScoreboardNode[]; urls: string[] }>(
+        `${API}/scoreboard`
+      );
+      set({ scoreboard: data.scoreboard, scoreboardUrls: data.urls });
+    } catch {
+      // ignore
+    }
+  },
+
+  downloadBinary: async () => {
+    const { linkedBinaryUrl, linkedBinaryReferrer, drpid } = get();
+    if (!linkedBinaryUrl || !drpid) {
+      set({ downloadProgress: "No project (DRPID) set. Load a project first.", downloadModalOpen: true });
+      return;
+    }
+    set({ downloadProgress: "Downloading...", downloadModalOpen: true });
+    const form = new FormData();
+    form.append("url", linkedBinaryUrl);
+    form.append("drpid", String(drpid));
+    if (linkedBinaryReferrer) form.append("referrer", linkedBinaryReferrer);
+    try {
+      const res = await fetch(`${API}/download-file`, { method: "POST", body: form });
+      if (!res.ok) {
+        set({ downloadProgress: `Error ${res.status}: ${await res.text()}`, downloadModalOpen: true });
+        return;
+      }
+      if (!res.body) {
+        set({ downloadProgress: "Done.", downloadModalOpen: true });
+        await get().refreshScoreboard();
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.startsWith("SAVING\t")) {
+            const name = line.split("\t")[1] ?? "";
+            set({ downloadProgress: `Downloading ${name}`, downloadModalOpen: true });
+          } else if (line.startsWith("PROGRESS\t")) {
+            const p = line.split("\t");
+            const w = parseInt(p[1], 10);
+            const t = p[2];
+            const fmt = (n: number) =>
+              n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
+            set({
+              downloadProgress: t ? `Downloaded ${fmt(w)} / ${fmt(parseInt(t, 10))}` : `Downloaded ${fmt(w)}`,
+              downloadModalOpen: true,
+            });
+          } else if (line.startsWith("DONE\t")) {
+            const name = line.split("\t")[1] ?? "";
+            set({
+              downloadProgress: name ? `Download complete. Saved as ${name}` : "Download complete.",
+              downloadModalOpen: true,
+            });
+            await get().refreshScoreboard();
+          } else if (line.startsWith("ERROR\t")) {
+            set({ downloadProgress: `Error: ${line.split("\t")[1] ?? "unknown"}`, downloadModalOpen: true });
+          }
+        }
+      }
+    } catch (e) {
+      set({
+        downloadProgress: `Error: ${e instanceof Error ? e.message : "Failed"}`,
+        downloadModalOpen: true,
+      });
+    }
+  },
 
   loadProject: async (drpid) => {
     const proj = await fetchJson<{ source_url?: string }>(`${API}/projects/${drpid}`);

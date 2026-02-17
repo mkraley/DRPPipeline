@@ -2,14 +2,27 @@
  * MetadataForm - Title, summary, keywords, agency, dates.
  *
  * Values are synced with the store and persisted to Storage on Save.
+ * Description is rich text (contentEditable). Keywords converts spaces to "; " on paste/blur.
  */
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useCollectorStore } from "../store";
 
 const STORAGE_KEY = "metadata_draft_";
 
+/** Convert spaces to "; " when no commas or semicolons present. */
+function normalizeKeywords(value: string): string {
+  const trimmed = value.replace(/\s+/g, " ").trim();
+  if (!trimmed) return "";
+  if (/[;,]/.test(trimmed)) return value;
+  if (/\s/.test(trimmed)) {
+    return trimmed.split(/\s+/).filter(Boolean).join("; ");
+  }
+  return value;
+}
+
 export function MetadataForm() {
   const { drpid, metadata, setMetadata } = useCollectorStore();
+  const summaryEditorRef = useRef<HTMLDivElement>(null);
 
   // Restore draft from sessionStorage when drpid changes
   useEffect(() => {
@@ -25,6 +38,15 @@ export function MetadataForm() {
     }
   }, [drpid, setMetadata]);
 
+  // Sync summary editor innerHTML when metadata.summary changes externally
+  useEffect(() => {
+    const el = summaryEditorRef.current;
+    if (!el) return;
+    if (el.innerHTML !== metadata.summary) {
+      el.innerHTML = metadata.summary || "";
+    }
+  }, [metadata.summary]);
+
   const saveDraft = useCallback(() => {
     if (!drpid) return;
     try {
@@ -37,7 +59,48 @@ export function MetadataForm() {
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const { name, value } = e.target;
-      setMetadata({ [name.replace("metadata_", "") as keyof typeof metadata]: value });
+      const key = name.replace("metadata_", "") as keyof typeof metadata;
+      setMetadata({ [key]: value });
+      saveDraft();
+    },
+    [setMetadata, saveDraft]
+  );
+
+  const handleSummaryInput = useCallback(() => {
+    const el = summaryEditorRef.current;
+    if (!el) return;
+    setMetadata({ summary: el.innerHTML });
+    saveDraft();
+  }, [setMetadata, saveDraft]);
+
+  const handleSummaryToolbar = useCallback((cmd: string) => {
+    document.execCommand(cmd, false);
+    summaryEditorRef.current?.focus();
+  }, []);
+
+  const handleKeywordsBlur = useCallback(
+    (e: React.FocusEvent<HTMLTextAreaElement>) => {
+      const val = e.target.value;
+      const normalized = normalizeKeywords(val);
+      if (normalized !== val) {
+        setMetadata({ keywords: normalized });
+        saveDraft();
+      }
+    },
+    [setMetadata, saveDraft]
+  );
+
+  const handleKeywordsPaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      e.preventDefault();
+      const text = e.clipboardData.getData("text/plain") || "";
+      const normalized = normalizeKeywords(text);
+      const ta = e.currentTarget;
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      const val = ta.value;
+      const newVal = val.slice(0, start) + normalized + val.slice(end);
+      setMetadata({ keywords: newVal });
       saveDraft();
     },
     [setMetadata, saveDraft]
@@ -54,20 +117,42 @@ export function MetadataForm() {
         value={metadata.title}
         onChange={handleChange}
       />
-      <label htmlFor="metadata-summary">Description</label>
-      <textarea
-        id="metadata-summary"
-        name="metadata_summary"
-        value={metadata.summary}
-        onChange={handleChange}
-        rows={3}
-      />
+      <label htmlFor="metadata-summary-editor">Description</label>
+      <div className="metadata-richtext-wrap">
+        <div className="metadata-richtext-toolbar" aria-label="Formatting">
+          <button type="button" onClick={() => handleSummaryToolbar("bold")} title="Bold">
+            B
+          </button>
+          <button type="button" onClick={() => handleSummaryToolbar("italic")} title="Italic">
+            I
+          </button>
+          <button type="button" onClick={() => handleSummaryToolbar("underline")} title="Underline">
+            U
+          </button>
+          <button type="button" onClick={() => handleSummaryToolbar("insertUnorderedList")} title="Bullet list">
+            • List
+          </button>
+        </div>
+        <div
+          ref={summaryEditorRef}
+          id="metadata-summary-editor"
+          className="metadata-richtext-editor"
+          contentEditable
+          data-placeholder="Summary"
+          role="textbox"
+          onInput={handleSummaryInput}
+          onBlur={handleSummaryInput}
+          suppressContentEditableWarning
+        />
+      </div>
       <label htmlFor="metadata-keywords">Keywords</label>
       <textarea
         id="metadata-keywords"
         name="metadata_keywords"
         value={metadata.keywords}
         onChange={handleChange}
+        onBlur={handleKeywordsBlur}
+        onPaste={handleKeywordsPaste}
         rows={2}
       />
       <label htmlFor="metadata-agency">Agency</label>
