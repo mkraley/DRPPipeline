@@ -63,6 +63,20 @@ class TestApiLoadSource(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
 
 
+class TestApiProxy(unittest.TestCase):
+    """Tests for /api/proxy (resource proxy for iframe CSS/JS/images)."""
+
+    def setUp(self) -> None:
+        self.client = app.test_client()
+
+    def test_proxy_requires_valid_url(self) -> None:
+        """GET /api/proxy without url or with invalid url returns 400."""
+        resp = self.client.get("/api/proxy")
+        self.assertEqual(resp.status_code, 400)
+        resp = self.client.get("/api/proxy?url=not-a-url")
+        self.assertEqual(resp.status_code, 400)
+
+
 class TestApiScoreboard(unittest.TestCase):
     """Tests for /api/scoreboard."""
 

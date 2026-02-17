@@ -8,7 +8,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+from urllib.parse import unquote
+
 from flask import Blueprint, Response, request
+import requests
 
 from interactive_collector.api_download import generate_download_progress
 from interactive_collector.api_pages import load_page, prepare_page_content
@@ -22,7 +25,7 @@ from interactive_collector.api_projects import (
 from interactive_collector.api_save import generate_save_progress, save_metadata
 from interactive_collector.api_scoreboard import add_to_scoreboard, clear_scoreboard, get_scoreboard_tree, get_scoreboard_urls
 from interactive_collector.collector_state import get_result_by_drpid
-from utils.url_utils import is_valid_url
+from utils.url_utils import BROWSER_HEADERS, is_valid_url
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -147,6 +150,7 @@ def load_source_route() -> Any:
     if not is_valid_url(url):
         return {"error": "Invalid URL", "srcdoc": None, "status_label": "Error"}, 400
 
+    app_root = request.url_root.rstrip("/") or request.host_url.rstrip("/")
     clear_scoreboard()
     srcdoc, body_message, status_label, h1_text = prepare_page_content(
         url, url, drpid, for_spa=True
@@ -171,6 +175,33 @@ def load_source_route() -> Any:
         "scoreboard_urls": get_scoreboard_urls(),
         "folder_path": folder_path,
     }
+
+
+@api_bp.route("/proxy", methods=["GET"])
+def proxy_resource() -> Any:
+    """
+    Fetch an external URL and stream it back so the iframe can load CSS/JS/images
+    from our origin (avoids CSP and cross-origin issues in srcdoc).
+    """
+    raw = request.args.get("url", "").strip()
+    url = unquote(raw) if raw else ""
+    if not url or not is_valid_url(url):
+        return {"error": "Invalid or missing url"}, 400
+    try:
+        resp = requests.get(url, headers=BROWSER_HEADERS, timeout=30)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        return {"error": str(e)}, 502
+    content_type = resp.headers.get("Content-Type") or "application/octet-stream"
+    if ";" in content_type:
+        content_type = content_type.split(";")[0].strip()
+
+    body = resp.content
+    headers = {
+        "Content-Type": content_type,
+        "Access-Control-Allow-Origin": "*",
+    }
+    return Response(body, status=200, headers=headers, mimetype=content_type)
 
 
 @api_bp.route("/scoreboard", methods=["GET"])

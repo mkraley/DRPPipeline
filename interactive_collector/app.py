@@ -868,11 +868,35 @@ def _base_url_for_page(page_url: str) -> str:
 
 
 def _inject_base_into_html(html_body: str, page_url: str) -> str:
-    """Inject <base href="..."> into the first <head> so relative CSS/JS/images load."""
+    """
+    Inject <base href="..."> so relative CSS/JS/images load in the iframe.
+
+    Tries: (1) inside first <head>; (2) after <html> as new <head>; (3) prepend at start.
+    """
     base_href = _base_url_for_page(page_url)
+    if not base_href.endswith("/"):
+        base_href = base_href + "/"
     base_escaped = base_href.replace("&", "&amp;").replace('"', "&quot;")
     base_tag = f'<base href="{base_escaped}">'
-    return re.sub(r"(<head[^>]*>)", r"\1" + base_tag, html_body, count=1, flags=re.IGNORECASE)
+
+    # (1) Inject into existing <head>
+    with_head = re.sub(r"(<head[^>]*>)", r"\1" + base_tag, html_body, count=1, flags=re.IGNORECASE)
+    if with_head != html_body:
+        return with_head
+
+    # (2) No <head>: insert <head><base...></head> after <html>
+    with_html_head = re.sub(
+        r"(<html[^>]*>)",
+        r"\1<head>" + base_tag + "</head>",
+        html_body,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    if with_html_head != html_body:
+        return with_html_head
+
+    # (3) No <html>: prepend base at start so relative URLs still resolve
+    return base_tag + html_body
 
 
 def _rewrite_links_to_app(

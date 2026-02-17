@@ -46,6 +46,21 @@ class TestBaseInjection(unittest.TestCase):
         self.assertIn("<head>", result)
         self.assertIn("<meta charset=", result)
 
+    def test_inject_base_into_html_no_head_prepends_after_html(self) -> None:
+        """When there is no <head>, base is inserted in a new head after <html>."""
+        html_body = "<!DOCTYPE html><html><body><p>Hi</p></body></html>"
+        result = _inject_base_into_html(html_body, "https://example.com/page")
+        self.assertIn("<base href=\"https://example.com/", result)
+        self.assertIn("<head>", result)
+        self.assertIn("<body>", result)
+
+    def test_inject_base_into_html_fragment_prepends(self) -> None:
+        """When there is no <html>, base is prepended at start."""
+        html_body = "<div><p>Fragment</p></div>"
+        result = _inject_base_into_html(html_body, "https://example.com/dir/")
+        self.assertTrue(result.startswith("<base href="), result[:80])
+        self.assertIn("<div>", result)
+
 
 class TestRewriteLinks(unittest.TestCase):
     """Tests for _rewrite_links_to_app."""

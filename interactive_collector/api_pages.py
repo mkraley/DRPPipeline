@@ -33,11 +33,35 @@ def _base_url_for_page(page_url: str) -> str:
 
 
 def _inject_base(html_body: str, page_url: str) -> str:
-    """Inject <base href="..."> into the first <head> so relative CSS/JS/images load."""
+    """
+    Inject <base href="..."> so relative CSS/JS/images load in the iframe.
+
+    Tries: (1) inside first <head>; (2) after <html> as new <head>; (3) prepend at start.
+    """
     base_href = _base_url_for_page(page_url)
+    if not base_href.endswith("/"):
+        base_href = base_href + "/"
     base_escaped = base_href.replace("&", "&amp;").replace('"', "&quot;")
     base_tag = f'<base href="{base_escaped}">'
-    return re.sub(r"(<head[^>]*>)", r"\1" + base_tag, html_body, count=1, flags=re.IGNORECASE)
+
+    # (1) Inject into existing <head>
+    with_head = re.sub(r"(<head[^>]*>)", r"\1" + base_tag, html_body, count=1, flags=re.IGNORECASE)
+    if with_head != html_body:
+        return with_head
+
+    # (2) No <head>: insert <head><base...></head> after <html>
+    with_html_head = re.sub(
+        r"(<html[^>]*>)",
+        r"\1<head>" + base_tag + "</head>",
+        html_body,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    if with_html_head != html_body:
+        return with_html_head
+
+    # (3) No <html>: prepend base at start so relative URLs still resolve
+    return base_tag + html_body
 
 
 def _is_displayable_text(content_type: Optional[str]) -> bool:
@@ -113,16 +137,16 @@ def prepare_page_content(
     for_spa: bool = True,
 ) -> tuple[Optional[str], Optional[str], str, str]:
     """
-    Fetch URL, inject base and link interceptor; return (srcdoc, message, status, h1).
+    Fetch URL, inject base, and link interceptor; return (srcdoc, message, status, h1).
 
     Args:
         url_param: URL to fetch.
         source_url: Source pane URL (for catalog resolution context).
         drpid: Optional DRPID for display.
-        for_spa: If True, inject link interceptor instead of href rewrite.
+        for_spa: If True, inject link interceptor for SPA mode.
 
     Returns:
-        (safe_srcdoc, body_message, status_label, h1_text)
+        (srcdoc, body_message, status_label, h1_text)
         - srcdoc: HTML for iframe srcdoc, or None if binary/unusable.
         - body_message: Error/notice string if srcdoc is None.
         - status_label: "OK", "404", etc.
@@ -142,8 +166,7 @@ def prepare_page_content(
         body_final = _inject_link_interceptor(body_with_base, url_param)
     else:
         body_final = body_with_base
-    safe_srcdoc = body_final.replace("&", "&amp;").replace('"', "&quot;")
-    return safe_srcdoc, None, status_label, h1_text
+    return body_final, None, status_label, h1_text
 
 
 def load_page(
@@ -214,14 +237,18 @@ def load_page(
     # When binary (PDF, ZIP, etc.), show referrer page in Linked pane instead of raw binary.
     linked_srcdoc_for_display = srcdoc
     if linked_is_binary and referrer and is_valid_url(referrer):
-        ref_srcdoc, _, _, _ = prepare_page_content(referrer, source_url, drpid, for_spa=True)
+        ref_srcdoc, _, _, _ = prepare_page_content(
+            referrer, source_url, drpid, for_spa=True
+        )
         if ref_srcdoc:
             linked_srcdoc_for_display = ref_srcdoc
             linked_display_url = referrer
     elif linked_is_binary:
         # Show source in linked pane when binary and no valid referrer.
         if source_url and is_valid_url(source_url):
-            ref_srcdoc, _, _, _ = prepare_page_content(source_url, source_url, drpid, for_spa=True)
+            ref_srcdoc, _, _, _ = prepare_page_content(
+                source_url, source_url, drpid, for_spa=True
+            )
             if ref_srcdoc:
                 linked_srcdoc_for_display = ref_srcdoc
                 linked_display_url = source_url
