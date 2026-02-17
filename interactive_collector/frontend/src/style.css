@@ -1,0 +1,232 @@
+:root {
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  color: #213547;
+  background-color: #fff;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.top {
+  padding: 8px;
+  background: #eee;
+  border-bottom: 1px solid #ccc;
+}
+
+.top .drpid {
+  font-weight: bold;
+  margin-right: 4px;
+}
+
+.top .top-sep {
+  margin: 0 8px;
+  color: #999;
+}
+
+.top input[type="url"] {
+  width: 50%;
+  min-width: 300px;
+}
+
+.main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.left-col {
+  display: flex;
+  flex-direction: column;
+  width: 440px;
+  min-width: 180px;
+  max-width: 50%;
+  background: #fafafa;
+  min-height: 0;
+  flex-shrink: 0;
+}
+
+.splitter {
+  flex-shrink: 0;
+  background: #e0e0e0;
+  transition: background 0.1s;
+}
+
+.splitter:hover {
+  background: #b0b0b0;
+}
+
+.splitter-v {
+  width: 6px;
+  cursor: col-resize;
+  min-width: 6px;
+}
+
+.splitter-h {
+  height: 6px;
+  cursor: row-resize;
+  min-height: 6px;
+}
+
+.panes {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  min-width: 0;
+}
+
+.pane {
+  flex: 1;
+  min-width: 120px;
+  min-height: 0;
+  border: 1px solid #ccc;
+  margin: 4px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pane-header {
+  padding: 4px 8px;
+  background: #e8e8e8;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane-empty {
+  flex: 1;
+  padding: 16px;
+  color: #666;
+  font-size: 14px;
+}
+
+.pane-iframe {
+  flex: 1;
+  width: 100%;
+  border: none;
+  min-height: 200px;
+}
+
+.scoreboard {
+  flex: 0 0 auto;
+  height: 200px;
+  min-height: 60px;
+  overflow: auto;
+  padding: 8px;
+  font-size: 12px;
+}
+
+.scoreboard ul {
+  list-style: none;
+  padding-left: 12px;
+  margin: 0;
+}
+
+.scoreboard li {
+  margin: 4px 0;
+  word-break: break-all;
+}
+
+.metadata-pane {
+  flex: 1;
+  min-height: 120px;
+  overflow: auto;
+  padding: 8px;
+  font-size: 12px;
+}
+
+.metadata-pane label {
+  display: block;
+  margin-top: 8px;
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+
+.metadata-pane input,
+.metadata-pane textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px;
+}
+
+.url-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: #06c;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.url-link:hover {
+  text-decoration: underline;
+}
+
+.btn-save {
+  background: #c00;
+  color: white;
+  border: none;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  border-radius: 3px;
+  margin-left: 8px;
+}
+
+.btn-save:hover {
+  background: #a00;
+}
+
+.btn-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.save-modal {
+  display: none;
+  position: fixed;
+  z-index: 9999;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.save-modal.show {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.save-modal-dialog {
+  background: white;
+  padding: 24px;
+  border-radius: 8px;
+  max-width: 90%;
+  min-width: 320px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.save-modal-message {
+  margin: 12px 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.save-modal-ok {
+  margin-top: 16px;
+  padding: 8px 20px;
+  cursor: pointer;
+}

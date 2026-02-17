@@ -136,9 +136,9 @@ class Args(metaclass=ArgsMeta):
         # Apply command line arguments (highest priority - overrides config file and defaults)
         cls._apply_command_line_args(parsed_args)
 
-        # config_file: same as config (--config) for code that reads Args.config_file
+        # config_file: same as config (--config) for code that reads Args.config_file (stored as str)
         if "config" in cls._config and cls._config["config"] is not None:
-            cls._config["config_file"] = cls._config["config"]
+            cls._config["config_file"] = str(cls._config["config"])
 
         # gwda_email fallback: use datalumos_username if gwda_email not set
         gwda_email = cls._config.get("gwda_email") or cls._config.get("datalumos_username")

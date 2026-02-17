@@ -22,23 +22,26 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import quote, urljoin
 
 import requests
-from flask import Flask, redirect, request, render_template_string, url_for
+from flask import Flask, redirect, request, render_template_string, send_from_directory, url_for
 
+from interactive_collector.collector_state import get_result_by_drpid as _get_result_by_drpid
+from interactive_collector.collector_state import get_scoreboard as _get_scoreboard
 from utils.file_utils import create_output_folder, sanitize_filename
 from utils.url_utils import is_valid_url, fetch_page_body, resolve_catalog_resource_url, BROWSER_HEADERS
 
 app = Flask(__name__)
+# Register API blueprint for SPA.
+from interactive_collector.api import api_bp
+app.register_blueprint(api_bp)
+
+# Shared state: use collector_state so legacy routes and API share the same data.
+_scoreboard = _get_scoreboard()
+_result_by_drpid = _get_result_by_drpid()
 
 # Default DB path when not set by orchestrator (standalone run).
 DEFAULT_DB_PATH = "drp_pipeline.db"
 # Default base output dir when not set by orchestrator (Windows).
 DEFAULT_BASE_OUTPUT_DIR = r"C:\Documents\DataRescue\DRPData"
-
-# In-memory scoreboard: list of {url, referrer, status_label}. Referrer None = root.
-_scoreboard: List[Dict[str, Any]] = []
-
-# Per-DRPID result: folder_path, downloads list, dataset_size for Save.
-_result_by_drpid: Dict[int, Dict[str, Any]] = {}
 
 # Content-Type to file extension for downloads (lowercase type -> extension with dot).
 _CONTENT_TYPE_EXT: Dict[str, str] = {
@@ -295,7 +298,7 @@ _INDEX_HTML = """<!DOCTYPE html>
       <div class="scoreboard" id="scoreboard">
         <h3>Scoreboard{% if folder_path %} <button type="submit" form="scoreboard-save-form" class="btn-save">Save</button>{% endif %}</h3>
         {% if folder_path %}
-        <form id="scoreboard-save-form" method="post" action="{{ url_for('save') }}">
+        <form id="scoreboard-save-form" method="post" action="{{ url_for('save') }}" onsubmit="return false;">
           <input type="hidden" name="drpid" value="{{ drpid or '' }}" />
           <input type="hidden" name="folder_path" value="{{ (folder_path or '') | e }}" />
           <input type="hidden" name="scoreboard_urls_json" value="{{ scoreboard_urls_json | e }}" />
@@ -1190,6 +1193,21 @@ def _prepare_pane_content(
     )
     safe_srcdoc = body_rewritten.replace("&", "&amp;").replace('"', "&quot;")
     return safe_srcdoc, None, status_label, h1_text
+
+
+# Path to built React SPA (for /collector route).
+_FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
+
+
+@app.route("/collector/")
+@app.route("/collector/<path:subpath>")
+def collector_spa(subpath: str = "") -> Any:
+    """
+    Serve the React SPA at /collector.
+    """
+    if not subpath:
+        return send_from_directory(_FRONTEND_DIST, "index.html")
+    return send_from_directory(_FRONTEND_DIST, subpath)
 
 
 @app.route("/")

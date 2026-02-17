@@ -1,0 +1,24 @@
+---
+description: Run full test suite after every code change
+alwaysApply: true
+---
+
+# Run All Tests After Each Code Change
+
+After **every** code change (edit, new file, or refactor), you **must** run the full test suite and ensure it passes before considering the response complete.
+
+## What to do
+
+1. After making code changes, run all tests from the project root:
+   ```powershell
+   cd c:\Documents\Code\DRPPipeline; python -m pytest -v
+   ```
+2. If any test fails, fix the code or tests until the suite passes.
+3. Do not leave the user with failing tests or skip running tests "for them to run later."
+
+## Scope
+
+- Run the **entire** test suite (`pytest` with no path), not only the file or module you changed.
+- Use Windows/PowerShell syntax (e.g. `;` to chain commands if needed).
+
+This ensures regressions and errors (e.g. missing helpers, broken imports) are caught immediately.

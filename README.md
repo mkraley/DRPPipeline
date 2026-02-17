@@ -73,6 +73,24 @@ Each module (except `noop` and `cleanup_inprogress`) advances project `status` s
 
 See [Usage](docs/Usage.md) for database fields and eligibility rules.
 
+## Interactive Collector (SPA)
+
+The Interactive Collector is available in two modes:
+
+- **Legacy:** Server-rendered at `/` (Flask templates, full-page reloads).
+- **SPA:** React app at `/collector/` with JSON API, no full-page reloads.
+
+### Running the SPA
+
+1. **Backend:** `flask run` (or via orchestrator).
+2. **Frontend (dev):** `cd interactive_collector/frontend && npm run dev` — Vite proxies `/api` to Flask.
+3. **Production:** Build with `npm run build`, then Flask serves the built app at `/collector/`.
+
+### SPA Architecture
+
+- **Backend:** `interactive_collector/api.py` — Blueprint with `/api/projects/*`, `/api/load-source`, `/api/load-page`, `/api/scoreboard`, `/api/save`, `/api/download-file`.
+- **Frontend:** `interactive_collector/frontend/` — Vite + React + Zustand. Link clicks are intercepted via postMessage; pages load via API and update the Linked pane without reload.
+
 ## Development
 
 - **Tests:** `python -m pytest` or `python -m unittest discover -p "test_*.py"`
