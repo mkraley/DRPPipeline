@@ -86,7 +86,7 @@ class DataLumosFileUploader:
         """
         files = self.get_file_paths(folder_path)
         if not files:
-            Logger.debug(f"No files to upload in {folder_path}")
+            Logger.info(f"No files to upload in {folder_path}")
             return
 
         Logger.info(f"Uploading {len(files)} file(s) from {folder_path}")

@@ -620,6 +620,7 @@ class TestAppRoutes(unittest.TestCase):
         self.assertEqual(values.get("download_date"), "2024-01-15")
         self.assertIn("extensions", values)
         self.assertIn("file_size", values)
+        self.assertEqual(values.get("folder_path"), d)
 
     def test_scoreboard_render_with_save_form_includes_checkbox_name(self) -> None:
         """When for_save_form=True, checkboxes have name=save_url and value=index."""

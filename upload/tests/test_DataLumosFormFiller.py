@@ -172,6 +172,15 @@ class TestDataLumosUploaderHelpers(unittest.TestCase):
         result = uploader._parse_keywords("key1, key2, 'key3', [key4]")
         self.assertEqual(result, ["key1", "key2", "key3", "key4"])
 
+    def test_parse_keywords_semicolon_or_comma(self) -> None:
+        """Test _parse_keywords splits on semicolons or commas."""
+        from upload.DataLumosUploader import DataLumosUploader
+        
+        uploader = DataLumosUploader()
+        self.assertEqual(uploader._parse_keywords("a; b; c"), ["a", "b", "c"])
+        self.assertEqual(uploader._parse_keywords("a, b; c"), ["a", "b", "c"])
+        self.assertEqual(uploader._parse_keywords("a;b,c"), ["a", "b", "c"])
+
     def test_parse_keywords_empty(self) -> None:
         """Test _parse_keywords returns empty list for empty input."""
         from upload.DataLumosUploader import DataLumosUploader

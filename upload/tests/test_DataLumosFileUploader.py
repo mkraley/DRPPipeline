@@ -48,6 +48,14 @@ class TestDataLumosFileUploader(unittest.TestCase):
             paths = uploader.get_file_paths(tmp)
             self.assertEqual(paths, [])
 
+    def test_upload_files_empty_folder_returns_without_error(self) -> None:
+        """Test upload_files with empty folder returns without opening modal or raising."""
+        with tempfile.TemporaryDirectory() as tmp:
+            mock_page = MagicMock()
+            uploader = DataLumosFileUploader(mock_page)
+            uploader.upload_files(tmp)
+            mock_page.locator.assert_not_called()
+
     def test_get_file_paths_missing_folder_raises(self) -> None:
         """Test get_file_paths raises FileNotFoundError for missing path."""
         mock_page = MagicMock()

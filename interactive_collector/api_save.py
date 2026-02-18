@@ -122,6 +122,7 @@ def save_metadata(
         "download_date": download_date,
     }
     if folder_path_str:
+        values["folder_path"] = folder_path_str
         folder_path = Path(folder_path_str)
         if folder_path.is_dir():
             exts_list, total_bytes = _folder_extensions_and_size(folder_path)

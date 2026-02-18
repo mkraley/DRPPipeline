@@ -190,6 +190,6 @@ class DataLumosUploader:
         return match.group(1) if match else None
     
     def _parse_keywords(self, keywords_raw: str) -> List[str]:
-        """Parse comma-separated keywords, removing quotes and brackets."""
+        """Parse keywords split by commas or semicolons, removing quotes and brackets."""
         cleaned = keywords_raw.replace("'", "").replace("[", "").replace("]", "").replace('"', "")
-        return [p.strip() for p in cleaned.split(",") if p.strip()]
+        return [p.strip() for p in re.split(r"[,;]+", cleaned) if p.strip()]
