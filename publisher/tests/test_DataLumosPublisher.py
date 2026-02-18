@@ -90,6 +90,46 @@ class TestDataLumosPublisher(unittest.TestCase):
             self.assertEqual(args[0], drpid)
             self.assertIn("datalumos_id", args[1])
 
+    def test_run_not_found_updates_sheet_only(self) -> None:
+        """Test run with status not_found updates sheet only and sets status updated_inventory."""
+        drpid = Storage.create_record("https://example.com/notfound")
+        Storage.update_record(drpid, {"status": "not_found"})
+
+        mock_updater = MagicMock()
+        mock_updater.update_for_not_found_or_no_links.return_value = (True, None)
+
+        with patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater", return_value=mock_updater), patch.object(
+            Args, "google_sheet_id", "sheet1"
+        ), patch.object(Args, "google_credentials", __file__):
+            self.publisher.run(drpid)
+
+        mock_updater.update_for_not_found_or_no_links.assert_called_once_with(
+            source_url="https://example.com/notfound",
+            notes_value="Not found",
+        )
+        record = Storage.get(drpid)
+        self.assertEqual(record.get("status"), "updated_not_found")
+
+    def test_run_no_links_updates_sheet_only(self) -> None:
+        """Test run with status no_links updates sheet only with Notes 'No live links'."""
+        drpid = Storage.create_record("https://example.com/nolinks")
+        Storage.update_record(drpid, {"status": "no_links"})
+
+        mock_updater = MagicMock()
+        mock_updater.update_for_not_found_or_no_links.return_value = (True, None)
+
+        with patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater", return_value=mock_updater), patch.object(
+            Args, "google_sheet_id", "sheet1"
+        ), patch.object(Args, "google_credentials", __file__):
+            self.publisher.run(drpid)
+
+        mock_updater.update_for_not_found_or_no_links.assert_called_once_with(
+            source_url="https://example.com/nolinks",
+            notes_value="No live links",
+        )
+        record = Storage.get(drpid)
+        self.assertEqual(record.get("status"), "updated_no_links")
+
     @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
     @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
     def test_run_success_updates_storage(

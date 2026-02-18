@@ -45,9 +45,10 @@ class DataLumosPublisher:
         """
         Run the publish process for a single project.
 
-        Implements ModuleProtocol. Gets project from Storage, validates
-        datalumos_id, authenticates, navigates to project, runs publish flow,
-        and updates Storage on success.
+        Implements ModuleProtocol. Gets project from Storage. For status
+        not_found or no_links: updates Google Sheet only (no browser). For
+        status upload: validates datalumos_id, authenticates, runs publish
+        flow, then updates sheet.
 
         Args:
             drpid: The DRPID of the project to publish.
@@ -57,6 +58,11 @@ class DataLumosPublisher:
         project = Storage.get(drpid)
         if project is None:
             record_error(drpid, f"Project with DRPID={drpid} not found in Storage")
+            return
+
+        status = (project.get("status") or "").strip().lower()
+        if status in ("not_found", "no_links"):
+            self._run_sheet_only_for_not_found_or_no_links(drpid, project, status)
             return
 
         workspace_id = self._get_field(project, "datalumos_id")
@@ -97,6 +103,53 @@ class DataLumosPublisher:
     def _get_field(self, project: Dict[str, Any], key: str) -> str:
         """Get and trim a project field. Returns empty string if missing."""
         return (project.get(key) or "").strip()
+
+    def _run_sheet_only_for_not_found_or_no_links(
+        self, drpid: int, project: Dict[str, Any], status: str
+    ) -> None:
+        """Update Google Sheet only for not_found/no_links; set status to updated_not_found or updated_no_links on success."""
+        if not Args.google_sheet_id or not Args.google_credentials:
+            return
+
+        from pathlib import Path
+
+        cred_path = Path(Args.google_credentials) if isinstance(Args.google_credentials, str) else Args.google_credentials
+        if not cred_path.exists():
+            record_crash(
+                f"Google Sheet update configured but credentials file not found: {cred_path}. "
+                "Set google_credentials to a valid path or leave unset to skip sheet update."
+            )
+            return
+
+        source_url = self._get_field(project, "source_url")
+        if not source_url:
+            Logger.warning("Google Sheet update skipped: no source_url")
+            return
+
+        notes_value = "Not found" if status == "not_found" else "No live links"
+        from publisher.GoogleSheetUpdater import GoogleSheetUpdater
+
+        updater = GoogleSheetUpdater()
+        success, error_message = updater.update_for_not_found_or_no_links(
+            source_url=source_url,
+            notes_value=notes_value,
+        )
+        if success:
+            status_value = "updated_not_found" if status == "not_found" else "updated_no_links"
+            Storage.update_record(drpid, {"status": status_value})
+            Logger.info(f"Sheet updated for DRPID={drpid} ({status})")
+        elif error_message:
+            msg_lower = error_message.lower()
+            if "not installed" in msg_lower:
+                record_crash(
+                    "Google Sheet update configured but Google Sheets API libraries are not installed. "
+                    "Install with: pip install google-api-python-client google-auth google-auth-httplib2 "
+                    "or leave google_sheet_id/google_credentials unset to skip sheet update."
+                )
+            Logger.warning(f"Google Sheet update failed for DRPID={drpid}: {error_message}")
+            Storage.append_to_field(
+                drpid, "warnings", f"Google Sheet update failed: {error_message}"
+            )
 
     def _update_google_sheet_if_configured(
         self, drpid: int, project: Dict[str, Any], workspace_id: str

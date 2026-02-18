@@ -182,7 +182,23 @@ class Orchestrator:
             module_instance.run(-1)
         else:
             # Modules with prereq: call run(drpid) for each eligible project
-            projects = Storage.list_eligible_projects(prereq, num_rows, start_row, start_drpid)
+            if module == "publisher":
+                # Publisher also processes not_found and no_links (sheet-only update)
+                projects_upload = Storage.list_eligible_projects("upload", num_rows, start_row, start_drpid)
+                projects_not_found = Storage.list_eligible_projects("not_found", num_rows, start_row, start_drpid)
+                projects_no_links = Storage.list_eligible_projects("no_links", num_rows, start_row, start_drpid)
+                seen: set[int] = set()
+                projects = []
+                for proj in projects_upload + projects_not_found + projects_no_links:
+                    drpid = proj["DRPID"]
+                    if drpid not in seen:
+                        seen.add(drpid)
+                        projects.append(proj)
+                projects.sort(key=lambda p: p["DRPID"])
+                if num_rows is not None:
+                    projects = projects[:num_rows]
+            else:
+                projects = Storage.list_eligible_projects(prereq, num_rows, start_row, start_drpid)
             Logger.info(f"Orchestrator module={module!r} eligible projects={len(projects)}")
             max_workers = Args.max_workers or 1
             max_workers = max(1, int(max_workers))

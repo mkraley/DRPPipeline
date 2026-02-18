@@ -106,6 +106,27 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn("not installed", msg.lower())
 
+    @patch("publisher.GoogleSheetUpdater._GOOGLE_SHEETS_AVAILABLE", True)
+    def test_update_for_not_found_or_no_links_missing_sheet_id(self) -> None:
+        """Test update_for_not_found_or_no_links returns error when sheet ID missing."""
+        updater = GoogleSheetUpdater()
+        with patch.object(Args, "google_sheet_id", ""), patch.object(Args, "google_credentials", None):
+            success, msg = updater.update_for_not_found_or_no_links(
+                "https://example.com", "Not found"
+            )
+        self.assertFalse(success)
+        self.assertIn("required", (msg or "").lower())
+
+    @patch("publisher.GoogleSheetUpdater._GOOGLE_SHEETS_AVAILABLE", False)
+    def test_update_for_not_found_or_no_links_api_not_available(self) -> None:
+        """Test update_for_not_found_or_no_links returns error when API not installed."""
+        updater = GoogleSheetUpdater()
+        success, msg = updater.update_for_not_found_or_no_links(
+            "https://example.com", "No live links"
+        )
+        self.assertFalse(success)
+        self.assertIn("not installed", (msg or "").lower())
+
     @skip_if_no_google
     @patch("google.oauth2.service_account.Credentials.from_service_account_file")
     def test_update_credentials_not_found(self, mock_from_sa: MagicMock) -> None:

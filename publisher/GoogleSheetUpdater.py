@@ -37,6 +37,15 @@ _REQUIRED_COLUMNS = [
     "Metadata availability info",
 ]
 
+# Minimal columns for not_found/no_links sheet update (no publish workflow)
+_REQUIRED_COLUMNS_NOT_FOUND = [
+    "URL",
+    "Claimed",
+    "Data Added",
+    "Dataset Download Possible?",
+    "Nominated to EOT / USGWDA",
+]
+
 DOWNLOAD_LOCATION_TEMPLATE = "https://www.datalumos.org/datalumos/project/{workspace_id}/version/V1/view"
 
 
@@ -135,6 +144,141 @@ class GoogleSheetUpdater:
             Logger.warning(f"Error updating Google Sheet: {e}")
             return False, str(e)
 
+    def update_for_not_found_or_no_links(
+        self,
+        source_url: str,
+        notes_value: str,
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Update the Google Sheet row matching source_url for not_found/no_links status.
+
+        Writes only: Claimed=username, Data Added=N, Dataset Download Possible?=N,
+        Nominated to EOT / USGWDA=N, Notes=notes_value. If Notes column does not
+        exist, adds it after the last existing column.
+        Other columns are not updated.
+
+        Args:
+            source_url: Source URL to match in the URL column.
+            notes_value: Text for Notes column (e.g. "Not found" or "No live links").
+
+        Returns:
+            (True, None) on success, (False, error_message) on failure.
+        """
+        if not _GOOGLE_SHEETS_AVAILABLE:
+            return False, (
+                "Google Sheets API not installed. "
+                "Install with: pip install google-api-python-client google-auth google-auth-httplib2"
+            )
+
+        sheet_id = Args.google_sheet_id
+        credentials_path = Path(Args.google_credentials) if Args.google_credentials else None
+        sheet_name = Args.google_sheet_name
+
+        if not sheet_id or not credentials_path:
+            return False, "Google Sheet ID and credentials path are required"
+
+        if not source_url or not source_url.strip():
+            return False, "Source URL is required to find matching row"
+
+        try:
+            credentials = service_account.Credentials.from_service_account_file(
+                str(credentials_path),
+                scopes=["https://www.googleapis.com/auth/spreadsheets"],
+            )
+            service = build("sheets", "v4", credentials=credentials)
+
+            column_map = self._get_column_mapping(
+                service,
+                sheet_id,
+                sheet_name,
+                _REQUIRED_COLUMNS_NOT_FOUND,
+                optional_columns=["Notes"],
+            )
+            if not column_map:
+                return False, "Failed to get column mapping from Google Sheet"
+
+            url_col_letter = column_map.get("URL")
+            if not url_col_letter:
+                return False, "Could not find URL column in sheet"
+
+            row_number = self._find_row_by_url(
+                service, sheet_id, sheet_name, url_col_letter, source_url.strip()
+            )
+            if not row_number:
+                return False, f"Could not find row with matching URL: {source_url}"
+
+            Logger.debug(f"Updating Google Sheet row {row_number} (not_found/no_links)")
+
+            username = Args.google_username or ""
+            requests: List[Dict[str, Any]] = []
+
+            for col_key, col_letter in column_map.items():
+                if col_key == "URL":
+                    continue
+                if col_key == "Claimed":
+                    requests.append({
+                        "range": f"{sheet_name}!{col_letter}{row_number}",
+                        "values": [[username]],
+                    })
+                elif col_key == "Data Added":
+                    requests.append({
+                        "range": f"{sheet_name}!{col_letter}{row_number}",
+                        "values": [["N"]],
+                    })
+                elif col_key == "Dataset Download Possible?":
+                    requests.append({
+                        "range": f"{sheet_name}!{col_letter}{row_number}",
+                        "values": [["N"]],
+                    })
+                elif col_key == "Nominated to EOT / USGWDA":
+                    requests.append({
+                        "range": f"{sheet_name}!{col_letter}{row_number}",
+                        "values": [["N"]],
+                    })
+                elif col_key == "Notes":
+                    requests.append({
+                        "range": f"{sheet_name}!{col_letter}{row_number}",
+                        "values": [[notes_value]],
+                    })
+
+            # If Notes column not present, add it after the last existing column
+            if "Notes" not in column_map:
+                notes_col_letter = self._get_next_column_letter(
+                    service, sheet_id, sheet_name
+                )
+                requests.append({
+                    "range": f"{sheet_name}!{notes_col_letter}1",
+                    "values": [["Notes"]],
+                })
+                requests.append({
+                    "range": f"{sheet_name}!{notes_col_letter}{row_number}",
+                    "values": [[notes_value]],
+                })
+
+            if not requests:
+                return False, "No data to update"
+
+            body = {"valueInputOption": "USER_ENTERED", "data": requests}
+            service.spreadsheets().values().batchUpdate(
+                spreadsheetId=sheet_id,
+                body=body,
+            ).execute()
+
+            Logger.info(
+                f"Updated Google Sheet row {row_number} (not_found/no_links): {len(requests)} columns"
+            )
+            return True, None
+
+        except ValueError:
+            raise
+        except FileNotFoundError as e:
+            return False, f"Credentials file not found: {credentials_path}"
+        except HttpError as e:
+            return False, f"Google Sheets API error: {e}"
+        except Exception as e:
+            Logger.warning(f"Error updating Google Sheet (not_found/no_links): {e}")
+            return False, str(e)
+
     def _column_index_to_letter(self, col_index: int) -> str:
         """Convert 1-based column index to letter (e.g. 1 -> A, 27 -> AA)."""
         result = ""
@@ -144,12 +288,28 @@ class GoogleSheetUpdater:
             col_index //= 26
         return result
 
+    def _get_next_column_letter(
+        self, service: Any, sheet_id: str, sheet_name: str
+    ) -> str:
+        """Return the letter for the column after the last existing column (header row 1)."""
+        range_name = f"{sheet_name}!1:1"
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=sheet_id, range=range_name)
+            .execute()
+        )
+        values = result.get("values", [])
+        num_cols = len(values[0]) if values and values[0] else 0
+        return self._column_index_to_letter(num_cols + 1)
+
     def _get_column_mapping(
         self,
         service: Any,
         sheet_id: str,
         sheet_name: str,
         required_columns: List[str],
+        optional_columns: Optional[List[str]] = None,
     ) -> Optional[Dict[str, str]]:
         """Read header row and map column names to letters; require required_columns."""
         range_name = f"{sheet_name}!1:1"
@@ -195,6 +355,23 @@ class GoogleSheetUpdater:
                 f"Required columns not found in sheet '{sheet_name}': {missing}. "
                 f"Available: {list(column_map.keys())}"
             )
+
+        for opt in optional_columns or []:
+            if opt in found_columns:
+                continue
+            for col_name, col_letter in column_map.items():
+                if col_name.lower() == opt.lower():
+                    found_columns[opt] = col_letter
+                    break
+            else:
+                for col_name, col_letter in column_map.items():
+                    if (
+                        opt.lower() in col_name.lower()
+                        or col_name.lower() in opt.lower()
+                    ):
+                        found_columns[opt] = col_letter
+                        break
+
         return found_columns
 
     def _find_row_by_url(
