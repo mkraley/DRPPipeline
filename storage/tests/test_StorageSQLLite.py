@@ -142,7 +142,6 @@ class TestStorageSQLLite(unittest.TestCase):
         
         self.storage.create_record("https://example.com")
         
-        # Try to create duplicate - should fail
         with self.assertRaises(sqlite3.IntegrityError):
             self.storage.create_record("https://example.com")
     
@@ -419,7 +418,6 @@ class TestStorageSQLLite(unittest.TestCase):
         
         self.storage.create_record("https://example.com")
         
-        # Try to create duplicate source_url - should fail
         with self.assertRaises(sqlite3.IntegrityError):
             self.storage.create_record("https://example.com")
     
@@ -547,6 +545,15 @@ class TestStorageSQLLite(unittest.TestCase):
         self.storage.update_record(2, {"status": "sourcing"})
         out = self.storage.list_eligible_projects("sourcing", None)
         self.assertEqual([r["DRPID"] for r in out], [1, 2])
+
+    def test_list_eligible_projects_respects_min_drpid(self) -> None:
+        """Test list_eligible_projects with min_drpid returns only DRPID >= value."""
+        self.storage.initialize(db_path=self.test_db_path)
+        for i in range(5):
+            self.storage.create_record(f"https://example.com/{i}")
+            self.storage.update_record(i + 1, {"status": "sourcing"})
+        out = self.storage.list_eligible_projects("sourcing", None, min_drpid=4)
+        self.assertEqual([r["DRPID"] for r in out], [4, 5])
 
     def test_append_to_field_warnings(self) -> None:
         """Test append_to_field appends to warnings with newline."""

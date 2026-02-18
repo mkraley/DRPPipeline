@@ -106,18 +106,20 @@ class StorageProtocol(Protocol):
         prereq_status: Optional[str],
         limit: Optional[int],
         start_row: Optional[int] = None,
+        min_drpid: Optional[int] = None,
     ) -> list[Dict[str, Any]]:
         """
         List projects eligible for the next module: status == prereq_status and no errors.
 
         Order by DRPID ASC. Optionally limit the number of rows. Optionally skip
-        first (start_row - 1) rows when start_row is set (1-origin).
+        first (start_row - 1) rows when start_row is set (1-origin), or filter by
+        min_drpid (DRPID >= min_drpid) when min_drpid is set.
 
         Args:
             prereq_status: Required status (e.g. "sourcing" for collectors). None -> [].
             limit: Max rows to return. None = no limit.
             start_row: If set, skip first (start_row - 1) rows of the full table (1-origin).
-                       Counts all rows, not just eligible ones.
+            min_drpid: If set, only return projects with DRPID >= this value (takes precedence over start_row when both set).
 
         Returns:
             List of full row dicts (all columns, including None for nulls).

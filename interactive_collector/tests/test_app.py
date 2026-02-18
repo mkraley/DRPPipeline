@@ -259,7 +259,7 @@ class TestAppRoutes(unittest.TestCase):
     def test_index_no_url_returns_form(self, mock_storage_cls: MagicMock) -> None:
         """GET / with no url param returns form and empty panes when no eligible project in Storage."""
         mock_storage_cls.list_eligible_projects.side_effect = [[], []]  # ensure_storage, get_first_eligible
-        response = self.client.get("/")
+        response = self.client.get("/legacy/")
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Interactive Collector", response.data)
         self.assertIn(b"name=\"url\"", response.data)
@@ -285,7 +285,7 @@ class TestAppRoutes(unittest.TestCase):
         mock_storage_cls.list_eligible_projects.side_effect = [[], [project], []]
         mock_storage_cls.get.return_value = project
 
-        response = self.client.get("/")
+        response = self.client.get("/legacy/")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"DRPID: 7", response.data)
@@ -308,7 +308,7 @@ class TestAppRoutes(unittest.TestCase):
             ],
         ]
 
-        response = self.client.get("/", query_string={"next": "1", "current_drpid": "1"})
+        response = self.client.get("/legacy/", query_string={"next": "1", "current_drpid": "1"})
 
         self.assertEqual(response.status_code, 302)
         self.assertIn("url=", response.location)
@@ -325,7 +325,7 @@ class TestAppRoutes(unittest.TestCase):
             "source_url": "https://catalog.data.gov/dataset/bar",
         }
 
-        response = self.client.get("/", query_string={"load_drpid": "3"})
+        response = self.client.get("/legacy/", query_string={"load_drpid": "3"})
 
         self.assertEqual(response.status_code, 302)
         self.assertIn("url=", response.location)
@@ -334,7 +334,7 @@ class TestAppRoutes(unittest.TestCase):
 
     def test_index_invalid_url_returns_message(self) -> None:
         """GET / with invalid url shows Invalid URL and message."""
-        response = self.client.get("/", query_string={"url": "not-a-url"})
+        response = self.client.get("/legacy/", query_string={"url": "not-a-url"})
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Invalid URL", response.data)
         self.assertIn(b"valid http", response.data)
@@ -351,7 +351,7 @@ class TestAppRoutes(unittest.TestCase):
             False,
         )
         response = self.client.get(
-            "/", query_string={"url": "https://example.com"}
+            "/legacy/", query_string={"url": "https://example.com"}
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Scoreboard", response.data)
@@ -377,7 +377,7 @@ class TestAppRoutes(unittest.TestCase):
             False,
         )
         response = self.client.get(
-            "/", query_string={"url": "https://example.com/missing"}
+            "/legacy/", query_string={"url": "https://example.com/missing"}
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"404", response.data)
@@ -395,7 +395,7 @@ class TestAppRoutes(unittest.TestCase):
             True,
         )
         response = self.client.get(
-            "/", query_string={"url": "https://example.com/ghost"}
+            "/legacy/", query_string={"url": "https://example.com/ghost"}
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"404 (logical)", response.data)
@@ -412,7 +412,7 @@ class TestAppRoutes(unittest.TestCase):
             False,
         )
         response = self.client.get(
-            "/", query_string={"url": "https://example.com/file.pdf"}
+            "/legacy/", query_string={"url": "https://example.com/file.pdf"}
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Binary content (application/pdf). Not displayed.", response.data)
@@ -430,7 +430,7 @@ class TestAppRoutes(unittest.TestCase):
             return (200, "<html><body>Linked page</body></html>", "text/html", False)
         mock_fetch_page_body.side_effect = fetch_side_effect
         response = self.client.get(
-            "/",
+            "/legacy/",
             query_string={
                 "source_url": "https://example.com/source",
                 "linked_url": "https://example.com/linked",
@@ -453,7 +453,7 @@ class TestAppRoutes(unittest.TestCase):
             return (200, "<html><body>Page</body></html>", "text/html", False)
         mock_fetch_page_body.side_effect = fetch_side_effect
         response = self.client.get(
-            "/",
+            "/legacy/",
             query_string={
                 "source_url": "https://example.com/source",
                 "linked_url": "https://example.com/linked",
@@ -479,9 +479,9 @@ class TestAppRoutes(unittest.TestCase):
         import interactive_collector.app as app_module
         with patch.object(app_module, "_ensure_output_folder_for_drpid", return_value="C:\\out\\1"):
             response = self.client.get(
-                                "/",
-                                query_string={"url": "https://example.com", "drpid": "1"},
-                            )
+                "/legacy/",
+                query_string={"url": "https://example.com", "drpid": "1"},
+            )
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"metadata_draft_", response.data)
         self.assertIn(b"saveDraft", response.data)
@@ -502,7 +502,7 @@ class TestAppRoutes(unittest.TestCase):
         mock_fetch_page_body.side_effect = fetch_side_effect
         mock_ensure_output_folder.return_value = "C:\\out\\DRP000001"
         response = self.client.get(
-            "/",
+            "/legacy/",
             query_string={
                 "source_url": "https://example.com/source",
                 "linked_url": "https://accessgudid.nlm.nih.gov/release_files/download/gudid_daily_update_20260209.zip",
@@ -526,8 +526,8 @@ class TestAppRoutes(unittest.TestCase):
             "text/html",
             False,
         )
-        self.client.get("/", query_string={"url": "https://example.com/first"})
-        response = self.client.get("/", query_string={"url": "https://example.com/second"})
+        self.client.get("/legacy/", query_string={"url": "https://example.com/first"})
+        response = self.client.get("/legacy/", query_string={"url": "https://example.com/second"})
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"example.com/second", response.data)
         self.assertNotIn(b"example.com/first", response.data)
@@ -543,7 +543,7 @@ class TestAppRoutes(unittest.TestCase):
             "text/html",
             False,
         )
-        response = self.client.get("/", query_string={"url": "https://example.com"})
+        response = self.client.get("/legacy/", query_string={"url": "https://example.com"})
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"linked_url=", response.data)
         self.assertIn(b"source_url=", response.data)

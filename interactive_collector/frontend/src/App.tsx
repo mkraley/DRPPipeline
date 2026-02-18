@@ -1,11 +1,11 @@
 /**
  * AppShell - Main layout for the Interactive Collector SPA.
  *
- * Layout: top bar (Next, Load DRPID), left column (Scoreboard + Metadata),
- * and two panes (Source, Linked) for viewing pages.
- * Loads first eligible project from storage on startup.
+ * Two views: Main page (pipeline launcher) and Collector (scoreboard + Source/Linked panes).
+ * Default view is Main; "Interactive collector" opens Collector; "Back to main" returns.
  */
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { MainPage } from "./components/MainPage";
 import { Scoreboard } from "./components/Scoreboard";
 import { MetadataForm } from "./components/MetadataForm";
 import { SourcePane } from "./components/SourcePane";
@@ -17,12 +17,17 @@ import { useHistorySync } from "./useHistorySync";
 import { useLinkInterceptor } from "./useLinkInterceptor";
 
 export default function App() {
+  const [view, setView] = useState<"main" | "collector">("main");
   const { drpid, folderPath, loadProject, loadFirstProject, loadNext, save, loading } =
     useCollectorStore();
   const leftColRef = useRef<HTMLDivElement>(null);
   const splitterVRef = useRef<HTMLDivElement>(null);
   useLinkInterceptor();
   useHistorySync();
+
+  if (view === "main") {
+    return <MainPage onOpenCollector={() => setView("collector")} />;
+  }
 
   useEffect(() => {
     const splitter = splitterVRef.current;
@@ -80,6 +85,9 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="top">
+        <button type="button" className="main-page-back-btn" onClick={() => setView("main")}>
+          Back to main
+        </button>
         {drpid != null && (
           <>
             <span className="drpid">DRPID: {drpid}</span>
@@ -115,8 +123,16 @@ export default function App() {
         </div>
         <div className="splitter splitter-v" ref={splitterVRef} title="Drag to resize left column" />
         <div className="panes">
-          <SourcePane />
-          <LinkedPane />
+          {drpid == null && !loading && (
+            <div className="collector-empty-state">
+              No project loaded. Use <strong>Load DRPID</strong> below to open a project, or run the{" "}
+              <strong>sourcing</strong> module from the main page to add candidates.
+            </div>
+          )}
+          <div className="panes-row">
+            <SourcePane />
+            <LinkedPane />
+          </div>
         </div>
       </div>
       <SaveProgressModal />

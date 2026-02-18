@@ -2,8 +2,9 @@
 Sourcing module for DRP Pipeline.
 
 Obtains candidate source URLs from configured sources (e.g. DRP Data_Inventories
-spreadsheet), performs duplicate prevention and availability checks, and creates
-storage records with generated IDs for each new candidate.
+spreadsheet), performs duplicate and availability checks, and creates storage
+records. Duplicate-in-storage is not created; an Error is logged. Other outcomes
+create a row with status: dupe_in_DL, not_found (URL 404 or equivalent), sourcing (good), or Error.
 """
 
 from typing import TYPE_CHECKING
@@ -30,76 +31,83 @@ class Sourcing:
 
     def run(self, drpid: int) -> None:
         """
-        Process configured sources: obtain candidate URLs, create storage records,
-        then check for duplicates and mark them appropriately.
+        Process configured sources: obtain candidate URLs, create storage records.
+        Duplicate URL already in storage: no row created, Error logged. Other
+        outcomes create a row with status: dupe_in_DL, not_found (404 or equivalent), sourcing (good), or Error.
 
         Args:
             drpid: DRPID of project to process. Use -1 for sourcing (no specific project).
         """
         from utils.Args import Args
         from utils.Logger import Logger
+        from utils.url_utils import fetch_page_body
         from duplicate_checking import DuplicateChecker
-        import sqlite3
-        
-        # Get num_rows from Args
+
         num_rows = Args.num_rows
-        
-        # Get candidate rows (url, office, agency) and skipped count from fetcher
         rows, skipped_count = self.get_candidate_urls(limit=num_rows)
 
-        # Track statistics
         successfully_added = 0
         dupes_in_storage = 0
         dupes_in_datalumos = 0
+        not_found_count = 0
+        error_count = 0
         assigned_ids: list[int] = []
         checker = DuplicateChecker()
 
-        # Check for duplicates before creating records
         for row in rows:
             url = row["url"]
-            duplicate_reason = None
+            office = row.get("office", "")
+            agency = row.get("agency", "")
 
-            # Check if URL already exists in storage
             if checker.exists_in_storage(url):
                 dupes_in_storage += 1
-                continue  # Skip to next URL, don't create record
+                Logger.error(f"Duplicate source URL already in storage, skipping (no row created): {url}")
+                continue
 
-            # Check datalumos (commented out for now, but structure ready)
-            # if checker.exists_in_datalumos(url):
-            #     duplicate_reason = "Duplicate source URL already exists in DataLumos"
-            #     dupes_in_datalumos += 1
+            new_drpid = Storage.create_record(url)
+            assigned_ids.append(new_drpid)
 
-            # Create storage record only if URL is not already in storage
-            drpid = Storage.create_record(url)
-            assigned_ids.append(drpid)
+            # Check datalumos (turned off for now; structure ready)
+            if False:  # checker.exists_in_datalumos(url):
+                status = "dupe_in_DL"
+                dupes_in_datalumos += 1
+                update_fields = {"status": status, "office": office, "agency": agency}
+                Storage.update_record(new_drpid, update_fields)
+                continue
 
-            update_fields: dict = {
-                "status": "sourcing",
-                "office": row.get("office", ""),
-                "agency": row.get("agency", ""),
-            }
-            if duplicate_reason:
-                update_fields["status"] = "Error"
-                update_fields["errors"] = duplicate_reason
-                Storage.update_record(drpid, update_fields)
-            else:
-                Storage.update_record(drpid, update_fields)
-                successfully_added += 1
-        
-        # Log statistics
+            # Check URL availability (404 or equivalent)
+            try:
+                status_code, _body, _content_type, _is_logical_404 = fetch_page_body(url)
+                if status_code == 404:
+                    status = "not_found"
+                    not_found_count += 1
+                    update_fields = {"status": status, "office": office, "agency": agency}
+                else:
+                    status = "sourcing"
+                    successfully_added += 1
+                    update_fields = {"status": status, "office": office, "agency": agency}
+                Storage.update_record(new_drpid, update_fields)
+            except Exception as e:
+                error_count += 1
+                update_fields = {
+                    "status": "Error",
+                    "office": office,
+                    "agency": agency,
+                    "errors": str(e),
+                }
+                Storage.update_record(new_drpid, update_fields)
+
         id_range_str = ""
         if assigned_ids:
             min_id = min(assigned_ids)
             max_id = max(assigned_ids)
-            if min_id == max_id:
-                id_range_str = f" (DRPID: {min_id})"
-            else:
-                id_range_str = f" (DRPIDs: {min_id}-{max_id})"
-        
-        Logger.info(f"Sourcing complete: {successfully_added} URLs successfully added{id_range_str}, "
-                   f"{dupes_in_storage} duplicates found in storage, "
-                   f"{dupes_in_datalumos} duplicates found in DataLumos, "
-                   f"{skipped_count} URLs skipped by filtering")
+            id_range_str = f" (DRPID: {min_id})" if min_id == max_id else f" (DRPIDs: {min_id}-{max_id})"
+
+        Logger.info(
+            f"Sourcing complete: {successfully_added} good (sourcing){id_range_str}, "
+            f"{dupes_in_storage} dupe_in_storage (skipped, no row), {dupes_in_datalumos} dupe_in_DL, "
+            f"{not_found_count} not_found, {error_count} errors, {skipped_count} skipped by filtering"
+        )
 
     def get_candidate_urls(self, limit: int | None = None) -> tuple[list[dict[str, str]], int]:
         """

@@ -89,7 +89,7 @@ class TestOrchestrator(unittest.TestCase):
         mock_find_class: MagicMock,
         mock_record_error: MagicMock,
     ) -> None:
-        """Test run("collector") calls record_error when run() raises, and continues."""
+        """Test run("catalog_collector") calls record_error when run() raises, and continues."""
         sys.argv = ["test", "noop"]
         Args._initialized = False
         Args.initialize()
@@ -109,10 +109,10 @@ class TestOrchestrator(unittest.TestCase):
         mock_find_class.return_value = mock_collector_cls
 
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
-            Orchestrator.run("collector")
+            Orchestrator.run("catalog_collector")
 
         mock_storage_cls.initialize.assert_called_once()
-        mock_storage.list_eligible_projects.assert_called_once_with("sourcing", None, None)
+        mock_storage.list_eligible_projects.assert_called_once_with("sourcing", None, None, None)
         mock_find_class.assert_called_once_with("CatalogDataCollector")
         mock_collector_cls.assert_called_once()
         mock_collector_instance.run.assert_called_once_with(1)

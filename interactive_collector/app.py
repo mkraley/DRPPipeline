@@ -30,9 +30,11 @@ from utils.file_utils import create_output_folder, sanitize_filename
 from utils.url_utils import is_valid_url, fetch_page_body, resolve_catalog_resource_url, BROWSER_HEADERS
 
 app = Flask(__name__)
-# Register API blueprint for SPA.
+# Register API blueprints for SPA.
 from interactive_collector.api import api_bp
+from interactive_collector.api_pipeline import pipeline_bp
 app.register_blueprint(api_bp)
+app.register_blueprint(pipeline_bp)
 
 # Shared state: use collector_state so legacy routes and API share the same data.
 _scoreboard = _get_scoreboard()
@@ -1219,31 +1221,26 @@ def _prepare_pane_content(
     return safe_srcdoc, None, status_label, h1_text
 
 
-# Path to built React SPA (for /collector route).
+# Path to built React SPA (served at / and /collector).
 _FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 
 
-@app.route("/collector/")
-@app.route("/collector/<path:subpath>")
-def collector_spa(subpath: str = "") -> Any:
-    """
-    Serve the React SPA at /collector.
-    """
+def _serve_spa(subpath: str = "") -> Any:
+    """Serve the React SPA (main page + interactive collector view)."""
     if not subpath:
         return send_from_directory(_FRONTEND_DIST, "index.html")
+    # Built assets may be under /collector/assets/; strip prefix so dist/assets/ is found
+    if subpath.startswith("collector/"):
+        subpath = subpath[len("collector/"):]
     return send_from_directory(_FRONTEND_DIST, subpath)
 
 
-@app.route("/")
-def index() -> str:
+@app.route("/legacy")
+@app.route("/legacy/")
+def legacy_index() -> str:
     """
-    Three-pane layout: scoreboard, Source, Linked.
-
-    Initial: ?url=... -> fetch url, show in Source; add root to scoreboard.
-    Link click: ?source_url=...&linked_url=...&referrer=... -> fetch both.
-    First load (no params): get first eligible project from Storage and show it.
-    ?next=1&current_drpid=X -> redirect to next eligible after X.
-    ?load_drpid=X -> redirect to project X's URL with drpid=X.
+    Legacy server-rendered three-pane collector (scoreboard, Source, Linked).
+    Main app is now the SPA at /.
     """
     app_root = request.url_root.rstrip("/") or request.host_url.rstrip("/")
     url_param = request.args.get("url", "").strip()
@@ -1263,7 +1260,7 @@ def index() -> str:
             proj = _get_next_eligible_after(app, current_drpid)
             if proj:
                 return redirect(
-                    url_for("index", url=proj.get("source_url") or "", drpid=proj["DRPID"])
+                    url_for("legacy_index", url=proj.get("source_url") or "", drpid=proj["DRPID"])
                 )
             # No next: stay on same project (or could show message)
         except ValueError:
@@ -1277,7 +1274,7 @@ def index() -> str:
             proj = _get_project_by_drpid(app, load_drpid)
             if proj and proj.get("source_url"):
                 return redirect(
-                    url_for("index", url=proj["source_url"], drpid=load_drpid)
+                    url_for("legacy_index", url=proj["source_url"], drpid=load_drpid)
                 )
             # Not found or no URL: fall through to show form (with message later if desired)
         except ValueError:
@@ -1435,7 +1432,7 @@ def index() -> str:
             _kwargs = {"source_url": source_url_param, "linked_url": referrer_param, "referrer": source_url_param, "from_scoreboard": "1"}
             if display_drpid:
                 _kwargs["drpid"] = display_drpid
-            linked_back_url = url_for("index", **_kwargs)
+            linked_back_url = url_for("legacy_index", **_kwargs)
         return render_template_string(
             _INDEX_HTML,
             initial_url=html.escape(source_url_param),
@@ -1478,6 +1475,25 @@ def index() -> str:
         show_auto_download=False,
         **_metadata_for_template(app, display_drpid, None),
     )
+
+
+@app.route("/")
+def index() -> Any:
+    """Serve the React SPA (main page) at root."""
+    return _serve_spa("")
+
+
+@app.route("/<path:subpath>")
+def spa_assets(subpath: str) -> Any:
+    """Serve SPA static assets (e.g. /assets/...) or index.html for client paths."""
+    return _serve_spa(subpath)
+
+
+@app.route("/collector/")
+@app.route("/collector/<path:subpath>")
+def collector_spa(subpath: str = "") -> Any:
+    """Serve the React SPA at /collector (backwards compatibility)."""
+    return _serve_spa(subpath)
 
 
 def _page_title_or_h1(page: Any) -> str:
@@ -1737,16 +1753,16 @@ def save() -> Any:
         return_to = "?" + return_to
 
     if not folder_path_str or not indices:
-        return redirect(url_for("index") + (return_to or ""))
+        return redirect(url_for("legacy_index") + (return_to or ""))
 
     try:
         urls = json.loads(urls_json)
     except json.JSONDecodeError:
-        return redirect(url_for("index") + (return_to or ""))
+        return redirect(url_for("legacy_index") + (return_to or ""))
 
     folder_path = Path(folder_path_str)
     if not folder_path.is_dir():
-        return redirect(url_for("index") + (return_to or ""))
+        return redirect(url_for("legacy_index") + (return_to or ""))
 
     drpid_val: Optional[int] = None
     try:

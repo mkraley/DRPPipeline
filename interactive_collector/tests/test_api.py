@@ -93,3 +93,75 @@ class TestApiScoreboard(unittest.TestCase):
         self.assertIn("urls", data)
         self.assertEqual(data["scoreboard"], [])
         self.assertEqual(data["urls"], [])
+
+
+class TestApiPipeline(unittest.TestCase):
+    """Tests for /api/pipeline/* endpoints."""
+
+    def setUp(self) -> None:
+        self.client = app.test_client()
+
+    def test_pipeline_modules_returns_list(self) -> None:
+        """GET /api/pipeline/modules returns module names in Orchestrator order, no noop."""
+        resp = self.client.get("/api/pipeline/modules")
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertIn("modules", data)
+        mods = data["modules"]
+        self.assertIsInstance(mods, list)
+        self.assertIn("sourcing", mods)
+        self.assertIn("interactive_collector", mods)
+        self.assertNotIn("noop", mods)
+
+    def test_pipeline_run_requires_module(self) -> None:
+        """POST /api/pipeline/run without module returns 400."""
+        resp = self.client.post(
+            "/api/pipeline/run",
+            json={},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        data = json.loads(resp.data)
+        self.assertIn("error", data)
+
+    def test_pipeline_run_rejects_unknown_module(self) -> None:
+        """POST /api/pipeline/run with unknown module returns 400."""
+        resp = self.client.post(
+            "/api/pipeline/run",
+            json={"module": "unknown_module"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        data = json.loads(resp.data)
+        self.assertIn("error", data)
+
+    def test_pipeline_run_interactive_collector_returns_400(self) -> None:
+        """POST /api/pipeline/run with interactive_collector returns 400 (use button instead)."""
+        resp = self.client.post(
+            "/api/pipeline/run",
+            json={"module": "interactive_collector"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        data = json.loads(resp.data)
+        self.assertIn("error", data)
+
+    def test_pipeline_run_noop_streams_output(self) -> None:
+        """POST /api/pipeline/run with noop streams log output."""
+        with patch("interactive_collector.api_pipeline.subprocess") as mock_subprocess:
+            proc = unittest.mock.MagicMock()
+            proc.stdout = ["2025-01-01 12:00:00 - INFO - DRP Pipeline starting...\n", "Done\n"]
+            proc.poll.return_value = 0
+            proc.wait.return_value = 0
+            mock_subprocess.Popen.return_value = proc
+            resp = self.client.post(
+                "/api/pipeline/run",
+                json={"module": "noop"},
+                content_type="application/json",
+            )
+            self.assertEqual(resp.status_code, 200)
+            body = resp.data.decode("utf-8")
+            self.assertIn("DRP Pipeline", body)
+            mock_subprocess.Popen.assert_called_once()
+            call_args = mock_subprocess.Popen.call_args[0][0]
+            self.assertIn("noop", call_args)

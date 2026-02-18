@@ -383,18 +383,20 @@ class StorageSQLLite:
         prereq_status: Optional[str],
         limit: Optional[int],
         start_row: Optional[int] = None,
+        min_drpid: Optional[int] = None,
     ) -> list[Dict[str, Any]]:
         """
-        List projects eligible for the next module: status == prereq_status and no errors.
+        List projects eligible for the next module: status == prereq_status.
 
         Order by DRPID ASC. Optionally limit the number of rows. Optionally skip
-        first (start_row - 1) rows when start_row is set (1-origin).
+        first (start_row - 1) rows when start_row is set (1-origin), or filter by
+        min_drpid (DRPID >= min_drpid). min_drpid takes precedence when both are set.
 
         Args:
             prereq_status: Required status (e.g. "sourcing" for collectors). None -> [].
             limit: Max rows to return. None = no limit.
             start_row: If set, skip first (start_row - 1) rows of the full table (1-origin).
-                   Row count is over all projects ORDER BY DRPID, not just eligible ones.
+            min_drpid: If set, only return projects with DRPID >= this value.
 
         Returns:
             List of full row dicts (all columns, including None for nulls).
@@ -403,7 +405,10 @@ class StorageSQLLite:
             return []
         params: list[Any] = [prereq_status]
         min_drpid_clause = ""
-        if start_row is not None and start_row > 1:
+        if min_drpid is not None:
+            min_drpid_clause = " AND DRPID >= ?"
+            params.append(min_drpid)
+        elif start_row is not None and start_row > 1:
             # Get DRPID at position start_row (1-origin) in full table
             subq = "SELECT DRPID FROM projects ORDER BY DRPID LIMIT 1 OFFSET ?"
             min_drpid_clause = " AND DRPID >= (" + subq + ")"

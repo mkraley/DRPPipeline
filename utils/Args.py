@@ -66,6 +66,7 @@ class Args(metaclass=ArgsMeta):
         "sourcing_url_column": "URL",
         "num_rows": None,  # None = unlimited; batch limit for orchestration
         "start_row": None,  # If set, skip first (start_row - 1) rows (1-origin); used when listing from DB
+        "start_drpid": None,  # If set, only projects with DRPID >= start_drpid (overrides start_row when set)
         "db_path": 'drp_pipeline.db',
         "storage_implementation": "StorageSQLLite",
         "base_output_dir": r"C:\Documents\DataRescue\DRPData",
@@ -164,6 +165,7 @@ class Args(metaclass=ArgsMeta):
             log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Set the logging level", case_sensitive=False),
             num_rows: Optional[int] = typer.Option(None, "--num-rows", "-n", help="Max projects or candidate URLs per batch; None = unlimited"),
             start_row: Optional[int] = typer.Option(None, "--start-row", help="Start at this 1-origin row (all rows, ORDER BY DRPID); skip earlier rows"),
+            start_drpid: Optional[int] = typer.Option(None, "--start-drpid", help="Only process projects with DRPID >= this value"),
             db_path: Optional[Path] = typer.Option(None, "--db-path", help="Path to SQLite database file"),
             storage: Optional[str] = typer.Option(None, "--storage", help="Storage implementation (e.g. StorageSQLLite)"),
             delete_all_db_entries: bool = typer.Option(False, "--delete-all-db-entries", help="Delete all database entries and reset auto-increment before proceeding"),
@@ -182,6 +184,8 @@ class Args(metaclass=ArgsMeta):
                 parsed_values["num_rows"] = num_rows
             if start_row is not None:
                 parsed_values["start_row"] = start_row
+            if start_drpid is not None:
+                parsed_values["start_drpid"] = start_drpid
             if db_path is not None:
                 parsed_values["db_path"] = db_path
             if storage is not None:

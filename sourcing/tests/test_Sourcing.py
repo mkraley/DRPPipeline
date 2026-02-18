@@ -63,4 +63,67 @@ class TestSourcing(unittest.TestCase):
         mock_fetcher_cls.assert_called_once()
         mock_fetcher.get_candidate_urls.assert_called_once_with(limit=10)
 
+    @patch("utils.url_utils.fetch_page_body", return_value=(200, "", "text/html", False))
+    @patch.object(Sourcing, "get_candidate_urls")
+    def test_run_creates_row_status_sourcing(self, mock_get: object, _mock_fetch: object) -> None:
+        """Test run creates record and sets status 'sourcing' when URL is good."""
+        mock_get.return_value = (
+            [{"url": "https://example.com/good", "office": "O", "agency": "A"}],
+            0,
+        )
+        self.sourcing.run(-1)
+        projects = self.storage.list_eligible_projects("sourcing", None)
+        self.assertEqual(len(projects), 1)
+        self.assertEqual(projects[0]["status"], "sourcing")
+        self.assertEqual(projects[0]["source_url"], "https://example.com/good")
+
+    @patch("utils.url_utils.fetch_page_body", return_value=(404, "", None, False))
+    @patch.object(Sourcing, "get_candidate_urls")
+    def test_run_creates_row_status_not_found(self, mock_get: object, _mock_fetch: object) -> None:
+        """Test run creates record and sets status 'not_found' when URL returns 404."""
+        mock_get.return_value = (
+            [{"url": "https://example.com/missing", "office": "O", "agency": "A"}],
+            0,
+        )
+        self.sourcing.run(-1)
+        record = self.storage.get(1)
+        self.assertIsNotNone(record)
+        self.assertEqual(record["status"], "not_found")
+        self.assertEqual(record["source_url"], "https://example.com/missing")
+
+    @patch("utils.Logger.Logger.error")
+    @patch.object(Sourcing, "get_candidate_urls")
+    def test_run_dupe_in_storage_logs_error_no_row(self, mock_get: object, mock_log_error: object) -> None:
+        """Test run does not create a row for duplicate URL; logs Error."""
+        self.storage.create_record("https://example.com/dup")
+        mock_get.return_value = (
+            [{"url": "https://example.com/dup", "office": "O", "agency": "A"}],
+            0,
+        )
+        self.sourcing.run(-1)
+        # Only one row (the pre-existing one); no second row created
+        record1 = self.storage.get(1)
+        self.assertEqual(record1["source_url"], "https://example.com/dup")
+        self.assertIsNone(self.storage.get(2))
+        mock_log_error.assert_called_once()
+        call_msg = mock_log_error.call_args[0][0]
+        self.assertIn("Duplicate source URL already in storage", call_msg)
+        self.assertIn("https://example.com/dup", call_msg)
+
+    @patch("utils.url_utils.fetch_page_body", side_effect=Exception("network error"))
+    @patch.object(Sourcing, "get_candidate_urls")
+    def test_run_creates_row_status_error_on_exception(
+        self, mock_get: object, _mock_fetch: object
+    ) -> None:
+        """Test run creates record and sets status 'Error' when fetch raises."""
+        mock_get.return_value = (
+            [{"url": "https://example.com/bad", "office": "O", "agency": "A"}],
+            0,
+        )
+        self.sourcing.run(-1)
+        record = self.storage.get(1)
+        self.assertIsNotNone(record)
+        self.assertEqual(record["status"], "Error")
+        self.assertIn("network error", record.get("errors", ""))
+
 
