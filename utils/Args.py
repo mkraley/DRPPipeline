@@ -65,6 +65,7 @@ class Args(metaclass=ArgsMeta):
             "https://docs.google.com/spreadsheets/d/1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY/edit?gid=101637367#gid=101637367"
         ),
         "sourcing_url_column": "URL",
+        "sourcing_fetch_timeout": 15,  # Seconds per URL when checking availability in sourcing; reduces delay from slow catalog.data.gov pages
         "num_rows": None,  # None = unlimited; batch limit for orchestration
         "start_row": None,  # If set, skip first (start_row - 1) rows (1-origin); used when listing from DB
         "start_drpid": None,  # If set, only projects with DRPID >= start_drpid (overrides start_row when set)

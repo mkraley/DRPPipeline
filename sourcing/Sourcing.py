@@ -7,13 +7,28 @@ records. Duplicate-in-storage is not created; an Error is logged. Other outcomes
 create a row with status: dupe_in_DL, not_found (URL 404 or equivalent), sourcing (good), or Error.
 """
 
-from typing import TYPE_CHECKING
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import TYPE_CHECKING, Any, List, Tuple
 
 from storage import Storage
 from .SpreadsheetCandidateFetcher import SpreadsheetCandidateFetcher
 
 if TYPE_CHECKING:
     from storage.StorageProtocol import StorageProtocol
+
+
+def _check_one(
+    item: Tuple[int, str, str, str], timeout: int
+) -> Tuple[int, str, str, str, int, str, Any, bool, Any]:
+    """Fetch URL and return (new_drpid, url, office, agency, status_code, body, content_type, is_logical_404, exception)."""
+    from utils.url_utils import fetch_page_body
+
+    new_drpid, url, office, agency = item
+    try:
+        status_code, body, content_type, is_logical_404 = fetch_page_body(url, timeout=timeout)
+        return (new_drpid, url, office, agency, status_code, body, content_type, is_logical_404, None)
+    except Exception as e:
+        return (new_drpid, url, office, agency, -1, "", None, False, e)
 
 
 class Sourcing:
@@ -40,19 +55,21 @@ class Sourcing:
         """
         from utils.Args import Args
         from utils.Logger import Logger
-        from utils.url_utils import fetch_page_body
         from duplicate_checking import DuplicateChecker
 
         num_rows = Args.num_rows
         rows, skipped_count = self.get_candidate_urls(limit=num_rows)
+        timeout = int(getattr(Args, "sourcing_fetch_timeout", 15) or 15)
+        workers = max(1, int(Args.max_workers or 1))
 
         successfully_added = 0
         dupes_in_storage = 0
         dupes_in_datalumos = 0
         not_found_count = 0
         error_count = 0
-        assigned_ids: list[int] = []
+        assigned_ids: List[int] = []
         checker = DuplicateChecker()
+        to_fetch: List[Tuple[int, str, str, str]] = []
 
         for row in rows:
             url = row["url"]
@@ -71,31 +88,42 @@ class Sourcing:
             if False:  # checker.exists_in_datalumos(url):
                 status = "dupe_in_DL"
                 dupes_in_datalumos += 1
-                update_fields = {"status": status, "office": office, "agency": agency}
-                Storage.update_record(new_drpid, update_fields)
+                Storage.update_record(new_drpid, {"status": status, "office": office, "agency": agency})
                 continue
 
-            # Check URL availability (404 or equivalent)
-            try:
-                status_code, _body, _content_type, _is_logical_404 = fetch_page_body(url)
-                if status_code == 404:
-                    status = "not_found"
-                    not_found_count += 1
-                    update_fields = {"status": status, "office": office, "agency": agency}
-                else:
-                    status = "sourcing"
-                    successfully_added += 1
-                    update_fields = {"status": status, "office": office, "agency": agency}
-                Storage.update_record(new_drpid, update_fields)
-            except Exception as e:
+            to_fetch.append((new_drpid, url, office, agency))
+
+        # Check URL availability (parallel or sequential) with shorter timeout to avoid long delays
+        results: List[Tuple[int, str, str, str, int, str, Any, bool, Any]] = []
+        if workers <= 1:
+            for item in to_fetch:
+                results.append(_check_one(item, timeout))
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = [executor.submit(_check_one, item, timeout) for item in to_fetch]
+                for future in as_completed(futures):
+                    results.append(future.result())
+
+        for result in results:
+            new_drpid, url, office, agency, status_code, _body, _ct, _logical_404, exc = result
+            if exc is not None:
                 error_count += 1
-                update_fields = {
-                    "status": "Error",
-                    "office": office,
-                    "agency": agency,
-                    "errors": str(e),
-                }
-                Storage.update_record(new_drpid, update_fields)
+                Storage.update_record(
+                    new_drpid,
+                    {"status": "Error", "office": office, "agency": agency, "errors": str(exc)},
+                )
+            elif status_code == 404:
+                not_found_count += 1
+                Storage.update_record(
+                    new_drpid,
+                    {"status": "not_found", "office": office, "agency": agency},
+                )
+            else:
+                successfully_added += 1
+                Storage.update_record(
+                    new_drpid,
+                    {"status": "sourcing", "office": office, "agency": agency},
+                )
 
         id_range_str = ""
         if assigned_ids:
