@@ -25,11 +25,8 @@ export default function App() {
   useLinkInterceptor();
   useHistorySync();
 
-  if (view === "main") {
-    return <MainPage onOpenCollector={() => setView("collector")} />;
-  }
-
   useEffect(() => {
+    if (view !== "collector") return;
     const splitter = splitterVRef.current;
     const leftCol = leftColRef.current;
     if (!splitter || !leftCol) return;
@@ -56,9 +53,10 @@ export default function App() {
     };
     splitter.addEventListener("mousedown", handleMouseDown);
     return () => splitter.removeEventListener("mousedown", handleMouseDown);
-  }, []);
+  }, [view]);
 
   useEffect(() => {
+    if (view !== "collector") return;
     const params = new URLSearchParams(window.location.search);
     const d = params.get("drpid");
     if (d) {
@@ -67,7 +65,7 @@ export default function App() {
     } else {
       loadFirstProject();
     }
-  }, [loadProject, loadFirstProject]);
+  }, [view, loadProject, loadFirstProject]);
 
   const onLoadDrpidSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
@@ -81,6 +79,10 @@ export default function App() {
     },
     [loadProject]
   );
+
+  if (view === "main") {
+    return <MainPage onOpenCollector={() => setView("collector")} />;
+  }
 
   return (
     <div className="app-shell">

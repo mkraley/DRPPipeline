@@ -43,6 +43,9 @@ htmlcov/
 # Logs
 *.log
 
+# Pipeline GUI stop signal (created when user clicks Stop)
+.drp_pipeline_stop
+
 # Database
 *.db*
 *.sqlite

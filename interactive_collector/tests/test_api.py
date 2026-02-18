@@ -146,6 +146,13 @@ class TestApiPipeline(unittest.TestCase):
         data = json.loads(resp.data)
         self.assertIn("error", data)
 
+    def test_pipeline_stop_returns_ok(self) -> None:
+        """POST /api/pipeline/stop returns 200 and ok: true."""
+        resp = self.client.post("/api/pipeline/stop")
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertEqual(data.get("ok"), True)
+
     def test_pipeline_run_noop_streams_output(self) -> None:
         """POST /api/pipeline/run with noop streams log output."""
         with patch("interactive_collector.api_pipeline.subprocess") as mock_subprocess:

@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 from utils.Args import Args
 from utils.Logger import Logger
 
-from orchestration.Orchestrator import Orchestrator
+from orchestration.Orchestrator import Orchestrator, _stop_requested
 
 
 class TestOrchestrator(unittest.TestCase):
@@ -27,6 +27,22 @@ class TestOrchestrator(unittest.TestCase):
     def tearDown(self) -> None:
         """Restore argv after each test."""
         sys.argv = self._original_argv
+
+    def test_stop_requested_false_when_no_stop_file(self) -> None:
+        """_stop_requested() returns False when Args has no stop_file or file does not exist."""
+        self.assertFalse(_stop_requested())
+        with patch.object(Args, "stop_file", str(Path("/nonexistent/drp_stop"))):
+            self.assertFalse(_stop_requested())
+
+    def test_stop_requested_true_when_file_exists(self) -> None:
+        """_stop_requested() returns True when Args.stop_file is set and file exists."""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".stop") as f:
+            stop_path = f.name
+        try:
+            with patch.object(Args, "stop_file", stop_path):
+                self.assertTrue(_stop_requested())
+        finally:
+            Path(stop_path).unlink(missing_ok=True)
 
     def test_run_unknown_module_raises(self) -> None:
         """Test run() with unknown module raises ValueError with valid modules listed."""

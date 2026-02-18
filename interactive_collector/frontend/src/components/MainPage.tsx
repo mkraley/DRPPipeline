@@ -111,6 +111,8 @@ export function MainPage({ onOpenCollector }: MainPageProps) {
     if (abortRef.current) {
       abortRef.current.abort();
     }
+    // Tell server to write stop file and terminate subprocess so work actually halts
+    fetch(`${API}/stop`, { method: "POST" }).catch(() => {});
   }, []);
 
   const clearLog = useCallback(() => setLogOutput(""), []);

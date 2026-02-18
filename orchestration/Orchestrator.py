@@ -110,6 +110,15 @@ def _find_module_class(class_name: str) -> type:
     )
 
 
+def _stop_requested() -> bool:
+    """Return True if the GUI requested stop (stop file exists)."""
+    stop_file = getattr(Args, "stop_file", None)
+    if not stop_file:
+        return False
+    path = Path(stop_file) if isinstance(stop_file, str) else stop_file
+    return path.exists()
+
+
 class Orchestrator:
     """
     Runs a single module (sourcing, collectors, etc.) on projects.
@@ -198,6 +207,9 @@ class Orchestrator:
             if max_workers <= 1:
                 # Single-threaded: reuse one instance
                 for proj in projects:
+                    if _stop_requested():
+                        Logger.info("Orchestrator stopped by user (stop file)")
+                        return
                     drpid = proj["DRPID"]
                     source_url = proj.get("source_url", "")
                     Logger.set_current_drpid(drpid)
@@ -216,6 +228,11 @@ class Orchestrator:
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     futures = {executor.submit(run_one, proj): proj for proj in projects}
                     for future in as_completed(futures):
+                        if _stop_requested():
+                            Logger.info("Orchestrator stopped by user (stop file)")
+                            # Shutdown cancels remaining futures
+                            executor.shutdown(wait=False, cancel_futures=True)
+                            return
                         proj = futures[future]
                         try:
                             future.result()

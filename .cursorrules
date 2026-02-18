@@ -23,6 +23,7 @@ When modifying or creating code, you MUST:
 - Modifying existing code → update existing tests
 - Adding new code → write new tests  
 - No code submission is complete without tests
+- Run all tests - all tests should pass. Fix any that do not pass.
 
 ---
 
