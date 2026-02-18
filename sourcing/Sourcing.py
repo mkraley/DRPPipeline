@@ -93,16 +93,28 @@ class Sourcing:
 
             to_fetch.append((new_drpid, url, office, agency))
 
+        total = len(to_fetch)
+        if total > 0:
+            Logger.info(
+                f"Sourcing: checking availability for {total} URLs (max_workers={workers}, timeout={timeout}s)"
+            )
+
         # Check URL availability (parallel or sequential) with shorter timeout to avoid long delays
         results: List[Tuple[int, str, str, str, int, str, Any, bool, Any]] = []
         if workers <= 1:
-            for item in to_fetch:
+            for i, item in enumerate(to_fetch, 1):
                 results.append(_check_one(item, timeout))
+                if total <= 20 or i % 10 == 0 or i == total:
+                    Logger.info(f"Sourcing progress: {i}/{total} URLs checked")
         else:
+            completed = 0
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 futures = [executor.submit(_check_one, item, timeout) for item in to_fetch]
                 for future in as_completed(futures):
                     results.append(future.result())
+                    completed += 1
+                    if total <= 20 or completed % 10 == 0 or completed == total:
+                        Logger.info(f"Sourcing progress: {completed}/{total} URLs checked")
 
         for result in results:
             new_drpid, url, office, agency, status_code, _body, _ct, _logical_404, exc = result

@@ -204,12 +204,14 @@ class Orchestrator:
                 finally:
                     Logger.clear_current_drpid()
 
+            n_projects = len(projects)
             if max_workers <= 1:
                 # Single-threaded: reuse one instance
-                for proj in projects:
+                for idx, proj in enumerate(projects, 1):
                     if _stop_requested():
                         Logger.info("Orchestrator stopped by user (stop file)")
                         return
+                    Logger.info(f"Orchestrator progress: {idx}/{n_projects} projects")
                     drpid = proj["DRPID"]
                     source_url = proj.get("source_url", "")
                     Logger.set_current_drpid(drpid)
@@ -227,12 +229,16 @@ class Orchestrator:
                 Logger.info(f"Orchestrator running with max_workers={max_workers}")
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     futures = {executor.submit(run_one, proj): proj for proj in projects}
+                    done = 0
                     for future in as_completed(futures):
                         if _stop_requested():
                             Logger.info("Orchestrator stopped by user (stop file)")
                             # Shutdown cancels remaining futures
                             executor.shutdown(wait=False, cancel_futures=True)
                             return
+                        done += 1
+                        if n_projects <= 20 or done % 10 == 0 or done == n_projects:
+                            Logger.info(f"Orchestrator progress: {done}/{n_projects} projects")
                         proj = futures[future]
                         try:
                             future.result()

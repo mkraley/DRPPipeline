@@ -104,6 +104,7 @@ def run_module() -> Any:
                 _STOP_FILE.unlink()
             env = os.environ.copy()
             env["DRP_STOP_FILE"] = str(_STOP_FILE)
+            env["PYTHONUNBUFFERED"] = "1"  # So log lines appear in main-page stream immediately
             proc = subprocess.Popen(
                 argv,
                 cwd=str(_PROJECT_ROOT),
