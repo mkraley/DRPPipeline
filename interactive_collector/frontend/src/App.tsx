@@ -12,16 +12,19 @@ import { SourcePane } from "./components/SourcePane";
 import { LinkedPane } from "./components/LinkedPane";
 import { SaveProgressModal } from "./components/SaveProgressModal";
 import { DownloadProgressModal } from "./components/DownloadProgressModal";
+import { NoLinksConfirmModal } from "./components/NoLinksConfirmModal";
 import { useCollectorStore } from "./store";
 import { useHistorySync } from "./useHistorySync";
 import { useLinkInterceptor } from "./useLinkInterceptor";
 
 export default function App() {
   const [view, setView] = useState<"main" | "collector">("main");
-  const { drpid, folderPath, loadProject, loadFirstProject, loadNext, save, loading } =
+  const { drpid, folderPath, loadProject, loadFirstProject, loadNext, save, setNoLinks, loading } =
     useCollectorStore();
   const leftColRef = useRef<HTMLDivElement>(null);
   const splitterVRef = useRef<HTMLDivElement>(null);
+  const splitterHRef = useRef<HTMLDivElement>(null);
+  const scoreboardRef = useRef<HTMLDivElement>(null);
   useLinkInterceptor();
   useHistorySync();
 
@@ -53,6 +56,36 @@ export default function App() {
     };
     splitter.addEventListener("mousedown", handleMouseDown);
     return () => splitter.removeEventListener("mousedown", handleMouseDown);
+  }, [view]);
+
+  useEffect(() => {
+    if (view !== "collector") return;
+    const splitterH = splitterHRef.current;
+    const scoreboardEl = scoreboardRef.current;
+    const leftCol = leftColRef.current;
+    if (!splitterH || !scoreboardEl || !leftCol) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const move = (e2: MouseEvent) => {
+        const r = leftCol!.getBoundingClientRect();
+        const h = Math.max(60, Math.min(r.height - 120, e2.clientY - r.top));
+        scoreboardEl!.style.height = `${h}px`;
+        scoreboardEl!.style.minHeight = `${h}px`;
+      };
+      const stop = () => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", stop);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+      document.body.style.cursor = getComputedStyle(splitterH).cursor;
+      document.body.style.userSelect = "none";
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", stop);
+    };
+    splitterH.addEventListener("mousedown", handleMouseDown);
+    return () => splitterH.removeEventListener("mousedown", handleMouseDown);
   }, [view]);
 
   useEffect(() => {
@@ -100,13 +133,13 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="top">
-        <button type="button" className="main-page-back-btn" onClick={() => setView("main")}>
+        <button type="button" className="btn-top" onClick={() => setView("main")}>
           Back to main
         </button>
         {drpid != null && (
           <>
             <span className="drpid">DRPID: {drpid}</span>
-            <button type="button" onClick={loadNext}>
+            <button type="button" className="btn-top" onClick={loadNext}>
               Next
             </button>
           </>
@@ -122,18 +155,42 @@ export default function App() {
             max={99999}
             className="top-input-drpid"
           />
-          <button type="submit">Load</button>
+          <button type="submit" className="btn-top">
+            Load
+          </button>
         </form>
         {folderPath && (
-          <button type="button" className="btn-save" onClick={save} disabled={loading}>
-            Save
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn-top"
+              title="No live links"
+              onClick={setNoLinks}
+            >
+              No Links
+            </button>
+            <button
+              type="button"
+              className="btn-top"
+              title="Save metadata to database"
+              onClick={save}
+              disabled={loading}
+            >
+              Save
+            </button>
+          </>
         )}
       </header>
       <div className="main">
         <div className="left-col" ref={leftColRef}>
-          <Scoreboard />
-          <div className="splitter splitter-h" title="Drag to resize scoreboard" />
+          <div ref={scoreboardRef} className="left-col-top">
+            <Scoreboard />
+          </div>
+          <div
+            ref={splitterHRef}
+            className="splitter splitter-h"
+            title="Drag to resize scoreboard"
+          />
           <MetadataForm />
         </div>
         <div className="splitter splitter-v" ref={splitterVRef} title="Drag to resize left column" />
@@ -152,6 +209,7 @@ export default function App() {
       </div>
       <SaveProgressModal />
       <DownloadProgressModal />
+      <NoLinksConfirmModal />
     </div>
   );
 }

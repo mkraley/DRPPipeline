@@ -20,12 +20,9 @@ function ScoreboardNodeItem({
   const isChecked = checkedIndices.has(node.idx);
   const isOk = node.status_label.includes("OK");
   const isDownload = node.is_download === true;
-  const originalSource = node.referrer === null;
 
-  // Checkbox logic: original source + OK, or OK non-dupe (dupes not checkable)
+  // Checkbox logic: OK non-dupe (dupes not checkable)
   const canCheck = isOk && !isDownload && !node.is_dupe;
-  const defaultChecked = (originalSource && isOk) || (isOk && !node.is_dupe);
-
   const handleChange = useCallback(() => {
     if (canCheck) setChecked(node.idx, !isChecked);
   }, [canCheck, node.idx, isChecked, setChecked]);
@@ -49,14 +46,14 @@ function ScoreboardNodeItem({
         <input
           type="checkbox"
           className="scoreboard-cb"
-          checked={isChecked || defaultChecked}
+          checked={isChecked}
           onChange={handleChange}
         />
       ) : (
         <span className="scoreboard-cb-spacer" aria-hidden="true" />
       ))}
       {isDownload ? (
-        <span className="scoreboard-row-content" title={node.url}>
+        <span className="scoreboard-row-content status-download" title={node.url}>
           {node.filename || displayShort}
         </span>
       ) : (
@@ -77,7 +74,7 @@ function ScoreboardNodeItem({
       )}
       <span
         className={`scoreboard-status ${
-          node.status_label.includes("404") ? "status-404" : node.is_dupe ? "status-dupe" : "status-ok"
+          isDownload ? "status-download" : node.status_label.includes("404") ? "status-404" : node.is_dupe ? "status-dupe" : "status-ok"
         }`}
       >
         ({statusDisplay})

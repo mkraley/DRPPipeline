@@ -67,6 +67,15 @@ body {
   flex-shrink: 0;
 }
 
+.left-col-top {
+  flex: 0 0 auto;
+  height: 200px;
+  min-height: 60px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .splitter {
   flex-shrink: 0;
   background: #e0e0e0;
@@ -147,6 +156,12 @@ body {
   min-height: 200px;
 }
 
+.left-col-top .scoreboard {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
 .scoreboard {
   flex: 0 0 auto;
   height: 200px;
@@ -156,13 +171,14 @@ body {
   font-size: 12px;
 }
 
-.scoreboard ul {
+.scoreboard > ul {
   list-style: none;
   margin: 0;
+  padding-left: 0;
 }
 
 .scoreboard ul.scoreboard-children {
-  padding-left: 16px;
+  padding-left: 12px;
   margin-top: 2px;
 }
 
@@ -219,6 +235,11 @@ body {
 .scoreboard .url-link.status-dupe,
 .scoreboard .status-dupe {
   color: #c60;
+}
+
+.scoreboard .url-link.status-download,
+.scoreboard .status-download {
+  color: #080;
 }
 
 .metadata-pane {
@@ -336,18 +357,38 @@ body {
   text-decoration: underline;
 }
 
+/* Unified collector header buttons */
+.btn-top {
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  background: #2c3e50;
+  color: #ecf0f1;
+  border: 1px solid #34495e;
+  border-radius: 4px;
+}
+
+.btn-top:hover:not(:disabled) {
+  background: #34495e;
+}
+
+.btn-top:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .btn-save {
-  background: #c00;
-  color: white;
-  border: none;
+  background: #2c3e50;
+  color: #ecf0f1;
+  border: 1px solid #34495e;
   padding: 4px 10px;
   cursor: pointer;
   font-size: 12px;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
-.btn-save:hover {
-  background: #a00;
+.btn-save:hover:not(:disabled) {
+  background: #34495e;
 }
 
 .btn-save:disabled {
@@ -357,17 +398,17 @@ body {
 
 .btn-download-binary {
   margin-left: 8px;
-  padding: 2px 8px;
+  padding: 4px 10px;
   font-size: 12px;
-  background: #06c;
-  color: white;
-  border: none;
-  border-radius: 3px;
+  background: #2c3e50;
+  color: #ecf0f1;
+  border: 1px solid #34495e;
+  border-radius: 4px;
   cursor: pointer;
 }
 
 .btn-download-binary:hover {
-  background: #05a;
+  background: #34495e;
 }
 
 .save-modal {

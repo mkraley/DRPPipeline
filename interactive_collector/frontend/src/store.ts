@@ -53,6 +53,7 @@ interface CollectorState {
   linkedBinaryReferrer: string | null;
   downloadProgress: string;
   downloadModalOpen: boolean;
+  noLinksModalOpen: boolean;
 }
 
 interface CollectorActions {
@@ -69,6 +70,8 @@ interface CollectorActions {
   downloadBinary: () => Promise<void>;
   closeDownloadModal: () => void;
   refreshScoreboard: () => Promise<void>;
+  setNoLinks: () => Promise<void>;
+  closeNoLinksModal: () => void;
 }
 
 const API = "/api";
@@ -134,6 +137,7 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
   linkedBinaryReferrer: null,
   downloadProgress: "",
   downloadModalOpen: false,
+  noLinksModalOpen: false,
 
   setDrpid: (v) => set({ drpid: v }),
 
@@ -228,7 +232,12 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
 
   loadLinked: async (url, referrer, fromScoreboard) => {
     const { sourceUrl, drpid } = get();
-    set({ loading: true, error: null });
+    const looksLikeBinary = /\.(pdf|zip|csv|xlsx?|docx?|pptx?|json|xml|rss)(\?|$)/i.test(url);
+    set({
+      loading: true,
+      error: null,
+      ...(looksLikeBinary ? { downloadModalOpen: true, downloadProgress: "Preparing download..." } : {}),
+    });
     try {
       const data = await fetchJson<{
         srcdoc: string | null;
@@ -267,14 +276,16 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
         linkedBinaryReferrer: isBinary ? referrer : null,
         loading: false,
         error: null,
+        downloadModalOpen: isBinary,
       });
-      if (isBinary && data.folder_path && drpid) {
+      if (isBinary) {
         get().downloadBinary();
       }
     } catch (e) {
       set({
         loading: false,
         error: e instanceof Error ? e.message : "Failed to load",
+        downloadModalOpen: false,
       });
     }
   },
@@ -352,6 +363,23 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
       // ignore
     }
   },
+
+  setNoLinks: async () => {
+    const { drpid } = get();
+    if (!drpid) return;
+    try {
+      await fetchJson<{ ok: boolean }>(`${API}/no-links`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ drpid }),
+      });
+      set({ noLinksModalOpen: true });
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Failed to set no links" });
+    }
+  },
+
+  closeNoLinksModal: () => set({ noLinksModalOpen: false }),
 
   downloadBinary: async () => {
     const { linkedBinaryUrl, linkedBinaryReferrer, drpid } = get();

@@ -209,6 +209,35 @@ def proxy_resource() -> Any:
     return Response(body, status=200, headers=headers, mimetype=content_type)
 
 
+@api_bp.route("/no-links", methods=["POST"])
+def no_links_route() -> Any:
+    """
+    Mark the current project (DRPID) as having no live links.
+
+    Expects JSON/form: {drpid}.
+    Updates Storage: status = 'no_links'.
+    """
+    if request.is_json:
+        data = request.get_json() or {}
+    else:
+        data = {"drpid": (request.form.get("drpid") or "").strip()}
+    drpid_val = data.get("drpid")
+    if not drpid_val:
+        return {"error": "drpid required"}, 400
+    try:
+        drpid = int(drpid_val)
+    except (ValueError, TypeError):
+        return {"error": "Invalid drpid"}, 400
+    from interactive_collector.api_projects import _ensure_storage
+    _ensure_storage()
+    from storage import Storage
+    try:
+        Storage.update_record(drpid, {"status": "no_links"})
+    except ValueError:
+        return {"error": "Project not found"}, 404
+    return {"ok": True}
+
+
 @api_bp.route("/scoreboard", methods=["GET"])
 def scoreboard_get() -> Any:
     """Return the current scoreboard tree."""
