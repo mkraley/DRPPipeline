@@ -30,7 +30,9 @@ function ScoreboardNodeItem({
     if (canCheck) setChecked(node.idx, !isChecked);
   }, [canCheck, node.idx, isChecked, setChecked]);
 
-  const urlShort = node.url.length > 80 ? node.url.slice(0, 80) + "..." : node.url;
+  const displayText = node.title || node.url;
+  const displayShort =
+    displayText.length > 80 ? displayText.slice(0, 80) + "..." : displayText;
   const statusDisplay = isDownload
     ? `${node.status_label} ${node.extension || ""}`.trim()
     : node.is_dupe
@@ -48,20 +50,22 @@ function ScoreboardNodeItem({
         />
       )}
       {isDownload ? (
-        <span className="url" title={node.url}>
-          {node.filename || urlShort}
+        <span className="scoreboard-row-content" title={node.url}>
+          {node.filename || displayShort}
         </span>
       ) : (
         <button
           type="button"
-          className="url-link"
+          className="url-link scoreboard-row-content"
           onClick={() => onLinkClick(node.url, node.referrer, true)}
           title={node.url}
         >
-          {urlShort}
+          {displayShort}
         </button>
       )}
-      <span className={node.status_label.includes("404") ? "status-404" : "status-ok"}>
+      <span
+        className={`scoreboard-status ${node.status_label.includes("404") ? "status-404" : "status-ok"}`}
+      >
         ({statusDisplay})
       </span>
       {node.children && node.children.length > 0 && (
@@ -81,7 +85,7 @@ function ScoreboardNodeItem({
 }
 
 export function Scoreboard() {
-  const { scoreboard, folderPath, sourceUrl, loadLinked, save, loading } = useCollectorStore();
+  const { scoreboard, sourceUrl, loadLinked } = useCollectorStore();
 
   const onLinkClick = useCallback(
     (url: string, referrer: string | null, fromScoreboard: boolean) => {
@@ -90,20 +94,9 @@ export function Scoreboard() {
     [loadLinked]
   );
 
-  const onSave = useCallback(() => {
-    save();
-  }, [save]);
-
   return (
     <div className="scoreboard">
-      <h3>
-        Scoreboard
-        {folderPath && (
-          <button type="button" className="btn-save" onClick={onSave} disabled={loading}>
-            Save
-          </button>
-        )}
-      </h3>
+      <h3>Scoreboard</h3>
       {scoreboard.length === 0 ? (
         <p>
           <em>No pages yet.</em>

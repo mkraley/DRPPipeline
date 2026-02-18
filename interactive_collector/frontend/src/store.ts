@@ -16,6 +16,7 @@ export interface ScoreboardNode {
   is_download?: boolean;
   filename?: string;
   extension?: string;
+  title?: string;
 }
 
 export interface Metadata {
@@ -63,6 +64,7 @@ interface CollectorActions {
   save: () => Promise<void>;
   closeSaveModal: () => void;
   loadProject: (drpid: number) => Promise<void>;
+  loadFirstProject: () => Promise<void>;
   loadNext: () => Promise<void>;
   downloadBinary: () => Promise<void>;
   closeDownloadModal: () => void;
@@ -154,6 +156,10 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
         body_message: string | null;
         status_label: string;
         h1_text: string;
+        extracted_title?: string;
+        extracted_agency?: string;
+        extracted_office?: string;
+        extracted_keywords?: string;
         scoreboard: ScoreboardNode[];
         scoreboard_urls: string[];
         folder_path: string | null;
@@ -179,9 +185,17 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
             time_end: String(proj.time_end ?? ""),
             download_date: String(proj.download_date ?? ""),
           };
-          if (data.h1_text && !meta.title) meta.title = data.h1_text;
+          if (!meta.title) meta.title = data.extracted_title || data.h1_text || "";
+          if (!meta.agency) meta.agency = data.extracted_agency || "";
+          if (!meta.office) meta.office = data.extracted_office || "";
+          if (!meta.keywords) meta.keywords = data.extracted_keywords || "";
+          if (!meta.download_date) meta.download_date = new Date().toISOString().slice(0, 10);
         } catch {
-          if (data.h1_text && !meta.title) meta = { ...meta, title: data.h1_text };
+          meta = { ...meta, title: data.extracted_title || data.h1_text || "" };
+          if (!meta.agency) meta.agency = data.extracted_agency || "";
+          if (!meta.office) meta.office = data.extracted_office || "";
+          if (!meta.keywords) meta.keywords = data.extracted_keywords || "";
+          if (!meta.download_date) meta.download_date = new Date().toISOString().slice(0, 10);
         }
       }
       set({
@@ -407,6 +421,17 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
     const proj = await fetchJson<{ source_url?: string }>(`${API}/projects/${drpid}`);
     if (proj.source_url) {
       await get().loadSource(proj.source_url, drpid);
+    }
+  },
+
+  loadFirstProject: async () => {
+    try {
+      const proj = await fetchJson<{ source_url?: string; DRPID?: number }>(`${API}/projects/first`);
+      if (proj.source_url && proj.DRPID != null) {
+        await get().loadSource(proj.source_url, proj.DRPID);
+      }
+    } catch {
+      // No eligible project (404) - leave state empty
     }
   },
 

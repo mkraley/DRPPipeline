@@ -23,6 +23,8 @@ function normalizeKeywords(value: string): string {
 export function MetadataForm() {
   const { drpid, metadata, setMetadata } = useCollectorStore();
   const summaryEditorRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+  const titleResizerRef = useRef<HTMLDivElement>(null);
 
   // Restore draft from sessionStorage when drpid changes
   useEffect(() => {
@@ -37,6 +39,36 @@ export function MetadataForm() {
       /* ignore */
     }
   }, [drpid, setMetadata]);
+
+  // Title textarea resize handle
+  useEffect(() => {
+    const grip = titleResizerRef.current;
+    const target = titleRef.current;
+    if (!grip || !target) return;
+    const minH = 40;
+    const handleMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const startY = e.clientY;
+      const startH = target.offsetHeight;
+      const move = (e2: MouseEvent) => {
+        const dy = e2.clientY - startY;
+        target.style.height = `${Math.max(minH, startH + dy)}px`;
+      };
+      const stop = () => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", stop);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+      document.body.style.cursor = "nwse-resize";
+      document.body.style.userSelect = "none";
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", stop);
+    };
+    grip.addEventListener("mousedown", handleMouseDown);
+    return () => grip.removeEventListener("mousedown", handleMouseDown);
+  }, []);
 
   // Sync summary editor innerHTML when metadata.summary changes externally
   useEffect(() => {
@@ -110,13 +142,22 @@ export function MetadataForm() {
     <div className="metadata-pane">
       <h3>Metadata</h3>
       <label htmlFor="metadata-title">Title</label>
-      <input
-        type="text"
-        id="metadata-title"
-        name="metadata_title"
-        value={metadata.title}
-        onChange={handleChange}
-      />
+      <div className="metadata-title-wrap resizer-wrap">
+        <textarea
+          id="metadata-title"
+          name="metadata_title"
+          value={metadata.title}
+          onChange={handleChange}
+          rows={2}
+          ref={titleRef}
+        />
+        <div
+          className="triangle-resizer"
+          ref={titleResizerRef}
+          title="Drag to resize"
+          aria-label="Resize"
+        />
+      </div>
       <label htmlFor="metadata-summary-editor">Description</label>
       <div className="metadata-richtext-wrap">
         <div className="metadata-richtext-toolbar" aria-label="Formatting">

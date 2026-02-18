@@ -152,10 +152,11 @@ def load_source_route() -> Any:
 
     app_root = request.url_root.rstrip("/") or request.host_url.rstrip("/")
     clear_scoreboard()
-    srcdoc, body_message, status_label, h1_text = prepare_page_content(
+    srcdoc, body_message, status_label, h1_text, extracted_metadata = prepare_page_content(
         url, url, drpid, for_spa=True
     )
-    add_to_scoreboard(url, None, status_label)
+    title = extracted_metadata.get("title", "").strip() or h1_text.strip()
+    add_to_scoreboard(url, None, status_label, title or None)
 
     folder_path = None
     if drpid:
@@ -171,6 +172,10 @@ def load_source_route() -> Any:
         "body_message": body_message,
         "status_label": status_label,
         "h1_text": h1_text,
+        "extracted_title": extracted_metadata.get("title", ""),
+        "extracted_agency": extracted_metadata.get("agency", ""),
+        "extracted_office": extracted_metadata.get("office", ""),
+        "extracted_keywords": extracted_metadata.get("keywords", ""),
         "scoreboard": get_scoreboard_tree(),
         "scoreboard_urls": get_scoreboard_urls(),
         "folder_path": folder_path,

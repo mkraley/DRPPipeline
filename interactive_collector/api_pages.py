@@ -90,6 +90,69 @@ def _h1_from_html(html_body: Any) -> str:
     return (inner or "").strip()
 
 
+def _strip_html_tags(text: str) -> str:
+    """Remove HTML tags from text and normalize whitespace."""
+    out = re.sub(r"<[^>]+>", "", text)
+    return " ".join((out or "").split())
+
+
+def _extract_metadata_from_html(html_body: Any) -> dict[str, str]:
+    """
+    Extract metadata from page HTML for preloading.
+    Returns dict with title, agency, office, keywords (empty string if not found).
+    - title: h1 with itemprop="name"
+    - agency: section#organization-info h1.heading
+    - office: a with title="publisher" (link text)
+    - keywords: text content of section.tags, semicolon delimited
+    """
+    result: dict[str, str] = {"title": "", "agency": "", "office": "", "keywords": ""}
+    if isinstance(html_body, bytes):
+        html_body = html_body.decode("utf-8", errors="replace")
+    body = (html_body or "").strip()
+    if not body:
+        return result
+    # title: h1 with itemprop="name"
+    m = re.search(
+        r'<h1[^>]*itemprop\s*=\s*["\']name["\'][^>]*>(.*?)</h1>',
+        body,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if m:
+        result["title"] = _strip_html_tags(m.group(1))
+    # agency: section#organization-info, then h1.heading
+    m = re.search(
+        r'<section[^>]*id\s*=\s*["\']organization-info["\'][^>]*>.*?<h1[^>]*class\s*=\s*["\'][^"\']*\bheading\b[^"\']*["\'][^>]*>(.*?)</h1>',
+        body,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if m:
+        result["agency"] = _strip_html_tags(m.group(1))
+    # office: a with title="publisher"
+    m = re.search(
+        r'<a[^>]*title\s*=\s*["\']publisher["\'][^>]*>(.*?)</a>',
+        body,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if m:
+        result["office"] = _strip_html_tags(m.group(1))
+    # keywords: section.tags text content, semicolon delimited
+    # Replace space with "; " only if no semicolons already present
+    m = re.search(
+        r'<section[^>]*class\s*=\s*["\'][^"\']*\btags\b[^"\']*["\'][^>]*>(.*?)</section>',
+        body,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if m:
+        raw = _strip_html_tags(m.group(1))
+        if ";" in raw:
+            parts = [p.strip() for p in raw.split(";") if p.strip()]
+            result["keywords"] = "; ".join(parts)
+        else:
+            parts = [p.strip() for p in raw.split() if p.strip()]
+            result["keywords"] = "; ".join(parts)
+    return result
+
+
 def _status_label(status_code: int, is_logical_404: bool) -> str:
     """Return human-readable status for display."""
     if status_code == 404:
@@ -135,9 +198,9 @@ def prepare_page_content(
     source_url: str,
     drpid: Optional[str] = None,
     for_spa: bool = True,
-) -> tuple[Optional[str], Optional[str], str, str]:
+) -> tuple[Optional[str], Optional[str], str, str, dict[str, str]]:
     """
-    Fetch URL, inject base, and link interceptor; return (srcdoc, message, status, h1).
+    Fetch URL, inject base, and link interceptor; return (srcdoc, message, status, h1, extracted).
 
     Args:
         url_param: URL to fetch.
@@ -146,27 +209,29 @@ def prepare_page_content(
         for_spa: If True, inject link interceptor for SPA mode.
 
     Returns:
-        (srcdoc, body_message, status_label, h1_text)
+        (srcdoc, body_message, status_label, h1_text, extracted_metadata)
         - srcdoc: HTML for iframe srcdoc, or None if binary/unusable.
         - body_message: Error/notice string if srcdoc is None.
         - status_label: "OK", "404", etc.
         - h1_text: First <h1> text.
+        - extracted_metadata: dict with title, agency, office from page HTML.
     """
     status_code, body, content_type, is_logical_404 = fetch_page_body(url_param)
     status_label = _status_label(status_code, is_logical_404)
     h1_text = _h1_from_html(body or "") if body else ""
+    extracted = _extract_metadata_from_html(body) if body else {"title": "", "agency": "", "office": "", "keywords": ""}
 
     if not _is_displayable_text(content_type) and content_type:
-        return None, f"Binary content ({html.escape(content_type)}). Not displayed.", status_label, ""
+        return None, f"Binary content ({html.escape(content_type)}). Not displayed.", status_label, "", extracted
     if (body or "").strip() == "" and _is_displayable_text(content_type):
-        return None, "Content could not be displayed (possibly binary or wrong encoding).", status_label, ""
+        return None, "Content could not be displayed (possibly binary or wrong encoding).", status_label, "", extracted
 
     body_with_base = _inject_base(body or "", url_param)
     if for_spa:
         body_final = _inject_link_interceptor(body_with_base, url_param)
     else:
         body_final = body_with_base
-    return body_final, None, status_label, h1_text
+    return body_final, None, status_label, h1_text, extracted
 
 
 def load_page(
@@ -212,7 +277,7 @@ def load_page(
             linked_url_for_fetch = resolved
             linked_display_url = resolved
 
-    srcdoc, body_message, status_label, _ = prepare_page_content(
+    srcdoc, body_message, status_label, h1_text, extracted = prepare_page_content(
         linked_url_for_fetch, source_url, drpid, for_spa=True
     )
     linked_is_binary = srcdoc is None and body_message and "Binary content" in (body_message or "")
@@ -223,7 +288,8 @@ def load_page(
         add_to_scoreboard(source_url, None, "OK")  # Assume OK; could fetch to verify
 
     if not from_scoreboard and not linked_is_binary:
-        add_to_scoreboard(linked_url_for_fetch, referrer or source_url, status_label)
+        title = (extracted.get("title", "") or h1_text or "").strip() or None
+        add_to_scoreboard(linked_url_for_fetch, referrer or source_url, status_label, title)
 
     # Ensure folder for drpid when we have one.
     display_drpid = drpid
@@ -237,7 +303,7 @@ def load_page(
     # When binary (PDF, ZIP, etc.), show referrer page in Linked pane instead of raw binary.
     linked_srcdoc_for_display = srcdoc
     if linked_is_binary and referrer and is_valid_url(referrer):
-        ref_srcdoc, _, _, _ = prepare_page_content(
+        ref_srcdoc, _, _, _, _ = prepare_page_content(
             referrer, source_url, drpid, for_spa=True
         )
         if ref_srcdoc:
@@ -246,7 +312,7 @@ def load_page(
     elif linked_is_binary:
         # Show source in linked pane when binary and no valid referrer.
         if source_url and is_valid_url(source_url):
-            ref_srcdoc, _, _, _ = prepare_page_content(
+            ref_srcdoc, _, _, _, _ = prepare_page_content(
                 source_url, source_url, drpid, for_spa=True
             )
             if ref_srcdoc:

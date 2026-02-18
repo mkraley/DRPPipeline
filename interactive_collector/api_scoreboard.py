@@ -11,7 +11,12 @@ from typing import Any, Dict, List, Optional
 from interactive_collector.collector_state import get_scoreboard
 
 
-def add_to_scoreboard(url: str, referrer: Optional[str], status_label: str) -> None:
+def add_to_scoreboard(
+    url: str,
+    referrer: Optional[str],
+    status_label: str,
+    title: Optional[str] = None,
+) -> None:
     """
     Append a URL to the in-memory scoreboard.
 
@@ -22,11 +27,18 @@ def add_to_scoreboard(url: str, referrer: Optional[str], status_label: str) -> N
         url: The page URL.
         referrer: URL of the page that linked to this one (None for root).
         status_label: "OK", "404", etc.
+        title: Optional page title for display.
     """
     board = get_scoreboard()
     existing_urls = {n["url"] for n in board}
     is_dupe = url in existing_urls
-    board.append({"url": url, "referrer": referrer, "status_label": status_label, "is_dupe": is_dupe})
+    board.append({
+        "url": url,
+        "referrer": referrer,
+        "status_label": status_label,
+        "is_dupe": is_dupe,
+        "title": (title or "").strip() or None,
+    })
 
 
 def add_download(
@@ -88,6 +100,7 @@ def get_scoreboard_tree() -> List[Dict[str, Any]]:
             "file_size": n.get("file_size", 0),
             "extension": n.get("extension", ""),
             "filename": n.get("filename", ""),
+            "title": n.get("title") or None,
         }
         for i, n in enumerate(board)
     ]

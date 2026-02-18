@@ -20,16 +20,29 @@ body {
   padding: 8px;
   background: #eee;
   border-bottom: 1px solid #ccc;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
 }
 
 .top .drpid {
   font-weight: bold;
-  margin-right: 4px;
 }
 
-.top .top-sep {
-  margin: 0 8px;
-  color: #999;
+.top .top-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.top .top-form label {
+  margin: 0;
+}
+
+.top-input-drpid {
+  width: 4.5em;
+  min-width: 4.5em;
 }
 
 .top input[type="url"] {
@@ -134,7 +147,28 @@ body {
 
 .scoreboard li {
   margin: 4px 0;
-  word-break: break-all;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.scoreboard li .scoreboard-cb {
+  flex-shrink: 0;
+}
+
+.scoreboard li .scoreboard-row-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.scoreboard li .scoreboard-status {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .metadata-pane {
@@ -159,6 +193,34 @@ body {
   padding: 4px;
   font-family: inherit;
   font-size: inherit;
+}
+
+.metadata-title-wrap.resizer-wrap,
+.metadata-keywords-wrap.resizer-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.metadata-title-wrap textarea {
+  resize: none;
+  min-height: 2.5em;
+}
+
+.triangle-resizer {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-top: 8px solid #888;
+  cursor: nwse-resize;
+  z-index: 1;
+}
+
+.triangle-resizer:hover {
+  border-top-color: #555;
 }
 
 .metadata-richtext-wrap {
@@ -232,7 +294,6 @@ body {
   cursor: pointer;
   font-size: 12px;
   border-radius: 3px;
-  margin-left: 8px;
 }
 
 .btn-save:hover {
