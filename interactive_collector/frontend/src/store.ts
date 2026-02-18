@@ -253,11 +253,12 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
       });
       const checked = defaultCheckedIndices(data.scoreboard, sourceUrl);
       const isBinary = Boolean(data.is_binary && data.linked_binary_url);
+      const nextScoreboard = Array.isArray(data.scoreboard) ? [...data.scoreboard] : data.scoreboard ?? [];
       set({
         linkedUrl: data.linked_display_url,
         linkedSrcdoc: data.srcdoc,
         linkedMessage: data.body_message,
-        scoreboard: data.scoreboard,
+        scoreboard: nextScoreboard,
         scoreboardUrls: data.scoreboard_urls,
         folderPath: data.folder_path ?? get().folderPath,
         checkedIndices: checked,

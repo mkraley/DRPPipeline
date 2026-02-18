@@ -22,15 +22,18 @@ function ScoreboardNodeItem({
   const isDownload = node.is_download === true;
   const originalSource = node.referrer === null;
 
-  // Checkbox logic: original source + OK, or OK non-dupe (except when binary)
-  const canCheck = isOk && !isDownload;
+  // Checkbox logic: original source + OK, or OK non-dupe (dupes not checkable)
+  const canCheck = isOk && !isDownload && !node.is_dupe;
   const defaultChecked = (originalSource && isOk) || (isOk && !node.is_dupe);
 
   const handleChange = useCallback(() => {
     if (canCheck) setChecked(node.idx, !isChecked);
   }, [canCheck, node.idx, isChecked, setChecked]);
 
-  const displayText = node.title || node.url;
+  const displayText =
+    (node.title && typeof node.title === "string" && node.title.trim())
+      ? node.title.trim()
+      : (node.url || "(no url)");
   const displayShort =
     displayText.length > 80 ? displayText.slice(0, 80) + "..." : displayText;
   const statusDisplay = isDownload
@@ -41,14 +44,17 @@ function ScoreboardNodeItem({
 
   return (
     <li>
-      {!isDownload && canCheck && (
+      <div className="scoreboard-row">
+      {(canCheck ? (
         <input
           type="checkbox"
           className="scoreboard-cb"
           checked={isChecked || defaultChecked}
           onChange={handleChange}
         />
-      )}
+      ) : (
+        <span className="scoreboard-cb-spacer" aria-hidden="true" />
+      ))}
       {isDownload ? (
         <span className="scoreboard-row-content" title={node.url}>
           {node.filename || displayShort}
@@ -56,7 +62,13 @@ function ScoreboardNodeItem({
       ) : (
         <button
           type="button"
-          className="url-link scoreboard-row-content"
+          className={`url-link scoreboard-row-content ${
+            node.status_label.includes("404")
+              ? "status-404"
+              : node.is_dupe
+                ? "status-dupe"
+                : "status-ok"
+          }`}
           onClick={() => onLinkClick(node.url, node.referrer, true)}
           title={node.url}
         >
@@ -64,12 +76,15 @@ function ScoreboardNodeItem({
         </button>
       )}
       <span
-        className={`scoreboard-status ${node.status_label.includes("404") ? "status-404" : "status-ok"}`}
+        className={`scoreboard-status ${
+          node.status_label.includes("404") ? "status-404" : node.is_dupe ? "status-dupe" : "status-ok"
+        }`}
       >
         ({statusDisplay})
       </span>
+      </div>
       {node.children && node.children.length > 0 && (
-        <ul>
+        <ul className="scoreboard-children">
           {node.children.map((c) => (
             <ScoreboardNodeItem
               key={c.idx}

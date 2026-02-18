@@ -80,8 +80,21 @@ export default function App() {
     [loadProject]
   );
 
+  const onOpenCollector = useCallback((initialDrpid?: number) => {
+    if (initialDrpid != null && !isNaN(initialDrpid)) {
+      const params = new URLSearchParams(window.location.search);
+      params.set("drpid", String(initialDrpid));
+      window.history.replaceState(
+        { drpid: initialDrpid },
+        "",
+        `${window.location.pathname}?${params.toString()}`
+      );
+    }
+    setView("collector");
+  }, []);
+
   if (view === "main") {
-    return <MainPage onOpenCollector={() => setView("collector")} />;
+    return <MainPage onOpenCollector={onOpenCollector} />;
   }
 
   return (

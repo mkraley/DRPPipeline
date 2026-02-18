@@ -10,7 +10,7 @@ const API = "/api/pipeline";
 const LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"] as const;
 
 interface MainPageProps {
-  onOpenCollector: () => void;
+  onOpenCollector: (initialDrpid?: number) => void;
 }
 
 export function MainPage({ onOpenCollector }: MainPageProps) {
@@ -39,7 +39,9 @@ export function MainPage({ onOpenCollector }: MainPageProps) {
   const runModule = useCallback(
     async (module: string) => {
       if (module === "interactive_collector") {
-        onOpenCollector();
+        const start = startDrpid.trim();
+        const id = start ? parseInt(start, 10) : NaN;
+        onOpenCollector(!isNaN(id) ? id : undefined);
         return;
       }
       setRunning(true);
@@ -130,7 +132,7 @@ export function MainPage({ onOpenCollector }: MainPageProps) {
               id="start_drpid"
               type="number"
               min={1}
-              placeholder="1"
+              placeholder=""
               value={startDrpid}
               onChange={(e) => setStartDrpid(e.target.value)}
               disabled={running}
