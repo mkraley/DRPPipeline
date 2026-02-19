@@ -1,18 +1,32 @@
 /**
  * SourcePane - Iframe showing the original source page.
  *
- * Links are intercepted via postMessage; clicks load in the Linked pane
- * without full page reload.
+ * Uses srcdoc with link interceptor; clicks load in the Linked pane.
+ * Socrata/datadiscovery block iframe embedding, so we always use srcdoc.
  */
 import { useCollectorStore } from "../store";
 
 export function SourcePane() {
   const { sourceUrl, sourceSrcdoc, sourceMessage } = useCollectorStore();
 
+  const openInNewTab = () => {
+    if (sourceUrl && /^https?:\/\//.test(sourceUrl)) window.open(sourceUrl, "_blank", "noopener,noreferrer");
+  };
+
   return (
     <div className="pane source-pane">
       <div className="pane-header" title={sourceUrl}>
         Source: {sourceUrl || "—"}
+        {sourceUrl && (
+          <button
+            type="button"
+            className="btn-open-external"
+            onClick={openInNewTab}
+            title="Open in new tab"
+          >
+            Open
+          </button>
+        )}
       </div>
       {sourceSrcdoc ? (
         <iframe

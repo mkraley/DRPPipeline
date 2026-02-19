@@ -76,24 +76,49 @@ interface CollectorActions {
 
 const API = "/api";
 
-/** Compute default-checked indices: original source + OK, or OK non-dupes. */
-function defaultCheckedIndices(scoreboard: ScoreboardNode[], originalSourceUrl: string): Set<number> {
+function walkScoreboard(nodes: ScoreboardNode[]): ScoreboardNode[] {
   const flat: ScoreboardNode[] = [];
-  function walk(nodes: ScoreboardNode[]) {
-    for (const n of nodes) {
-      flat.push(n);
-      if (n.children?.length) walk(n.children);
+  function walk(n: ScoreboardNode[]) {
+    for (const node of n) {
+      flat.push(node);
+      if (node.children?.length) walk(node.children);
     }
   }
-  walk(scoreboard);
+  walk(nodes);
+  return flat;
+}
+
+/** Compute default-checked indices: original source + OK, or OK non-dupes. */
+function defaultCheckedIndices(scoreboard: ScoreboardNode[], originalSourceUrl: string): Set<number> {
   const set = new Set<number>();
-  for (const n of flat) {
+  for (const n of walkScoreboard(scoreboard)) {
     if (n.is_download) continue;
     const isOk = n.status_label.includes("OK");
     const baseChecked = (n.url === originalSourceUrl && isOk) || (isOk && !n.is_dupe);
     if (baseChecked) set.add(n.idx);
   }
   return set;
+}
+
+/** Merge checkedIndices: preserve user choices for existing nodes, add defaults for new nodes only. */
+function mergeCheckedIndices(
+  prevChecked: Set<number>,
+  prevScoreboard: ScoreboardNode[],
+  nextScoreboard: ScoreboardNode[],
+  sourceUrl: string
+): Set<number> {
+  const prevIndices = new Set(walkScoreboard(prevScoreboard).map((n) => n.idx));
+  const nextIndices = new Set(walkScoreboard(nextScoreboard).map((n) => n.idx));
+  const defaults = defaultCheckedIndices(nextScoreboard, sourceUrl);
+  const merged = new Set<number>();
+  for (const idx of nextIndices) {
+    if (prevIndices.has(idx)) {
+      if (prevChecked.has(idx)) merged.add(idx);
+    } else if (defaults.has(idx)) {
+      merged.add(idx);
+    }
+  }
+  return merged;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -232,6 +257,7 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
 
   loadLinked: async (url, referrer, fromScoreboard) => {
     const { sourceUrl, drpid } = get();
+    const effectiveSourceUrl = sourceUrl || url;
     const looksLikeBinary = /\.(pdf|zip|csv|xlsx?|docx?|pptx?|json|xml|rss)(\?|$)/i.test(url);
     set({
       loading: true,
@@ -255,15 +281,27 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
         body: JSON.stringify({
           url,
           referrer,
-          source_url: sourceUrl,
+          source_url: effectiveSourceUrl,
           drpid,
           from_scoreboard: fromScoreboard,
         }),
       });
-      const checked = defaultCheckedIndices(data.scoreboard, sourceUrl);
       const isBinary = Boolean(data.is_binary && data.linked_binary_url);
       const nextScoreboard = Array.isArray(data.scoreboard) ? [...data.scoreboard] : data.scoreboard ?? [];
+      const prev = get();
+      const checked = fromScoreboard
+        ? prev.checkedIndices
+        : mergeCheckedIndices(
+            prev.checkedIndices,
+            prev.scoreboard,
+            nextScoreboard,
+            effectiveSourceUrl
+          );
+      const hadNoSource = !get().sourceUrl;
       set({
+        ...(hadNoSource && effectiveSourceUrl === url
+          ? { sourceUrl: url, sourceSrcdoc: data.srcdoc, sourceMessage: null }
+          : {}),
         linkedUrl: data.linked_display_url,
         linkedSrcdoc: data.srcdoc,
         linkedMessage: data.body_message,
@@ -342,8 +380,14 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
         }
       }
     } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed";
+      const isNetworkError =
+        /network|failed to fetch|load failed|connection|timeout/i.test(msg) ||
+        (e instanceof TypeError && msg.toLowerCase().includes("fetch"));
       set({
-        saveProgress: `Error: ${e instanceof Error ? e.message : "Failed"}`,
+        saveProgress: isNetworkError
+          ? "Connection lost. PDF conversion can take a long time—the server or network may have timed out. Check the terminal for details; try saving fewer pages at once."
+          : `Error: ${msg}`,
         saveModalOpen: true,
       });
     }

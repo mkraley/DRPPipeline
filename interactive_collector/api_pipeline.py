@@ -2,6 +2,7 @@
 Flask API for running pipeline modules from the SPA main page.
 
 Exposes: list modules, run a module (subprocess with streamed log output), stop running module.
+Progress is streamed to the client and echoed to stderr so it appears in the Flask terminal.
 """
 
 import os
@@ -100,8 +101,11 @@ def run_module() -> Any:
         proc: Optional[subprocess.Popen[str]] = None
         try:
             # Remove stop file from any previous run; pass path to subprocess so orchestrator can check it
-            if _STOP_FILE.exists():
-                _STOP_FILE.unlink()
+            try:
+                if _STOP_FILE.exists():
+                    _STOP_FILE.unlink()
+            except OSError:
+                pass
             env = os.environ.copy()
             env["DRP_STOP_FILE"] = str(_STOP_FILE)
             env["PYTHONUNBUFFERED"] = "1"  # So log lines appear in main-page stream immediately
@@ -119,10 +123,15 @@ def run_module() -> Any:
             _current_proc = proc
             assert proc.stdout is not None
             for line in proc.stdout:
+                sys.stderr.write(line)
+                sys.stderr.flush()
                 yield line
             proc.wait()
         except Exception as e:
-            yield f"\nPipeline run error: {e}\n"
+            line = f"\nPipeline run error: {e}\n"
+            sys.stderr.write(line)
+            sys.stderr.flush()
+            yield line
         finally:
             _current_proc = None
             if _STOP_FILE.exists():

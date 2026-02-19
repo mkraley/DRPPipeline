@@ -155,12 +155,16 @@ class TestApiPipeline(unittest.TestCase):
 
     def test_pipeline_run_noop_streams_output(self) -> None:
         """POST /api/pipeline/run with noop streams log output."""
-        with patch("interactive_collector.api_pipeline.subprocess") as mock_subprocess:
-            proc = unittest.mock.MagicMock()
-            proc.stdout = ["2025-01-01 12:00:00 - INFO - DRP Pipeline starting...\n", "Done\n"]
-            proc.poll.return_value = 0
-            proc.wait.return_value = 0
-            mock_subprocess.Popen.return_value = proc
+        proc = unittest.mock.MagicMock()
+        proc.stdout = iter(
+            ["2025-01-01 12:00:00 - INFO - DRP Pipeline starting...\n", "Done\n"]
+        )
+        proc.poll.return_value = 0
+        proc.wait.return_value = 0
+        with patch(
+            "interactive_collector.api_pipeline.subprocess.Popen",
+            return_value=proc,
+        ) as mock_popen:
             resp = self.client.post(
                 "/api/pipeline/run",
                 json={"module": "noop"},
@@ -169,6 +173,6 @@ class TestApiPipeline(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             body = resp.data.decode("utf-8")
             self.assertIn("DRP Pipeline", body)
-            mock_subprocess.Popen.assert_called_once()
-            call_args = mock_subprocess.Popen.call_args[0][0]
+            mock_popen.assert_called_once()
+            call_args = mock_popen.call_args[0][0]
             self.assertIn("noop", call_args)

@@ -3,12 +3,15 @@ API module for save operations (metadata + PDF generation).
 
 Serves: POST /api/save. Updates project metadata in Storage and optionally
 generates PDFs for checked scoreboard pages via Playwright (headless Chromium).
-Streams progress as SAVING, DONE, ERROR lines.
+Streams progress as SAVING, DONE, ERROR lines. Yields comment lines (#) as
+heartbeats during long operations so the connection is not dropped by timeouts.
 """
 
 import json
+import queue
+import threading
 from pathlib import Path
-from typing import Any, Dict, Generator, List
+from typing import Any, Dict, Generator, List, Tuple
 
 from utils.file_utils import sanitize_filename
 from utils.url_utils import is_valid_url
@@ -40,18 +43,38 @@ def _format_file_size(size_bytes: int) -> str:
     return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
 
 
-def _page_title_or_h1(page: Any) -> str:
+def _page_title_or_h1(page: Any, url: str = "") -> str:
     """Get page <title> or first <h1> text from a Playwright page; empty string if neither."""
     try:
         title = page.title()
-        if title and (title or "").strip():
-            return (title or "").strip()
+        if title and title.strip():
+            return title.strip()
         try:
-            h1 = page.locator("h1").first.text_content(timeout=2000)
-            if h1 and (h1 or "").strip():
-                return (h1 or "").strip()
+            # In headless, title can be empty until JS runs; read <title> from DOM
+            title = page.evaluate(
+                "() => document.querySelector('title')?.textContent?.trim() || document.title?.trim() || ''"
+            )
+            if title:
+                return title
         except Exception:
             pass
+        try:
+            h1 = page.locator("h1").first.text_content(timeout=2000)
+            if h1 and h1.strip():
+                return h1.strip()
+        except Exception:
+            pass
+        # Fallback: last path segment or hostname from URL for a meaningful filename
+        if url:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            path = (parsed.path or "").rstrip("/")
+            if path:
+                segment = path.split("/")[-1]
+                if segment and len(segment) < 80:
+                    return segment
+            if parsed.netloc:
+                return parsed.netloc.split(".")[0] or parsed.netloc
     except Exception:
         pass
     return ""
@@ -83,7 +106,7 @@ def save_metadata(
     download_date: str,
 ) -> None:
     """
-    Update the project record in Storage with metadata and folder stats.
+    Update the project record in Storage with metadata and folder stats (extensions, file_size).
 
     Args:
         drpid: Project ID.
@@ -140,16 +163,24 @@ def save_metadata(
         pass
 
 
-def generate_save_progress(
+# PDF generation: use "commit" so we only wait for the navigation to commit (response received).
+# Some pages never fire domcontentloaded in headless (e.g. FDA REMS); commit avoids that.
+# Then we wait for content to appear (JS-rendered pages) before printing.
+_PDF_NAVIGATION_WAIT = "commit"
+_PDF_NAVIGATION_TIMEOUT_MS = 30000  # commit is fast; this covers slow servers only
+_PDF_SETTLE_MS = 5000  # initial pause after commit
+_PDF_WAIT_FOR_CONTENT_MS = 35000  # wait for body to have text (JS-rendered content); then print
+_PDF_PRINT_TIMEOUT_MS = 90000
+_HEARTBEAT_INTERVAL = 15.0  # seconds; yield a comment line so connection is not dropped
+
+
+def _run_pdf_worker(
     folder_path: Path,
     urls: List[str],
     indices: List[str],
-) -> Generator[str, None, None]:
-    """
-    Generator that yields progress lines for the PDF save operation.
-
-    Yields: SAVING\\t{url}\\t{current}\\t{total}\\n then DONE\\t{count}\\n or ERROR\\t{msg}\\n
-    """
+    progress_queue: "queue.Queue[Tuple[str, ...]]",
+) -> None:
+    """Run Playwright PDF generation and put progress items on the queue."""
     from playwright.sync_api import sync_playwright
 
     total = len(indices)
@@ -166,22 +197,92 @@ def generate_save_progress(
                     url = urls[idx]
                     if not url or not is_valid_url(url):
                         continue
-                    yield f"SAVING\t{url}\t{current}\t{total}\n"
+                    progress_queue.put(("SAVING", url, str(current), str(total)))
                     page = browser.new_page()
                     try:
-                        page.goto(url, wait_until="networkidle", timeout=60000)
-                        base = _page_title_or_h1(page)
+                        page.set_default_timeout(_PDF_PRINT_TIMEOUT_MS)
+                        page.goto(
+                            url,
+                            wait_until=_PDF_NAVIGATION_WAIT,
+                            timeout=_PDF_NAVIGATION_TIMEOUT_MS,
+                        )
+                        page.wait_for_timeout(_PDF_SETTLE_MS)
+                        # Wait for load event so JS-rendered content and <title> are ready (e.g. FDA REMS)
+                        try:
+                            page.wait_for_load_state("load", timeout=_PDF_WAIT_FOR_CONTENT_MS)
+                        except Exception:
+                            pass
+                        page.wait_for_timeout(2000)  # extra for post-load paint
+                        base = _page_title_or_h1(page, url)
                         if not base:
                             base = "page"
                         pdf_name = _unique_pdf_basename(base, used_basenames)
                         pdf_path = folder_path / pdf_name
-                        page.pdf(path=str(pdf_path))
+                        page.pdf(path=str(pdf_path), print_background=True)
                         saved.append(pdf_name)
                     finally:
                         page.close()
                 except (ValueError, Exception) as e:
-                    yield f"ERROR\t{str(e)[:200]}\n"
+                    msg = str(e).strip() or type(e).__name__
+                    progress_queue.put(("ERROR", msg[:200]))
             browser.close()
     except Exception as e:
-        yield f"ERROR\t{str(e)[:200]}\n"
-    yield f"DONE\t{len(saved)}\n"
+        msg = str(e).strip() or type(e).__name__
+        progress_queue.put(("ERROR", msg[:200]))
+    progress_queue.put(("DONE", str(len(saved))))
+
+
+def generate_save_progress(
+    folder_path: Path,
+    urls: List[str],
+    indices: List[str],
+    *,
+    drpid: int | None = None,
+    folder_path_str: str = "",
+    metadata: Dict[str, str] | None = None,
+) -> Generator[str, None, None]:
+    """
+    Generator that yields progress lines for the PDF save operation.
+
+    Yields: SAVING\\t{url}\\t{current}\\t{total}\\n then DONE\\t{count}\\n or ERROR\\t{msg}\\n.
+    Yields #\\n as a heartbeat during long operations so the connection is not dropped.
+
+    If drpid, folder_path_str, and metadata are provided, saves metadata (including folder
+    stats) to Storage after PDFs are written, so one save happens after the folder is final.
+    """
+    progress_queue: queue.Queue[Tuple[str, ...]] = queue.Queue()
+    worker = threading.Thread(
+        target=_run_pdf_worker,
+        args=(folder_path, urls, indices, progress_queue),
+        daemon=True,
+    )
+    worker.start()
+    done_sent = False
+    while not done_sent:
+        try:
+            item = progress_queue.get(timeout=_HEARTBEAT_INTERVAL)
+        except queue.Empty:
+            yield "#\n"
+            continue
+        kind = item[0]
+        if kind == "SAVING":
+            yield f"SAVING\t{item[1]}\t{item[2]}\t{item[3]}\n"
+        elif kind == "ERROR":
+            yield f"ERROR\t{item[1]}\n"
+        elif kind == "DONE":
+            done_sent = True
+            worker.join(timeout=1.0)
+            if drpid is not None and folder_path_str and metadata:
+                save_metadata(
+                    drpid,
+                    folder_path_str,
+                    title=metadata.get("title", ""),
+                    summary=metadata.get("summary", ""),
+                    keywords=metadata.get("keywords", ""),
+                    agency=metadata.get("agency", ""),
+                    office=metadata.get("office", ""),
+                    time_start=metadata.get("time_start", ""),
+                    time_end=metadata.get("time_end", ""),
+                    download_date=metadata.get("download_date", ""),
+                )
+            yield f"DONE\t{item[1]}\n"

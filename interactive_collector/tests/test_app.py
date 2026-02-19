@@ -515,6 +515,39 @@ class TestAppRoutes(unittest.TestCase):
         self.assertIn(b'id="auto-download-data"', response.data)
         mock_ensure_output_folder.assert_called_once()
 
+    @patch("interactive_collector.app._ensure_output_folder_for_drpid")
+    @patch("interactive_collector.app.fetch_page_body")
+    def test_index_link_click_xml_treated_as_download(
+        self,
+        mock_fetch_page_body: unittest.mock.Mock,
+        mock_ensure_output_folder: unittest.mock.Mock,
+    ) -> None:
+        """When linked is XML (Content-Type or body sniffing), treat as binary and offer download."""
+        def fetch_side_effect(url: str) -> tuple:
+            if "fda.gov" in url or "xml" in url:
+                # XML with wrong Content-Type (text/html) - body sniffing catches it
+                return (
+                    200,
+                    '<?xml version="1.0"?><feed><title>FDA Data</title></feed>',
+                    "text/html",
+                    False,
+                )
+            return (200, "<html><body>Source</body></html>", "text/html", False)
+        mock_fetch_page_body.side_effect = fetch_side_effect
+        mock_ensure_output_folder.return_value = "C:\\out\\DRP000001"
+        response = self.client.get(
+            "/legacy/",
+            query_string={
+                "source_url": "https://example.com/source",
+                "linked_url": "http://www.fda.gov/media/187526/download",
+                "referrer": "https://example.com/source",
+                "drpid": "1",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        # XML treated as binary: download button shown (Linked pane shows source, not XML)
+        self.assertIn(b'id="auto-download-data"', response.data)
+
     @patch("interactive_collector.app.fetch_page_body")
     def test_scoreboard_cleared_when_new_initial_url(
         self, mock_fetch_page_body: unittest.mock.Mock

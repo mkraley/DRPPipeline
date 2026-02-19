@@ -138,9 +138,15 @@ _HTML_NOT_FOUND_PHRASES = (
     "sorry, the page you requested could not be found",
 )
 
+# Real 404 pages are usually short. Large pages (e.g. data catalog dataset views)
+# that incidentally contain the phrase in templates/scripts should not be flagged.
+_HTML_NOT_FOUND_MAX_BODY_LEN = 15000
+
 
 def _html_body_looks_like_not_found(body: str) -> bool:
-    """Return True if HTML body contains not-found error phrases."""
+    """Return True if HTML body contains not-found error phrases and is short enough."""
+    if not body or len(body) > _HTML_NOT_FOUND_MAX_BODY_LEN:
+        return False
     lower = body.lower()
     return any(phrase in lower for phrase in _HTML_NOT_FOUND_PHRASES)
 

@@ -5,6 +5,7 @@ Serves the SPA with: projects, load-page, scoreboard, save, download-file.
 """
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -282,21 +283,32 @@ def save_route() -> Any:
     urls_json = (request.form.get("scoreboard_urls_json") or "[]").strip()
     indices = request.form.getlist("save_url")
 
-    # Always save metadata if drpid present.
-    if drpid_str:
+    # Save metadata once: after PDFs when we generate them, otherwise now.
+    will_generate_pdfs = bool(folder_path_str and indices)
+    metadata = {
+        "title": (request.form.get("metadata_title") or "").strip(),
+        "summary": (request.form.get("metadata_summary") or "").strip(),
+        "keywords": (request.form.get("metadata_keywords") or "").strip(),
+        "agency": (request.form.get("metadata_agency") or "").strip(),
+        "office": (request.form.get("metadata_office") or "").strip(),
+        "time_start": (request.form.get("metadata_time_start") or "").strip(),
+        "time_end": (request.form.get("metadata_time_end") or "").strip(),
+        "download_date": (request.form.get("metadata_download_date") or "").strip(),
+    }
+    if drpid_str and not will_generate_pdfs:
         try:
             drpid = int(drpid_str)
             save_metadata(
                 drpid,
                 folder_path_str,
-                title=(request.form.get("metadata_title") or "").strip(),
-                summary=(request.form.get("metadata_summary") or "").strip(),
-                keywords=(request.form.get("metadata_keywords") or "").strip(),
-                agency=(request.form.get("metadata_agency") or "").strip(),
-                office=(request.form.get("metadata_office") or "").strip(),
-                time_start=(request.form.get("metadata_time_start") or "").strip(),
-                time_end=(request.form.get("metadata_time_end") or "").strip(),
-                download_date=(request.form.get("metadata_download_date") or "").strip(),
+                title=metadata["title"],
+                summary=metadata["summary"],
+                keywords=metadata["keywords"],
+                agency=metadata["agency"],
+                office=metadata["office"],
+                time_start=metadata["time_start"],
+                time_end=metadata["time_end"],
+                download_date=metadata["download_date"],
             )
         except (ValueError, TypeError):
             pass
@@ -313,8 +325,22 @@ def save_route() -> Any:
     if not folder_path.is_dir():
         return {"error": "Output folder not found"}, 400
 
+    try:
+        drpid_for_stats = int(drpid_str) if drpid_str else None
+    except (ValueError, TypeError):
+        drpid_for_stats = None
+
     def stream() -> Any:
-        for line in generate_save_progress(folder_path, urls, indices):
+        for line in generate_save_progress(
+            folder_path,
+            urls,
+            indices,
+            drpid=drpid_for_stats,
+            folder_path_str=folder_path_str,
+            metadata=metadata if will_generate_pdfs and drpid_for_stats is not None else None,
+        ):
+            sys.stderr.write(line)
+            sys.stderr.flush()
             yield line
 
     return Response(
@@ -349,6 +375,8 @@ def download_file_route() -> Any:
 
     def stream() -> Any:
         for line in generate_download_progress(url, folder_path, drpid, referrer):
+            sys.stderr.write(line)
+            sys.stderr.flush()
             yield line
 
     return Response(

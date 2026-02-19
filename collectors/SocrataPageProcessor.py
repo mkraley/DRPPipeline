@@ -250,9 +250,14 @@ class SocrataPageProcessor:
         except Exception as e:
             Logger.debug(f"Could not remove collapse buttons: {e}")
     
+    _PDF_TIMEOUT_MS = 90000
+
     def _generate_pdf(self, pdf_path: Path) -> bool:
         """
         Generate PDF from the current page.
+        
+        Sets a generous timeout so print doesn't hang silently, and injects
+        print CSS to reduce layout issues (borders/overlap) in Chromium print.
         
         Args:
             pdf_path: Path where PDF should be saved
@@ -260,8 +265,18 @@ class SocrataPageProcessor:
         Returns:
             True if successful, False otherwise
         """
+        page = self._collector._page
         try:
-            self._collector._page.pdf(path=str(pdf_path), format='A4', print_background=True)
+            page.set_default_timeout(self._PDF_TIMEOUT_MS)
+            page.add_style_tag(
+                content="""
+                @media print {
+                    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                    table, tr, .card, [role="row"] { break-inside: avoid; }
+                }
+                """
+            )
+            page.pdf(path=str(pdf_path), format="A4", print_background=True)
             return True
         except Exception as e:
             Logger.error(f"Failed to generate PDF: {e}")

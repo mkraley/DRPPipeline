@@ -16,6 +16,7 @@ Save button converts checked scoreboard pages to PDF in that folder.
 import html
 import json
 import re
+import sys
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -952,16 +953,28 @@ def _is_displayable_text(content_type: Optional[str]) -> bool:
     if not content_type:
         return True
     ct = content_type.lower().strip()
+    # XML types: treat as binary so we offer download instead of iframe
+    if ct in ("application/xml", "text/xml"):
+        return False
     if ct.startswith("text/"):
         return True
     if ct in (
-        "application/xml",
         "application/json",
         "application/javascript",
         "application/xhtml+xml",
     ):
         return True
     return False
+
+
+def _body_looks_like_xml(body: Any) -> bool:
+    """Return True if body starts with XML declaration (e.g. when Content-Type is wrong)."""
+    if isinstance(body, bytes):
+        body = body.decode("utf-8", errors="replace")
+    s = (body or "").strip()
+    if len(s) < 5:
+        return False
+    return s[:5].lower() == "<?xml"
 
 
 def _extension_from_content_type(content_type: Optional[str]) -> str:
@@ -1210,6 +1223,8 @@ def _prepare_pane_content(
 
     if not _is_displayable_text(content_type) and content_type:
         return None, f"Binary content ({html.escape(content_type)}). Not displayed.", status_label, ""
+    if _body_looks_like_xml(body):
+        return None, "XML content. Not displayed.", status_label, ""
     if (body or "").strip() == "" and _is_displayable_text(content_type):
         return None, "Content could not be displayed (possibly binary or wrong encoding).", status_label, ""
 
@@ -1386,7 +1401,10 @@ def legacy_index() -> str:
         linked_is_binary = (
             linked_srcdoc is None
             and linked_pane_message
-            and "Binary content" in (linked_pane_message or "")
+            and (
+                "Binary content" in (linked_pane_message or "")
+                or "XML content" in (linked_pane_message or "")
+            )
         )
         if not from_scoreboard and not linked_is_binary:
             _scoreboard_add(linked_url_for_fetch, referrer_param, linked_status)
@@ -1532,43 +1550,11 @@ def _generate_save_progress(
     indices: List[str],
 ):
     """
-    Generator that yields progress lines for the save operation.
-    Yields: SAVING\t{url}\t{current}\t{total}\n then DONE\t{count}\n or ERROR\t{msg}\n
+    Generator that yields progress lines for the save operation (legacy route).
+    Delegates to api_save.generate_save_progress so heartbeats and timeouts are shared.
     """
-    from playwright.sync_api import sync_playwright
-    total = len(indices)
-    saved: List[str] = []
-    used_basenames: Dict[str, int] = {}
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            for current, idx_str in enumerate(indices, 1):
-                try:
-                    idx = int(idx_str)
-                    if idx < 0 or idx >= len(urls):
-                        continue
-                    url = urls[idx]
-                    if not url or not is_valid_url(url):
-                        continue
-                    yield f"SAVING\t{url}\t{current}\t{total}\n"
-                    page = browser.new_page()
-                    try:
-                        page.goto(url, wait_until="networkidle", timeout=60000)
-                        base = _page_title_or_h1(page)
-                        if not base:
-                            base = "page"
-                        pdf_name = _unique_pdf_basename(base, used_basenames)
-                        pdf_path = folder_path / pdf_name
-                        page.pdf(path=str(pdf_path))
-                        saved.append(pdf_name)
-                    finally:
-                        page.close()
-                except (ValueError, Exception) as e:
-                    yield f"ERROR\t{str(e)[:200]}\n"
-            browser.close()
-    except Exception as e:
-        yield f"ERROR\t{str(e)[:200]}\n"
-    yield f"DONE\t{len(saved)}\n"
+    from interactive_collector.api_save import generate_save_progress
+    yield from generate_save_progress(folder_path, urls, indices)
 
 
 # Progress report interval for large file downloads (MB).
@@ -1685,6 +1671,8 @@ def download_file() -> Any:
 
     def stream() -> Any:
         for line in _generate_download_progress(url, folder_path, drpid, referrer):
+            sys.stderr.write(line)
+            sys.stderr.flush()
             yield line
 
     from flask import Response
@@ -1773,6 +1761,8 @@ def save() -> Any:
 
     def stream() -> Any:
         for line in _generate_save_progress(folder_path, urls, indices):
+            sys.stderr.write(line)
+            sys.stderr.flush()
             yield line
 
     from flask import Response

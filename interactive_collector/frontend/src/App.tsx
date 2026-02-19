@@ -29,6 +29,15 @@ export default function App() {
   useHistorySync();
 
   useEffect(() => {
+    document.title =
+      view === "main"
+        ? "DRP Pipeline"
+        : drpid != null
+          ? `DRP${String(drpid).padStart(6, "0")} - DRP Pipeline`
+          : "DRP Pipeline";
+  }, [view, drpid]);
+
+  useEffect(() => {
     if (view !== "collector") return;
     const splitter = splitterVRef.current;
     const leftCol = leftColRef.current;

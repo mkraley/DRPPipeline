@@ -282,6 +282,12 @@ class TestUrlUtils(unittest.TestCase):
         )
         self.assertFalse(url_utils.body_looks_like_not_found(""))
 
+    def test_body_looks_like_not_found_false_for_large_page(self) -> None:
+        """Large pages with phrase in template/script are not false positives (e.g. datadiscovery.nlm.nih.gov)."""
+        # Valid dataset page that incidentally contains "page not found" somewhere - should not be flagged
+        large_body = "x" * 20000 + "page not found" + "y" * 1000
+        self.assertFalse(url_utils.body_looks_like_not_found(large_body))
+
     @patch("utils.url_utils.requests.get")
     def test_fetch_page_body_success(self, mock_get: Mock) -> None:
         """Test fetch_page_body returns 200, body, content-type, and False for logical 404."""

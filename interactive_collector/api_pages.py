@@ -14,13 +14,11 @@ from urllib.parse import urljoin
 
 from utils.url_utils import fetch_page_body, is_valid_url, resolve_catalog_resource_url
 
-# Content types we display as text (not binary).
+# Content types we display as text (not binary). XML is excluded so it's offered as download.
 _DISPLAYABLE = (
     "application/json",
     "application/javascript",
     "application/xhtml+xml",
-    "application/xml",
-    "text/xml",
     "text/plain",
 )
 
@@ -69,11 +67,24 @@ def _is_displayable_text(content_type: Optional[str]) -> bool:
     if not content_type:
         return True
     ct = content_type.lower().strip()
+    # XML types: treat as binary so we offer download instead of iframe
+    if ct in ("application/xml", "text/xml"):
+        return False
     if ct.startswith("text/"):
         return True
     if ct in _DISPLAYABLE:
         return True
     return False
+
+
+def _body_looks_like_xml(body: Any) -> bool:
+    """Return True if body starts with XML declaration (e.g. when Content-Type is wrong)."""
+    if isinstance(body, bytes):
+        body = body.decode("utf-8", errors="replace")
+    s = (body or "").strip()
+    if len(s) < 5:
+        return False
+    return s[:5].lower() == "<?xml"
 
 
 def _h1_from_html(html_body: Any) -> str:
@@ -223,6 +234,8 @@ def prepare_page_content(
 
     if not _is_displayable_text(content_type) and content_type:
         return None, f"Binary content ({html.escape(content_type)}). Not displayed.", status_label, "", extracted
+    if _body_looks_like_xml(body):
+        return None, "XML content. Not displayed.", status_label, "", extracted
     if (body or "").strip() == "" and _is_displayable_text(content_type):
         return None, "Content could not be displayed (possibly binary or wrong encoding).", status_label, "", extracted
 
@@ -280,7 +293,9 @@ def load_page(
     srcdoc, body_message, status_label, h1_text, extracted = prepare_page_content(
         linked_url_for_fetch, source_url, drpid, for_spa=True
     )
-    linked_is_binary = srcdoc is None and body_message and "Binary content" in (body_message or "")
+    linked_is_binary = srcdoc is None and body_message and (
+        "Binary content" in (body_message or "") or "XML content" in (body_message or "")
+    )
 
     # Add source to scoreboard if not present (when loading linked from source).
     source_in_board = has_url(source_url)
