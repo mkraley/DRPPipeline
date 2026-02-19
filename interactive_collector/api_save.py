@@ -8,10 +8,11 @@ heartbeats during long operations so the connection is not dropped by timeouts.
 """
 
 import json
+import os
 import queue
 import threading
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Tuple
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from utils.file_utils import sanitize_filename
 from utils.url_utils import is_valid_url
@@ -80,17 +81,26 @@ def _page_title_or_h1(page: Any, url: str = "") -> str:
     return ""
 
 
-def _unique_pdf_basename(base: str, used: Dict[str, int]) -> str:
-    """Return a unique sanitized basename: base.pdf or base_1.pdf, base_2.pdf, etc."""
+def _unique_pdf_basename(
+    base: str,
+    used: Dict[str, int],
+    folder_path: Optional[Path] = None,
+) -> str:
+    """Return a unique sanitized basename: base.pdf or base_1.pdf, base_2.pdf, etc.
+    When folder_path is set, skips names that already exist in the folder (no overwrite).
+    """
     safe = sanitize_filename(base, max_length=80)
     if not safe:
         safe = "page"
     key = safe.lower()
     n = used.get(key, 0)
-    used[key] = n + 1
-    if n == 0:
-        return f"{safe}.pdf"
-    return f"{safe}_{n}.pdf"
+    while True:
+        name = f"{safe}.pdf" if n == 0 else f"{safe}_{n}.pdf"
+        if folder_path is not None and (folder_path / name).exists():
+            n += 1
+            continue
+        used[key] = n + 1
+        return name
 
 
 def save_metadata(
@@ -165,11 +175,17 @@ def save_metadata(
 
 # PDF generation: use "commit" so we only wait for the navigation to commit (response received).
 # Some pages never fire domcontentloaded in headless (e.g. FDA REMS); commit avoids that.
-# Then we wait for content to appear (JS-rendered pages) before printing.
+# Default is headed (visible browser); set DRP_PDF_HEADLESS=1 to run headless.
 _PDF_NAVIGATION_WAIT = "commit"
 _PDF_NAVIGATION_TIMEOUT_MS = 30000  # commit is fast; this covers slow servers only
 _PDF_SETTLE_MS = 5000  # initial pause after commit
-_PDF_WAIT_FOR_CONTENT_MS = 35000  # wait for body to have text (JS-rendered content); then print
+_PDF_WAIT_FOR_CONTENT_MS = 35000  # wait for load event; then print
+
+
+def _pdf_headless() -> bool:
+    """False = headed (default, visible browser); True only when DRP_PDF_HEADLESS=1 (or true, etc.)."""
+    v = (os.environ.get("DRP_PDF_HEADLESS") or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
 _PDF_PRINT_TIMEOUT_MS = 90000
 _HEARTBEAT_INTERVAL = 15.0  # seconds; yield a comment line so connection is not dropped
 
@@ -188,7 +204,7 @@ def _run_pdf_worker(
     used_basenames: Dict[str, int] = {}
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=_pdf_headless())
             for current, idx_str in enumerate(indices, 1):
                 try:
                     idx = int(idx_str)
@@ -216,7 +232,7 @@ def _run_pdf_worker(
                         base = _page_title_or_h1(page, url)
                         if not base:
                             base = "page"
-                        pdf_name = _unique_pdf_basename(base, used_basenames)
+                        pdf_name = _unique_pdf_basename(base, used_basenames, folder_path)
                         pdf_path = folder_path / pdf_name
                         page.pdf(path=str(pdf_path), print_background=True)
                         saved.append(pdf_name)
