@@ -87,6 +87,25 @@ def _body_looks_like_xml(body: Any) -> bool:
     return s[:5].lower() == "<?xml"
 
 
+def _body_looks_like_html(body: Any) -> bool:
+    """
+    Return True if the body looks like an HTML document (not data XML).
+
+    Pages like NCBI BioSample may be served as application/xml or with <?xml
+    but are actually HTML. We treat as HTML if we see <!DOCTYPE html or <html
+    in the first 8KB so they display in the pane instead of as download.
+    """
+    if body is None:
+        return False
+    if isinstance(body, bytes):
+        body = body.decode("utf-8", errors="replace")
+    s = (body or "").strip()
+    if len(s) < 4:
+        return False
+    head = s[:8192].lower()
+    return "<!doctype html" in head or "<html" in head
+
+
 def _h1_from_html(html_body: Any) -> str:
     """Extract text of the first <h1> in the HTML; empty string if none."""
     if isinstance(html_body, bytes):
@@ -232,9 +251,12 @@ def prepare_page_content(
     h1_text = _h1_from_html(body or "") if body else ""
     extracted = _extract_metadata_from_html(body) if body else {"title": "", "agency": "", "office": "", "keywords": ""}
 
-    if not _is_displayable_text(content_type) and content_type:
+    # If body is actually HTML (e.g. NCBI pages served as XML), display it
+    if _body_looks_like_html(body):
+        pass  # treat as displayable below
+    elif not _is_displayable_text(content_type) and content_type:
         return None, f"Binary content ({html.escape(content_type)}). Not displayed.", status_label, "", extracted
-    if _body_looks_like_xml(body):
+    elif _body_looks_like_xml(body):
         return None, "XML content. Not displayed.", status_label, "", extracted
     if (body or "").strip() == "" and _is_displayable_text(content_type):
         return None, "Content could not be displayed (possibly binary or wrong encoding).", status_label, "", extracted
