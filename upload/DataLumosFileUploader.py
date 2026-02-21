@@ -4,8 +4,14 @@ DataLumos file upload handler.
 Handles uploading files to a DataLumos project using Playwright.
 Uses a drop-zone compatible approach: injects a file input and dispatches
 drag/drop events to the modal drop target so the UI receives files.
+
+When the output folder contains subfolders, zips all contents and uses
+the Import From Zip feature instead of uploading files one-by-one.
 """
 
+import os
+import shutil
+import tempfile
 from pathlib import Path
 from typing import List
 
@@ -16,9 +22,13 @@ from utils.Logger import Logger
 
 # Selectors from DataLumos import file modal (aligned with chiara_upload.py)
 UPLOAD_BTN_SELECTOR = "a.btn-primary:nth-child(3) > span:nth-child(4)"
+IMPORT_FROM_ZIP_BTN_SELECTOR = 'a.btn-default:has-text("Import From Zip")'
 DROP_ZONE_SELECTOR = ".importFileModal .col-md-offset-2 > span:nth-child(1)"
+DROP_ZONE_SELECTOR_FROM_ZIP = ".importZipModal .col-md-offset-2 > span:nth-child(1)"
 FILE_QUEUED_TEXT = "File added to queue for upload."
-CLOSE_MODAL_SELECTOR = ".importFileModal > div:nth-child(3) > button:nth-child(1)"
+FILE_QUEUED_TEXT_FROM_ZIP = "The contents of your ZIP file are being extracted"
+CLOSE_MODAL_SELECTOR = ".importFileModal .modal-footer button"
+CLOSE_MODAL_SELECTOR_FROM_ZIP = ".importZipModal .modal-footer button"
 INJECTED_INPUT_ID = "pw-datalumos-file-input"
 
 # JS to create file input and dispatch drop events to target (adapted from chiara/Selenium approach)
@@ -74,8 +84,8 @@ class DataLumosFileUploader:
         """
         Upload all files from a folder to the current DataLumos project.
 
-        Opens the Upload Files modal, injects a file input that feeds the drop zone,
-        sets files one-by-one, waits for all to be queued, then closes the modal.
+        If the folder contains subfolders, zips all contents and uses
+        Import From Zip. Otherwise, uses Upload Files and uploads one-by-one.
 
         Args:
             folder_path: Path to folder containing files to upload
@@ -84,12 +94,64 @@ class DataLumosFileUploader:
             FileNotFoundError: If folder doesn't exist
             RuntimeError: If upload flow fails
         """
-        files = self.get_file_paths(folder_path)
-        if not files:
-            Logger.info(f"No files to upload in {folder_path}")
-            return
+        folder = Path(folder_path)
+        if not folder.exists():
+            raise FileNotFoundError(f"Folder not found: {folder_path}")
+        if not folder.is_dir():
+            raise NotADirectoryError(f"Path is not a directory: {folder_path}")
 
-        Logger.info(f"Uploading {len(files)} file(s) from {folder_path}")
+        use_zip = self._folder_has_subfolders(folder_path)
+        if use_zip:
+            zip_path = self._zip_folder_contents(folder_path)
+            try:
+                self._upload_via_import_from_zip(zip_path)
+            finally:
+                zip_path.unlink(missing_ok=True)
+        else:
+            files = self.get_file_paths(folder_path)
+            if not files:
+                Logger.info(f"No files to upload in {folder_path}")
+                return
+            self._upload_via_upload_files(files)
+        Logger.info("File upload completed and modal closed")
+
+    def _folder_has_subfolders(self, folder_path: str) -> bool:
+        """Return True if the folder contains any subdirectories."""
+        folder = Path(folder_path)
+        return any(p.is_dir() for p in folder.iterdir())
+
+    def _zip_folder_contents(self, folder_path: str) -> Path:
+        """
+        Zip all files and subfolders in the given folder.
+
+        Returns:
+            Path to the temporary zip file (caller must delete).
+        """
+        folder = Path(folder_path)
+        fd, zip_path = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)
+        zip_path_obj = Path(zip_path)
+        base_name = str(zip_path_obj.with_suffix(""))
+        shutil.make_archive(base_name, "zip", folder, ".")
+        Logger.info(f"Zipped contents of {folder_path} to {zip_path_obj.name}")
+        return zip_path_obj
+
+    def _upload_via_import_from_zip(self, zip_path: Path) -> None:
+        """Open Import From Zip modal and upload the zip via drop zone."""
+        Logger.info(f"Uploading zip via Import From Zip: {zip_path.name}")
+        self._wait_for_obscuring_elements()
+
+        import_zip_btn = self._page.locator(IMPORT_FROM_ZIP_BTN_SELECTOR)
+        import_zip_btn.click()
+        self._page.wait_for_timeout(1000)
+        self._wait_for_obscuring_elements()
+
+        self._do_drop_zone_upload([zip_path], use_zip=True)
+        self._close_modal(use_zip=True)
+
+    def _upload_via_upload_files(self, files: List[Path]) -> None:
+        """Open Upload Files modal and upload files one-by-one via drop zone."""
+        Logger.info(f"Uploading {len(files)} file(s) via Upload Files")
         self._wait_for_obscuring_elements()
 
         upload_btn = self._page.locator(UPLOAD_BTN_SELECTOR)
@@ -97,29 +159,41 @@ class DataLumosFileUploader:
         self._page.wait_for_timeout(1000)
         self._wait_for_obscuring_elements()
 
-        drop_zone = self._page.locator(DROP_ZONE_SELECTOR)
+        self._do_drop_zone_upload(files, use_zip=False)
+        self._close_modal(use_zip=False)
+
+    def _do_drop_zone_upload(self, paths: List[Path], use_zip: bool) -> None:
+        """Inject file input, upload paths via drop zone, wait for completion."""
+        drop_zone_selector = DROP_ZONE_SELECTOR_FROM_ZIP if use_zip else DROP_ZONE_SELECTOR
+        drop_zone = self._page.locator(drop_zone_selector)
         drop_zone.wait_for(state="visible", timeout=self._timeout)
 
-        input_id = self._page.evaluate(JS_INJECT_FILE_INPUT, DROP_ZONE_SELECTOR)
+        input_id = self._page.evaluate(JS_INJECT_FILE_INPUT, drop_zone_selector)
         if not input_id:
             raise RuntimeError("Could not find drop zone for file upload")
 
         file_input = self._page.locator(f"#{input_id}")
-        for path in files:
-            try:
+        try:
+            for path in paths:
                 file_input.set_input_files(str(path))
                 self._page.wait_for_timeout(500)
-            except Exception as e:
-                self._remove_injected_input()
-                raise RuntimeError(f"Error uploading file '{path.name}': {e}") from e
-
-        self.wait_for_upload_completion(len(files))
+                if use_zip:
+                    # press the Upload button
+                    upload_btn = self._page.locator("#uploadButton")
+                    upload_btn.click()
+                    self.wait_for_zip_upload_completion()
+            if not use_zip:
+                self.wait_for_upload_completion(len(paths))
+        except Exception as e:
+            self._remove_injected_input()
+            raise RuntimeError(f"Error uploading '{paths[0].name if paths else '?'}': {e}") from e
         self._remove_injected_input()
 
-        close_btn = self._page.locator(CLOSE_MODAL_SELECTOR)
+    def _close_modal(self, use_zip: bool) -> None:
+        """Close the import/upload modal."""
+        close_btn = self._page.locator(CLOSE_MODAL_SELECTOR_FROM_ZIP if use_zip else CLOSE_MODAL_SELECTOR)
         close_btn.click()
         self._wait_for_obscuring_elements()
-        Logger.info("File upload completed and modal closed")
 
     def _remove_injected_input(self) -> None:
         """Remove the injected file input from the DOM."""
@@ -187,3 +261,19 @@ class DataLumosFileUploader:
                 f"(expected {file_count} 'File added to queue for upload.' messages)"
             ) from e
         Logger.debug(f"All {file_count} file(s) added to queue")
+
+    def wait_for_zip_upload_completion(self) -> None:
+        """
+        Wait for the zip file uploads to be queued.
+
+        Raises:
+            TimeoutError: If uploads don't complete within upload_wait_timeout
+        """
+        queued = self._page.locator(f"span:has-text('{FILE_QUEUED_TEXT_FROM_ZIP}')")
+        try:
+            queued.nth(0).wait_for(state="visible", timeout=self._upload_wait_timeout)
+        except PlaywrightTimeoutError as e:
+            raise TimeoutError(
+                f"File upload did not complete within {self._upload_wait_timeout} ms "
+            ) from e
+        Logger.debug(f"Zip file(s) added to queue")        

@@ -4,6 +4,7 @@ Unit tests for DataLumosFileUploader.
 
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -74,3 +75,74 @@ class TestDataLumosFileUploader(unittest.TestCase):
                 uploader.get_file_paths(path)
         finally:
             Path(path).unlink(missing_ok=True)
+
+    def test_folder_has_subfolders_true_when_subdir_exists(self) -> None:
+        """Test _folder_has_subfolders returns True when folder has subdirs."""
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "sub").mkdir()
+            mock_page = MagicMock()
+            uploader = DataLumosFileUploader(mock_page)
+            self.assertTrue(uploader._folder_has_subfolders(tmp))
+
+    def test_folder_has_subfolders_false_when_only_files(self) -> None:
+        """Test _folder_has_subfolders returns False when folder has only files."""
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "a.txt").write_text("a")
+            mock_page = MagicMock()
+            uploader = DataLumosFileUploader(mock_page)
+            self.assertFalse(uploader._folder_has_subfolders(tmp))
+
+    def test_folder_has_subfolders_false_when_empty(self) -> None:
+        """Test _folder_has_subfolders returns False for empty folder."""
+        with tempfile.TemporaryDirectory() as tmp:
+            mock_page = MagicMock()
+            uploader = DataLumosFileUploader(mock_page)
+            self.assertFalse(uploader._folder_has_subfolders(tmp))
+
+    def test_zip_folder_contents_creates_valid_zip_with_files_and_subdirs(self) -> None:
+        """Test _zip_folder_contents creates a zip containing all contents."""
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "root.txt").write_text("root")
+            sub = Path(tmp) / "sub"
+            sub.mkdir()
+            (sub / "nested.txt").write_text("nested")
+            mock_page = MagicMock()
+            uploader = DataLumosFileUploader(mock_page)
+            zip_path = uploader._zip_folder_contents(tmp)
+            try:
+                self.assertTrue(zip_path.exists())
+                with zipfile.ZipFile(zip_path, "r") as zf:
+                    names = set(zf.namelist())
+                self.assertIn("root.txt", names)
+                self.assertIn("sub/nested.txt", names)
+            finally:
+                zip_path.unlink(missing_ok=True)
+
+    def test_upload_files_with_subfolders_uses_import_from_zip(self) -> None:
+        """Test upload_files with subfolders clicks Import From Zip, not Upload Files."""
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "sub").mkdir()
+            (Path(tmp) / "sub" / "f.txt").write_text("x")
+
+            def locator_side_effect(selector: str) -> MagicMock:
+                loc = MagicMock()
+                if selector == "#busy":
+                    loc.count.return_value = 0
+                else:
+                    loc.wait_for = MagicMock()
+                    loc.click = MagicMock()
+                    loc.nth = MagicMock(return_value=MagicMock())
+                return loc
+
+            mock_page = MagicMock()
+            mock_page.locator.side_effect = locator_side_effect
+            mock_page.evaluate.return_value = "pw-datalumos-file-input"
+
+            uploader = DataLumosFileUploader(mock_page)
+            uploader.upload_files(tmp)
+
+            calls = [c[0][0] for c in mock_page.locator.call_args_list]
+            import_zip_calls = [c for c in calls if "Import From Zip" in c]
+            upload_calls = [c for c in calls if "btn-primary" in str(c)]
+            self.assertGreater(len(import_zip_calls), 0, "Should use Import From Zip")
+            self.assertEqual(len(upload_calls), 0, "Should not use Upload Files")
