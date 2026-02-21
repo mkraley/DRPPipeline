@@ -97,7 +97,7 @@ function ScoreboardNodeItem({
 }
 
 export function Scoreboard() {
-  const { scoreboard, sourceUrl, loadLinked } = useCollectorStore();
+  const { scoreboard, sourceUrl, loadLinked, refreshScoreboard } = useCollectorStore();
 
   const onLinkClick = useCallback(
     (url: string, referrer: string | null, fromScoreboard: boolean) => {
@@ -108,7 +108,17 @@ export function Scoreboard() {
 
   return (
     <div className="scoreboard">
-      <h3>Scoreboard</h3>
+      <h3>
+        Scoreboard
+        <button
+          type="button"
+          className="btn-refresh"
+          onClick={() => refreshScoreboard()}
+          title="Refresh scoreboard (e.g. after saving from extension)"
+        >
+          Refresh
+        </button>
+      </h3>
       {scoreboard.length === 0 ? (
         <p>
           <em>No pages yet.</em>

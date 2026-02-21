@@ -26,6 +26,7 @@ from interactive_collector.api_projects import (
 from interactive_collector.api_save import generate_save_progress, save_metadata
 from interactive_collector.api_scoreboard import add_to_scoreboard, clear_scoreboard, get_scoreboard_tree, get_scoreboard_urls
 from interactive_collector.collector_state import get_result_by_drpid
+from utils.file_utils import sanitize_filename
 from utils.url_utils import BROWSER_HEADERS, is_valid_url
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -181,6 +182,82 @@ def load_source_route() -> Any:
         "scoreboard_urls": get_scoreboard_urls(),
         "folder_path": folder_path,
     }
+
+
+def _unique_pdf_basename_for_folder(base: str, folder_path: Path) -> str:
+    """Return unique sanitized PDF basename (base.pdf or base_1.pdf, etc.)."""
+    safe = sanitize_filename(base, max_length=80) if base else "page"
+    if not safe:
+        safe = "page"
+    for i in range(1000):
+        name = f"{safe}.pdf" if i == 0 else f"{safe}_{i}.pdf"
+        if not (folder_path / name).exists():
+            return name
+    return f"{safe}_999.pdf"
+
+
+@api_bp.route("/extension/save-pdf", methods=["POST", "OPTIONS"])
+def extension_save_pdf() -> Any:
+    """
+    Receive PDF from browser extension; write to output folder and add to scoreboard.
+
+    Expects multipart form: drpid, url, referrer (optional), pdf (file).
+    CORS: allow extension origin.
+    """
+    if request.method == "OPTIONS":
+        return "", 204, {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+        }
+    drpid_str = (request.form.get("drpid") or "").strip()
+    url = (request.form.get("url") or "").strip()
+    referrer = (request.form.get("referrer") or "").strip() or None
+    pdf_file = request.files.get("pdf")
+
+    if not drpid_str:
+        return {"error": "drpid required"}, 400
+    if not url or not is_valid_url(url):
+        return {"error": "valid url required"}, 400
+    if not pdf_file:
+        return {"error": "pdf file required"}, 400
+    try:
+        drpid = int(drpid_str)
+    except (ValueError, TypeError):
+        return {"error": "invalid drpid"}, 400
+
+    folder_path_str = get_result_by_drpid().get(drpid, {}).get("folder_path")
+    if not folder_path_str:
+        folder_path_str = ensure_output_folder(drpid)
+    if not folder_path_str:
+        return {"error": "no output folder for project"}, 400
+
+    folder_path = Path(folder_path_str)
+    if not folder_path.is_dir():
+        return {"error": "output folder not found"}, 400
+
+    # Derive base name from URL (last path segment or domain)
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    path = (parsed.path or "").rstrip("/")
+    base = path.split("/")[-1] if path else (parsed.netloc or "page").split(".")[0]
+    if not base or len(base) > 80:
+        base = (parsed.netloc or "page").split(".")[0] or "page"
+    basename = _unique_pdf_basename_for_folder(base, folder_path)
+    dest = folder_path / basename
+
+    try:
+        pdf_file.save(str(dest))
+    except OSError as e:
+        return {"error": str(e)[:200]}, 500
+
+    title = None
+    add_to_scoreboard(url, referrer, "OK", title)
+    return (
+        {"ok": True, "filename": basename, "path": str(dest)},
+        200,
+        {"Access-Control-Allow-Origin": "*"},
+    )
 
 
 @api_bp.route("/proxy", methods=["GET"])

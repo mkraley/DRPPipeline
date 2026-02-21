@@ -1517,6 +1517,48 @@ def legacy_index() -> str:
     )
 
 
+@app.route("/extension/launcher")
+def extension_launcher() -> Any:
+    """
+    Launcher page for the browser extension. Encodes DRPID and target URL.
+
+    Query params: drpid (required), url (required, https).
+    Returns minimal HTML that redirects to url after ~500ms.
+    The extension content script runs on this page, reads drpid/url, stores in
+    chrome.storage, then the redirect proceeds. User pastes this URL in the
+    extended browser to start a collection session.
+    """
+    drpid_param = request.args.get("drpid", "").strip()
+    url_param = request.args.get("url", "").strip()
+    if not drpid_param:
+        return "<!DOCTYPE html><html><body><p>Missing drpid.</p></body></html>", 400
+    if not url_param:
+        return "<!DOCTYPE html><html><body><p>Missing url.</p></body></html>", 400
+    try:
+        drpid = int(drpid_param)
+    except ValueError:
+        return "<!DOCTYPE html><html><body><p>Invalid drpid.</p></body></html>", 400
+    if not url_param.startswith("https://"):
+        return "<!DOCTYPE html><html><body><p>URL must be https.</p></body></html>", 400
+    proj = _get_project_by_drpid(app, drpid)
+    if not proj:
+        return "<!DOCTYPE html><html><body><p>Project not found.</p></body></html>", 404
+    folder_path = _folder_path_for_drpid(str(drpid))
+    if not folder_path:
+        try:
+            folder_path = _ensure_output_folder_for_drpid(app, drpid)
+        except (ValueError, TypeError):
+            pass
+    if not folder_path:
+        return "<!DOCTYPE html><html><body><p>Could not create output folder.</p></body></html>", 500
+    # Extension reads drpid and url from window.location.search; we redirect after short delay
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Redirecting...</title></head>
+<body><p>Redirecting...</p>
+<script>setTimeout(function(){{ window.location.href = {json.dumps(url_param)}; }}, 500);</script>
+</body></html>"""
+
+
 @app.route("/")
 def index() -> Any:
     """Serve the React SPA (main page) at root."""

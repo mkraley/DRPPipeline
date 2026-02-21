@@ -1,0 +1,11 @@
+---
+description: Bump extension version when extension code changes
+globs: interactive_collector/extension/**/*
+alwaysApply: false
+---
+
+# Bump Extension Version on Changes
+
+Whenever you edit any file under `interactive_collector/extension/` (manifest.json, content.js, page.js, background.js, content.css, etc.), you **must** also update the `version` in `manifest.json`.
+
+Increment the patch version (e.g. `1.0.3` → `1.0.4`). Use semver: `major.minor.patch`.
