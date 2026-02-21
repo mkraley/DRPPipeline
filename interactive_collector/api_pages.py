@@ -12,7 +12,7 @@ import re
 from typing import Any, Optional
 from urllib.parse import urljoin
 
-from utils.url_utils import fetch_page_body, is_valid_url, resolve_catalog_resource_url
+from utils.url_utils import fetch_page_body, is_valid_url, is_waf_challenge, resolve_catalog_resource_url
 
 # Content types we display as text (not binary). XML is excluded so it's offered as download.
 _DISPLAYABLE = (
@@ -250,6 +250,18 @@ def prepare_page_content(
     status_label = _status_label(status_code, is_logical_404)
     h1_text = _h1_from_html(body or "") if body else ""
     extracted = _extract_metadata_from_html(body) if body else {"title": "", "agency": "", "office": "", "keywords": ""}
+
+    # catalog.data.gov uses AWS WAF; when blocked, we get a challenge page instead of real content.
+    # Show a helpful message instead of the raw challenge HTML ("JavaScript is disabled").
+    if is_waf_challenge(status_code, body or ""):
+        return (
+            None,
+            "This page requires browser verification (catalog.data.gov uses AWS WAF). "
+            "Click 'Open' above to view it in your browser, or try again later.",
+            "WAF challenge",
+            "",
+            extracted,
+        )
 
     # If body is actually HTML (e.g. NCBI pages served as XML), display it
     if _body_looks_like_html(body):

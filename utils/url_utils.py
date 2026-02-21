@@ -9,17 +9,21 @@ from typing import Dict, Optional, Tuple
 import requests
 
 # Headers to mimic a real browser and avoid abuse/filter blocks.
+# Includes Client Hints (Sec-CH-UA*) that Chrome sends; some WAFs check for these.
 BROWSER_HEADERS: Dict[str, str] = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     ),
     "Accept": (
         "text/html,application/xhtml+xml,application/xml;q=0.9,"
-        "image/avif,image/webp,*/*;q=0.8"
+        "image/avif,image/webp,image/apng,*/*;q=0.8"
     ),
     "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
+    "Sec-CH-UA": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+    "Sec-CH-UA-Mobile": "?0",
+    "Sec-CH-UA-Platform": '"Windows"',
     "DNT": "1",
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",
@@ -268,6 +272,107 @@ def _is_text_content_type(content_type: Optional[str]) -> bool:
     return False
 
 
+def _is_aws_waf_challenge(status_code: int, body: str) -> bool:
+    """
+    Return True if the response looks like an AWS WAF JavaScript challenge page.
+
+    catalog.data.gov and other data.gov domains use AWS WAF and return HTTP 202
+    with a challenge page that requires JavaScript. Python requests cannot pass
+    the challenge; a real browser (Playwright) can. Some variants return 200
+    with "Human Verification" in the title.
+    """
+    if status_code not in (200, 202):
+        return False
+    if not body or len(body) < 100:
+        return False
+    lower = body.lower()
+    return (
+        "awswaf" in lower
+        or "challenge.js" in lower
+        or "challenge-container" in lower
+        or "human verification" in lower
+        or ("noscript" in lower and "javascript is disabled" in lower)
+    )
+
+
+def is_waf_challenge(status_code: int, body: str) -> bool:
+    """
+    Public check: return True if the response is an AWS WAF challenge page.
+
+    Callers can use this to show a friendly message instead of the raw challenge HTML.
+    """
+    return _is_aws_waf_challenge(status_code, body)
+
+
+def _fetch_page_body_with_playwright(
+    url: str, timeout: int = 60
+) -> Tuple[int, str, Optional[str], bool]:
+    """
+    Fetch a page using Playwright to bypass AWS WAF bot challenges.
+
+    Returns same tuple as fetch_page_body. Used as fallback when requests.get
+    returns a WAF challenge (HTTP 202 with challenge page).
+    Set DRP_FETCH_HEADED=1 to use a visible browser (may help pass WAF in some environments).
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return -1, "", None, False
+
+    import os
+    headless = False #(os.environ.get("DRP_FETCH_HEADED") or "").strip().lower() not in ("1", "true", "yes", "on")
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=headless)
+            try:
+                page = browser.new_page()
+                page.set_default_timeout(timeout * 1000)
+                page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
+                # Allow WAF challenge to complete (it may trigger reload)
+                page.wait_for_load_state("load", timeout=(timeout - 10) * 1000)
+                page.wait_for_timeout(2000)  # Extra for post-load content
+                body = page.content()
+            finally:
+                browser.close()
+
+        if not body or len(body) < 100:
+            return -1, body or "", "text/html", False
+        # Check if we still got a challenge page (e.g. headless detected)
+        if _is_aws_waf_challenge(200, body):
+            return 202, body, "text/html", False
+        return 200, body, "text/html", False
+    except Exception:
+        return -1, "", None, False
+
+
+def _http_get(url: str, headers: Dict[str, str], timeout: int) -> "requests.Response":
+    """
+    Perform GET with optional curl_cffi for Chrome TLS impersonation.
+
+    If curl_cffi is installed, uses it first (impersonate="chrome") to mimic
+    Chrome's TLS fingerprint; may bypass AWS WAF that blocks plain requests.
+    Falls back to requests otherwise.
+    """
+    try:
+        from curl_cffi import requests as curl_requests
+        return curl_requests.get(
+            url,
+            headers=headers,
+            timeout=timeout,
+            allow_redirects=True,
+            impersonate="chrome120",
+        )
+    except ImportError:
+        pass
+    return requests.get(
+        url,
+        headers=headers,
+        timeout=timeout,
+        allow_redirects=True,
+    )
+
+
 def fetch_page_body(
     url: str, timeout: int = 30
 ) -> Tuple[int, str, Optional[str], bool]:
@@ -294,15 +399,10 @@ def fetch_page_body(
         - content_type: Parsed Content-Type (None if missing or on error).
         - is_logical_404: True only when status is 404 due to body content (200 + not-found phrases).
     """
-    # Prefer gzip/deflate only so response is always decompressed by requests (no Brotli)
+    # Prefer gzip/deflate only so response is always decompressed (no Brotli)
     headers = {**BROWSER_HEADERS, "Accept-Encoding": "gzip, deflate"}
     try:
-        response = requests.get(
-            url,
-            timeout=timeout,
-            allow_redirects=True,
-            headers=headers,
-        )
+        response = _http_get(url, headers, timeout)
         content_type = response.headers.get("Content-Type")
         if content_type and ";" in content_type:
             content_type = content_type.split(";")[0].strip()
@@ -320,6 +420,13 @@ def fetch_page_body(
         if response.status_code == 200 and content_type and "text/html" in content_type.lower():
             if _html_body_looks_like_not_found(body):
                 return 404, body, content_type, True
+        # catalog.data.gov uses AWS WAF; requests returns 202 with a challenge page.
+        # Fall back to Playwright so a real browser can pass the challenge.
+        if _is_aws_waf_challenge(response.status_code, body):
+            pw_status, pw_body, pw_ct, pw_404 = _fetch_page_body_with_playwright(url, timeout)
+            if pw_status == 200 and pw_body:
+                return pw_status, pw_body, pw_ct or "text/html", pw_404
+            # If Playwright also failed, return original response
         return response.status_code, body, content_type, False
     except Exception as exc:
         cause = exc.__cause__ if exc.__cause__ is not None else exc
