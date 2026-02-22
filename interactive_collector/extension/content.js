@@ -3,8 +3,6 @@
  *
  * On launcher page: store drpid and collectorBase from URL, let redirect proceed.
  * On data.gov pages: inject "Save as PDF" button; on click, generate PDF and POST to collector.
- * In collector Source pane iframe: intercept link clicks (including download attr) so binary
- * links trigger the collector's download workflow instead of the browser's default download.
  *
  * Content scripts run in an isolated world and cannot see page globals like window.html2pdf.
  * We inject a script into the page context to run html2pdf, then receive the blob via custom event.
@@ -18,38 +16,6 @@
 
   function isLauncherPage() {
     return LAUNCHER_MATCH.test(window.location.pathname);
-  }
-
-  function isSourcePaneFrame() {
-    if (window === window.top) return false;
-    try {
-      var fe = window.frameElement;
-      return fe && fe.getAttribute && fe.getAttribute("data-drp-source-pane") === "true";
-    } catch (e) {
-      return false;
-    }
-  }
-
-  function interceptSourcePaneLinks() {
-    if (!isSourcePaneFrame()) return;
-    var referrer = "";
-    try {
-      var fe = window.frameElement;
-      if (fe && fe.getAttribute) referrer = fe.getAttribute("data-source-url") || "";
-    } catch (e) {}
-    function handleLink(e) {
-      var a = e.target && (e.target.closest ? e.target.closest("a") : e.target);
-      if (!a || !a.href) return;
-      if (a.href.indexOf("javascript:") === 0 || a.href.indexOf("mailto:") === 0 ||
-          a.href.indexOf("tel:") === 0 || a.href.indexOf("#") === 0) return;
-      if (a.href.indexOf("http://") !== 0 && a.href.indexOf("https://") !== 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      window.parent.postMessage({ type: "COLLECTOR_LINK_CLICK", url: a.href, referrer: referrer || null }, "*");
-    }
-    document.addEventListener("mousedown", handleLink, true);
-    document.addEventListener("click", handleLink, true);
   }
 
   function handleLauncherPage() {
@@ -218,10 +184,9 @@
     setTimeout(ensureButton, 150);
   }
 
-  interceptSourcePaneLinks();
   if (isLauncherPage()) {
     handleLauncherPage();
-  } else if (window === window.top) {
+  } else {
     addSaveButton();
     window.addEventListener("popstate", onUrlChange);
     var _push = history.pushState, _replace = history.replaceState;

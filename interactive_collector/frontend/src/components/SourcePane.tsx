@@ -68,8 +68,6 @@ export function SourcePane() {
           srcDoc={sourceSrcdoc}
           sandbox="allow-same-origin allow-scripts allow-forms allow-top-navigation-by-user-activation"
           title="Source page"
-          data-drp-source-pane="true"
-          data-source-url={sourceUrl || ""}
         />
       ) : (
         <div className="pane-empty">

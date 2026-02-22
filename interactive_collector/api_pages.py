@@ -164,49 +164,27 @@ def _inject_link_interceptor(html_body: str, page_url: str) -> str:
     Inject a script that intercepts link clicks and posts COLLECTOR_LINK_CLICK to parent.
 
     For SPA: links no longer navigate; the React app receives the message and loads
-    the page via API, updating only the Linked pane. Must run before page scripts
-    so clicks on binary links (.zip, .pdf, etc.) are intercepted instead of triggering
-    the browser's native download.
+    the page via API, updating only the Linked pane.
     """
     import json as _json
     page_url_js = _json.dumps(page_url)
     script = f'''<script>
 (function(){{
   var pageUrl = {page_url_js};
-  function handleLink(e) {{
+  document.addEventListener("click", function(e) {{
     var a = e.target && (e.target.closest ? e.target.closest("a") : e.target);
     if (!a || !a.href) return;
     if (a.href.startsWith("javascript:") || a.href.startsWith("mailto:") || a.href.startsWith("tel:") || a.href.startsWith("#")) return;
     if (!a.href.startsWith("http://") && !a.href.startsWith("https://")) return;
     e.preventDefault();
     e.stopPropagation();
-    e.stopImmediatePropagation();
     window.parent.postMessage({{ type: "COLLECTOR_LINK_CLICK", url: a.href, referrer: pageUrl }}, "*");
-  }}
-  document.addEventListener("mousedown", handleLink, true);
-  document.addEventListener("click", handleLink, true);
+  }}, true);
 }})();
 </script>'''
-    # Insert at start of <head> so our listener runs before page scripts (which often
-    # run at end of body) - otherwise page handlers can consume the event first and
-    # trigger native download for .zip/.pdf links.
-    if "<head" in html_body.lower():
-        return re.sub(
-            r"(<head[^>]*>)",
-            r"\1" + script,
-            html_body,
-            count=1,
-            flags=re.IGNORECASE,
-        )
-    if "<html" in html_body.lower():
-        return re.sub(
-            r"(<html[^>]*>)",
-            r"\1" + script,
-            html_body,
-            count=1,
-            flags=re.IGNORECASE,
-        )
-    return script + html_body
+    if "</body>" in html_body.lower():
+        return re.sub(r"</body>", script + "</body>", html_body, count=1, flags=re.IGNORECASE)
+    return html_body + script
 
 
 def prepare_page_content(
