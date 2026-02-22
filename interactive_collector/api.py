@@ -24,8 +24,8 @@ from interactive_collector.api_projects import (
     get_project_by_drpid,
 )
 from interactive_collector.api_save import generate_save_progress, save_metadata
-from interactive_collector.api_scoreboard import add_to_scoreboard, clear_scoreboard, get_scoreboard_tree, get_scoreboard_urls
-from interactive_collector.collector_state import get_result_by_drpid
+from interactive_collector.api_scoreboard import add_download, add_to_scoreboard, clear_scoreboard, get_scoreboard_tree, get_scoreboard_urls
+from interactive_collector.collector_state import get_result_by_drpid, get_scoreboard
 from utils.file_utils import sanitize_filename
 from utils.url_utils import BROWSER_HEADERS, is_valid_url
 
@@ -154,7 +154,7 @@ def load_source_route() -> Any:
 
     app_root = request.url_root.rstrip("/") or request.host_url.rstrip("/")
     clear_scoreboard()
-    srcdoc, body_message, status_label, h1_text, extracted_metadata = prepare_page_content(
+    srcdoc, body_message, status_label, h1_text, extracted_metadata, _ = prepare_page_content(
         url, url, drpid, for_spa=True
     )
     title = extracted_metadata.get("title", "").strip() or h1_text.strip()
@@ -316,10 +316,75 @@ def no_links_route() -> Any:
     return {"ok": True}
 
 
+@api_bp.route("/downloads-watcher/start", methods=["POST"])
+def downloads_watcher_start() -> Any:
+    """
+    Start watching the user's Downloads folder. New files are moved to the project output folder.
+
+    Expects JSON/form: {drpid}. Triggered when user clicks Copy & Open.
+    """
+    if request.is_json:
+        data = request.get_json() or {}
+    else:
+        data = {"drpid": (request.form.get("drpid") or "").strip()}
+    drpid_val = data.get("drpid")
+    if drpid_val is None or drpid_val == "":
+        return {"error": "drpid required", "ok": False}, 400
+    try:
+        drpid = int(drpid_val)
+    except (ValueError, TypeError):
+        return {"error": "Invalid drpid", "ok": False}, 400
+    folder_path_str = get_result_by_drpid().get(drpid, {}).get("folder_path")
+    if not folder_path_str:
+        folder_path_str = ensure_output_folder(drpid)
+    if not folder_path_str:
+        return {"error": "No output folder for project", "ok": False}, 400
+    output_folder = Path(folder_path_str)
+
+    def on_new_file(dest_path_str: str, dest_path: Path, size: int) -> None:
+        ext = (dest_path.suffix or "").lstrip(".") or ""
+        add_download(
+            url=f"Downloads:{dest_path.name}",
+            referrer=None,
+            file_path=dest_path_str,
+            file_size=size,
+            extension=ext,
+            filename=dest_path.name,
+        )
+
+    from interactive_collector.downloads_watcher import start_watching
+    ok, msg = start_watching(drpid, output_folder, on_new_file)
+    if not ok:
+        return {"error": msg, "ok": False}, 400
+    return {"ok": True, "message": msg}
+
+
+@api_bp.route("/downloads-watcher/stop", methods=["POST"])
+def downloads_watcher_stop() -> Any:
+    """Stop watching the Downloads folder. Triggered when user clicks Collection complete."""
+    from interactive_collector.downloads_watcher import stop_watching
+    ok, msg = stop_watching()
+    return {"ok": ok, "message": msg}
+
+
+@api_bp.route("/downloads-watcher/status", methods=["GET"])
+def downloads_watcher_status() -> Any:
+    """Return whether the Downloads watcher is currently active."""
+    from interactive_collector.downloads_watcher import is_watching
+    return {"watching": is_watching()}
+
+
 @api_bp.route("/scoreboard", methods=["GET"])
 def scoreboard_get() -> Any:
     """Return the current scoreboard tree."""
     return {"scoreboard": get_scoreboard_tree(), "urls": get_scoreboard_urls()}
+
+
+@api_bp.route("/scoreboard/clear", methods=["POST"])
+def scoreboard_clear() -> Any:
+    """Clear the scoreboard."""
+    clear_scoreboard()
+    return {"scoreboard": [], "urls": []}
 
 
 @api_bp.route("/scoreboard/add", methods=["POST"])
@@ -375,6 +440,9 @@ def save_route() -> Any:
     if drpid_str and not will_generate_pdfs:
         try:
             drpid = int(drpid_str)
+            board = get_scoreboard()
+            notes_lines = [f"  {n.get('url', '')} -> {n.get('status_label', '')}" for n in board if n.get("url")]
+            status_notes = "\n".join(notes_lines) if notes_lines else None
             save_metadata(
                 drpid,
                 folder_path_str,
@@ -386,6 +454,7 @@ def save_route() -> Any:
                 time_start=metadata["time_start"],
                 time_end=metadata["time_end"],
                 download_date=metadata["download_date"],
+                status_notes=status_notes,
             )
         except (ValueError, TypeError):
             pass
@@ -434,6 +503,7 @@ def download_file_route() -> Any:
 
     Expects form: url, drpid, referrer?.
     Streams progress (SAVING, PROGRESS, DONE).
+    Creates output folder on demand if missing.
     """
     url = (request.form.get("url") or "").strip()
     drpid_str = (request.form.get("drpid") or "").strip()
@@ -447,6 +517,8 @@ def download_file_route() -> Any:
         return "Invalid DRPID", 400
 
     folder_path = get_result_by_drpid().get(drpid, {}).get("folder_path")
+    if not folder_path:
+        folder_path = ensure_output_folder(drpid)
     if not folder_path:
         return "No output folder for this project", 400
 

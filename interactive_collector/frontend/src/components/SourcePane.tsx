@@ -15,16 +15,18 @@ export function SourcePane() {
     if (sourceUrl && /^https?:\/\//.test(sourceUrl)) window.open(sourceUrl, "_blank", "noopener,noreferrer");
   };
 
+  const { startDownloadsWatcher } = useCollectorStore();
   const copyAndOpen = useCallback(async () => {
     if (!sourceUrl || !drpid || !/^https?:\/\//.test(sourceUrl)) return;
     const launcher = `${window.location.origin}/extension/launcher?drpid=${drpid}&url=${encodeURIComponent(sourceUrl)}`;
     try {
       await navigator.clipboard.writeText(launcher);
-      setToast("Copied! Paste in browser with extension.");
+      setToast("Copied! Paste in browser. Watching Downloads folder.");
+      await startDownloadsWatcher();
     } catch {
       window.prompt("Copy this URL and paste in extended browser:", launcher);
     }
-  }, [sourceUrl, drpid]);
+  }, [sourceUrl, drpid, startDownloadsWatcher]);
 
   useEffect(() => {
     if (!toast) return;
@@ -66,6 +68,8 @@ export function SourcePane() {
           srcDoc={sourceSrcdoc}
           sandbox="allow-same-origin allow-scripts allow-forms allow-top-navigation-by-user-activation"
           title="Source page"
+          data-drp-source-pane="true"
+          data-source-url={sourceUrl || ""}
         />
       ) : (
         <div className="pane-empty">

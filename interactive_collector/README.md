@@ -14,6 +14,7 @@ Standalone tool to fetch URLs and explore links. It reuses pipeline code (URL fe
 - **Scoreboard**: Hierarchical list of visited URLs (by referrer) with status (OK, 404, 404 logical).
 - **Follow links**: Links in the page are rewritten so that clicking opens the target in the **Linked** pane and keeps the source page visible in **Source**.
 - **Base tag** injection so relative CSS/JS/images load; only `<a href="...">` is rewritten (stylesheets etc. unchanged).
+- **Saving non-HTML links**: PDF, CSV, ZIP, XML, and other non-HTML resources show a download button to save to the project folder. Uses `utils.url_utils.is_non_html_response` (magic bytes, Content-Type, body sniffing) consistently across SPA and legacy app.
 
 ## Pipeline integration — Done
 
@@ -23,12 +24,18 @@ Standalone tool to fetch URLs and explore links. It reuses pipeline code (URL fe
 - **Run from orchestrator**: Use module `interactive_collector`. The orchestrator sets the app’s DB path (same as pipeline) and starts the Flask app; the app then loads the first eligible project from Storage. No environment variables are used.
 - **Standalone**: Run `python -m interactive_collector`; the app uses `drp_pipeline.db` in the current directory by default. If there are no eligible projects, the form is shown with no DRPID.
 
-## Phase 3 — Next
+## Phase 3 — Done
 
-- **Persistence**: Optional save/load or clear of scoreboard (or persist to pipeline DB).
-- **Export**: Export scoreboard or visited-URL list (e.g. for pipeline input).
-- **Pipeline integration (further)**: Feed collected URLs/status back into the DRP pipeline (e.g. update record after collection).
-- **Polish**: Clear scoreboard button, invalid-URL handling in link-click flow, optional back/forward.
+- **Clear scoreboard**: Button to clear the scoreboard (API: POST /api/scoreboard/clear).
+- **Export**: Export scoreboard as JSON or visited URLs as CSV (for pipeline input).
+- **Pipeline integration**: On save, visited URLs and status are written to Storage `status_notes`.
+- **Polish**: Clear scoreboard button.
+
+## Phase 4 — Next
+
+- **Persistence**: Optional save/load of scoreboard (or persist to pipeline DB).
+- **Invalid-URL handling**: Handle invalid URLs in link-click flow.
+- **Optional back/forward**: Browser-like back/forward in panes.
 
 ## Requirements
 

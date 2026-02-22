@@ -114,6 +114,7 @@ def save_metadata(
     time_start: str,
     time_end: str,
     download_date: str,
+    status_notes: Optional[str] = None,
 ) -> None:
     """
     Update the project record in Storage with metadata and folder stats (extensions, file_size).
@@ -146,6 +147,7 @@ def save_metadata(
         "status": "collector",
         "errors": None,
         "title": title,
+        "status_notes": (status_notes or "").strip() or None,
         "agency": agency,
         "office": office,
         "summary": summary,
@@ -289,6 +291,11 @@ def generate_save_progress(
             done_sent = True
             worker.join(timeout=1.0)
             if drpid is not None and folder_path_str and metadata:
+                from interactive_collector.collector_state import get_scoreboard
+
+                board = get_scoreboard()
+                notes_lines = [f"  {n.get('url', '')} -> {n.get('status_label', '')}" for n in board if n.get("url")]
+                status_notes = "\n".join(notes_lines) if notes_lines else None
                 save_metadata(
                     drpid,
                     folder_path_str,
@@ -300,5 +307,6 @@ def generate_save_progress(
                     time_start=metadata.get("time_start", ""),
                     time_end=metadata.get("time_end", ""),
                     download_date=metadata.get("download_date", ""),
+                    status_notes=status_notes,
                 )
             yield f"DONE\t{item[1]}\n"

@@ -54,6 +54,7 @@ interface CollectorState {
   downloadProgress: string;
   downloadModalOpen: boolean;
   noLinksModalOpen: boolean;
+  downloadsWatcherActive: boolean;
 }
 
 interface CollectorActions {
@@ -70,8 +71,11 @@ interface CollectorActions {
   downloadBinary: () => Promise<void>;
   closeDownloadModal: () => void;
   refreshScoreboard: () => Promise<void>;
+  clearScoreboard: () => Promise<void>;
   setNoLinks: () => Promise<void>;
   closeNoLinksModal: () => void;
+  startDownloadsWatcher: () => Promise<void>;
+  stopDownloadsWatcher: () => Promise<void>;
 }
 
 const API = "/api";
@@ -163,6 +167,7 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
   downloadProgress: "",
   downloadModalOpen: false,
   noLinksModalOpen: false,
+  downloadsWatcherActive: false,
 
   setDrpid: (v) => set({ drpid: v }),
 
@@ -408,6 +413,22 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
     }
   },
 
+  clearScoreboard: async () => {
+    try {
+      const data = await fetchJson<{ scoreboard: ScoreboardNode[]; urls: string[] }>(
+        `${API}/scoreboard/clear`,
+        { method: "POST" }
+      );
+      set({
+        scoreboard: data.scoreboard,
+        scoreboardUrls: data.urls,
+        checkedIndices: new Set(),
+      });
+    } catch {
+      // ignore
+    }
+  },
+
   setNoLinks: async () => {
     const { drpid } = get();
     if (!drpid) return;
@@ -424,6 +445,35 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
   },
 
   closeNoLinksModal: () => set({ noLinksModalOpen: false }),
+
+  startDownloadsWatcher: async () => {
+    const { drpid } = get();
+    if (!drpid) return;
+    try {
+      const data = await fetchJson<{ ok: boolean; message?: string }>(`${API}/downloads-watcher/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ drpid }),
+      });
+      if (data.ok) {
+        set({ downloadsWatcherActive: true });
+      }
+    } catch {
+      // ignore - watcher may fail (e.g. watchdog not installed)
+    }
+  },
+
+  stopDownloadsWatcher: async () => {
+    try {
+      const data = await fetchJson<{ ok: boolean }>(`${API}/downloads-watcher/stop`, {
+        method: "POST",
+      });
+      set({ downloadsWatcherActive: false });
+      if (data.ok) await get().refreshScoreboard();
+    } catch {
+      set({ downloadsWatcherActive: false });
+    }
+  },
 
   downloadBinary: async () => {
     const { linkedBinaryUrl, linkedBinaryReferrer, drpid } = get();

@@ -272,6 +272,90 @@ def _is_text_content_type(content_type: Optional[str]) -> bool:
     return False
 
 
+def is_displayable_content_type(content_type: Optional[str]) -> bool:
+    """
+    Return True if we should show the response body as text in an iframe (not binary).
+
+    Like _is_text_content_type but excludes XML (application/xml, text/xml) so XML
+    is offered as download instead of displayed. Used by Interactive Collector to
+    decide when to show the download button for non-HTML links.
+    """
+    if not content_type:
+        return True
+    ct = content_type.lower().strip()
+    if ct in ("application/xml", "text/xml"):
+        return False
+    if ct.startswith("text/"):
+        return True
+    if ct in (
+        "application/json",
+        "application/javascript",
+        "application/xhtml+xml",
+    ):
+        return True
+    return False
+
+
+def body_looks_like_xml(body: Optional[str | bytes]) -> bool:
+    """Return True if body starts with XML declaration (e.g. when Content-Type is wrong)."""
+    if body is None:
+        return False
+    if isinstance(body, bytes):
+        body = body.decode("utf-8", errors="replace")
+    s = (body or "").strip()
+    return len(s) >= 5 and s[:5].lower() == "<?xml"
+
+
+def body_looks_like_html(body: Optional[str | bytes]) -> bool:
+    """
+    Return True if the body looks like an HTML document (not data XML).
+
+    Pages like NCBI BioSample may be served as application/xml but are actually HTML.
+    We treat as HTML if we see <!DOCTYPE html or <html in the first 8KB.
+    """
+    if body is None:
+        return False
+    if isinstance(body, bytes):
+        body = body.decode("utf-8", errors="replace")
+    s = (body or "").strip()
+    if len(s) < 4:
+        return False
+    head = s[:8192].lower()
+    return "<!doctype html" in head or "<html" in head
+
+
+def is_non_html_response(
+    content_type: Optional[str],
+    body: Optional[str | bytes],
+    raw_bytes: Optional[bytes] = None,
+) -> bool:
+    """
+    Return True if the response should be treated as non-HTML (offer download, not display).
+
+    Uses the same logic as the Interactive Collector: magic bytes, Content-Type,
+    and body sniffing (XML vs HTML). Reuse this to decide when to show the download
+    button for links (PDF, CSV, ZIP, XML, etc.) instead of displaying in an iframe.
+
+    Args:
+        content_type: Response Content-Type header (or None).
+        body: Decoded response body (text or empty for binary). From fetch_page_body.
+        raw_bytes: Optional raw response bytes. When provided, magic-byte detection
+            (PDF, ZIP, PNG, JPEG, gzip) overrides Content-Type.
+
+    Returns:
+        True if we should offer download (binary/XML/non-displayable).
+    """
+    if raw_bytes is not None and len(raw_bytes) >= 2 and _raw_looks_binary(raw_bytes):
+        return True
+    if body_looks_like_html(body):
+        return False
+    if content_type and not is_displayable_content_type(content_type):
+        return True
+    if body_looks_like_xml(body):
+        return True
+    return False
+
+
 def _is_aws_waf_challenge(status_code: int, body: str) -> bool:
     """
     Return True if the response looks like an AWS WAF JavaScript challenge page.
@@ -286,13 +370,23 @@ def _is_aws_waf_challenge(status_code: int, body: str) -> bool:
     if not body or len(body) < 100:
         return False
     lower = body.lower()
-    return (
+    # Common WAF challenge indicators
+    if (
         "awswaf" in lower
         or "challenge.js" in lower
         or "challenge-container" in lower
         or "human verification" in lower
-        or ("noscript" in lower and "javascript is disabled" in lower)
-    )
+    ):
+        return True
+    # noscript block with JS requirement (various phrasings)
+    if "noscript" in lower and (
+        "javascript is disabled" in lower
+        or "javascript is not enabled" in lower
+        or "enable javascript" in lower
+        or "javascript must be enabled" in lower
+    ):
+        return True
+    return False
 
 
 def is_waf_challenge(status_code: int, body: str) -> bool:

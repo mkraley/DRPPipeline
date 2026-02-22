@@ -19,8 +19,18 @@ import { useLinkInterceptor } from "./useLinkInterceptor";
 
 export default function App() {
   const [view, setView] = useState<"main" | "collector">("main");
-  const { drpid, folderPath, loadProject, loadFirstProject, loadNext, save, setNoLinks, loading } =
-    useCollectorStore();
+  const {
+    drpid,
+    folderPath,
+    loadProject,
+    loadFirstProject,
+    loadNext,
+    save,
+    setNoLinks,
+    loading,
+    downloadsWatcherActive,
+    stopDownloadsWatcher,
+  } = useCollectorStore();
   const leftColRef = useRef<HTMLDivElement>(null);
   const splitterVRef = useRef<HTMLDivElement>(null);
   const splitterHRef = useRef<HTMLDivElement>(null);
@@ -109,6 +119,18 @@ export default function App() {
     }
   }, [view, loadProject, loadFirstProject]);
 
+  useEffect(() => {
+    if (view !== "collector") return;
+    fetch("/api/downloads-watcher/status")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.watching) {
+          useCollectorStore.setState({ downloadsWatcherActive: true });
+        }
+      })
+      .catch(() => {});
+  }, [view]);
+
   const onLoadDrpidSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
@@ -168,6 +190,16 @@ export default function App() {
             Load
           </button>
         </form>
+        {downloadsWatcherActive && (
+          <button
+            type="button"
+            className="btn-top"
+            title="Stop watching Downloads folder and move any new files to project output"
+            onClick={stopDownloadsWatcher}
+          >
+            Collection complete
+          </button>
+        )}
         {folderPath && (
           <>
             <button

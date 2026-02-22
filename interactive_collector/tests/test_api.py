@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from interactive_collector.app import app
-from interactive_collector.api_scoreboard import clear_scoreboard
+from interactive_collector.api_scoreboard import add_to_scoreboard, clear_scoreboard
 
 
 class TestApiProjects(unittest.TestCase):
@@ -93,6 +93,50 @@ class TestApiScoreboard(unittest.TestCase):
         self.assertIn("urls", data)
         self.assertEqual(data["scoreboard"], [])
         self.assertEqual(data["urls"], [])
+
+    def test_scoreboard_clear_clears_and_returns_empty(self) -> None:
+        """POST /api/scoreboard/clear clears scoreboard and returns empty."""
+        add_to_scoreboard("https://example.com", None, "OK")
+        resp = self.client.post("/api/scoreboard/clear")
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertEqual(data["scoreboard"], [])
+        self.assertEqual(data["urls"], [])
+        resp2 = self.client.get("/api/scoreboard")
+        self.assertEqual(json.loads(resp2.data)["scoreboard"], [])
+
+
+class TestDownloadsWatcher(unittest.TestCase):
+    """Tests for /api/downloads-watcher/* endpoints."""
+
+    def setUp(self) -> None:
+        self.client = app.test_client()
+
+    def test_start_requires_drpid(self) -> None:
+        """POST /api/downloads-watcher/start without drpid returns 400."""
+        resp = self.client.post(
+            "/api/downloads-watcher/start",
+            json={},
+            content_type="application/json",
+        )
+        self.assertIn(resp.status_code, (400, 500))
+        data = json.loads(resp.data)
+        self.assertIn("error", data)
+
+    def test_status_returns_watching(self) -> None:
+        """GET /api/downloads-watcher/status returns watching flag."""
+        resp = self.client.get("/api/downloads-watcher/status")
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertIn("watching", data)
+        self.assertIsInstance(data["watching"], bool)
+
+    def test_stop_returns_ok(self) -> None:
+        """POST /api/downloads-watcher/stop returns ok."""
+        resp = self.client.post("/api/downloads-watcher/stop")
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertIn("ok", data)
 
 
 class TestApiPipeline(unittest.TestCase):

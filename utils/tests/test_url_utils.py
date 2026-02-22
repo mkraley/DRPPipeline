@@ -420,6 +420,59 @@ class TestUrlUtils(unittest.TestCase):
         self.assertEqual(ct, "text/html")
 
 
+class TestIsNonHtmlResponse(unittest.TestCase):
+    """Tests for is_non_html_response (used for download button on non-HTML links)."""
+
+    def test_pdf_content_type_is_non_html(self) -> None:
+        self.assertTrue(url_utils.is_non_html_response("application/pdf", ""))
+
+    def test_xml_content_type_is_non_html(self) -> None:
+        self.assertTrue(url_utils.is_non_html_response("application/xml", ""))
+
+    def test_zip_content_type_is_non_html(self) -> None:
+        self.assertTrue(url_utils.is_non_html_response("application/zip", ""))
+
+    def test_html_content_type_with_html_body_is_html(self) -> None:
+        self.assertFalse(url_utils.is_non_html_response("text/html", "<html><body>Hi</body></html>"))
+
+    def test_xml_content_type_with_html_body_is_html(self) -> None:
+        """NCBI BioSample etc.: served as XML but body has <html>."""
+        self.assertFalse(url_utils.is_non_html_response("application/xml", "<!DOCTYPE html><html><body></body></html>"))
+
+    def test_xml_body_sniffing_is_non_html(self) -> None:
+        self.assertTrue(url_utils.is_non_html_response("text/plain", "<?xml version='1.0'?>"))
+
+    def test_raw_magic_bytes_overrides_content_type(self) -> None:
+        self.assertTrue(url_utils.is_non_html_response("text/html", "", raw_bytes=b"%PDF-1.4"))
+
+    def test_json_content_type_is_html(self) -> None:
+        """JSON is displayable as text, not offered as download."""
+        self.assertFalse(url_utils.is_non_html_response("application/json", '{"a":1}'))
+
+
+class TestWafChallenge(unittest.TestCase):
+    """Tests for is_waf_challenge (AWS WAF detection). Body must be >= 100 chars."""
+
+    def test_javascript_disabled_detected(self) -> None:
+        body = "<noscript>JavaScript is disabled. Please enable it.</noscript>" + " " * 50
+        self.assertTrue(url_utils.is_waf_challenge(202, body))
+
+    def test_javascript_not_enabled_detected(self) -> None:
+        body = "<noscript>JavaScript is not enabled. Enable JavaScript to continue.</noscript>" + " " * 50
+        self.assertTrue(url_utils.is_waf_challenge(202, body))
+
+    def test_enable_javascript_detected(self) -> None:
+        body = "<noscript>Please enable JavaScript to continue.</noscript>" + " " * 60
+        self.assertTrue(url_utils.is_waf_challenge(200, body))
+
+    def test_awswaf_detected(self) -> None:
+        self.assertTrue(url_utils.is_waf_challenge(202, "x" * 100 + "awswaf challenge"))
+
+    def test_normal_html_not_detected(self) -> None:
+        body = "<html><body><h1>Normal page</h1><noscript>Fallback</noscript></body></html>" + " " * 30
+        self.assertFalse(url_utils.is_waf_challenge(200, body))
+
+
 class TestResolveCatalogResourceUrl(unittest.TestCase):
     """Tests for resolve_catalog_resource_url."""
 

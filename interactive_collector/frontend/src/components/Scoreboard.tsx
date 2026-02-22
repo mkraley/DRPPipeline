@@ -7,6 +7,26 @@
 import { useCallback } from "react";
 import { useCollectorStore, type ScoreboardNode } from "../store";
 
+function walkScoreboard(nodes: ScoreboardNode[]): ScoreboardNode[] {
+  const flat: ScoreboardNode[] = [];
+  function walk(n: ScoreboardNode[]) {
+    for (const node of n) {
+      flat.push(node);
+      if (node.children?.length) walk(node.children);
+    }
+  }
+  walk(nodes);
+  return flat;
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 function ScoreboardNodeItem({
   node,
   sourceUrl,
@@ -97,7 +117,7 @@ function ScoreboardNodeItem({
 }
 
 export function Scoreboard() {
-  const { scoreboard, sourceUrl, loadLinked, refreshScoreboard } = useCollectorStore();
+  const { scoreboard, sourceUrl, loadLinked, refreshScoreboard, clearScoreboard } = useCollectorStore();
 
   const onLinkClick = useCallback(
     (url: string, referrer: string | null, fromScoreboard: boolean) => {
@@ -117,6 +137,44 @@ export function Scoreboard() {
           title="Refresh scoreboard (e.g. after saving from extension)"
         >
           Refresh
+        </button>
+        <button
+          type="button"
+          className="btn-refresh btn-clear"
+          onClick={() => clearScoreboard()}
+          title="Clear scoreboard"
+          disabled={scoreboard.length === 0}
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          className="btn-refresh btn-export"
+          onClick={() => {
+            const json = JSON.stringify(scoreboard, null, 2);
+            downloadBlob(new Blob([json], { type: "application/json" }), "scoreboard.json");
+          }}
+          title="Export scoreboard as JSON"
+          disabled={scoreboard.length === 0}
+        >
+          Export JSON
+        </button>
+        <button
+          type="button"
+          className="btn-refresh btn-export"
+          onClick={() => {
+            const flat = walkScoreboard(scoreboard);
+            const header = "url,status,referrer\n";
+            const rows = flat.map(
+              (n) =>
+                `"${(n.url || "").replace(/"/g, '""')}","${(n.status_label || "").replace(/"/g, '""')}","${((n.referrer || "").replace(/"/g, '""'))}"`
+            );
+            downloadBlob(new Blob([header + rows.join("\n")], { type: "text/csv" }), "visited_urls.csv");
+          }}
+          title="Export visited URLs as CSV (for pipeline input)"
+          disabled={scoreboard.length === 0}
+        >
+          Export CSV
         </button>
       </h3>
       {scoreboard.length === 0 ? (

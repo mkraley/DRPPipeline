@@ -12,14 +12,14 @@ import re
 from typing import Any, Optional
 from urllib.parse import urljoin
 
-from utils.url_utils import fetch_page_body, is_valid_url, is_waf_challenge, resolve_catalog_resource_url
-
-# Content types we display as text (not binary). XML is excluded so it's offered as download.
-_DISPLAYABLE = (
-    "application/json",
-    "application/javascript",
-    "application/xhtml+xml",
-    "text/plain",
+from utils.url_utils import (
+    body_looks_like_html,
+    body_looks_like_xml,
+    fetch_page_body,
+    is_non_html_response,
+    is_valid_url,
+    is_waf_challenge,
+    resolve_catalog_resource_url,
 )
 
 
@@ -63,47 +63,12 @@ def _inject_base(html_body: str, page_url: str) -> str:
 
 
 def _is_displayable_text(content_type: Optional[str]) -> bool:
-    """Return True if we should show the response body as text (not binary)."""
+    """Return True if we should show the response body as text (not binary). Uses url_utils."""
+    from utils.url_utils import is_displayable_content_type
+
     if not content_type:
         return True
-    ct = content_type.lower().strip()
-    # XML types: treat as binary so we offer download instead of iframe
-    if ct in ("application/xml", "text/xml"):
-        return False
-    if ct.startswith("text/"):
-        return True
-    if ct in _DISPLAYABLE:
-        return True
-    return False
-
-
-def _body_looks_like_xml(body: Any) -> bool:
-    """Return True if body starts with XML declaration (e.g. when Content-Type is wrong)."""
-    if isinstance(body, bytes):
-        body = body.decode("utf-8", errors="replace")
-    s = (body or "").strip()
-    if len(s) < 5:
-        return False
-    return s[:5].lower() == "<?xml"
-
-
-def _body_looks_like_html(body: Any) -> bool:
-    """
-    Return True if the body looks like an HTML document (not data XML).
-
-    Pages like NCBI BioSample may be served as application/xml or with <?xml
-    but are actually HTML. We treat as HTML if we see <!DOCTYPE html or <html
-    in the first 8KB so they display in the pane instead of as download.
-    """
-    if body is None:
-        return False
-    if isinstance(body, bytes):
-        body = body.decode("utf-8", errors="replace")
-    s = (body or "").strip()
-    if len(s) < 4:
-        return False
-    head = s[:8192].lower()
-    return "<!doctype html" in head or "<html" in head
+    return is_displayable_content_type(content_type)
 
 
 def _h1_from_html(html_body: Any) -> str:
@@ -199,28 +164,49 @@ def _inject_link_interceptor(html_body: str, page_url: str) -> str:
     Inject a script that intercepts link clicks and posts COLLECTOR_LINK_CLICK to parent.
 
     For SPA: links no longer navigate; the React app receives the message and loads
-    the page via API, updating only the Linked pane.
+    the page via API, updating only the Linked pane. Must run before page scripts
+    so clicks on binary links (.zip, .pdf, etc.) are intercepted instead of triggering
+    the browser's native download.
     """
     import json as _json
     page_url_js = _json.dumps(page_url)
     script = f'''<script>
 (function(){{
   var pageUrl = {page_url_js};
-  document.addEventListener("click", function(e) {{
+  function handleLink(e) {{
     var a = e.target && (e.target.closest ? e.target.closest("a") : e.target);
     if (!a || !a.href) return;
     if (a.href.startsWith("javascript:") || a.href.startsWith("mailto:") || a.href.startsWith("tel:") || a.href.startsWith("#")) return;
     if (!a.href.startsWith("http://") && !a.href.startsWith("https://")) return;
     e.preventDefault();
     e.stopPropagation();
+    e.stopImmediatePropagation();
     window.parent.postMessage({{ type: "COLLECTOR_LINK_CLICK", url: a.href, referrer: pageUrl }}, "*");
-  }}, true);
+  }}
+  document.addEventListener("mousedown", handleLink, true);
+  document.addEventListener("click", handleLink, true);
 }})();
 </script>'''
-    # Insert before </body> or at end if no body
-    if "</body>" in html_body.lower():
-        return re.sub(r"</body>", script + "</body>", html_body, count=1, flags=re.IGNORECASE)
-    return html_body + script
+    # Insert at start of <head> so our listener runs before page scripts (which often
+    # run at end of body) - otherwise page handlers can consume the event first and
+    # trigger native download for .zip/.pdf links.
+    if "<head" in html_body.lower():
+        return re.sub(
+            r"(<head[^>]*>)",
+            r"\1" + script,
+            html_body,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    if "<html" in html_body.lower():
+        return re.sub(
+            r"(<html[^>]*>)",
+            r"\1" + script,
+            html_body,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    return script + html_body
 
 
 def prepare_page_content(
@@ -251,8 +237,10 @@ def prepare_page_content(
     h1_text = _h1_from_html(body or "") if body else ""
     extracted = _extract_metadata_from_html(body) if body else {"title": "", "agency": "", "office": "", "keywords": ""}
 
+    # Use shared logic (url_utils.is_non_html_response) to decide if link is non-HTML.
+    linked_is_binary = is_non_html_response(content_type, body)
+
     # catalog.data.gov uses AWS WAF; when blocked, we get a challenge page instead of real content.
-    # Show a helpful message instead of the raw challenge HTML ("JavaScript is disabled").
     if is_waf_challenge(status_code, body or ""):
         return (
             None,
@@ -261,24 +249,25 @@ def prepare_page_content(
             "WAF challenge",
             "",
             extracted,
+            False,  # WAF is not binary
         )
 
     # If body is actually HTML (e.g. NCBI pages served as XML), display it
-    if _body_looks_like_html(body):
+    if body_looks_like_html(body):
         pass  # treat as displayable below
     elif not _is_displayable_text(content_type) and content_type:
-        return None, f"Binary content ({html.escape(content_type)}). Not displayed.", status_label, "", extracted
-    elif _body_looks_like_xml(body):
-        return None, "XML content. Not displayed.", status_label, "", extracted
+        return None, f"Binary content ({html.escape(content_type)}). Not displayed.", status_label, "", extracted, True
+    elif body_looks_like_xml(body):
+        return None, "XML content. Not displayed.", status_label, "", extracted, True
     if (body or "").strip() == "" and _is_displayable_text(content_type):
-        return None, "Content could not be displayed (possibly binary or wrong encoding).", status_label, "", extracted
+        return None, "Content could not be displayed (possibly binary or wrong encoding).", status_label, "", extracted, False
 
     body_with_base = _inject_base(body or "", url_param)
     if for_spa:
         body_final = _inject_link_interceptor(body_with_base, url_param)
     else:
         body_final = body_with_base
-    return body_final, None, status_label, h1_text, extracted
+    return body_final, None, status_label, h1_text, extracted, False  # displayable HTML
 
 
 def load_page(
@@ -324,11 +313,8 @@ def load_page(
             linked_url_for_fetch = resolved
             linked_display_url = resolved
 
-    srcdoc, body_message, status_label, h1_text, extracted = prepare_page_content(
+    srcdoc, body_message, status_label, h1_text, extracted, linked_is_binary = prepare_page_content(
         linked_url_for_fetch, source_url, drpid, for_spa=True
-    )
-    linked_is_binary = srcdoc is None and body_message and (
-        "Binary content" in (body_message or "") or "XML content" in (body_message or "")
     )
 
     # Add source to scoreboard if not present (when loading linked from source).
@@ -352,7 +338,7 @@ def load_page(
     # When binary (PDF, ZIP, etc.), show referrer page in Linked pane instead of raw binary.
     linked_srcdoc_for_display = srcdoc
     if linked_is_binary and referrer and is_valid_url(referrer):
-        ref_srcdoc, _, _, _, _ = prepare_page_content(
+        ref_srcdoc, _, _, _, _, _ = prepare_page_content(
             referrer, source_url, drpid, for_spa=True
         )
         if ref_srcdoc:
@@ -361,7 +347,7 @@ def load_page(
     elif linked_is_binary:
         # Show source in linked pane when binary and no valid referrer.
         if source_url and is_valid_url(source_url):
-            ref_srcdoc, _, _, _, _ = prepare_page_content(
+            ref_srcdoc, _, _, _, _, _ = prepare_page_content(
                 source_url, source_url, drpid, for_spa=True
             )
             if ref_srcdoc:

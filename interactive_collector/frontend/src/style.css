@@ -196,6 +196,14 @@ body {
   background: #d0d0d0;
 }
 
+.scoreboard .btn-clear {
+  margin-left: 4px;
+}
+
+.scoreboard .btn-clear:not(:disabled):hover {
+  background: #f0c0c0;
+}
+
 .scoreboard > ul {
   list-style: none;
   margin: 0;

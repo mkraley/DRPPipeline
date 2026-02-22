@@ -17,12 +17,11 @@ export function LinkedPane() {
     linkedIsBinary,
     downloadBinary,
     drpid,
-    folderPath,
     sourceUrl,
     loadLinked,
     error,
   } = useCollectorStore();
-  const canDownload = linkedIsBinary && drpid && folderPath;
+  const canDownload = linkedIsBinary && drpid;
   const [loadUrlInput, setLoadUrlInput] = useState("");
 
   const openInNewTab = () => {

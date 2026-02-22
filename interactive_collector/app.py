@@ -28,7 +28,16 @@ from flask import Flask, redirect, request, render_template_string, send_from_di
 from interactive_collector.collector_state import get_result_by_drpid as _get_result_by_drpid
 from interactive_collector.collector_state import get_scoreboard as _get_scoreboard
 from utils.file_utils import create_output_folder, sanitize_filename
-from utils.url_utils import is_valid_url, fetch_page_body, resolve_catalog_resource_url, BROWSER_HEADERS
+from utils.url_utils import (
+    body_looks_like_html,
+    body_looks_like_xml,
+    fetch_page_body,
+    is_non_html_response,
+    is_valid_url,
+    is_displayable_content_type,
+    resolve_catalog_resource_url,
+    BROWSER_HEADERS,
+)
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB for extension PDF uploads
@@ -949,54 +958,6 @@ def _rewrite_links_to_app(
     )
 
 
-def _is_displayable_text(content_type: Optional[str]) -> bool:
-    """Return True if we should show the response body as text (not binary)."""
-    if not content_type:
-        return True
-    ct = content_type.lower().strip()
-    # XML types: treat as binary so we offer download instead of iframe
-    if ct in ("application/xml", "text/xml"):
-        return False
-    if ct.startswith("text/"):
-        return True
-    if ct in (
-        "application/json",
-        "application/javascript",
-        "application/xhtml+xml",
-    ):
-        return True
-    return False
-
-
-def _body_looks_like_xml(body: Any) -> bool:
-    """Return True if body starts with XML declaration (e.g. when Content-Type is wrong)."""
-    if isinstance(body, bytes):
-        body = body.decode("utf-8", errors="replace")
-    s = (body or "").strip()
-    if len(s) < 5:
-        return False
-    return s[:5].lower() == "<?xml"
-
-
-def _body_looks_like_html(body: Any) -> bool:
-    """
-    Return True if the body looks like an HTML document (not data XML).
-
-    Pages like NCBI BioSample may be served as application/xml or with <?xml
-    but are actually HTML. We treat as HTML if we see <!DOCTYPE html or <html
-    in the first 8KB so they display in the pane instead of as download.
-    """
-    if body is None:
-        return False
-    if isinstance(body, bytes):
-        body = body.decode("utf-8", errors="replace")
-    s = (body or "").strip()
-    if len(s) < 4:
-        return False
-    head = s[:8192].lower()
-    return "<!doctype html" in head or "<html" in head
-
-
 def _extension_from_content_type(content_type: Optional[str]) -> str:
     """Return extension with leading dot from Content-Type, or empty string."""
     if not content_type or ";" in content_type:
@@ -1233,30 +1194,32 @@ def _prepare_pane_content(
     app_root: str,
     source_url: str,
     drpid: Optional[str] = None,
-) -> tuple[Optional[str], Optional[str], str, str]:
+) -> tuple[Optional[str], Optional[str], str, str, bool]:
     """
-    Fetch url_param, inject base, rewrite links. Returns (safe_srcdoc, body_message, status_label, h1_text).
+    Fetch url_param, inject base, rewrite links. Uses url_utils.is_non_html_response.
+    Returns (safe_srcdoc, body_message, status_label, h1_text, is_binary).
     """
     status_code, body, content_type, is_logical_404 = fetch_page_body(url_param)
     status_label = _status_label(status_code, is_logical_404)
     h1_text = _h1_from_html(body or "") if body else ""
+    pane_is_binary = is_non_html_response(content_type, body)
 
     # If body is actually HTML (e.g. NCBI pages served as XML), display it
-    if _body_looks_like_html(body):
+    if body_looks_like_html(body):
         pass  # treat as displayable below
-    elif not _is_displayable_text(content_type) and content_type:
-        return None, f"Binary content ({html.escape(content_type)}). Not displayed.", status_label, ""
-    elif _body_looks_like_xml(body):
-        return None, "XML content. Not displayed.", status_label, ""
-    if (body or "").strip() == "" and _is_displayable_text(content_type):
-        return None, "Content could not be displayed (possibly binary or wrong encoding).", status_label, ""
+    elif content_type and not is_displayable_content_type(content_type):
+        return None, f"Binary content ({html.escape(content_type)}). Not displayed.", status_label, "", True
+    elif body_looks_like_xml(body):
+        return None, "XML content. Not displayed.", status_label, "", True
+    if (body or "").strip() == "" and is_displayable_content_type(content_type):
+        return None, "Content could not be displayed (possibly binary or wrong encoding).", status_label, "", False
 
     body_with_base = _inject_base_into_html(body or "", url_param)
     body_rewritten = _rewrite_links_to_app(
         body_with_base, url_param, app_root, source_url, url_param, drpid=drpid
     )
     safe_srcdoc = body_rewritten.replace("&", "&amp;").replace('"', "&quot;")
-    return safe_srcdoc, None, status_label, h1_text
+    return safe_srcdoc, None, status_label, h1_text, False
 
 
 # Path to built React SPA (served at / and /collector).
@@ -1350,7 +1313,7 @@ def legacy_index() -> str:
                 show_auto_download=False,
                 **_metadata_for_template(app, display_drpid, None),
             )
-        safe_srcdoc, body_message, status_label, src_h1 = _prepare_pane_content(
+        safe_srcdoc, body_message, status_label, src_h1, _ = _prepare_pane_content(
             url_param, app_root, url_param, drpid=display_drpid
         )
         _scoreboard_add(url_param, None, status_label)
@@ -1405,7 +1368,7 @@ def legacy_index() -> str:
                 **_metadata_for_template(app, display_drpid, None),
             )
         # Fetch both panes. For catalog.data.gov links, resolve on click and show the resolved URL in the Linked pane (skip the relay).
-        src_srcdoc, src_pane_message, src_status, src_h1 = _prepare_pane_content(
+        src_srcdoc, src_pane_message, src_status, src_h1, _ = _prepare_pane_content(
             source_url_param, app_root, source_url_param, drpid=display_drpid
         )
         linked_url_for_fetch = linked_url_param
@@ -1416,19 +1379,11 @@ def legacy_index() -> str:
             if resolved_linked:
                 linked_url_for_fetch = resolved_linked
                 linked_display_url = resolved_linked
-        linked_srcdoc, linked_pane_message, linked_status, _ = _prepare_pane_content(
+        linked_srcdoc, linked_pane_message, linked_status, _, linked_is_binary = _prepare_pane_content(
             linked_url_for_fetch, app_root, source_url_param, drpid=display_drpid
         )
         if not any(n["url"] == source_url_param for n in _scoreboard):
             _scoreboard_add(source_url_param, None, src_status)
-        linked_is_binary = (
-            linked_srcdoc is None
-            and linked_pane_message
-            and (
-                "Binary content" in (linked_pane_message or "")
-                or "XML content" in (linked_pane_message or "")
-            )
-        )
         if not from_scoreboard and not linked_is_binary:
             _scoreboard_add(linked_url_for_fetch, referrer_param, linked_status)
         # else: from_scoreboard click, or binary (DL entry added when download completes)
@@ -1445,7 +1400,7 @@ def legacy_index() -> str:
                 linked_srcdoc_for_display = src_srcdoc
                 linked_display_url_when_binary = source_url_param
             elif is_valid_url(referrer_param):
-                ref_srcdoc, _ref_msg, _ref_status, _ = _prepare_pane_content(
+                ref_srcdoc, _ref_msg, _ref_status, _, _ = _prepare_pane_content(
                     referrer_param, app_root, source_url_param, drpid=display_drpid
                 )
                 if ref_srcdoc:
