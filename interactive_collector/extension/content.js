@@ -12,6 +12,7 @@
 
   const LAUNCHER_MATCH = /\/extension\/launcher/;
   const DRP_ID = "drp-collector-save-btn";
+  var pageScriptInjected = false;
 
   function isLauncherPage() {
     return LAUNCHER_MATCH.test(window.location.pathname);
@@ -28,6 +29,8 @@
   }
 
   function injectPageScript() {
+    if (pageScriptInjected) return;
+    pageScriptInjected = true;
     const s = document.createElement("script");
     s.src = chrome.runtime.getURL("page.js");
     (document.head || document.documentElement).appendChild(s);
@@ -38,8 +41,8 @@
       const timeout = setTimeout(() => {
         document.removeEventListener("drp-pdf-ready", onReady);
         document.removeEventListener("drp-pdf-error", onErr);
-        reject(new Error("PDF generation timed out (html2pdf may still be loading)"));
-      }, 60000);
+        reject(new Error("PDF generation timed out (try a shorter page)"));
+      }, 300000);
       const onReady = (e) => {
         clearTimeout(timeout);
         document.removeEventListener("drp-pdf-ready", onReady);
@@ -65,11 +68,11 @@
     toast.id = DRP_ID + "-toast";
     toast.textContent = msg;
     toast.style.cssText =
-      "position:fixed;bottom:80px;right:20px;padding:10px 16px;background:" +
+      "position:fixed;bottom:80px;right:20px;padding:12px 18px;background:" +
       (isError ? "#c44" : "#282") +
-      ";color:#fff;border-radius:6px;z-index:2147483647;font-size:14px;";
+      ";color:#fff;border-radius:6px;z-index:2147483647;font-size:14px;max-width:90vw;";
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+    setTimeout(() => toast.remove(), isError ? 6000 : 5000);
   }
 
   function addSaveButton() {
@@ -102,31 +105,68 @@
 
       btn.disabled = true;
       btn.textContent = "Saving...";
+      showToast("Generating PDF...", false);
       try {
-        const pdfBase64 = await createPdfBlob(collectorBase);
-        if (!pdfBase64 || typeof pdfBase64 !== "string") {
-          showToast("No PDF data received", true);
-          return;
-        }
-        const resp = await chrome.runtime.sendMessage({
-          type: "drp-save-pdf",
+        var res = await chrome.runtime.sendMessage({
+          type: "drp-print-to-pdf",
           collectorBase,
           drpid,
           url: window.location.href,
-          referrer: document.referrer || "",
-          pdfBase64,
+          referrer: (document.referrer || "").trim() || "",
         });
-        if (resp && resp.ok) {
-          showToast("Saved: " + (resp.filename || "OK"), false);
-        } else {
-          showToast((resp && resp.error) || "Save failed", true);
+        if (res && res.ok) {
+          showToast("Saved: " + (res.filename || "OK"), false);
+          return;
         }
+        if (res && res.fallback) {
+          showToast("Using alternative PDF method...", false);
+          const pdfBase64 = await createPdfBlob(collectorBase);
+          if (!pdfBase64 || typeof pdfBase64 !== "string") {
+            showToast("No PDF data received", true);
+            return;
+          }
+          var r2 = await chrome.runtime.sendMessage({
+            type: "drp-save-pdf",
+            collectorBase,
+            drpid,
+            url: window.location.href,
+            referrer: (document.referrer || "").trim() || "",
+            pdfBase64,
+          });
+          if (r2 && r2.ok) {
+            showToast("Saved: " + (r2.filename || "OK"), false);
+          } else {
+            showToast((r2 && r2.error) || "Save failed", true);
+          }
+          return;
+        }
+        showToast((res && res.error) || "Print to PDF failed", true);
+        return;
       } catch (e) {
         var msg = e && e.message ? String(e.message) : "Failed to save";
         if (msg.indexOf("invalidated") !== -1) {
-          msg = "Extension was reloaded. Refresh this page and use Copy & Open again.";
+          showToast("Extension was reloaded. Refresh this page and use Copy & Open again.", true);
+        } else {
+          try {
+            showToast("Using alternative PDF method...", false);
+            const pdfBase64 = await createPdfBlob(collectorBase);
+            if (pdfBase64 && typeof pdfBase64 === "string") {
+              var r2 = await chrome.runtime.sendMessage({
+                type: "drp-save-pdf",
+                collectorBase,
+                drpid,
+                url: window.location.href,
+                referrer: (document.referrer || "").trim() || "",
+                pdfBase64,
+              });
+              if (r2 && r2.ok) {
+                showToast("Saved: " + (r2.filename || "OK"), false);
+                return;
+              }
+            }
+          } catch (_) {}
+          showToast(msg, true);
         }
-        showToast(msg, true);
       } finally {
         btn.disabled = false;
         btn.textContent = "Save as PDF";
@@ -134,9 +174,29 @@
     });
   }
 
+  function ensureButton() {
+    if (document.getElementById(DRP_ID)) return;
+    addSaveButton();
+  }
+
+  function onUrlChange() {
+    if (isLauncherPage()) return;
+    setTimeout(ensureButton, 150);
+  }
+
   if (isLauncherPage()) {
     handleLauncherPage();
   } else {
     addSaveButton();
+    window.addEventListener("popstate", onUrlChange);
+    var _push = history.pushState, _replace = history.replaceState;
+    history.pushState = function () {
+      _push.apply(this, arguments);
+      onUrlChange();
+    };
+    history.replaceState = function () {
+      _replace.apply(this, arguments);
+      onUrlChange();
+    };
   }
 })();

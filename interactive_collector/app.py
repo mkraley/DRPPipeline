@@ -31,6 +31,7 @@ from utils.file_utils import create_output_folder, sanitize_filename
 from utils.url_utils import is_valid_url, fetch_page_body, resolve_catalog_resource_url, BROWSER_HEADERS
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB for extension PDF uploads
 # Register API blueprints for SPA.
 from interactive_collector.api import api_bp
 from interactive_collector.api_pipeline import pipeline_bp

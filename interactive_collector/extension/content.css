@@ -22,3 +22,10 @@
   opacity: 0.7;
   cursor: not-allowed;
 }
+
+@media print {
+  .drp-collector-btn,
+  #drp-collector-save-btn-toast {
+    display: none !important;
+  }
+}

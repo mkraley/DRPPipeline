@@ -135,7 +135,11 @@ def create_output_folder(base_dir: Path, drpid: int) -> Optional[Path]:
 
     try:
         if folder_path.exists():
-            shutil.rmtree(folder_path)
+            try:
+                shutil.rmtree(folder_path)
+            except OSError as e:
+                from utils.Logger import Logger
+                Logger.warning(f"Could not empty output folder (in use?): {e}. Using existing folder.")
         folder_path.mkdir(parents=True, exist_ok=True)
         return folder_path
     except Exception as e:
