@@ -63,7 +63,31 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
     try {
       await startDownloadsWatcher();
       await navigator.clipboard.writeText(launcher);
-      setToast("Copied! Paste in browser. Save as PDF and downloads watching are on.");
+      setToast("Copied and opened in new window. If this window didn’t move left, press Win+Left to snap it.");
+      // Open in new window and try to arrange side-by-side (SPA left, page right)
+      const halfW = Math.floor((typeof screen !== "undefined" ? screen.availWidth : 1920) / 2);
+      const availH = typeof screen !== "undefined" ? screen.availHeight : 1000;
+      const availX = typeof screen !== "undefined" ? (screen as { availLeft?: number }).availLeft ?? 0 : 0;
+      const availY = typeof screen !== "undefined" ? (screen as { availTop?: number }).availTop ?? 0 : 0;
+      const viewWindow = window.open(
+        launcher,
+        "drp_collector_view",
+        `width=${halfW},height=${availH},left=${availX + halfW},top=${availY}`
+      );
+      if (viewWindow) {
+        try {
+          viewWindow.resizeTo(halfW, availH);
+          viewWindow.moveTo(availX + halfW, availY);
+        } catch {
+          /* ignore */
+        }
+        try {
+          window.resizeTo(halfW, availH);
+          window.moveTo(availX, availY);
+        } catch {
+          /* SPA window move often blocked by browser; user can Win+Left to snap */
+        }
+      }
     } catch {
       try {
         await navigator.clipboard.writeText(launcher);
