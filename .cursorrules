@@ -12,6 +12,7 @@ When modifying or creating code, you MUST:
 - [ ] Use UTF-8-sig encoding for CSV/text files
 - [ ] Use Windows path syntax (backslashes, drive letters)
 - [ ] If any of the code in the browser extension is modified, always update the extension version number
+- [ ] If any frontend code is changed, run npm build
 
 **If ANY of these are missing, the response is incomplete.**
 

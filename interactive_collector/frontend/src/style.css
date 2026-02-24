@@ -733,6 +733,30 @@ body {
   max-width: 320px;
 }
 
+.collector-status-collecting-btn {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1b5e20;
+  background: #c8e6c9;
+  border: 1px solid #81c784;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.collector-status-collecting-btn:hover {
+  background: #a5d6a7;
+  color: #0d3310;
+}
+
+.collector-status-not-collecting {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #666;
+}
+
 .collector-right-content {
   flex: 1;
   display: flex;

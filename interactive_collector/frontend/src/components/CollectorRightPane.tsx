@@ -25,18 +25,23 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
     loading,
     refreshScoreboard,
     startDownloadsWatcher,
+    downloadsWatcherActive,
+    stopDownloadsWatcher,
   } = useCollectorStore();
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/downloads-watcher/status")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.watching) {
-          useCollectorStore.setState({ downloadsWatcherActive: true });
-        }
-      })
-      .catch(() => {});
+    const updateStatus = () => {
+      fetch("/api/downloads-watcher/status")
+        .then((r) => r.json())
+        .then((data) => {
+          useCollectorStore.setState({ downloadsWatcherActive: !!data.watching });
+        })
+        .catch(() => {});
+    };
+    updateStatus();
+    const interval = setInterval(updateStatus, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -141,6 +146,22 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
               Save
             </button>
           </>
+        )}
+        {drpid != null && (
+          downloadsWatcherActive ? (
+            <button
+              type="button"
+              className="collector-status-collecting-btn"
+              onClick={() => stopDownloadsWatcher()}
+              title="Save as PDF and downloads capturing are on. Click to turn off (e.g. for debugging)."
+            >
+              Collecting
+            </button>
+          ) : (
+            <span className="collector-status-not-collecting" title="Click Copy & Open to start capturing">
+              Not collecting
+            </span>
+          )
         )}
         {toast && <span className="collector-rail-toast">{toast}</span>}
       </div>
