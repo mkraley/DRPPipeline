@@ -1,7 +1,7 @@
 """
 Flask Blueprint for Interactive Collector JSON API.
 
-Serves the SPA with: projects, load-page, scoreboard, save, download-file.
+Serves the SPA with: projects, projects/load, scoreboard, save, download-file.
 """
 
 import json
@@ -15,7 +15,6 @@ from flask import Blueprint, Response, request
 import requests
 
 from interactive_collector.api_download import generate_download_progress
-from interactive_collector.api_pages import load_page, prepare_page_content
 from interactive_collector.api_projects import (
     ensure_output_folder,
     folder_path_for_drpid,
@@ -91,96 +90,55 @@ def projects_get(drpid: int) -> Any:
     return proj
 
 
-@api_bp.route("/load-page", methods=["POST"])
-def load_page_route() -> Any:
+@api_bp.route("/projects/load", methods=["POST"])
+def projects_load() -> Any:
     """
-    Fetch a URL for display in Source or Linked pane.
-
-    Expects JSON: {url, referrer?, source_url, drpid?, from_scoreboard?}.
-    Or form: url, referrer, source_url, drpid, from_scoreboard.
-
-    Returns:
-        JSON with srcdoc, status_label, h1_text, is_binary, scoreboard, etc.
+    Load a project for the collector. Does not fetch the source URL.
+    Ensures output folder and clears scoreboard.
+    Expects JSON: {drpid} or no body for first eligible.
+    Returns project + folder_path + scoreboard.
     """
     if request.is_json:
         data = request.get_json() or {}
     else:
-        data = {
-            "url": (request.form.get("url") or "").strip(),
-            "referrer": (request.form.get("referrer") or "").strip() or None,
-            "source_url": (request.form.get("source_url") or "").strip(),
-            "drpid": (request.form.get("drpid") or "").strip() or None,
-            "from_scoreboard": (request.form.get("from_scoreboard") or "").strip() == "1",
-        }
-    url = _str_or_none(data.get("url")) or ""
-    referrer = _str_or_none(data.get("referrer"))
-    source_url = _str_or_none(data.get("source_url")) or ""
-    drpid = _str_or_none(data.get("drpid"))
-    from_scoreboard = data.get("from_scoreboard") is True or (data.get("from_scoreboard") == "1")
-    app_root = request.url_root.rstrip("/") or request.host_url.rstrip("/")
-
-    if not url:
-        return {"error": "url required"}, 400
-    if not source_url:
-        return {"error": "source_url required"}, 400
-
-    result = load_page(url, referrer, source_url, drpid, from_scoreboard, app_root)
-    if result.get("error"):
-        return result, 400
-    return result
-
-
-@api_bp.route("/load-source", methods=["POST"])
-def load_source_route() -> Any:
-    """
-    Load the initial source URL (clears scoreboard, adds root).
-
-    Expects JSON/form: {url, drpid?}.
-    """
-    if request.is_json:
-        data = request.get_json() or {}
-    else:
-        data = {
-            "url": (request.form.get("url") or "").strip(),
-            "drpid": (request.form.get("drpid") or "").strip() or None,
-        }
-    url = _str_or_none(data.get("url")) or ""
-    drpid = _str_or_none(data.get("drpid"))
-
-    if not url:
-        return {"error": "url required"}, 400
-    if not is_valid_url(url):
-        return {"error": "Invalid URL", "srcdoc": None, "status_label": "Error"}, 400
-
-    app_root = request.url_root.rstrip("/") or request.host_url.rstrip("/")
-    clear_scoreboard()
-    srcdoc, body_message, status_label, h1_text, extracted_metadata, _ = prepare_page_content(
-        url, url, drpid, for_spa=True
-    )
-    title = extracted_metadata.get("title", "").strip() or h1_text.strip()
-    add_to_scoreboard(url, None, status_label, title or None)
-
-    folder_path = None
-    if drpid:
+        data = {}
+    drpid_val = data.get("drpid")
+    if drpid_val is not None:
         try:
-            folder_path = ensure_output_folder(int(drpid))
+            drpid = int(drpid_val)
         except (ValueError, TypeError):
-            pass
-    if folder_path is None:
-        folder_path = folder_path_for_drpid(drpid)
+            return {"error": "Invalid drpid"}, 400
+        proj = get_project_by_drpid(drpid)
+    else:
+        proj = get_first_eligible()
+    if not proj:
+        return {"error": "No project found"}, 404
+    drpid = proj["DRPID"]
+    source_url = (proj.get("source_url") or "").strip()
+    folder_path = ensure_output_folder(drpid)
+    clear_scoreboard()
+
+    metadata = {
+        "title": (proj.get("title") or "").strip(),
+        "summary": (proj.get("summary") or "").strip(),
+        "keywords": (proj.get("keywords") or "").strip(),
+        "agency": (proj.get("agency") or "").strip(),
+        "office": (proj.get("office") or "").strip(),
+        "time_start": (proj.get("time_start") or "").strip(),
+        "time_end": (proj.get("time_end") or "").strip(),
+        "download_date": (proj.get("download_date") or "").strip(),
+    }
+    if not metadata["download_date"]:
+        from datetime import date
+        metadata["download_date"] = date.today().isoformat()
 
     return {
-        "srcdoc": srcdoc,
-        "body_message": body_message,
-        "status_label": status_label,
-        "h1_text": h1_text,
-        "extracted_title": extracted_metadata.get("title", ""),
-        "extracted_agency": extracted_metadata.get("agency", ""),
-        "extracted_office": extracted_metadata.get("office", ""),
-        "extracted_keywords": extracted_metadata.get("keywords", ""),
+        "DRPID": drpid,
+        "source_url": source_url,
+        "folder_path": folder_path,
         "scoreboard": get_scoreboard_tree(),
         "scoreboard_urls": get_scoreboard_urls(),
-        "folder_path": folder_path,
+        "metadata": metadata,
     }
 
 
@@ -213,6 +171,7 @@ def extension_save_pdf() -> Any:
     drpid_str = (request.form.get("drpid") or "").strip()
     url = (request.form.get("url") or "").strip()
     referrer = (request.form.get("referrer") or "").strip() or None
+    page_title = (request.form.get("title") or request.form.get("page_title") or "").strip()
     pdf_file = request.files.get("pdf")
 
     if not drpid_str:
@@ -236,13 +195,21 @@ def extension_save_pdf() -> Any:
     if not folder_path.is_dir():
         return {"error": "output folder not found"}, 400
 
-    # Derive base name from URL (last path segment or domain)
+    # Prefer page title from extension for a helpful filename; fallback to URL-derived base
     from urllib.parse import urlparse
-    parsed = urlparse(url)
-    path = (parsed.path or "").rstrip("/")
-    base = path.split("/")[-1] if path else (parsed.netloc or "page").split(".")[0]
-    if not base or len(base) > 80:
-        base = (parsed.netloc or "page").split(".")[0] or "page"
+    if page_title and len(page_title) <= 80:
+        base = sanitize_filename(page_title, max_length=80) or "page"
+    else:
+        parsed = urlparse(url)
+        path = (parsed.path or "").rstrip("/")
+        base = path.split("/")[-1] if path else (parsed.netloc or "page").split(".")[0]
+        if not base or len(base) > 80:
+            base = (parsed.netloc or "page").split(".")[0] or "page"
+        base = sanitize_filename(base, max_length=80) if base else "page"
+    if base.lower().endswith(".pdf"):
+        base = base[:-4].rstrip("._")
+    if not base:
+        base = "page"
     basename = _unique_pdf_basename_for_folder(base, folder_path)
     dest = folder_path / basename
 
@@ -251,8 +218,7 @@ def extension_save_pdf() -> Any:
     except OSError as e:
         return {"error": str(e)[:200]}, 500
 
-    title = None
-    add_to_scoreboard(url, referrer, "OK", title)
+    add_to_scoreboard(url, referrer, "OK", page_title or None)
     return (
         {"ok": True, "filename": basename, "path": str(dest)},
         200,
@@ -460,7 +426,15 @@ def save_route() -> Any:
             pass
 
     if not folder_path_str or not indices:
-        return {"done": True, "saved": 0}
+        # Metadata-only save: stream DONE so frontend can finish
+        def empty_stream():
+            yield "DONE\t0\n"
+
+        return Response(
+            empty_stream(),
+            mimetype="text/plain; charset=utf-8",
+            headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+        )
 
     try:
         urls = json.loads(urls_json)

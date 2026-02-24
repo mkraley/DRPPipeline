@@ -691,6 +691,78 @@ body {
   background: #34495e;
 }
 
+/* Collector right pane (replaces log when "Interactive collector" is active) */
+.collector-right-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #fafafa;
+}
+
+.collector-rail {
+  padding: 8px;
+  background: #eee;
+  border-bottom: 1px solid #ccc;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.collector-rail .drpid {
+  font-weight: bold;
+}
+
+.collector-rail .top-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.collector-rail .top-form label {
+  margin: 0;
+}
+
+.collector-rail-toast {
+  font-size: 12px;
+  color: #555;
+  max-width: 320px;
+}
+
+.collector-right-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.collector-scoreboard-wrap {
+  flex: 0 0 auto;
+  height: 200px;
+  min-height: 80px;
+  overflow: auto;
+  border-bottom: 1px solid #ddd;
+}
+
+.collector-scoreboard-wrap .scoreboard {
+  height: 100%;
+}
+
+.collector-metadata-wrap {
+  flex: 1;
+  min-height: 120px;
+  overflow: auto;
+}
+
+.collector-metadata-wrap .metadata-pane {
+  min-height: 100%;
+}
+
 .copy-open-toast {
   position: absolute;
   bottom: 12px;

@@ -15,6 +15,7 @@ Save button converts checked scoreboard pages to PDF in that folder.
 
 import html
 import json
+import logging
 import re
 import sys
 from datetime import date, datetime
@@ -46,6 +47,22 @@ from interactive_collector.api import api_bp
 from interactive_collector.api_pipeline import pipeline_bp
 app.register_blueprint(api_bp)
 app.register_blueprint(pipeline_bp)
+
+
+class _QuietRequestLogFilter(logging.Filter):
+    """Suppress Werkzeug request logs for noisy polling endpoints."""
+
+    _QUIET_PATHS = ("/api/scoreboard", "/api/downloads-watcher/status")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+            return not any(path in msg for path in self._QUIET_PATHS)
+        except Exception:
+            return True
+
+
+logging.getLogger("werkzeug").addFilter(_QuietRequestLogFilter())
 
 # Shared state: use collector_state so legacy routes and API share the same data.
 _scoreboard = _get_scoreboard()
@@ -1222,17 +1239,14 @@ def _prepare_pane_content(
     return safe_srcdoc, None, status_label, h1_text, False
 
 
-# Path to built React SPA (served at / and /collector).
+# Path to built React SPA (served at /).
 _FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 
 
 def _serve_spa(subpath: str = "") -> Any:
-    """Serve the React SPA (main page + interactive collector view)."""
+    """Serve the React SPA (main page with log and collector panes)."""
     if not subpath:
         return send_from_directory(_FRONTEND_DIST, "index.html")
-    # Built assets may be under /collector/assets/; strip prefix so dist/assets/ is found
-    if subpath.startswith("collector/"):
-        subpath = subpath[len("collector/"):]
     return send_from_directory(_FRONTEND_DIST, subpath)
 
 
@@ -1524,13 +1538,6 @@ def index() -> Any:
 @app.route("/<path:subpath>")
 def spa_assets(subpath: str) -> Any:
     """Serve SPA static assets (e.g. /assets/...) or index.html for client paths."""
-    return _serve_spa(subpath)
-
-
-@app.route("/collector/")
-@app.route("/collector/<path:subpath>")
-def collector_spa(subpath: str = "") -> Any:
-    """Serve the React SPA at /collector (backwards compatibility)."""
     return _serve_spa(subpath)
 
 

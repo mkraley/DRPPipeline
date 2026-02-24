@@ -1,19 +1,18 @@
 /**
  * Main page: run pipeline modules (CLI replacement).
  *
- * Column of module buttons (Orchestrator order, no noop), Start DRPID / Max rows / Log level,
- * log output pane with Stop, and "Interactive collector" opens the collector view.
+ * Left: module controls (Start DRPID, Max rows, Log level, Max workers) and module buttons.
+ * Right: either Log output pane (when running other modules) or Collector pane (Scoreboard,
+ * Metadata, Copy & Open in top rail) when "Interactive collector" is active.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CollectorRightPane } from "./CollectorRightPane";
+import { useCollectorStore } from "../store";
 
 const API = "/api/pipeline";
 const LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"] as const;
 
-interface MainPageProps {
-  onOpenCollector: (initialDrpid?: number) => void;
-}
-
-export function MainPage({ onOpenCollector }: MainPageProps) {
+export function MainPage() {
   const [modules, setModules] = useState<string[]>([]);
   const [startDrpid, setStartDrpid] = useState<string>("");
   const [maxRows, setMaxRows] = useState<string>("");
@@ -22,8 +21,11 @@ export function MainPage({ onOpenCollector }: MainPageProps) {
   const [logOutput, setLogOutput] = useState<string>("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rightPaneMode, setRightPaneMode] = useState<"log" | "collector">("log");
   const logEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  const { loadProject, loadFirstProject } = useCollectorStore();
 
   useEffect(() => {
     fetch(`${API}/modules`)
@@ -39,11 +41,17 @@ export function MainPage({ onOpenCollector }: MainPageProps) {
   const runModule = useCallback(
     async (module: string) => {
       if (module === "interactive_collector") {
+        setRightPaneMode("collector");
         const start = startDrpid.trim();
         const id = start ? parseInt(start, 10) : NaN;
-        onOpenCollector(!isNaN(id) ? id : undefined);
+        if (!isNaN(id)) {
+          loadProject(id);
+        } else {
+          loadFirstProject();
+        }
         return;
       }
+      setRightPaneMode("log");
       setRunning(true);
       setError(null);
       abortRef.current = new AbortController();
@@ -106,18 +114,43 @@ export function MainPage({ onOpenCollector }: MainPageProps) {
         abortRef.current = null;
       }
     },
-    [startDrpid, maxRows, logLevel, maxWorkers, onOpenCollector]
+    [startDrpid, maxRows, logLevel, maxWorkers, loadProject, loadFirstProject]
   );
 
   const stopRun = useCallback(() => {
     if (abortRef.current) {
       abortRef.current.abort();
     }
-    // Tell server to write stop file and terminate subprocess so work actually halts
     fetch(`${API}/stop`, { method: "POST" }).catch(() => {});
   }, []);
 
   const clearLog = useCallback(() => setLogOutput(""), []);
+
+  const rightPane =
+    rightPaneMode === "log" ? (
+      <div className="main-page-log-pane">
+        <div className="main-page-log-toolbar">
+          <span>Log output</span>
+          <span>
+            <button type="button" onClick={clearLog} disabled={running}>
+              Clear
+            </button>
+            {running && (
+              <button type="button" className="main-page-stop-btn" onClick={stopRun}>
+                Stop
+              </button>
+            )}
+          </span>
+        </div>
+        {error && <div className="main-page-log-error">{error}</div>}
+        <pre className="main-page-log-pre">
+          {logOutput || "(Run a module to see output.)"}
+          <div ref={logEndRef} />
+        </pre>
+      </div>
+    ) : (
+      <CollectorRightPane onShowLog={() => setRightPaneMode("log")} />
+    );
 
   return (
     <div className="main-page">
@@ -183,33 +216,14 @@ export function MainPage({ onOpenCollector }: MainPageProps) {
                 type="button"
                 onClick={() => runModule(mod)}
                 disabled={running && mod !== "interactive_collector"}
-                title={mod === "interactive_collector" ? "Open Interactive Collector UI" : `Run module: ${mod}`}
+                title={mod === "interactive_collector" ? "Open Interactive Collector in right pane" : `Run module: ${mod}`}
               >
                 {mod === "interactive_collector" ? "Interactive collector" : mod}
               </button>
             ))}
           </div>
         </div>
-        <div className="main-page-log-pane">
-          <div className="main-page-log-toolbar">
-            <span>Log output</span>
-            <span>
-              <button type="button" onClick={clearLog} disabled={running}>
-                Clear
-              </button>
-              {running && (
-                <button type="button" className="main-page-stop-btn" onClick={stopRun}>
-                  Stop
-                </button>
-              )}
-            </span>
-          </div>
-          {error && <div className="main-page-log-error">{error}</div>}
-          <pre className="main-page-log-pre">
-            {logOutput || "(Run a module to see output.)"}
-            <div ref={logEndRef} />
-          </pre>
-        </div>
+        {rightPane}
       </div>
     </div>
   );

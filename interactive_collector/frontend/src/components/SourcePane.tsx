@@ -1,30 +1,31 @@
 /**
- * SourcePane - Iframe showing the original source page.
+ * SourcePane - Displays source URL and Copy & Open button.
  *
- * Uses srcdoc with link interceptor; clicks load in the Linked pane.
- * Socrata/datadiscovery block iframe embedding, so we always use srcdoc.
+ * User pastes the launcher URL in the extended browser to browse with the
+ * extension. No iframe display of the source page.
  */
 import { useState, useCallback, useEffect } from "react";
 import { useCollectorStore } from "../store";
 
 export function SourcePane() {
-  const { sourceUrl, sourceSrcdoc, sourceMessage, drpid } = useCollectorStore();
+  const { sourceUrl, drpid } = useCollectorStore();
   const [toast, setToast] = useState<string | null>(null);
-
-  const openInNewTab = () => {
-    if (sourceUrl && /^https?:\/\//.test(sourceUrl)) window.open(sourceUrl, "_blank", "noopener,noreferrer");
-  };
 
   const { startDownloadsWatcher } = useCollectorStore();
   const copyAndOpen = useCallback(async () => {
     if (!sourceUrl || !drpid || !/^https?:\/\//.test(sourceUrl)) return;
     const launcher = `${window.location.origin}/extension/launcher?drpid=${drpid}&url=${encodeURIComponent(sourceUrl)}`;
     try {
-      await navigator.clipboard.writeText(launcher);
-      setToast("Copied! Paste in browser. Watching Downloads folder.");
       await startDownloadsWatcher();
+      await navigator.clipboard.writeText(launcher);
+      setToast("Copied! Paste in browser. Save as PDF and downloads watching are on.");
     } catch {
-      window.prompt("Copy this URL and paste in extended browser:", launcher);
+      try {
+        await navigator.clipboard.writeText(launcher);
+        setToast("URL copied. Watcher could not start — paste in browser to use Save as PDF.");
+      } catch {
+        window.prompt("Copy this URL and paste in extended browser:", launcher);
+      }
     }
   }, [sourceUrl, drpid, startDownloadsWatcher]);
 
@@ -35,45 +36,25 @@ export function SourcePane() {
   }, [toast]);
 
   return (
-    <div className="pane source-pane">
+    <div className="pane source-pane source-pane-simple">
       {toast && <div className="copy-open-toast">{toast}</div>}
-      <div className="pane-header" title={sourceUrl}>
+      <div className="pane-header" title={sourceUrl || ""}>
         Source: {sourceUrl || "—"}
-        {sourceUrl && (
-          <>
-            <button
-              type="button"
-              className="btn-open-external"
-              onClick={openInNewTab}
-              title="Open in new tab"
-            >
-              Open
-            </button>
-            {drpid != null && (
+        {sourceUrl && drpid != null && (
               <button
                 type="button"
-                className="btn-open-external"
+                className="btn-open-external btn-copy-open"
                 onClick={copyAndOpen}
                 title="Copy launcher URL to paste in extended browser (with extension)"
               >
                 Copy &amp; Open
               </button>
-            )}
-          </>
         )}
       </div>
-      {sourceSrcdoc ? (
-        <iframe
-          className="pane-iframe"
-          srcDoc={sourceSrcdoc}
-          sandbox="allow-same-origin allow-scripts allow-forms allow-top-navigation-by-user-activation"
-          title="Source page"
-        />
-      ) : (
-        <div className="pane-empty">
-          {sourceMessage || "Enter a URL and click Go, or click a link to open it in the Linked pane."}
-        </div>
-      )}
+      <div className="pane-empty">
+        Use <strong>Copy &amp; Open</strong> to copy the launcher URL, then paste it in your
+        browser with the extension installed. Browse there and save pages as PDF.
+      </div>
     </div>
   );
 }

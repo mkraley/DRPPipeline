@@ -37,30 +37,45 @@ class TestApiProjects(unittest.TestCase):
             self.assertEqual(resp.status_code, 404)
 
 
-class TestApiLoadSource(unittest.TestCase):
-    """Tests for /api/load-source."""
+class TestApiProjectsLoad(unittest.TestCase):
+    """Tests for /api/projects/load."""
 
     def setUp(self) -> None:
         self.client = app.test_client()
         clear_scoreboard()
 
-    def test_load_source_requires_url(self) -> None:
-        """POST /api/load-source without url returns 400."""
-        resp = self.client.post(
-            "/api/load-source",
-            json={},
-            content_type="application/json",
-        )
-        self.assertEqual(resp.status_code, 400)
+    def test_projects_load_returns_404_when_no_project(self) -> None:
+        """POST /api/projects/load with no eligible project returns 404."""
+        with patch("interactive_collector.api.get_first_eligible", return_value=None):
+            with patch("interactive_collector.api.get_project_by_drpid", return_value=None):
+                resp = self.client.post(
+                    "/api/projects/load",
+                    json={},
+                    content_type="application/json",
+                )
+                self.assertEqual(resp.status_code, 404)
 
-    def test_load_source_rejects_invalid_url(self) -> None:
-        """POST /api/load-source with invalid URL returns 400."""
-        resp = self.client.post(
-            "/api/load-source",
-            json={"url": "not-a-url"},
-            content_type="application/json",
-        )
-        self.assertEqual(resp.status_code, 400)
+    def test_projects_load_returns_project_when_found(self) -> None:
+        """POST /api/projects/load with drpid returns project and clears scoreboard."""
+        proj = {
+            "DRPID": 1,
+            "source_url": "https://example.com/dataset",
+            "title": "Test",
+        }
+        with patch("interactive_collector.api.get_project_by_drpid", return_value=proj):
+            with patch("interactive_collector.api.ensure_output_folder", return_value="C:\\out\\1"):
+                add_to_scoreboard("https://old.com", None, "OK")
+                resp = self.client.post(
+                    "/api/projects/load",
+                    json={"drpid": 1},
+                    content_type="application/json",
+                )
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertEqual(data["DRPID"], 1)
+        self.assertEqual(data["source_url"], "https://example.com/dataset")
+        self.assertIn("scoreboard", data)
+        self.assertEqual(data["scoreboard"], [])
 
 
 class TestApiProxy(unittest.TestCase):

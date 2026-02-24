@@ -10,15 +10,14 @@ Standalone tool to fetch URLs and explore links. It reuses pipeline code (URL fe
 
 ## Phase 2 — Done (current)
 
-- **Three-pane layout**: Scoreboard (left), Source and Linked panes side by side.
-- **Scoreboard**: Hierarchical list of visited URLs (by referrer) with status (OK, 404, 404 logical).
-- **Follow links**: Links in the page are rewritten so that clicking opens the target in the **Linked** pane and keeps the source page visible in **Source**.
-- **Base tag** injection so relative CSS/JS/images load; only `<a href="...">` is rewritten (stylesheets etc. unchanged).
-- **Saving non-HTML links**: PDF, CSV, ZIP, XML, and other non-HTML resources show a download button to save to the project folder. Uses `utils.url_utils.is_non_html_response` (magic bytes, Content-Type, body sniffing) consistently across SPA and legacy app.
+- **SPA layout**: Scoreboard (left), metadata pane, and Copy & Open panel. The collector does not display the source URL in an iframe.
+- **Copy & Open**: User clicks **Copy & Open** to copy the launcher URL, then pastes it in a separate browser window with the extension installed. The extension saves pages as PDF and sends them to the project folder.
+- **Scoreboard**: Hierarchical list of visited/saved URLs (by referrer) with status (OK, 404, DL). Links open in a new tab.
+- **Save**: Updates metadata in the database and optionally stops the downloads watcher. Does not convert HTML to PDF (that is done by the extension).
 
 ## Pipeline integration — Done
 
-- **DB-driven**: The app uses the pipeline database (Storage) when available. On first load with no URL, it asks Storage for the first eligible project (prereq=sourcing, no errors) and populates the Source pane and **DRPID** in the top bar.
+- **DB-driven**: The app uses the pipeline database (Storage) when available. On first load, it asks Storage for the first eligible project (prereq=sourcing, no errors) or uses the **Start DRPID** from the main page if set.
 - **Next**: When a project is loaded, a **Next** button appears; it fetches the next eligible project (by DRPID) and loads it.
 - **Load by DRPID**: Enter a DRPID in the **Load DRPID** field and click **Load** to fetch that project’s record and load its source URL.
 - **Run from orchestrator**: Use module `interactive_collector`. The orchestrator sets the app’s DB path (same as pipeline) and starts the Flask app; the app then loads the first eligible project from Storage. No environment variables are used.
@@ -52,7 +51,7 @@ From the DRPPipeline repo root:
 python -m interactive_collector
 ```
 
-Then open **http://127.0.0.1:5000/** in a browser. Use the form to enter a URL and click **Go**. Click links in the Source (or Linked) pane to open them in the Linked pane; the scoreboard shows a tree of visited URLs and 404s.
+Then open **http://127.0.0.1:5000/** in a browser. Click **Interactive collector** to open the collector. Use **Copy & Open** to paste the launcher URL in your extended browser; the scoreboard shows saved URLs.
 
 **Pipeline-driven (DB-driven):**
 
@@ -62,7 +61,7 @@ From the repo root, run the pipeline with module `interactive_collector` (same D
 python main.py --module interactive_collector [--db-path drp_pipeline.db]
 ```
 
-The orchestrator finds the first project eligible for collection (prereq=sourcing, no errors), sets the initial URL and DRPID, and starts the app. Open **http://127.0.0.1:5000/**; the Source pane shows that project’s URL and the top bar shows **DRPID: &lt;id&gt;**.
+The orchestrator finds the first project eligible for collection (prereq=sourcing, no errors), sets the initial URL and DRPID, and starts the app. Open **http://127.0.0.1:5000/**; the collector shows the project’s URL and **Copy & Open** for browsing with the extension.
 
 ## Running tests
 
@@ -76,7 +75,7 @@ Or run the whole project test suite; `utils.tests.test_url_utils` includes tests
 
 ## Project layout
 
-- `app.py` — Flask app (single route: form, scoreboard, Source/Linked panes; link rewriting and base injection).
+- `app.py` — Flask app (SPA at /, legacy at /legacy; scoreboard, metadata, Copy & Open).
 - `__main__.py` — Entrypoint for `python -m interactive_collector`.
 - `tests/` — Unit tests for the app and helpers.
 

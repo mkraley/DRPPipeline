@@ -1,0 +1,165 @@
+/**
+ * CollectorRightPane - Renders in the main page right pane when "Interactive collector" is active.
+ *
+ * Top rail: Show log, Copy & Open, DRPID, Next, Load DRPID, No Links, Save.
+ * Below: Scoreboard, then Metadata.
+ */
+import { useCallback, useEffect, useState } from "react";
+import { Scoreboard } from "./Scoreboard";
+import { MetadataForm } from "./MetadataForm";
+import { useCollectorStore } from "../store";
+
+interface CollectorRightPaneProps {
+  onShowLog: () => void;
+}
+
+export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
+  const {
+    drpid,
+    sourceUrl,
+    folderPath,
+    loadProject,
+    loadNext,
+    save,
+    setNoLinks,
+    loading,
+    refreshScoreboard,
+    startDownloadsWatcher,
+  } = useCollectorStore();
+  const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/downloads-watcher/status")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.watching) {
+          useCollectorStore.setState({ downloadsWatcherActive: true });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (drpid == null) return;
+    refreshScoreboard();
+    const interval = setInterval(refreshScoreboard, 2000);
+    return () => clearInterval(interval);
+  }, [drpid, refreshScoreboard]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const copyAndOpen = useCallback(async () => {
+    if (!sourceUrl || !drpid || !/^https?:\/\//.test(sourceUrl)) return;
+    const launcher = `${window.location.origin}/extension/launcher?drpid=${drpid}&url=${encodeURIComponent(sourceUrl)}`;
+    try {
+      await startDownloadsWatcher();
+      await navigator.clipboard.writeText(launcher);
+      setToast("Copied! Paste in browser. Save as PDF and downloads watching are on.");
+    } catch {
+      try {
+        await navigator.clipboard.writeText(launcher);
+        setToast("URL copied. Watcher could not start — paste in browser to use Save as PDF.");
+      } catch {
+        window.prompt("Copy this URL and paste in extended browser:", launcher);
+      }
+    }
+  }, [sourceUrl, drpid, startDownloadsWatcher]);
+
+  const onLoadDrpidSubmit = useCallback(
+    (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      const val = (form.querySelector('input[name="load_drpid"]') as HTMLInputElement)?.value?.trim();
+      if (val) {
+        const id = parseInt(val, 10);
+        if (!isNaN(id)) loadProject(id);
+      }
+    },
+    [loadProject]
+  );
+
+  return (
+    <div className="collector-right-pane">
+      <div className="collector-rail">
+        <button type="button" className="btn-top" onClick={onShowLog}>
+          Show log
+        </button>
+        {drpid != null && (
+          <>
+            <span className="drpid">DRPID: {drpid}</span>
+            <button type="button" className="btn-top" onClick={loadNext}>
+              Next
+            </button>
+          </>
+        )}
+        <form className="top-form" onSubmit={onLoadDrpidSubmit}>
+          <label htmlFor="collector_load_drpid">Load DRPID</label>
+          <input
+            type="number"
+            id="collector_load_drpid"
+            name="load_drpid"
+            placeholder="e.g. 1"
+            min={1}
+            max={99999}
+            className="top-input-drpid"
+          />
+          <button type="submit" className="btn-top">
+            Load
+          </button>
+        </form>
+        {sourceUrl && drpid != null && (
+          <button
+            type="button"
+            className="btn-top btn-copy-open"
+            onClick={copyAndOpen}
+            title="Copy launcher URL to paste in extended browser (with extension)"
+          >
+            Copy &amp; Open
+          </button>
+        )}
+        {folderPath && (
+          <>
+            <button
+              type="button"
+              className="btn-top"
+              title="No live links"
+              onClick={setNoLinks}
+            >
+              No Links
+            </button>
+            <button
+              type="button"
+              className="btn-top"
+              title="Save metadata to database"
+              onClick={save}
+              disabled={loading}
+            >
+              Save
+            </button>
+          </>
+        )}
+        {toast && <span className="collector-rail-toast">{toast}</span>}
+      </div>
+      {drpid == null && !loading && (
+        <div className="collector-empty-state">
+          No project loaded. Use <strong>Load DRPID</strong> above to open a project, or run the{" "}
+          <strong>sourcing</strong> module from the left to add candidates.
+        </div>
+      )}
+      {drpid != null && (
+        <div className="collector-right-content">
+          <div className="collector-scoreboard-wrap">
+            <Scoreboard />
+          </div>
+          <div className="collector-metadata-wrap">
+            <MetadataForm />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -7,8 +7,16 @@ and added to the scoreboard. User clicks "Collection complete" to stop watching.
 """
 
 import os
+import threading
+import time
 from pathlib import Path
 from typing import Callable, Optional
+
+# Delay (seconds) before moving a file so the browser can finish writing.
+_MOVE_DELAY_SEC = 1.0
+# Retries and delay between retries when rename fails (e.g. file still locked).
+_MOVE_RETRIES = 3
+_MOVE_RETRY_DELAY_SEC = 1.0
 
 try:
     from watchdog.events import FileSystemEventHandler
@@ -61,18 +69,31 @@ class _DownloadsHandler(FileSystemEventHandler):
         self.output_folder = output_folder
         self.on_file_moved = on_file_moved
 
+    def _move_after_delay(self, src_path: Path) -> None:
+        time.sleep(_MOVE_DELAY_SEC)
+        if not src_path.exists():
+            return
+        if not _is_complete_file(src_path):
+            return
+        base_name = src_path.name
+        dest = _unique_dest_name(self.output_folder, base_name)
+        for attempt in range(_MOVE_RETRIES):
+            try:
+                size = src_path.stat().st_size
+                src_path.rename(dest)
+                ext = dest.suffix.lstrip(".") or ""
+                self.on_file_moved(str(dest), dest, size)
+                return
+            except OSError:
+                if attempt < _MOVE_RETRIES - 1:
+                    time.sleep(_MOVE_RETRY_DELAY_SEC)
+                pass  # File in use, permissions, etc.
+
     def _handle_file(self, src_path: Path) -> None:
         if not _is_complete_file(src_path):
             return
-        try:
-            size = src_path.stat().st_size
-            base_name = src_path.name
-            dest = _unique_dest_name(self.output_folder, base_name)
-            src_path.rename(dest)
-            ext = dest.suffix.lstrip(".") or ""
-            self.on_file_moved(str(dest), dest, size)
-        except OSError:
-            pass  # File in use, permissions, etc.
+        t = threading.Thread(target=self._move_after_delay, args=(src_path,), daemon=True)
+        t.start()
 
     def on_created(self, event) -> None:
         if event.is_directory:

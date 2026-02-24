@@ -88,7 +88,7 @@ The Interactive Collector is available in two modes:
 
 ### SPA Architecture
 
-- **Backend:** `interactive_collector/api.py` — Blueprint with `/api/projects/*`, `/api/load-source`, `/api/load-page`, `/api/scoreboard`, `/api/save`, `/api/download-file`.
+- **Backend:** `interactive_collector/api.py` — Blueprint with `/api/projects/*`, `/api/projects/load`, `/api/scoreboard`, `/api/save`, `/api/download-file`.
 - **Frontend:** `interactive_collector/frontend/` — Vite + React + Zustand. Link clicks are intercepted via postMessage; pages load via API and update the Linked pane without reload.
 
 ## Development

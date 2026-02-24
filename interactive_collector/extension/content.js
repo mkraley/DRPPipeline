@@ -2,30 +2,118 @@
  * DRP Collector extension - content script.
  *
  * On launcher page: store drpid and collectorBase from URL, let redirect proceed.
- * On data.gov pages: inject "Save as PDF" button; on click, generate PDF and POST to collector.
- *
- * Content scripts run in an isolated world and cannot see page globals like window.html2pdf.
- * We inject a script into the page context to run html2pdf, then receive the blob via custom event.
+ * On other pages: show "Save as PDF" when the collector's downloads watcher is on
+ * (same as Copy & Open). When Save is pressed in the collector, watcher turns off
+ * and we hide the button (via polling).
  */
 (function () {
   "use strict";
 
   const LAUNCHER_MATCH = /\/extension\/launcher/;
   const DRP_ID = "drp-collector-save-btn";
+  const WATCHER_POLL_MS = 25000;
   var pageScriptInjected = false;
+  var watcherPollTimer = null;
 
   function isLauncherPage() {
     return LAUNCHER_MATCH.test(window.location.pathname);
   }
 
   function handleLauncherPage() {
+    try {
+      if (!chrome.runtime || !chrome.runtime.id) return;
+    } catch (e) {
+      return;
+    }
     const params = new URLSearchParams(window.location.search);
     const drpid = params.get("drpid");
     const url = params.get("url");
     const collectorBase = window.location.origin;
     if (drpid && url) {
-      chrome.storage.local.set({ drpid, collectorBase }).catch(() => {});
+      chrome.storage.local.set({ drpid, collectorBase }).then(
+        function () {
+          window.location.href = url;
+        },
+        function () {
+          window.location.href = url;
+        }
+      );
     }
+  }
+
+  function clearWatcherPoll() {
+    if (watcherPollTimer) {
+      clearInterval(watcherPollTimer);
+      watcherPollTimer = null;
+    }
+  }
+
+  function isContextInvalidated(err) {
+    var msg = err && (err.message || String(err));
+    return typeof msg === "string" && msg.indexOf("Extension context invalidated") !== -1;
+  }
+
+  function checkWatcherAndShowOrHide() {
+    try {
+      if (!chrome.runtime || !chrome.runtime.id) return;
+    } catch (e) {
+      return;
+    }
+    chrome.storage.local.get(["drpid", "collectorBase"]).then(
+      function (stored) {
+        var drpid = stored.drpid, collectorBase = stored.collectorBase;
+        if (!drpid || !collectorBase) {
+          removeCollectorButtons();
+          clearWatcherPoll();
+          return;
+        }
+        addSaveButton();
+        startWatcherPoll(collectorBase);
+      },
+      function (e) {
+        if (isContextInvalidated(e)) {
+          clearWatcherPoll();
+          removeCollectorButtons();
+        }
+      }
+    );
+  }
+
+  function startWatcherPoll(collectorBase) {
+    clearWatcherPoll();
+    watcherPollTimer = setInterval(function () {
+      try {
+        if (!chrome.runtime || !chrome.runtime.id) {
+          clearWatcherPoll();
+          removeCollectorButtons();
+          return;
+        }
+      } catch (e) {
+        clearWatcherPoll();
+        removeCollectorButtons();
+        return;
+      }
+      chrome.runtime.sendMessage({ type: "drp-watcher-status", collectorBase })
+        .then(function (res) {
+          if (res && res.watching) return;
+          try {
+            chrome.storage.local.remove(["drpid", "collectorBase"]).catch(function () {});
+          } catch (_) {}
+          removeCollectorButtons();
+          clearWatcherPoll();
+        })
+        .catch(function (e) {
+          if (isContextInvalidated(e)) {
+            clearWatcherPoll();
+            removeCollectorButtons();
+          }
+        });
+    }, WATCHER_POLL_MS);
+  }
+
+  function removeCollectorButtons() {
+    var btn = document.getElementById(DRP_ID);
+    if (btn) btn.remove();
   }
 
   function injectPageScript() {
@@ -113,6 +201,7 @@
           drpid,
           url: window.location.href,
           referrer: (document.referrer || "").trim() || "",
+          title: (document.title || "").trim() || "",
         });
         if (res && res.ok) {
           showToast("Saved: " + (res.filename || "OK"), false);
@@ -132,6 +221,7 @@
             url: window.location.href,
             referrer: (document.referrer || "").trim() || "",
             pdfBase64,
+            title: (document.title || "").trim() || "",
           });
           if (r2 && r2.ok) {
             showToast("Saved: " + (r2.filename || "OK"), false);
@@ -158,6 +248,7 @@
                 url: window.location.href,
                 referrer: (document.referrer || "").trim() || "",
                 pdfBase64,
+                title: (document.title || "").trim() || "",
               });
               if (r2 && r2.ok) {
                 showToast("Saved: " + (r2.filename || "OK"), false);
@@ -174,20 +265,34 @@
     });
   }
 
-  function ensureButton() {
+  function ensureButtons() {
     if (document.getElementById(DRP_ID)) return;
-    addSaveButton();
+    try {
+      checkWatcherAndShowOrHide();
+    } catch (e) {
+      if (isContextInvalidated(e)) {
+        clearWatcherPoll();
+        removeCollectorButtons();
+      }
+    }
   }
 
   function onUrlChange() {
     if (isLauncherPage()) return;
-    setTimeout(ensureButton, 150);
+    setTimeout(ensureButtons, 150);
   }
 
   if (isLauncherPage()) {
     handleLauncherPage();
   } else {
-    addSaveButton();
+    try {
+      checkWatcherAndShowOrHide();
+    } catch (e) {
+      if (isContextInvalidated(e)) {
+        clearWatcherPoll();
+        removeCollectorButtons();
+      }
+    }
     window.addEventListener("popstate", onUrlChange);
     var _push = history.pushState, _replace = history.replaceState;
     history.pushState = function () {

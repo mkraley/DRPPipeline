@@ -12,7 +12,7 @@ export function SaveProgressModal() {
   return (
     <div className="save-modal show" role="dialog" aria-label="Save progress">
       <div className="save-modal-dialog">
-        <strong>Saving PDFs</strong>
+        <strong>Saving</strong>
         <div className="save-modal-message">{saveProgress}</div>
         {isComplete && (
           <button type="button" className="save-modal-ok" onClick={closeSaveModal}>
