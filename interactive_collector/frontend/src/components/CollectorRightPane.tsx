@@ -58,43 +58,41 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
   }, [toast]);
 
   const copyAndOpen = useCallback(async () => {
-    if (!sourceUrl || !drpid || !/^https?:\/\//.test(sourceUrl)) return;
+    if (!sourceUrl || !drpid || !/^https?:\/\//.test(sourceUrl)) {
+      setToast("Load a project with a source URL first.");
+      return;
+    }
     const launcher = `${window.location.origin}/extension/launcher?drpid=${drpid}&url=${encodeURIComponent(sourceUrl)}`;
+    // Open window first (synchronously) so it’s in the user gesture chain and not blocked as a popup.
+    const a = document.createElement("a");
+    a.href = launcher;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
     try {
       await startDownloadsWatcher();
       await navigator.clipboard.writeText(launcher);
-      setToast("Copied and opened in new window. If this window didn’t move left, press Win+Left to snap it.");
-      // Open in new window and try to arrange side-by-side (SPA left, page right)
+      setToast("Copied and opened in new window. If it didn’t open, check popup blocker or paste from clipboard.");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Watcher could not start";
+      try {
+        await navigator.clipboard.writeText(launcher);
+        setToast(`URL copied. Watcher failed: ${msg}`);
+      } catch {
+        setToast(`Watcher failed: ${msg}. Paste this URL in browser: ${launcher.slice(0, 50)}…`);
+      }
+    }
+    try {
       const halfW = Math.floor((typeof screen !== "undefined" ? screen.availWidth : 1920) / 2);
       const availH = typeof screen !== "undefined" ? screen.availHeight : 1000;
       const availX = typeof screen !== "undefined" ? (screen as { availLeft?: number }).availLeft ?? 0 : 0;
       const availY = typeof screen !== "undefined" ? (screen as { availTop?: number }).availTop ?? 0 : 0;
-      const viewWindow = window.open(
-        launcher,
-        "drp_collector_view",
-        `width=${halfW},height=${availH},left=${availX + halfW},top=${availY}`
-      );
-      if (viewWindow) {
-        try {
-          viewWindow.resizeTo(halfW, availH);
-          viewWindow.moveTo(availX + halfW, availY);
-        } catch {
-          /* ignore */
-        }
-        try {
-          window.resizeTo(halfW, availH);
-          window.moveTo(availX, availY);
-        } catch {
-          /* SPA window move often blocked by browser; user can Win+Left to snap */
-        }
-      }
+      window.resizeTo(halfW, availH);
+      window.moveTo(availX, availY);
     } catch {
-      try {
-        await navigator.clipboard.writeText(launcher);
-        setToast("URL copied. Watcher could not start — paste in browser to use Save as PDF.");
-      } catch {
-        window.prompt("Copy this URL and paste in extended browser:", launcher);
-      }
+      /* ignore */
     }
   }, [sourceUrl, drpid, startDownloadsWatcher]);
 

@@ -222,16 +222,17 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
   startDownloadsWatcher: async () => {
     const { drpid } = get();
     if (!drpid) return;
-    const data = await fetchJson<{ ok: boolean; message?: string; error?: string }>(`${API}/downloads-watcher/start`, {
+    const res = await fetch(`${API}/downloads-watcher/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ drpid }),
     });
-    if (data.ok) {
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (res.ok && data.ok) {
       set({ downloadsWatcherActive: true });
-    } else {
-      throw new Error((data as { error?: string }).error || "Watcher could not start");
+      return;
     }
+    throw new Error(data.error || `Watcher could not start (${res.status})`);
   },
 
   stopDownloadsWatcher: async () => {
@@ -248,6 +249,9 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
 
   loadProject: async (drpid) => {
     set({ loading: true, error: null });
+    if (get().downloadsWatcherActive) {
+      await get().stopDownloadsWatcher();
+    }
     try {
       const data = await fetchJson<{
         DRPID: number;
@@ -272,6 +276,9 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
 
   loadFirstProject: async () => {
     set({ loading: true, error: null });
+    if (get().downloadsWatcherActive) {
+      await get().stopDownloadsWatcher();
+    }
     try {
       const data = await fetchJson<{
         DRPID: number;

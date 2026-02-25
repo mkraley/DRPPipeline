@@ -14,6 +14,8 @@ When modifying or creating code, you MUST:
 - [ ] If any of the code in the browser extension is modified, always update the extension version number
 - [ ] If any frontend code is changed, run npm build
 
+**When instructing to rebuild the frontend**, remind the user: one-off build is `npm run build` (in `interactive_collector/frontend`); for continuous rebuild on file changes use `npm run build:watch` so they don't have to run build manually each time.
+
 **If ANY of these are missing, the response is incomplete.**
 
 ---
