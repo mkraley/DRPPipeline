@@ -43,6 +43,7 @@ interface CollectorState {
   saveProgress: string;
   saveModalOpen: boolean;
   noLinksModalOpen: boolean;
+  skipModalOpen: boolean;
   downloadsWatcherActive: boolean;
 }
 
@@ -57,6 +58,9 @@ interface CollectorActions {
   refreshScoreboard: () => Promise<void>;
   setNoLinks: () => Promise<void>;
   closeNoLinksModal: () => void;
+  openSkipModal: () => void;
+  closeSkipModal: () => void;
+  skip: (reason: string) => Promise<void>;
   startDownloadsWatcher: () => Promise<void>;
   stopDownloadsWatcher: () => Promise<void>;
 }
@@ -126,6 +130,7 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
   saveProgress: "",
   saveModalOpen: false,
   noLinksModalOpen: false,
+  skipModalOpen: false,
   downloadsWatcherActive: false,
 
   setDrpid: (v) => set({ drpid: v }),
@@ -218,6 +223,42 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
   },
 
   closeNoLinksModal: () => set({ noLinksModalOpen: false }),
+
+  openSkipModal: () => set({ skipModalOpen: true }),
+  closeSkipModal: () => set({ skipModalOpen: false }),
+
+  skip: async (reason) => {
+    const { drpid, folderPath, metadata } = get();
+    if (!drpid) return;
+    const body = {
+      drpid,
+      reason: reason.trim(),
+      folder_path: folderPath || "",
+      metadata_title: metadata.title,
+      metadata_summary: metadata.summary,
+      metadata_keywords: metadata.keywords,
+      metadata_agency: metadata.agency,
+      metadata_office: metadata.office,
+      metadata_time_start: metadata.time_start,
+      metadata_time_end: metadata.time_end,
+      metadata_download_date: metadata.download_date,
+    };
+    try {
+      const data = await fetchJson<{ ok: boolean; error?: string }>(`${API}/skip`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (data.ok) {
+        set({ skipModalOpen: false });
+        await get().stopDownloadsWatcher();
+      } else {
+        throw new Error(data.error || "Skip failed");
+      }
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : "Skip failed" });
+    }
+  },
 
   startDownloadsWatcher: async () => {
     const { drpid } = get();

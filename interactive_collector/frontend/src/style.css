@@ -532,6 +532,20 @@ body {
   word-break: break-all;
 }
 
+.save-modal-input {
+  display: block;
+  width: 100%;
+  margin: 12px 0;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.save-modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
 .save-modal-ok {
   margin-top: 16px;
   padding: 8px 20px;

@@ -5,6 +5,7 @@ Serves the SPA with: projects, projects/load, scoreboard, save, download-file.
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -26,9 +27,27 @@ from interactive_collector.api_save import generate_save_progress, save_metadata
 from interactive_collector.api_scoreboard import add_download, add_to_scoreboard, clear_scoreboard, get_scoreboard_tree, get_scoreboard_urls
 from interactive_collector.collector_state import get_result_by_drpid, get_scoreboard
 from utils.file_utils import sanitize_filename
-from utils.url_utils import BROWSER_HEADERS, is_valid_url
+from utils.url_utils import BROWSER_HEADERS, fetch_page_body, is_valid_url
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
+
+
+def _description_from_html(html_body: Any) -> str:
+    """Extract inner HTML of the first div[itemprop="description"]; empty string if none."""
+    if html_body is None:
+        return ""
+    if isinstance(html_body, bytes):
+        html_body = html_body.decode("utf-8", errors="replace")
+    if not (html_body or "").strip():
+        return ""
+    m = re.search(
+        r'<div[^>]*\bitemprop\s*=\s*["\']description["\'][^>]*>(.*?)</div>',
+        html_body,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if not m:
+        return ""
+    return (m.group(1) or "").strip()
 
 
 def _str_or_none(x: Any) -> str | None:
@@ -131,6 +150,17 @@ def projects_load() -> Any:
     if not metadata["download_date"]:
         from datetime import date
         metadata["download_date"] = date.today().isoformat()
+
+    # Preload description from source page when summary is empty (same idea as title from h1).
+    if not (metadata["summary"] or "").strip() and source_url and is_valid_url(source_url):
+        try:
+            status_code, body, _ct, _ = fetch_page_body(source_url)
+            if status_code == 200 and body:
+                desc = _description_from_html(body)
+                if desc:
+                    metadata["summary"] = desc
+        except Exception:
+            pass
 
     return {
         "DRPID": drpid,
@@ -435,6 +465,77 @@ def save_route() -> Any:
             mimetype="text/plain; charset=utf-8",
             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
         )
+
+
+@api_bp.route("/skip", methods=["POST"])
+def skip_route() -> Any:
+    """
+    Update the project like Save but set status to "collector hold - {reason}".
+
+    Expects form or JSON: drpid, reason, folder_path (optional), metadata_*.
+    """
+    if request.is_json:
+        data = request.get_json() or {}
+        drpid_val = data.get("drpid")
+        reason = (data.get("reason") or "").strip()
+        folder_path_str = (data.get("folder_path") or "").strip()
+        metadata = {
+            "title": (data.get("metadata_title") or "").strip(),
+            "summary": (data.get("metadata_summary") or "").strip(),
+            "keywords": (data.get("metadata_keywords") or "").strip(),
+            "agency": (data.get("metadata_agency") or "").strip(),
+            "office": (data.get("metadata_office") or "").strip(),
+            "time_start": (data.get("metadata_time_start") or "").strip(),
+            "time_end": (data.get("metadata_time_end") or "").strip(),
+            "download_date": (data.get("metadata_download_date") or "").strip(),
+        }
+    else:
+        drpid_val = (request.form.get("drpid") or "").strip()
+        reason = (request.form.get("reason") or "").strip()
+        folder_path_str = (request.form.get("folder_path") or "").strip()
+        metadata = {
+            "title": (request.form.get("metadata_title") or "").strip(),
+            "summary": (request.form.get("metadata_summary") or "").strip(),
+            "keywords": (request.form.get("metadata_keywords") or "").strip(),
+            "agency": (request.form.get("metadata_agency") or "").strip(),
+            "office": (request.form.get("metadata_office") or "").strip(),
+            "time_start": (request.form.get("metadata_time_start") or "").strip(),
+            "time_end": (request.form.get("metadata_time_end") or "").strip(),
+            "download_date": (request.form.get("metadata_download_date") or "").strip(),
+        }
+    if not reason:
+        return {"error": "reason required", "ok": False}, 400
+    if not drpid_val:
+        return {"error": "drpid required", "ok": False}, 400
+    try:
+        drpid = int(drpid_val)
+    except (ValueError, TypeError):
+        return {"error": "Invalid drpid", "ok": False}, 400
+    if not folder_path_str:
+        folder_path_str = get_result_by_drpid().get(drpid, {}).get("folder_path") or ""
+        if not folder_path_str:
+            folder_path_str = ensure_output_folder(drpid) or ""
+    board = get_scoreboard()
+    notes_lines = [f"  {n.get('url', '')} -> {n.get('status_label', '')}" for n in board if n.get("url")]
+    status_notes = "\n".join(notes_lines) if notes_lines else None
+    try:
+        save_metadata(
+            drpid,
+            folder_path_str,
+            title=metadata["title"],
+            summary=metadata["summary"],
+            keywords=metadata["keywords"],
+            agency=metadata["agency"],
+            office=metadata["office"],
+            time_start=metadata["time_start"],
+            time_end=metadata["time_end"],
+            download_date=metadata["download_date"],
+            status_notes=status_notes,
+            status_override=f"collector hold - {reason}",
+        )
+        return {"ok": True}
+    except (ValueError, RuntimeError) as e:
+        return {"error": str(e)[:200], "ok": False}, 500
 
     try:
         urls = json.loads(urls_json)

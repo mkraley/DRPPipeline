@@ -115,6 +115,7 @@ def save_metadata(
     time_end: str,
     download_date: str,
     status_notes: Optional[str] = None,
+    status_override: Optional[str] = None,
 ) -> None:
     """
     Update the project record in Storage with metadata and folder stats (extensions, file_size).
@@ -125,6 +126,7 @@ def save_metadata(
         title, summary, keywords, agency, office: Metadata fields.
         time_start, time_end: Date range.
         download_date: When data was downloaded.
+        status_override: If set, use instead of default "collector" (e.g. "collector hold - reason").
     """
     from interactive_collector.collector_state import get_db_path
 
@@ -144,7 +146,7 @@ def save_metadata(
 
     from storage import Storage
     values: Dict[str, Any] = {
-        "status": "collector",
+        "status": (status_override or "collector").strip() or "collector",
         "errors": None,
         "title": title,
         "status_notes": (status_notes or "").strip() or None,

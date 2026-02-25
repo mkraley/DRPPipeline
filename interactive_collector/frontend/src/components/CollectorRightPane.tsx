@@ -22,6 +22,7 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
     loadNext,
     save,
     setNoLinks,
+    openSkipModal,
     loading,
     refreshScoreboard,
     startDownloadsWatcher,
@@ -157,6 +158,15 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
               onClick={setNoLinks}
             >
               No Links
+            </button>
+            <button
+              type="button"
+              className="btn-top"
+              title="Skip project with reason (sets status to collector hold)"
+              onClick={openSkipModal}
+              disabled={loading}
+            >
+              Skip
             </button>
             <button
               type="button"

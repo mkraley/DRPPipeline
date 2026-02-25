@@ -77,6 +77,36 @@ class TestApiProjectsLoad(unittest.TestCase):
         self.assertIn("scoreboard", data)
         self.assertEqual(data["scoreboard"], [])
 
+    def test_projects_load_preloads_description_from_source_page(self) -> None:
+        """When summary is empty and source_url is set, description is preloaded from div[itemprop='description']."""
+        proj = {
+            "DRPID": 1,
+            "source_url": "https://catalog.data.gov/dataset/foo",
+            "title": "Test",
+            "summary": "",
+            "keywords": "",
+        }
+        html_with_description = (
+            "<html><body><div itemprop='description'><p>This is the dataset description.</p></div></body></html>"
+        )
+        with patch("interactive_collector.api.get_project_by_drpid", return_value=proj):
+            with patch("interactive_collector.api.ensure_output_folder", return_value="C:\\out\\1"):
+                with patch(
+                    "interactive_collector.api.fetch_page_body",
+                    return_value=(200, html_with_description, "text/html", False),
+                ):
+                    resp = self.client.post(
+                        "/api/projects/load",
+                        json={"drpid": 1},
+                        content_type="application/json",
+                    )
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertEqual(
+            data["metadata"]["summary"],
+            "<p>This is the dataset description.</p>",
+        )
+
 
 class TestApiProxy(unittest.TestCase):
     """Tests for /api/proxy (resource proxy for iframe CSS/JS/images)."""

@@ -9,6 +9,7 @@ import { useEffect } from "react";
 import { MainPage } from "./components/MainPage";
 import { SaveProgressModal } from "./components/SaveProgressModal";
 import { NoLinksConfirmModal } from "./components/NoLinksConfirmModal";
+import { SkipModal } from "./components/SkipModal";
 import { useCollectorStore } from "./store";
 import { useHistorySync } from "./useHistorySync";
 
@@ -26,6 +27,7 @@ export default function App() {
       <MainPage />
       <SaveProgressModal />
       <NoLinksConfirmModal />
+      <SkipModal />
     </>
   );
 }
