@@ -21,6 +21,7 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
     loadProject,
     loadNext,
     save,
+    setMetadata,
     setNoLinks,
     openSkipModal,
     loading,
@@ -51,6 +52,31 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
     const interval = setInterval(refreshScoreboard, 2000);
     return () => clearInterval(interval);
   }, [drpid, refreshScoreboard]);
+
+  useEffect(() => {
+    if (drpid == null) return;
+    const poll = () => {
+      fetch(`/api/metadata-from-page?drpid=${drpid}`)
+        .then((r) => r.json())
+        .then((data: { metadata?: Record<string, string> }) => {
+          const fromPage = data.metadata;
+          if (!fromPage || Object.keys(fromPage).length === 0) return;
+          const state = useCollectorStore.getState();
+          const current = state.metadata;
+          const updates: Partial<typeof current> = {};
+          const keys = ["title", "summary", "keywords", "agency", "office", "time_start", "time_end", "download_date"] as const;
+          for (const k of keys) {
+            const v = fromPage[k];
+            if (v && !(current[k] || "").trim()) updates[k] = v;
+          }
+          if (Object.keys(updates).length) setMetadata(updates);
+        })
+        .catch(() => {});
+    };
+    poll();
+    const interval = setInterval(poll, 4000);
+    return () => clearInterval(interval);
+  }, [drpid, setMetadata]);
 
   useEffect(() => {
     if (!toast) return;

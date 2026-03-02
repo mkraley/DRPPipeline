@@ -5,7 +5,6 @@ Serves the SPA with: projects, projects/load, scoreboard, save, download-file.
 """
 
 import json
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -25,29 +24,16 @@ from interactive_collector.api_projects import (
 )
 from interactive_collector.api_save import generate_save_progress, save_metadata
 from interactive_collector.api_scoreboard import add_download, add_to_scoreboard, clear_scoreboard, get_scoreboard_tree, get_scoreboard_urls
-from interactive_collector.collector_state import get_result_by_drpid, get_scoreboard
+from interactive_collector.collector_state import (
+    get_metadata_from_page,
+    get_result_by_drpid,
+    get_scoreboard,
+    set_metadata_from_page,
+)
 from utils.file_utils import sanitize_filename
-from utils.url_utils import BROWSER_HEADERS, fetch_page_body, is_valid_url
+from utils.url_utils import BROWSER_HEADERS, is_valid_url
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
-
-
-def _description_from_html(html_body: Any) -> str:
-    """Extract inner HTML of the first div[itemprop="description"]; empty string if none."""
-    if html_body is None:
-        return ""
-    if isinstance(html_body, bytes):
-        html_body = html_body.decode("utf-8", errors="replace")
-    if not (html_body or "").strip():
-        return ""
-    m = re.search(
-        r'<div[^>]*\bitemprop\s*=\s*["\']description["\'][^>]*>(.*?)</div>',
-        html_body,
-        re.DOTALL | re.IGNORECASE,
-    )
-    if not m:
-        return ""
-    return (m.group(1) or "").strip()
 
 
 def _str_or_none(x: Any) -> str | None:
@@ -150,17 +136,6 @@ def projects_load() -> Any:
     if not metadata["download_date"]:
         from datetime import date
         metadata["download_date"] = date.today().isoformat()
-
-    # Preload description from source page when summary is empty (same idea as title from h1).
-    if not (metadata["summary"] or "").strip() and source_url and is_valid_url(source_url):
-        try:
-            status_code, body, _ct, _ = fetch_page_body(source_url)
-            if status_code == 200 and body:
-                desc = _description_from_html(body)
-                if desc:
-                    metadata["summary"] = desc
-        except Exception:
-            pass
 
     return {
         "DRPID": drpid,
@@ -310,6 +285,51 @@ def no_links_route() -> Any:
     except ValueError:
         return {"error": "Project not found"}, 404
     return {"ok": True}
+
+
+@api_bp.route("/metadata-from-page", methods=["GET", "POST", "OPTIONS"])
+def metadata_from_page_route() -> Any:
+    """
+    GET: Return and consume stored metadata for drpid (extracted from Copy & Open page only).
+    POST: Store metadata sent by extension from the Copy & Open target page (not subsequent pages).
+    CORS: allow extension content script (origin is the catalog page, e.g. catalog.data.gov).
+    """
+    if request.method == "OPTIONS":
+        return "", 204, {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+        }
+    cors_headers = {"Access-Control-Allow-Origin": "*"}
+    if request.method == "POST":
+        if request.is_json:
+            data = request.get_json() or {}
+        else:
+            data = {k: request.form.get(k) for k in ("drpid", "title", "summary", "keywords", "agency", "office", "time_start", "time_end", "download_date")}
+        drpid_val = data.get("drpid")
+        if not drpid_val:
+            return {"error": "drpid required"}, 400, cors_headers
+        try:
+            drpid = int(drpid_val)
+        except (ValueError, TypeError):
+            return {"error": "Invalid drpid"}, 400, cors_headers
+        payload = {
+            k: (data.get(k) or "").strip()
+            for k in ("title", "summary", "keywords", "agency", "office", "time_start", "time_end", "download_date")
+        }
+        payload = {k: v for k, v in payload.items() if v}
+        set_metadata_from_page(drpid, payload)
+        return {"ok": True}, 200, cors_headers
+    # GET
+    drpid_val = request.args.get("drpid", "").strip()
+    if not drpid_val:
+        return {"error": "drpid required"}, 400, cors_headers
+    try:
+        drpid = int(drpid_val)
+    except (ValueError, TypeError):
+        return {"error": "Invalid drpid"}, 400, cors_headers
+    meta = get_metadata_from_page(drpid)
+    return {"metadata": meta}, 200, cors_headers
 
 
 @api_bp.route("/downloads-watcher/start", methods=["POST"])

@@ -77,35 +77,35 @@ class TestApiProjectsLoad(unittest.TestCase):
         self.assertIn("scoreboard", data)
         self.assertEqual(data["scoreboard"], [])
 
-    def test_projects_load_preloads_description_from_source_page(self) -> None:
-        """When summary is empty and source_url is set, description is preloaded from div[itemprop='description']."""
-        proj = {
-            "DRPID": 1,
-            "source_url": "https://catalog.data.gov/dataset/foo",
-            "title": "Test",
-            "summary": "",
-            "keywords": "",
-        }
-        html_with_description = (
-            "<html><body><div itemprop='description'><p>This is the dataset description.</p></div></body></html>"
+
+class TestApiMetadataFromPage(unittest.TestCase):
+    """Tests for /api/metadata-from-page (Copy & Open page preload)."""
+
+    def setUp(self) -> None:
+        self.client = app.test_client()
+
+    def test_metadata_from_page_post_then_get_returns_and_consumes(self) -> None:
+        """POST stores metadata for drpid; GET returns and clears it."""
+        resp = self.client.post(
+            "/api/metadata-from-page",
+            json={"drpid": 1, "title": "Dataset Title", "summary": "<p>Desc</p>", "download_date": "2025-02-22"},
+            content_type="application/json",
         )
-        with patch("interactive_collector.api.get_project_by_drpid", return_value=proj):
-            with patch("interactive_collector.api.ensure_output_folder", return_value="C:\\out\\1"):
-                with patch(
-                    "interactive_collector.api.fetch_page_body",
-                    return_value=(200, html_with_description, "text/html", False),
-                ):
-                    resp = self.client.post(
-                        "/api/projects/load",
-                        json={"drpid": 1},
-                        content_type="application/json",
-                    )
         self.assertEqual(resp.status_code, 200)
-        data = json.loads(resp.data)
-        self.assertEqual(
-            data["metadata"]["summary"],
-            "<p>This is the dataset description.</p>",
-        )
+        resp2 = self.client.get("/api/metadata-from-page?drpid=1")
+        self.assertEqual(resp2.status_code, 200)
+        data = json.loads(resp2.data)
+        self.assertEqual(data["metadata"].get("title"), "Dataset Title")
+        self.assertEqual(data["metadata"].get("summary"), "<p>Desc</p>")
+        self.assertEqual(data["metadata"].get("download_date"), "2025-02-22")
+        resp3 = self.client.get("/api/metadata-from-page?drpid=1")
+        data3 = json.loads(resp3.data)
+        self.assertEqual(data3["metadata"], {})
+
+    def test_metadata_from_page_post_requires_drpid(self) -> None:
+        """POST without drpid returns 400."""
+        resp = self.client.post("/api/metadata-from-page", json={}, content_type="application/json")
+        self.assertEqual(resp.status_code, 400)
 
 
 class TestApiProxy(unittest.TestCase):

@@ -52,7 +52,7 @@ app.register_blueprint(pipeline_bp)
 class _QuietRequestLogFilter(logging.Filter):
     """Suppress Werkzeug request logs for noisy polling endpoints."""
 
-    _QUIET_PATHS = ("/api/scoreboard", "/api/downloads-watcher/status")
+    _QUIET_PATHS = ("/api/scoreboard", "/api/downloads-watcher/status", "/api/metadata-from-page")
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:

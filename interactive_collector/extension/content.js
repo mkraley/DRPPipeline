@@ -30,7 +30,7 @@
     const url = params.get("url");
     const collectorBase = window.location.origin;
     if (drpid && url) {
-      chrome.storage.local.set({ drpid, collectorBase }).then(
+      chrome.storage.local.set({ drpid, collectorBase, sourcePageUrl: url }).then(
         function () {
           window.location.href = url;
         },
@@ -39,6 +39,82 @@
         }
       );
     }
+  }
+
+  function urlOriginAndPath(u) {
+    if (!u) return "";
+    try {
+      var a = document.createElement("a");
+      a.href = u;
+      var path = (a.pathname || "/").replace(/\/+$/, "") || "/";
+      return (a.host || a.hostname) + path;
+    } catch (e) {
+      return u;
+    }
+  }
+
+  function extractMetadataFromPage() {
+    var meta = {};
+    var el;
+    // Title: h1[itemprop="name"] (dataset title, not generic h1)
+    el = document.querySelector('h1[itemprop="name"]');
+    if (el && el.textContent) meta.title = el.textContent.trim();
+    if (!meta.title) {
+      el = document.querySelector("h2.asset-name");
+      if (el && el.textContent) meta.title = el.textContent.trim();
+    }
+    if (!meta.title && document.title) meta.title = document.title.trim();
+    // Description: Socrata uses div.description-section (see SocrataMetadataExtractor)
+    el = document.querySelector("div.description-section");
+    if (el && el.innerHTML) meta.summary = el.innerHTML.trim();
+    if (!meta.summary) {
+      el = document.querySelector('div[itemprop="description"]');
+      if (el && el.innerHTML) meta.summary = el.innerHTML.trim();
+    }
+    // Keywords: section.tags – all tag items, semicolon delimited
+    var tagsSection = document.querySelector("section.tags");
+    if (tagsSection) {
+      var tagEls = tagsSection.querySelectorAll("a");
+      if (tagEls.length) {
+        meta.keywords = Array.prototype.map.call(tagEls, function (n) { return n.textContent.trim(); }).filter(Boolean).join("; ");
+      }
+      if (!meta.keywords && tagsSection.textContent) meta.keywords = tagsSection.textContent.trim();
+    }
+    if (!meta.keywords) {
+      var kwNodes = document.querySelectorAll('[itemprop="keywords"]');
+      if (kwNodes.length) {
+        meta.keywords = Array.prototype.map.call(kwNodes, function (n) { return n.textContent.trim(); }).filter(Boolean).join("; ");
+      }
+    }
+    el = document.querySelector('[itemprop="publisher"]');
+    if (el) {
+      var name = el.getAttribute("content") || (el.querySelector("[itemprop='name']") && el.querySelector("[itemprop='name']").textContent) || el.textContent;
+      if (name && name.trim()) meta.agency = name.trim();
+    }
+    el = document.querySelector(".dataset-office, [data-field='organization'] .value, .publisher-name");
+    if (el && el.textContent) meta.office = el.textContent.trim();
+    if (!meta.office && meta.agency) meta.office = meta.agency;
+    var today = new Date();
+    meta.download_date = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0") + "-" + String(today.getDate()).padStart(2, "0");
+    return meta;
+  }
+
+  function sendMetadataFromPageIfSource(collectorBase, drpid, sourcePageUrl) {
+    if (!sourcePageUrl) return;
+    var currentKey = urlOriginAndPath(window.location.href);
+    var sourceKey = urlOriginAndPath(sourcePageUrl);
+    if (currentKey !== sourceKey) return;
+    var meta = extractMetadataFromPage();
+    meta.drpid = parseInt(drpid, 10);
+    if (Object.keys(meta).length <= 1) return;
+    var url = collectorBase + "/api/metadata-from-page";
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(meta),
+    }).then(function () {
+      chrome.storage.local.remove(["sourcePageUrl"]).catch(function () {});
+    }).catch(function () {});
   }
 
   function clearWatcherPoll() {
@@ -59,14 +135,15 @@
     } catch (e) {
       return;
     }
-    chrome.storage.local.get(["drpid", "collectorBase"]).then(
+    chrome.storage.local.get(["drpid", "collectorBase", "sourcePageUrl"]).then(
       function (stored) {
-        var drpid = stored.drpid, collectorBase = stored.collectorBase;
+        var drpid = stored.drpid, collectorBase = stored.collectorBase, sourcePageUrl = stored.sourcePageUrl;
         if (!drpid || !collectorBase) {
           removeCollectorButtons();
           clearWatcherPoll();
           return;
         }
+        sendMetadataFromPageIfSource(collectorBase, drpid, sourcePageUrl);
         addSaveButton();
         startWatcherPoll(collectorBase);
       },
