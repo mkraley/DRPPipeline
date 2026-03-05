@@ -1,34 +1,64 @@
-# DRP Pipeline MCP Server — Design Plan
+# DRP Pipeline MCP Servers — Design Plan
 
-## Overview
+## Goals
 
-An MCP server that lets Claude (via Claude Desktop or Claude Code) manage the DRP Pipeline through natural language — inspecting project status, querying the database, running pipeline modules, and modifying records — with built-in dry-run safety and post-run verification.
+Make it possible for users to move data without having to write code or interact with the pipeline through technically challenging command line interfaces.
 
-## Architecture
+1. **Orchestration workflows should be easy to use and understand.** Visibility and safety are key — users should always be able to see what the pipeline will do before it does it, and understand what happened after.
 
-**Option A — Direct access**: The MCP server imports/calls the pipeline's existing database and subprocess infrastructure directly. No dependency on the Flask app being running.
+2. **Development tasks (Collector and Uploader) should not require users to read or write code.** Having thorough unit and system tests is important. Good error handling is important — errors should be surfaced clearly with enough context to act on them.
 
-**Transport**: `stdio` — compatible with both Claude Desktop and Claude Code.
+---
 
-**Language**: Python, using the `mcp` SDK (`pip install mcp`).
+## MCP 1 — Orchestration
 
-**DB access**: The server reads `config.json` for `db_path` (falling back to `drp_pipeline.db` in the project root), then opens sqlite3 connections directly. This avoids initializing the Storage/Args/Logger singletons in the MCP process.
+The most commonly used MCP. Manages the pipeline using existing Collectors and Uploaders: inspecting project state, running modules, fixing problems, and verifying results.
 
-**Module execution**: Runs `python main.py <module> [args]` via `subprocess.run`, same pattern as `interactive_collector/api_pipeline.py`. Captures and returns stdout+stderr.
+### Architecture
 
-## Files to Create/Modify
+- **Transport**: `stdio` — compatible with Claude Desktop and Claude Code
+- **DB access**: Reads `config.json` for `db_path` (falls back to `drp_pipeline.db` in project root); uses `sqlite3` directly to avoid singleton initialization overhead
+- **Module execution**: Runs `python main.py <module> [args]` via subprocess, same pattern as `interactive_collector/api_pipeline.py`
+
+### Files
 
 ```
 mcp_server/
-    __init__.py        # empty
+    __init__.py
     server.py          # all tools; entry point: python mcp_server/server.py
-.mcp.json              # Claude Code MCP config
+.mcp.json              # Claude Code config
 requirements.txt       # add: mcp>=1.0.0
 ```
 
-## Tools
+### Configuration
 
-### Query tools (read-only)
+**Claude Code** (`.mcp.json` in project root):
+```json
+{
+  "mcpServers": {
+    "drp-pipeline": {
+      "command": "python",
+      "args": ["mcp_server/server.py"]
+    }
+  }
+}
+```
+
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "drp-pipeline": {
+      "command": "python",
+      "args": ["/Users/sefk/src/datarescue/DRPPipeline/mcp_server/server.py"]
+    }
+  }
+}
+```
+
+### Tools
+
+#### Query tools (read-only)
 
 | Tool | Description |
 |------|-------------|
@@ -36,13 +66,13 @@ requirements.txt       # add: mcp>=1.0.0
 | `list_projects` | List projects filtered by status and/or has_errors; paginated with limit/offset |
 | `get_project` | Full record for a single DRPID |
 
-### Pipeline execution
+#### Pipeline execution
 
 | Tool | Description |
 |------|-------------|
-| `run_module` | Run a pipeline module. `dry_run=True` (default) shows eligible projects; `dry_run=False` executes via subprocess and returns captured log output. Accepts `num_rows`, `max_workers`, `start_drpid`, `log_level`. |
+| `run_module` | Run a pipeline module. `dry_run=True` (default) shows eligible projects without executing. `dry_run=False` runs via subprocess and returns captured log output. Accepts `num_rows`, `max_workers`, `start_drpid`, `log_level`. |
 
-### Write tools (all default to `dry_run=True`)
+#### Write tools (all default to `dry_run=True`)
 
 | Tool | Description |
 |------|-------------|
@@ -51,21 +81,21 @@ requirements.txt       # add: mcp>=1.0.0
 | `set_project_status` | Manually set a project's status (e.g. roll back to `sourcing` to re-collect). |
 | `delete_project` | Delete a project record. Does not delete files from disk. |
 
-### Verification tools
+#### Verification tools
 
 | Tool | Description |
 |------|-------------|
 | `verify_module_run` | After running a module, checks how many projects reached the expected output status, how many are stuck with errors, and surfaces a sample of error messages. Accepts `expected_count` to assert against. |
 | `check_project_files` | Lists files in a project's `folder_path`, with names, sizes, and extensions. Confirms folder exists. |
 
-## Safety Design
+### Safety design
 
 - All write tools and `run_module` default to `dry_run=True`.
 - Dry-run responses are clearly labeled and describe exactly what *would* change.
 - `delete_project` and `set_project_status` show the full current record before any deletion/mutation.
 - Protected fields (`DRPID`, `source_url`, `datalumos_id`, `status`, `errors`, `warnings`, `published_url`) cannot be updated via `update_project`; use dedicated tools (`clear_errors`, `set_project_status`) for status/error fields.
 
-## Module Registry (from Orchestrator.py)
+### Module registry (from `orchestration/Orchestrator.py`)
 
 | Module | Prereq status | Output status |
 |--------|--------------|---------------|
@@ -80,34 +110,94 @@ requirements.txt       # add: mcp>=1.0.0
 
 Note: `publisher` also processes `not_found` and `no_links` status projects (sheet-only update). The dry-run for `run_module publisher` will show all three buckets.
 
-## Configuration
+---
 
-### Claude Code (`.mcp.json` in project root)
-```json
-{
-  "mcpServers": {
-    "drp-pipeline": {
-      "command": "python",
-      "args": ["mcp_server/server.py"]
-    }
-  }
-}
+## MCP 2 — Collector Development
+
+Enables adding support for a new data source without writing code. Claude uses this MCP to inspect a source site, scaffold a new collector, register it, and verify it works — producing a tested, integrated collector as output.
+
+### What a collector is
+
+A collector is a Python class with a single public method: `run(drpid: int) -> None`. It:
+
+1. Reads the project record from `Storage.get(drpid)` to get `source_url`
+2. Fetches data from that URL (HTML scraping, REST API, bulk download, etc.)
+3. Creates a local output folder, saves files there
+4. Extracts metadata (title, agency, summary, keywords, dates, etc.)
+5. Writes results back via `Storage.update_record(drpid, {...})` and sets `status = "collector"`
+6. Records errors with `record_error(drpid, ...)` on failure
+
+The class is registered in `orchestration/Orchestrator.py` under `MODULES` with a `prereq` of `"sourcing"`. The two existing collectors (`SocrataCollector`, `CatalogDataCollector`) serve as reference implementations.
+
+### Proposed workflow
+
+```
+1. Inspect     — Claude fetches the source URL and analyzes its structure
+2. Reference   — Claude reads the interface spec and existing collector examples
+3. Scaffold    — MCP tool generates a new collector file from the standard template
+4. Write       — Claude fills in the implementation (standard code editing)
+5. Register    — MCP tool adds the module to Orchestrator.MODULES (with dry-run)
+6. Test        — MCP tool runs the collector on a single real project and reports results
+7. Verify      — MCP 1's verify_module_run confirms the project advanced to "collector"
 ```
 
-### Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json`)
-```json
-{
-  "mcpServers": {
-    "drp-pipeline": {
-      "command": "python",
-      "args": ["/Users/sefk/src/datarescue/DRPPipeline/mcp_server/server.py"]
-    }
-  }
-}
+Steps 1–2 and 4 use Claude Code's normal file/web tools. Steps 3, 5, and 6 need MCP tools.
+
+### Files
+
 ```
+mcp_collector_dev/
+    __init__.py
+    server.py
+```
+
+### Tools
+
+#### Inspection tools
+
+| Tool | Description |
+|------|-------------|
+| `fetch_url_content` | Fetch a URL and return the raw HTML or JSON body (truncated to a readable size). |
+| `analyze_page_structure` | Fetch a URL and return a structured summary: page title, headings (h1–h3), all links with anchor text, JSON-LD or `<meta>` structured data, and any API endpoints found in `<script>` tags. |
+
+#### Reference tools (read-only)
+
+| Tool | Description |
+|------|-------------|
+| `get_collector_interface` | Returns the `ModuleProtocol` definition, the `Storage` schema (all DB columns and types), and the utility functions available in `utils/` (file_utils, url_utils, Errors). This is the spec a new collector must satisfy. |
+| `list_collector_examples` | Returns the full source of all existing collector files in `collectors/`. Lets Claude use them as concrete reference. |
+
+#### Scaffolding and integration tools (with dry-run)
+
+| Tool | Description |
+|------|-------------|
+| `scaffold_collector` | Given a class name, module name, and optional description, writes a new collector file under `collectors/` using the standard boilerplate: imports, `__init__`, `run`, `_collect`, `_update_storage_from_result`. `dry_run=True` (default) shows the file content; `dry_run=False` creates it. Will not overwrite an existing file unless `overwrite=True`. |
+| `register_collector` | Adds an entry to `MODULES` in `orchestration/Orchestrator.py`. Accepts `module_name`, `class_name`, `prereq` (default `"sourcing"`). `dry_run=True` (default) shows the exact diff; `dry_run=False` applies it. Errors if the module name already exists. |
+
+#### Testing tools
+
+| Tool | Description |
+|------|-------------|
+| `test_collector_on_project` | Run the new collector against a single DRPID (`--num-rows 1 --start-drpid <drpid>`). Returns: Storage record before and after, files created in the output folder, any errors recorded. Designed to verify the collector works end-to-end before batch use. |
+
+### Safety design
+
+- `scaffold_collector` and `register_collector` both default to `dry_run=True`.
+- `scaffold_collector` will not overwrite an existing file unless `overwrite=True` is passed.
+- `register_collector` will not add a duplicate module name.
+- `test_collector_on_project` is low-blast-radius (one project), but does make real network requests and write files to disk.
+- After `test_collector_on_project`, use MCP 1's `verify_module_run` and `run_module` (dry-run first) to scale up to a batch.
+
+---
+
+## MCP 3 — Uploader Development
+
+*Future work.* Similar in structure to MCP 2, but for adding support for uploading to a new data repository besides DataLumos. Not designed yet.
+
+---
 
 ## Open Questions / Future Work
 
-- `run_module` with `dry_run=False` blocks until the subprocess finishes and then returns the full output. For long-running modules (upload, publisher with browser automation), this could take many minutes. A future enhancement could add a background-run mode that returns a job ID and a separate `poll_run` tool to check status.
+- `run_module` with `dry_run=False` blocks until the subprocess finishes and returns the full output. For long-running modules (upload, publisher with browser automation), this could take many minutes. A future enhancement could add a background-run mode that returns a job ID and a separate `poll_run` tool to check status.
 - `cleanup_inprogress` has no DB effect and no verifiable output status; it only affects DataLumos. `verify_module_run` will return an error for this module.
 - If `config.json` is absent, the server falls back to `drp_pipeline.db` in the project root. If the DB does not exist, all tools return a clear error.
