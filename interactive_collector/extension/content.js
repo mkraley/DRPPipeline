@@ -266,6 +266,35 @@
     (document.head || document.documentElement).appendChild(s);
   }
 
+  /** Run expansion in the page (read more, show more, accordions), then resolve. Used before print-to-PDF. */
+  function runExpandForPdf() {
+    return new Promise((resolve) => {
+      let readyTimeout;
+      let doneTimeout;
+      const done = () => {
+        document.removeEventListener("drp-expand-done", done);
+        document.removeEventListener("drp-expand-ready", onReady);
+        clearTimeout(readyTimeout);
+        clearTimeout(doneTimeout);
+        resolve();
+      };
+      const onReady = () => {
+        document.removeEventListener("drp-expand-ready", onReady);
+        clearTimeout(readyTimeout);
+        document.addEventListener("drp-expand-done", done);
+        document.dispatchEvent(new CustomEvent("drp-expand-for-pdf"));
+        doneTimeout = setTimeout(done, 60000);
+      };
+      document.addEventListener("drp-expand-ready", onReady);
+      readyTimeout = setTimeout(() => {
+        document.removeEventListener("drp-expand-ready", onReady);
+        document.addEventListener("drp-expand-done", done);
+        document.dispatchEvent(new CustomEvent("drp-expand-for-pdf"));
+        doneTimeout = setTimeout(done, 60000);
+      }, 5000);
+    });
+  }
+
   function createPdfBlob(collectorBase) {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -287,7 +316,30 @@
       };
       document.addEventListener("drp-pdf-ready", onReady);
       document.addEventListener("drp-pdf-error", onErr);
-      document.dispatchEvent(new CustomEvent("drp-generate-pdf", { detail: { collectorBase } }));
+      try {
+        console.log("[DRP] In-page PDF: waiting for page script...");
+      } catch (e) {}
+      let dispatched = false;
+      const onPageReady = () => {
+        if (dispatched) return;
+        dispatched = true;
+        document.removeEventListener("drp-page-ready", onPageReady);
+        clearTimeout(pageReadyTimeout);
+        try {
+          console.log("[DRP] In-page PDF: dispatching drp-generate-pdf (expansion will run; look for [DRP expand] in console)");
+        } catch (e) {}
+        document.dispatchEvent(new CustomEvent("drp-generate-pdf", { detail: { collectorBase } }));
+      };
+      document.addEventListener("drp-page-ready", onPageReady);
+      const pageReadyTimeout = setTimeout(() => {
+        if (dispatched) return;
+        dispatched = true;
+        document.removeEventListener("drp-page-ready", onPageReady);
+        try {
+          console.log("[DRP] In-page PDF: page script not ready in 15s, dispatching anyway");
+        } catch (e) {}
+        document.dispatchEvent(new CustomEvent("drp-generate-pdf", { detail: { collectorBase } }));
+      }, 15000);
     });
   }
 
@@ -335,8 +387,12 @@
 
       btn.disabled = true;
       btn.textContent = "Saving...";
-      showToast("Generating PDF...", false);
+      showToast("Expanding content...", false);
       try {
+        console.log("[DRP] Save as PDF clicked");
+        injectPageScript();
+        await runExpandForPdf();
+        showToast("Generating PDF...", false);
         var res = await chrome.runtime.sendMessage({
           type: "drp-print-to-pdf",
           collectorBase,
@@ -346,10 +402,12 @@
           title: (document.title || "").trim() || "",
         });
         if (res && res.ok) {
+          console.log("[DRP] PDF saved via print (page was expanded first)");
           showToast("Saved: " + (res.filename || "OK"), false);
           return;
         }
         if (res && res.fallback) {
+          console.log("[DRP] Using in-page PDF (expansion will run)");
           showToast("Using alternative PDF method...", false);
           const pdfBase64 = await createPdfBlob(collectorBase);
           if (!pdfBase64 || typeof pdfBase64 !== "string") {
