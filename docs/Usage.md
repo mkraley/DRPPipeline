@@ -48,7 +48,7 @@ python main.py sourcing --num-rows 50
 3. Verifies source URL availability
 4. Creates database records with generated DRPIDs
 
-Requires `sourcing_spreadsheet_url` (and optionally `sourcing_url_column`) in config or environment.
+Requires `google_sheet_id` in config (the sheet ID from the Google Sheet URL). Uses `google_sheet_name` for the tab (when credentials are set, that tab is used for CSV; otherwise the first sheet). Optionally set `sourcing_url_column`.
 
 ### `collector`
 

@@ -68,7 +68,6 @@ Create a JSON file (e.g. `config.json`) in the project root:
   "num_rows": 10,
   "db_path": "drp_pipeline.db",
   "storage_implementation": "StorageSQLLite",
-  "sourcing_spreadsheet_url": "https://docs.google.com/spreadsheets/d/...",
   "sourcing_url_column": "URL",
   "base_output_dir": "C:\\Documents\\DataRescue\\DRPData",
   "datalumos_username": "your@email",
@@ -84,7 +83,7 @@ Create a JSON file (e.g. `config.json`) in the project root:
 
 Common options:
 
-- **Sourcing:** `sourcing_spreadsheet_url`, `sourcing_url_column`
+- **Sourcing:** `google_sheet_id` (required), `google_sheet_name` (tab name; when credentials are set, this tab is used for CSV export; otherwise the first sheet is used), `sourcing_url_column`
 - **Upload / Publisher / Cleanup:** `datalumos_username`, `datalumos_password`; `upload_headless`, `upload_timeout` for browser behavior
 - **Publisher (optional):** `google_sheet_id`, `google_credentials`, `google_sheet_name`, `google_username` for inventory sheet updates
 

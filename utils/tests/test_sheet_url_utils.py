@@ -3,8 +3,16 @@ Unit tests for sheet_url_utils.
 """
 
 import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from utils.sheet_url_utils import parse_spreadsheet_url
+from utils.sheet_url_utils import get_gid_for_sheet_name, parse_spreadsheet_url
+
+try:
+    import google.oauth2.service_account  # noqa: F401
+    _GOOGLE_AVAILABLE = True
+except ImportError:
+    _GOOGLE_AVAILABLE = False
 
 
 class TestParseSpreadsheetUrl(unittest.TestCase):
@@ -39,3 +47,43 @@ class TestParseSpreadsheetUrl(unittest.TestCase):
         with self.assertRaises(ValueError) as cm:
             parse_spreadsheet_url("https://example.com/not-a-sheet")
         self.assertIn("Could not extract spreadsheet ID", str(cm.exception))
+
+
+class TestGetGidForSheetName(unittest.TestCase):
+    """Test cases for get_gid_for_sheet_name."""
+
+    def test_returns_none_when_no_credentials_path(self) -> None:
+        """When credentials_path is None, returns None (use first sheet)."""
+        self.assertIsNone(get_gid_for_sheet_name("abc123", "CDC", None))
+
+    def test_returns_none_when_empty_sheet_name(self) -> None:
+        """When sheet_name is empty, returns None."""
+        self.assertIsNone(get_gid_for_sheet_name("abc123", "", Path("creds.json")))
+
+    @unittest.skipIf(not _GOOGLE_AVAILABLE, "google-auth not installed")
+    @patch("googleapiclient.discovery.build")
+    @patch("google.oauth2.service_account.Credentials.from_service_account_file")
+    def test_returns_gid_when_sheet_name_matches(self, mock_creds: object, mock_build: object) -> None:
+        """When API returns sheets, returns gid for the matching title."""
+        mock_service = MagicMock()
+        mock_service.spreadsheets.return_value.get.return_value.execute.return_value = {
+            "sheets": [
+                {"properties": {"sheetId": 0, "title": "Sheet1"}},
+                {"properties": {"sheetId": 101637367, "title": "CDC"}},
+            ]
+        }
+        mock_build.return_value = mock_service
+        gid = get_gid_for_sheet_name("spreadsheet_id", "CDC", Path("creds.json"))
+        self.assertEqual(gid, "101637367")
+
+    @unittest.skipIf(not _GOOGLE_AVAILABLE, "google-auth not installed")
+    @patch("googleapiclient.discovery.build")
+    @patch("google.oauth2.service_account.Credentials.from_service_account_file")
+    def test_returns_none_when_sheet_name_not_found(self, mock_creds: object, mock_build: object) -> None:
+        """When no sheet title matches, returns None."""
+        mock_service = MagicMock()
+        mock_service.spreadsheets.return_value.get.return_value.execute.return_value = {
+            "sheets": [{"properties": {"sheetId": 0, "title": "Sheet1"}}]
+        }
+        mock_build.return_value = mock_service
+        self.assertIsNone(get_gid_for_sheet_name("spreadsheet_id", "CDC", Path("creds.json")))

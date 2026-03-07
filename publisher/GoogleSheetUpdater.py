@@ -102,11 +102,10 @@ class GoogleSheetUpdater:
                 service, sheet_id, sheet_name, _REQUIRED_COLUMNS
             )
             if not column_map:
-                return False, "Failed to get column mapping from Google Sheet"
-
+                raise ValueError("Failed to get column mapping from Google Sheet")
             url_col_letter = column_map.get("URL")
             if not url_col_letter:
-                return False, "Could not find URL column in sheet"
+                raise ValueError("Could not find URL column in sheet")
 
             row_number = self._find_row_by_url(
                 service, sheet_id, sheet_name, url_col_letter, source_url.strip()
@@ -195,11 +194,10 @@ class GoogleSheetUpdater:
                 optional_columns=["Notes"],
             )
             if not column_map:
-                return False, "Failed to get column mapping from Google Sheet"
-
+                raise ValueError("Failed to get column mapping from Google Sheet")
             url_col_letter = column_map.get("URL")
             if not url_col_letter:
-                return False, "Could not find URL column in sheet"
+                raise ValueError("Could not find URL column in sheet")
 
             row_number = self._find_row_by_url(
                 service, sheet_id, sheet_name, url_col_letter, source_url.strip()
@@ -321,7 +319,10 @@ class GoogleSheetUpdater:
         )
         values = result.get("values", [])
         if not values:
-            return None
+            raise ValueError(
+                f"Sheet '{sheet_name}' has no header row (row 1 is empty). "
+                "Ensure the sheet has column headers in the first row."
+            )
 
         column_map: Dict[str, str] = {}
         for idx, col_name in enumerate(values[0]):

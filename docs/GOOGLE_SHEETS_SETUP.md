@@ -53,23 +53,24 @@ https://docs.google.com/spreadsheets/d/SHEET_ID_HERE/edit
 
 Copy the `SHEET_ID_HERE` part - this is your Sheet ID.
 
-### 4. Get Your Sheet ID
+### 4. Sheet ID and tab name
 
 From your Google Sheet URL:
 ```
-https://docs.google.com/spreadsheets/d/1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY/edit?gid=101637367
+https://docs.google.com/spreadsheets/d/1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY/edit
 ```
 
-The Sheet ID is: `1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY`
+- **Sheet ID:** `1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY` → use for `google_sheet_id`
+- **Tab name:** The worksheet name (e.g. "CDC", "Data_Inventories") → use for `google_sheet_name`. The same name is used for both sourcing (which tab to fetch as CSV) and publisher (which tab to update).
 
-The tab name is determined by the `gid` parameter or defaults to "CDC".
+## Config / command-line arguments
 
-## Command-Line / config file Arguments
+Use `google_sheet_id` and `google_sheet_name` in config; the same sheet and tab can be used for **sourcing** (candidate URLs) and **publisher** (inventory updates).
 
-- `--google-sheet-id`: Required. The Google Sheet ID from the URL (default: `1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY`)
-- `--google-credentials`: Required. Path to the service account JSON file
-- `--google-sheet-name`: Optional. Name of the worksheet/tab (default: "CDC")
-- `--google-username`: Optional. Username to write in "Claimed" column (default: "mkraley")
+- **google_sheet_id**: Sheet ID from the URL (required for sourcing and for publisher updates)
+- **google_sheet_name**: Worksheet/tab name (default: "CDC"). When credentials are set, sourcing uses this tab for the CSV export; otherwise the first sheet is used.
+- **google_credentials**: Path to the service account JSON file (required for publisher sheet updates; also used by sourcing to resolve the tab by name)
+- **google_username**: Username to write in "Claimed" column (default: "mkraley")
 
 ## How It Works
 

@@ -3,7 +3,9 @@ Unit tests for SpreadsheetCandidateFetcher.
 """
 
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from utils.Args import Args
@@ -30,17 +32,28 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
     def setUp(self) -> None:
         """Set up test environment before each test."""
         self._original_argv = sys.argv.copy()
+        self._creds_file = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+        self._creds_file.write(b"{}")
+        self._creds_file.close()
         sys.argv = ["test", "sourcing"]
         Args.initialize()
+        Args._config["google_sheet_id"] = "test_sheet_id"
+        Args._config["google_sheet_name"] = "CDC"
+        Args._config["google_credentials"] = self._creds_file.name
         Logger.initialize(log_level="WARNING")
         self.fetcher = SpreadsheetCandidateFetcher()
 
     def tearDown(self) -> None:
         """Clean up after each test."""
         sys.argv = self._original_argv
+        try:
+            Path(self._creds_file.name).unlink(missing_ok=True)
+        except Exception:
+            pass
 
+    @patch("sourcing.SpreadsheetCandidateFetcher.get_gid_for_sheet_name", return_value="0")
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
-    def test_get_candidate_urls_returns_filtered_urls(self, mock_fetch: object) -> None:
+    def test_get_candidate_urls_returns_filtered_urls(self, mock_fetch: object, _mock_gid: object) -> None:
         """Test get_candidate_urls fetches CSV, filters rows, returns list of url/office/agency dicts."""
         mock_fetch.return_value = _csv_candidates()
         rows, skipped = self.fetcher.get_candidate_urls()
@@ -52,8 +65,9 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         self.assertEqual(rows[0]["agency"], "")
         mock_fetch.assert_called_once()
 
+    @patch("sourcing.SpreadsheetCandidateFetcher.get_gid_for_sheet_name", return_value="0")
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
-    def test_get_candidate_urls_missing_url_column_raises(self, mock_fetch: object) -> None:
+    def test_get_candidate_urls_missing_url_column_raises(self, mock_fetch: object, _mock_gid: object) -> None:
         """Test get_candidate_urls raises ValueError when URL column missing."""
         mock_fetch.return_value = "ColA,ColB\r\n1,2\r\n"
         with self.assertRaises(ValueError) as cm:
@@ -61,8 +75,9 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         self.assertIn("missing required URL column", str(cm.exception))
         self.assertIn("URL", str(cm.exception))
 
+    @patch("sourcing.SpreadsheetCandidateFetcher.get_gid_for_sheet_name", return_value="0")
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
-    def test_get_candidate_urls_missing_filter_column_raises(self, mock_fetch: object) -> None:
+    def test_get_candidate_urls_missing_filter_column_raises(self, mock_fetch: object, _mock_gid: object) -> None:
         """Test get_candidate_urls raises ValueError when filter column missing."""
         csv_no_dl = (
             "Admin Notes,Claimed (add your name),URL\r\n"
@@ -95,8 +110,37 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         # Missing URL yields "".startswith("https://catalog.data.gov/") -> False.
         self.assertFalse(self.fetcher._row_passes_filter({}))
 
+    def test_get_candidate_urls_requires_google_sheet_id(self) -> None:
+        """Test get_candidate_urls raises ValueError when google_sheet_id is missing."""
+        Args._config["google_sheet_id"] = ""
+        with self.assertRaises(ValueError) as cm:
+            self.fetcher.get_candidate_urls()
+        self.assertIn("google_sheet_id", str(cm.exception))
+
+    def test_get_candidate_urls_requires_google_sheet_name(self) -> None:
+        """Test get_candidate_urls raises ValueError when google_sheet_name is missing."""
+        Args._config["google_sheet_name"] = ""
+        with self.assertRaises(ValueError) as cm:
+            self.fetcher.get_candidate_urls()
+        self.assertIn("google_sheet_name", str(cm.exception))
+
+    def test_get_candidate_urls_requires_google_credentials(self) -> None:
+        """Test get_candidate_urls raises ValueError when google_credentials is missing."""
+        Args._config["google_credentials"] = None
+        with self.assertRaises(ValueError) as cm:
+            self.fetcher.get_candidate_urls()
+        self.assertIn("google_credentials", str(cm.exception))
+
+    @patch("sourcing.SpreadsheetCandidateFetcher.get_gid_for_sheet_name", return_value=None)
+    def test_get_candidate_urls_raises_when_sheet_not_found(self, _mock_gid: object) -> None:
+        """Test get_candidate_urls raises ValueError when sheet name can't be resolved."""
+        with self.assertRaises(ValueError) as cm:
+            self.fetcher.get_candidate_urls()
+        self.assertIn("not found", str(cm.exception))
+
+    @patch("sourcing.SpreadsheetCandidateFetcher.get_gid_for_sheet_name", return_value="0")
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
-    def test_get_candidate_urls_respects_limit(self, mock_fetch: object) -> None:
+    def test_get_candidate_urls_respects_limit(self, mock_fetch: object, _mock_gid: object) -> None:
         """Test get_candidate_urls stops at limit (from caller)."""
         csv_with_many = (
             "Admin Notes,Claimed (add your name),URL,Download Location\r\n"
@@ -114,8 +158,9 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         self.assertEqual(rows[0]["url"], "https://catalog.data.gov/dataset/a")
         self.assertEqual(rows[1]["url"], "https://catalog.data.gov/dataset/d")
 
+    @patch("sourcing.SpreadsheetCandidateFetcher.get_gid_for_sheet_name", return_value="0")
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
-    def test_get_candidate_urls_unlimited_when_limit_none(self, mock_fetch: object) -> None:
+    def test_get_candidate_urls_unlimited_when_limit_none(self, mock_fetch: object, _mock_gid: object) -> None:
         """Test get_candidate_urls returns all URLs when limit is None."""
         csv_with_many = (
             "Admin Notes,Claimed (add your name),URL,Download Location\r\n"
@@ -129,8 +174,9 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         self.assertEqual(len(rows), 3)
         self.assertEqual([r["url"] for r in rows], ["https://catalog.data.gov/dataset/a", "https://catalog.data.gov/dataset/d", "https://catalog.data.gov/dataset/e"])
 
+    @patch("sourcing.SpreadsheetCandidateFetcher.get_gid_for_sheet_name", return_value="0")
     @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
-    def test_get_candidate_urls_stops_early_when_limit_reached(self, mock_fetch: object) -> None:
+    def test_get_candidate_urls_stops_early_when_limit_reached(self, mock_fetch: object, _mock_gid: object) -> None:
         """Test that processing stops once limit is reached (doesn't process all rows)."""
         csv_many_rows = (
             "Admin Notes,Claimed (add your name),URL,Download Location\r\n"
