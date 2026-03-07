@@ -71,22 +71,23 @@ Use `google_sheet_id` and `google_sheet_name` in config; the same sheet and tab 
 - **google_sheet_name**: Worksheet/tab name (default: "CDC"). When credentials are set, sourcing uses this tab for the CSV export; otherwise the first sheet is used.
 - **google_credentials**: Path to the service account JSON file (required for publisher sheet updates; also used by sourcing to resolve the tab by name)
 - **google_username**: Username to write in "Claimed" column (default: "mkraley")
+- **gwda_your_name**: Required for GWDA nomination (upload step); set in config (e.g. your full name)
 
 ## How It Works
 
-- After successful publishing, the script searches for the row in the Google Sheet by matching the source URL (from CSV column `7_original_distribution_url`) against column F (URL) in the sheet
-- If a matching row is found, it updates the following columns:
-  - **Column A**: Claimed (add your name) - writes the username
-  - **Column B**: Data Added (Y/N/IP) - writes "Y"
-  - **Column G**: Dataset Download Possible? - writes "Y"
-  - **Column I**: Nominated to EOT / USGWDA - writes "Y"
-  - **Column J**: Date Downloaded - writes value from storage `download_date`
-  - **Column K**: Download Location - writes `https://www.datalumos.org/datalumos/project/{workspace_id}/version/V1/view`
-  - **Column L**: Dataset Size - writes value from storage `file_size` (if available)
-  - **Column M**: File extensions of data uploads - writes value from storage `extensions` (if available)
-  - **Column N**: Metadata availability info - writes "Y"
-- If no matching row is found, an error is recorded and the script continues to the next workspace
-- Errors are logged but don't stop the script execution
+- After successful publishing, the script searches for the row in the Google Sheet by matching the source URL against the **URL** column (case-insensitive, flexible match)
+- If a matching row is found, it updates the following columns (by header name; column letters may vary):
+  - **Claimed** — writes `google_username`
+  - **Data Added** — writes "Y"
+  - **Dataset Download Possible?** — writes "Y"
+  - **Nominated to EOT / USGWDA** — writes "Y"
+  - **Date Downloaded** — writes value from storage `download_date`
+  - **Download Location** — writes `https://www.datalumos.org/datalumos/project/{workspace_id}/version/V1/view`
+  - **Dataset Size** — writes formatted value from storage `file_size` (if available)
+  - **File extensions of data uploads** — writes value from storage `extensions` (if available)
+  - **Metadata availability info** — writes "Y"
+- For **not_found** or **no_links** projects, the publisher updates only: Claimed, Data Added, Dataset Download Possible?, Nominated to EOT / USGWDA, Notes
+- If no matching row is found, a warning is appended and the script continues
 
 ## Troubleshooting
 

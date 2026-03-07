@@ -5,7 +5,7 @@ Multi-pane layout: scoreboard (left), Source pane, Linked pane.
 Links open in the Linked pane so you can see where you came from.
 
 When the pipeline DB is available (config DRP_DB_PATH or default drp_pipeline.db),
-the app loads the first eligible project (prereq=sourcing, no errors) on start,
+the app loads the first eligible project (prereq=sourced, no errors) on start,
 and supports Next (next eligible) and Load by DRPID.
 
 When the original source page is retrieved and we have a DRPID, an output folder

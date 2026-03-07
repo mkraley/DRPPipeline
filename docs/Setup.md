@@ -1,6 +1,6 @@
 # DRP Pipeline — Setup
 
-This document covers prerequisites, installation, and configuration. For running the pipeline and module details, see [Usage](Usage.md).
+This document covers prerequisites and installation. For configuration and usage, see [Usage](Usage.md).
 
 ## Prerequisites
 
@@ -15,7 +15,7 @@ This document covers prerequisites, installation, and configuration. For running
    cd DRPPipeline
    ```
 
-2. Install dependencies:
+2. Install Python dependencies:
    ```bash
    pip install -r requirements.txt
    ```
@@ -25,70 +25,27 @@ This document covers prerequisites, installation, and configuration. For running
    playwright install
    ```
 
-## Configuration
+## Browser extension (optional)
 
-The pipeline is configured by (in order of priority, highest first):
+The browser extension lets you browse source pages in a real browser and save pages as PDF to the interactive collector when AWS WAF blocks automated access.
 
-1. **Command line arguments**
-2. **Config file** (JSON, default: `./config.json`)
-3. **Default values** (in `Args._defaults`)
+### Extension installation
 
-If `./config.json` exists, it is loaded automatically. If it does not exist, a warning is shown but the pipeline continues with defaults and command-line arguments.
+1. Open Chrome and go to `chrome://extensions`.
+2. Enable **Developer mode** (toggle in the top right).
+3. Click **Load unpacked**.
+4. Select the `interactive_collector/extension` folder in this project.
+5. The extension is now loaded.
 
-### Command line arguments
+### Extension usage
 
-```bash
-python main.py <module> [options]
-```
+1. Start the collector (Flask app) and load a project with a source URL.
+2. In the collector, click **Copy & Open** next to the source URL.
+3. Open the extended browser (the same Chrome where the extension is installed).
+4. Paste the copied URL into the address bar and press Enter.
+5. The launcher page loads briefly, stores the project ID, then redirects to the source URL.
+6. Browse the site. When you find a page to save, click **Save as PDF** (floating button in the bottom-right corner).
+7. The PDF is sent to the collector and added to the scoreboard.
+8. In the collector window, click **Refresh** on the scoreboard to see the new entry.
 
-**Required:**
-
-- `module` — Module to run: `noop`, `sourcing`, `collector`, `upload`, `publisher`, `cleanup_inprogress`
-
-**Optional:**
-
-- `--config`, `-c` — Path to configuration file (JSON). Default: `./config.json`
-- `--log-level`, `-l` — Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR`
-- `--log-color` — Color the log severity in the terminal (DEBUG=gray, WARNING=orange, ERROR=red, exception=purple). Only when stdout is a TTY.
-- `--num-rows`, `-n` — Max projects or candidate URLs per batch; omit for unlimited
-- `--db-path` — Path to SQLite database file
-- `--storage` — Storage implementation (default: `StorageSQLLite`)
-- `--delete-all-db-entries` — Delete all database entries and reset auto-increment before running
-- `--max-workers`, `-w` — Max concurrent projects for modules that support it (default: 1)
-- `--download-timeout-ms` — Download timeout in milliseconds (default: 30 min)
-- `--no-use-url-download` — Use Playwright save_as instead of URL + requests for downloads
-
-### Config file format
-
-Create a JSON file (e.g. `config.json`) in the project root:
-
-```json
-{
-  "log_level": "INFO",
-  "num_rows": 10,
-  "db_path": "drp_pipeline.db",
-  "storage_implementation": "StorageSQLLite",
-  "sourcing_url_column": "URL",
-  "base_output_dir": "C:\\Documents\\DataRescue\\DRPData",
-  "datalumos_username": "your@email",
-  "datalumos_password": "your-password",
-  "upload_headless": false,
-  "upload_timeout": 60000,
-  "google_sheet_id": "1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY",
-  "google_credentials": "C:\\path\\to\\service-account.json",
-  "google_sheet_name": "CDC",
-  "google_username": "mkraley"
-}
-```
-
-Common options:
-
-- **Sourcing:** `google_sheet_id` (required), `google_sheet_name` (tab name; when credentials are set, this tab is used for CSV export; otherwise the first sheet is used), `sourcing_url_column`
-- **Upload / Publisher / Cleanup:** `datalumos_username`, `datalumos_password`; `upload_headless`, `upload_timeout` for browser behavior
-- **Publisher (optional):** `google_sheet_id`, `google_credentials`, `google_sheet_name`, `google_username` for inventory sheet updates
-
-See [README](../README.md) and module descriptions for context. Command-line values override config file values.
-
-### Google credentials
-
-In order to update the source inventory sheet, we need google credentials. See [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md)
+**PDF quality:** The extension uses html2pdf/html2canvas. Cross-origin images load via the collector's `/api/proxy`. Wait for the page and lazy images to load before saving.
