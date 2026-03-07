@@ -1252,9 +1252,16 @@ _FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 
 def _serve_spa(subpath: str = "") -> Any:
     """Serve the React SPA (main page with log and collector panes)."""
+    dist_str = str(_FRONTEND_DIST)
+    if not _FRONTEND_DIST.is_dir():
+        return (
+            f"Frontend not built. Run: npm run build (in interactive_collector/frontend)",
+            503,
+            {"Content-Type": "text/plain; charset=utf-8"},
+        )
     if not subpath:
-        return send_from_directory(_FRONTEND_DIST, "index.html")
-    return send_from_directory(_FRONTEND_DIST, subpath)
+        return send_from_directory(dist_str, "index.html")
+    return send_from_directory(dist_str, subpath)
 
 
 @app.route("/legacy")

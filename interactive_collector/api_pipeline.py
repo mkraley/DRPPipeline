@@ -14,7 +14,7 @@ import threading
 from pathlib import Path
 from typing import Any, Generator, Optional
 
-from flask import Blueprint, Response, request
+from flask import Blueprint, Response, current_app, request
 
 # Project root (parent of interactive_collector)
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -46,6 +46,19 @@ def list_modules() -> Any:
     return {"modules": mods}
 
 
+def _log(msg: str) -> None:
+    """Write to stdout, stderr, and Flask logger so it appears in the Flask terminal."""
+    line = msg + "\n"
+    sys.stdout.write(line)
+    sys.stdout.flush()
+    sys.stderr.write(line)
+    sys.stderr.flush()
+    try:
+        current_app.logger.info(msg)
+    except Exception:
+        pass
+
+
 @pipeline_bp.route("/run", methods=["POST"])
 def run_module() -> Any:
     """
@@ -56,6 +69,9 @@ def run_module() -> Any:
 
     Returns:
         Streamed text/plain (log output). On invalid input, 400 JSON.
+
+    Note: If you don't see [pipeline/run] logs in the terminal, the debug reloader
+    may be using a child process whose output isn't shown. Try: flask run --no-reload
     """
     if not request.is_json:
         data: dict[str, Any] = {}
@@ -63,6 +79,7 @@ def run_module() -> Any:
         data = request.get_json() or {}
 
     module = (data.get("module") or "").strip()
+    _log(f"[pipeline/run] POST received module={module!r}")
     if not module:
         return {"error": "module is required"}, 400
 
@@ -103,6 +120,15 @@ def run_module() -> Any:
         global _current_proc
         proc: Optional[subprocess.Popen[str]] = None
         keepalive_interval = 20.0  # Send something every N seconds so connection isn't dropped
+        # Emit these as the first chunk so they appear in the stream (SPA + terminal)
+        start_msg1 = f"[pipeline/run] POST received module={module!r}\n"
+        start_msg2 = f"[pipeline/run] starting subprocess: {' '.join(argv)}\n"
+        sys.stderr.write(start_msg1)
+        sys.stderr.flush()
+        yield start_msg1
+        sys.stderr.write(start_msg2)
+        sys.stderr.flush()
+        yield start_msg2
         try:
             try:
                 if _STOP_FILE.exists():
