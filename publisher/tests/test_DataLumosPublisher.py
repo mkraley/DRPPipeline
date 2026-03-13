@@ -12,6 +12,8 @@ from storage import Storage
 from utils.Args import Args
 from utils.Logger import Logger
 
+from utils.project_utils import get_field
+
 from publisher.DataLumosPublisher import DataLumosPublisher, PUBLISHED_URL_TEMPLATE
 
 
@@ -50,10 +52,10 @@ class TestDataLumosPublisher(unittest.TestCase):
                 pass
 
     def test_get_field(self) -> None:
-        """Test _get_field returns trimmed value or empty string."""
+        """Test get_field returns trimmed value or empty string."""
         project = {"datalumos_id": "  12345  ", "missing": None}
-        self.assertEqual(self.publisher._get_field(project, "datalumos_id"), "12345")
-        self.assertEqual(self.publisher._get_field(project, "missing"), "")
+        self.assertEqual(get_field(project, "datalumos_id"), "12345")
+        self.assertEqual(get_field(project, "missing"), "")
 
     def test_project_url(self) -> None:
         """Test _project_url builds correct workspace URL."""
@@ -139,7 +141,7 @@ class TestDataLumosPublisher(unittest.TestCase):
     ) -> None:
         """Test run updates Storage with published_url and status on success."""
         drpid = Storage.create_record("https://example.com/test")
-        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "upload"})
+        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "uploaded"})
 
         mock_page = MagicMock()
         self.publisher._session.ensure_browser = MagicMock(return_value=mock_page)
@@ -156,7 +158,7 @@ class TestDataLumosPublisher(unittest.TestCase):
         expected_url = "https://www.datalumos.org/datalumos/project/239181/version/V1/view"
         record = Storage.get(drpid)
         self.assertIsNotNone(record)
-        self.assertEqual(record.get("status"), "publisher")
+        self.assertEqual(record.get("status"), "published")
         self.assertEqual(record.get("published_url"), expected_url)
 
     @patch("publisher.DataLumosPublisher.DataLumosPublisher._update_google_sheet_if_configured")
@@ -170,7 +172,7 @@ class TestDataLumosPublisher(unittest.TestCase):
     ) -> None:
         """Test run calls _update_google_sheet_if_configured after successful publish."""
         drpid = Storage.create_record("https://example.com/test")
-        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "upload"})
+        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "uploaded"})
         mock_page = MagicMock()
         self.publisher._session.ensure_browser = MagicMock(return_value=mock_page)
         self.publisher._session.ensure_authenticated = MagicMock(return_value=None)
@@ -197,7 +199,7 @@ class TestDataLumosPublisher(unittest.TestCase):
     ) -> None:
         """Test run sets status to updated_inventory after successful Google Sheet update."""
         drpid = Storage.create_record("https://example.com/test")
-        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "upload"})
+        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "uploaded"})
         mock_page = MagicMock()
         self.publisher._session.ensure_browser = MagicMock(return_value=mock_page)
         self.publisher._session.ensure_authenticated = MagicMock(return_value=None)
@@ -228,7 +230,7 @@ class TestDataLumosPublisher(unittest.TestCase):
     ) -> None:
         """Test run calls record_crash when Google Sheet is configured but credentials file missing."""
         drpid = Storage.create_record("https://example.com/test")
-        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "upload"})
+        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "uploaded"})
         mock_page = MagicMock()
         self.publisher._session.ensure_browser = MagicMock(return_value=mock_page)
         self.publisher._session.ensure_authenticated = MagicMock(return_value=None)

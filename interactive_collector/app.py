@@ -5,7 +5,7 @@ Multi-pane layout: scoreboard (left), Source pane, Linked pane.
 Links open in the Linked pane so you can see where you came from.
 
 When the pipeline DB is available (config DRP_DB_PATH or default drp_pipeline.db),
-the app loads the first eligible project (prereq=sourcing, no errors) on start,
+the app loads the first eligible project (prereq=sourced, no errors) on start,
 and supports Next (next eligible) and Load by DRPID.
 
 When the original source page is retrieved and we have a DRPID, an output folder
@@ -147,7 +147,7 @@ def _get_first_eligible(flask_app: Flask) -> Optional[Dict[str, Any]]:
     """Return the first eligible project (prereq=sourcing, no errors) or None."""
     _ensure_storage(flask_app)
     from storage import Storage
-    projects = Storage.list_eligible_projects("sourcing", 1)
+    projects = Storage.list_eligible_projects("sourced", 1)
     return projects[0] if projects else None
 
 
@@ -156,7 +156,7 @@ def _get_next_eligible_after(flask_app: Flask, current_drpid: int) -> Optional[D
     _ensure_storage(flask_app)
     from storage import Storage
     # Fetch a chunk and find first with DRPID > current_drpid
-    projects = Storage.list_eligible_projects("sourcing", 200)
+    projects = Storage.list_eligible_projects("sourced", 200)
     for proj in projects:
         if proj["DRPID"] > current_drpid:
             return proj
@@ -220,30 +220,13 @@ def _folder_path_for_drpid(display_drpid: Optional[str]) -> Optional[str]:
         return None
 
 
-def _folder_extensions_and_size(folder_path: Path) -> tuple[List[str], int]:
-    """Return (sorted list of unique extensions without leading dot, total size in bytes)."""
-    exts: set[str] = set()
-    total = 0
-    try:
-        for p in folder_path.iterdir():
-            if p.is_file():
-                total += p.stat().st_size
-                if p.suffix:
-                    exts.add(p.suffix.lstrip(".").lower())
-    except OSError:
-        pass
-    return (sorted(exts), total)
+from utils.file_utils import folder_extensions_and_size, format_file_size
+from interactive_collector.pdf_utils import page_title_or_h1, unique_pdf_basename
 
-
-def _format_file_size(size_bytes: int) -> str:
-    """Format byte count as human-friendly string (e.g. '1.2 MB')."""
-    if size_bytes < 1024:
-        return f"{size_bytes} B"
-    if size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f} KB"
-    if size_bytes < 1024 * 1024 * 1024:
-        return f"{size_bytes / (1024 * 1024):.1f} MB"
-    return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+# Re-export for tests that import from app
+_folder_extensions_and_size = folder_extensions_and_size
+_format_file_size = format_file_size
+_unique_pdf_basename = unique_pdf_basename
 
 
 _INDEX_HTML = """<!DOCTYPE html>
@@ -1252,9 +1235,16 @@ _FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 
 def _serve_spa(subpath: str = "") -> Any:
     """Serve the React SPA (main page with log and collector panes)."""
+    dist_str = str(_FRONTEND_DIST)
+    if not _FRONTEND_DIST.is_dir():
+        return (
+            f"Frontend not built. Run: npm run build (in interactive_collector/frontend)",
+            503,
+            {"Content-Type": "text/plain; charset=utf-8"},
+        )
     if not subpath:
-        return send_from_directory(_FRONTEND_DIST, "index.html")
-    return send_from_directory(_FRONTEND_DIST, subpath)
+        return send_from_directory(dist_str, "index.html")
+    return send_from_directory(dist_str, subpath)
 
 
 @app.route("/legacy")
@@ -1548,36 +1538,6 @@ def spa_assets(subpath: str) -> Any:
     return _serve_spa(subpath)
 
 
-def _page_title_or_h1(page: Any) -> str:
-    """Get page <title> or first <h1> text from a Playwright page; empty string if neither."""
-    try:
-        title = page.title()
-        if title and (title or "").strip():
-            return (title or "").strip()
-        try:
-            h1 = page.locator("h1").first.text_content(timeout=2000)
-            if h1 and (h1 or "").strip():
-                return (h1 or "").strip()
-        except Exception:
-            pass
-    except Exception:
-        pass
-    return ""
-
-
-def _unique_pdf_basename(base: str, used: Dict[str, int]) -> str:
-    """Return a unique sanitized basename: base.pdf or base_1.pdf, base_2.pdf, etc."""
-    safe = sanitize_filename(base, max_length=80)
-    if not safe:
-        safe = "page"
-    key = safe.lower()
-    n = used.get(key, 0)
-    used[key] = n + 1
-    if n == 0:
-        return f"{safe}.pdf"
-    return f"{safe}_{n}.pdf"
-
-
 def _generate_save_progress(
     folder_path: Path,
     urls: List[str],
@@ -1730,7 +1690,7 @@ def _save_metadata_from_request() -> None:
     _ensure_storage(app)
     from storage import Storage
     values: Dict[str, Any] = {
-        "status": "collector",
+        "status": "collected",
         "errors": None,
         "title": (request.form.get("metadata_title") or "").strip(),
         "agency": (request.form.get("metadata_agency") or "").strip(),
@@ -1745,9 +1705,9 @@ def _save_metadata_from_request() -> None:
         values["folder_path"] = folder_path_str
         folder_path = Path(folder_path_str)
         if folder_path.is_dir():
-            exts_list, total_bytes = _folder_extensions_and_size(folder_path)
+            exts_list, total_bytes = folder_extensions_and_size(folder_path)
             values["extensions"] = ", ".join(exts_list) if exts_list else ""
-            values["file_size"] = _format_file_size(total_bytes)
+            values["file_size"] = format_file_size(total_bytes)
         else:
             values["extensions"] = ""
             values["file_size"] = ""
@@ -1756,8 +1716,8 @@ def _save_metadata_from_request() -> None:
         values["file_size"] = ""
     try:
         Storage.update_record(drpid, values)
-    except ValueError:
-        pass
+    except ValueError as e:
+        Logger.warning(f"_save_metadata_from_request: record not found or invalid for DRPID={drpid}: {e}")
 
 
 @app.route("/save", methods=["POST"])

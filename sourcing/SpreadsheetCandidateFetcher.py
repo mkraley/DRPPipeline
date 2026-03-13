@@ -1,25 +1,28 @@
 """
 Fetches candidate source URLs from a Google Sheets tab.
 
-Reads spreadsheet URL and URL column from Args, filters rows via _row_passes_filter,
-returns non-empty URL values.
+Reads google_sheet_id, google_sheet_name, google_credentials, and sourcing_url_column from Args.
+Requires google_credentials to resolve the sheet name to a tab (gid). Raises ValueError
+if any required config is missing, the sheet is not found, or required columns are missing.
 """
 
 import csv
 import io
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from utils.Args import Args
 from utils.Logger import Logger
-from utils.sheet_url_utils import parse_spreadsheet_url
+from utils.sheet_url_utils import get_gid_for_sheet_name
 
 
 class SpreadsheetCandidateFetcher:
     """
     Fetches candidate URLs from a Google Sheets tab (e.g. DRP Data_Inventories).
 
-    All configuration comes from Args: sourcing_spreadsheet_url, sourcing_url_column.
+    All configuration comes from Args: google_sheet_id, google_sheet_name, google_credentials,
+    sourcing_url_column. google_credentials is required to resolve the sheet name to a tab.
     """
 
     def get_candidate_urls(self, limit: int | None = None) -> tuple[list[dict[str, str]], int]:
@@ -35,8 +38,29 @@ class SpreadsheetCandidateFetcher:
         Returns:
             Tuple of (list of dicts with keys url, office, agency; count of skipped rows).
         """
-        spreadsheet_url = Args.sourcing_spreadsheet_url
-        sheet_id, gid = parse_spreadsheet_url(spreadsheet_url)
+        sheet_id = (getattr(Args, "google_sheet_id", None) or "").strip()
+        if not sheet_id:
+            raise ValueError(
+                "google_sheet_id is required for sourcing. Set it in config (the sheet ID from the Google Sheet URL)."
+            )
+        sheet_name = (getattr(Args, "google_sheet_name", None) or "").strip()
+        if not sheet_name:
+            raise ValueError(
+                "google_sheet_name is required for sourcing. Set it in config (the worksheet/tab name)."
+            )
+        creds_path = getattr(Args, "google_credentials", None)
+        creds_path = Path(creds_path) if creds_path else None
+        if not creds_path or not creds_path.exists():
+            raise ValueError(
+                "google_credentials is required for sourcing (to resolve sheet name to tab). "
+                "Set it in config to the path of your service account JSON file."
+            )
+        gid = get_gid_for_sheet_name(sheet_id, sheet_name, creds_path)
+        if gid is None:
+            raise ValueError(
+                f"Sheet '{sheet_name}' not found in spreadsheet (or Sheets API error). "
+                f"Verify google_sheet_name matches the worksheet/tab name and that credentials have read access."
+            )
         csv_text = self._fetch_sheet_csv(sheet_id, gid)
         url_column = Args.sourcing_url_column
         return self._extract_urls_from_csv(csv_text, url_column, limit)
@@ -77,7 +101,12 @@ class SpreadsheetCandidateFetcher:
         """
         claimed = (row.get("Claimed (add your name)") or "").strip()
         download_location = (row.get("Download Location") or "").strip()
-        return claimed == "" and download_location == "" # and (row.get("URL") or "").strip().startswith("https://catalog.data.gov/")
+        url = (row.get("URL") or "").strip()
+        return (
+            claimed == ""
+            and download_location == ""
+            and url.startswith("https://catalog.data.gov/")
+        )
 
     def _extract_urls_from_csv(
         self, csv_text: str, url_column: str, num_rows: int | None = None

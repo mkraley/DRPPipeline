@@ -64,7 +64,7 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
           const state = useCollectorStore.getState();
           const current = state.metadata;
           const updates: Partial<typeof current> = {};
-          const keys = ["title", "summary", "keywords", "agency", "office", "time_start", "time_end", "download_date"] as const;
+          const keys = ["title", "summary", "keywords", "agency", "time_start", "time_end", "download_date"] as const;
           for (const k of keys) {
             const v = fromPage[k];
             if (v && !(current[k] || "").trim()) updates[k] = v;
@@ -188,7 +188,7 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
             <button
               type="button"
               className="btn-top"
-              title="Skip project with reason (sets status to collector hold)"
+              title="Skip project with reason (sets status to collector_hold)"
               onClick={openSkipModal}
               disabled={loading}
             >

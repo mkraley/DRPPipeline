@@ -41,7 +41,6 @@ class TestArgs(unittest.TestCase):
         import sys
         sys.argv = ["test", "noop"]
         Args.initialize()
-        self.assertIn("1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY", Args.sourcing_spreadsheet_url)
         self.assertEqual(Args.sourcing_url_column, "URL")
         self.assertIsNone(Args.num_rows)  # Default is None (unlimited)
 

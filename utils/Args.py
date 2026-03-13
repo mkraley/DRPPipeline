@@ -61,9 +61,6 @@ class Args(metaclass=ArgsMeta):
         "config_file": None,  # Set from --config when provided
         "log_level": "INFO",
         "log_color": True,  # Set True with --log-color to color severity in terminal (only when TTY)
-        "sourcing_spreadsheet_url": (
-            "https://docs.google.com/spreadsheets/d/1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY/edit?gid=101637367#gid=101637367"
-        ),
         "sourcing_url_column": "URL",
         "sourcing_fetch_timeout": 15,  # Seconds per URL when checking availability in sourcing; reduces delay from slow catalog.data.gov pages
         "num_rows": None,  # None = unlimited; batch limit for orchestration
@@ -82,14 +79,14 @@ class Args(metaclass=ArgsMeta):
         "datalumos_password": None,  # Required for upload; set in config file
         "upload_headless": False,  # Run browser in headless mode for upload
         "upload_timeout": 60000,  # Default timeout in ms for upload operations
-        # GWDA nomination (before DataLumos upload)
-        "gwda_your_name": "Michael Kraley",
+        # GWDA nomination (before DataLumos upload; gwda_your_name required in config)
+        "gwda_your_name": "",
         "gwda_institution": "Data Rescue Project",
         "gwda_email": None,  # Uses datalumos_username if not set
-        # Publisher: Google Sheet update (optional; after publish)
-        "google_sheet_id": None,  # Google Sheet ID from URL; set in config to enable
-        "google_credentials": None,  # Path to service account JSON; required if google_sheet_id set
-        "google_sheet_name": "CDC",  # Worksheet/tab name
+        # Sourcing + Publisher: Google Sheet (same sheet used for candidate URLs and inventory updates)
+        "google_sheet_id": None,  # Google Sheet ID from URL; set in config for sourcing and/or publisher
+        "google_credentials": None,  # Path to service account JSON; required for publisher sheet updates
+        "google_sheet_name": "CDC",  # Worksheet/tab name (sourcing CSV tab and publisher updates)
         "google_username": "mkraley",  # Value for "Claimed" column
         "stop_file": None,  # When set (e.g. via env DRP_STOP_FILE), orchestrator checks this path each iteration and exits if file exists
     }
@@ -188,7 +185,7 @@ class Args(metaclass=ArgsMeta):
         
         def callback(
             ctx: typer.Context,
-            module: str = typer.Argument(..., help="Module to run: noop, sourcing, collector, upload, publisher, cleanup_inprogress, interactive_collector"),
+            module: str = typer.Argument(..., help="Module to run: noop, sourcing, socrata_collector, catalog_collector, interactive_collector, upload, publisher, cleanup_inprogress"),
             config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to configuration file (JSON format). Default: ./config.json"),
             log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Set the logging level", case_sensitive=False),
             num_rows: Optional[int] = typer.Option(None, "--num-rows", "-n", help="Max projects or candidate URLs per batch; None = unlimited"),

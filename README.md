@@ -2,8 +2,8 @@
 
 A modular pipeline for collecting data from various sources (e.g., government websites) and uploading to repositories such as DataLumos.
 
-- **[Setup](docs/Setup.md)** — Prerequisites, installation, and configuration  
-- **[Usage](docs/Usage.md)** — Running modules, database, and examples  
+- **[Setup](docs/Setup.md)** — Prerequisites and installation  
+- **[Usage](docs/Usage.md)** — Parameters, SPA, command line, database  
 
 ## Overview
 
@@ -29,7 +29,7 @@ Projects move through a series of modules in order; each module updates status s
 
 The code is broken up into a set of modules, each of which performs a step of the pipeline. There can be multiple modules for a given function, e.g. separate collectors for source websites that have different formatting.
 
-The work of the pipeline is coodinated via a SQLLite database. Metadata about each project is initialized by the **sourcing** module. More detailed info, e.g. metadata and files, is then **collected**. The metadata itself is stored in the database; files are kept on local disk and pointed to by a field in the database. Project contents are then **uploaded** to the repository. When all is complete, the project is **published** and the original source spreadsheet is **updated**.
+The work of the pipeline is coordinated via a SQLite database. Metadata about each project is initialized by the **sourcing** module. More detailed info, e.g. metadata and files, is then **collected**. The metadata itself is stored in the database; files are kept on local disk and pointed to by a field in the database. Project contents are then **uploaded** to the repository. When all is complete, the project is **published** and the original source spreadsheet is **updated**.
 
 Not all modules need to be used. For example, data can be collected by other means, a spreadsheet that contains the structure can then be imported into a sqllite database and then uploaded and published.
 
@@ -40,7 +40,7 @@ DRPPipeline/
 ├── collectors/          # Data collection (e.g., SocrataCollector)
 ├── cleanup_inprogress/ # Delete DataLumos projects in Deposit In Progress
 ├── debug/              # Debug scripts
-├── docs/               # Setup, Usage, design docs
+├── docs/               # Setup, Usage, Google Sheets setup
 ├── duplicate_checking/ # Duplicate detection (e.g., DataLumos search)
 ├── orchestration/     # Orchestrator and module protocol
 ├── publisher/         # DataLumos publish and optional Google Sheet update
@@ -58,7 +58,9 @@ DRPPipeline/
 |--------|--------|
 | **noop** | No-op; useful for testing. |
 | **sourcing** | Fetches candidate URLs from a spreadsheet, checks duplicates, creates DB records. |
-| **collector** | Collects data and metadata for projects (e.g., Socrata); updates status. |
+| **socrata_collector** | Collects data and metadata from Socrata-hosted pages (e.g. data.cdc.gov). |
+| **catalog_collector** | Collects download links from catalog.data.gov dataset pages. |
+| **interactive_collector** | Flask app for manual collection: browse URLs, save PDFs, update metadata. |
 | **upload** | Uploads collected data to DataLumos via browser automation. |
 | **publisher** | Runs DataLumos publish workflow; also updates source inventory|
 | **cleanup_inprogress** | Standalone utility that deletes DataLumos workspace projects in “Deposit In Progress” state (no DB changes). |
@@ -88,7 +90,7 @@ The Interactive Collector is available in two modes:
 
 ### SPA Architecture
 
-- **Backend:** `interactive_collector/api.py` — Blueprint with `/api/projects/*`, `/api/projects/load`, `/api/scoreboard`, `/api/save`, `/api/download-file`.
+- **Backend:** `interactive_collector/api.py` — Blueprint with `/api/projects/*`, `/api/projects/load`, `/api/scoreboard`, `/api/save`, `/api/download-file`, `/api/pipeline/*`, `/api/proxy`, `/extension/save-pdf`.
 - **Frontend:** `interactive_collector/frontend/` — Vite + React + Zustand. Link clicks are intercepted via postMessage; pages load via API and update the Linked pane without reload.
 
 ## Development
@@ -103,7 +105,7 @@ The Interactive Collector is available in two modes:
 - **Database:** Ensure `db_path` is writable; projects with non-empty `errors` are not eligible for later modules.
 - **Playwright:** Run `playwright install`; use `upload_headless: false` in config for visible browser debugging.
 
-For full configuration and command-line options, see [Setup](docs/Setup.md).
+For full configuration and command-line options, see [Usage](docs/Usage.md).
 
 ## Credits
 

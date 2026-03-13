@@ -84,15 +84,17 @@
         }
         if (!meta.keywords && el.textContent) meta.keywords = el.textContent.trim();
       }
-      el = document.querySelector("div.DatasetHero__meta-container > div:nth-child(3) > span:nth-child(2)") ||
-           document.querySelector("div[class*='DatasetHero__meta-container'] div:nth-child(3) span:nth-child(2)");
-      if (el && el.textContent) meta.agency = el.textContent.trim();
-      if (!meta.agency) {
-        var hero = document.querySelector("div[class*='DatasetHero__meta-container']");
-        if (hero) {
-          var spans = hero.querySelectorAll("span");
-          if (spans.length >= 2) meta.agency = spans[1].textContent.trim();
+      // Agency: div.DatasetHero__meta with <span>Data source</span> and sibling <span>agency name</span>
+      var metaDivs = document.querySelectorAll("div.DatasetHero__meta, div[class*='DatasetHero__meta']");
+      for (var d = 0; d < metaDivs.length; d++) {
+        var spans = metaDivs[d].querySelectorAll("span");
+        for (var s = 0; s < spans.length; s++) {
+          if (spans[s].textContent.trim().toLowerCase().indexOf("data source") !== -1 && spans[s].nextElementSibling) {
+            meta.agency = spans[s].nextElementSibling.textContent.trim();
+            break;
+          }
         }
+        if (meta.agency) break;
       }
     }
 
@@ -157,6 +159,7 @@
     if (currentKey !== sourceKey) return;
     var meta = extractMetadataFromPage();
     meta.drpid = parseInt(drpid, 10);
+    delete meta.office;
     if (Object.keys(meta).length <= 1) return;
     // POST via background script so the request is from the extension (localhost allowed), not the page (blocked by Private Network Access)
     chrome.runtime.sendMessage(
@@ -263,6 +266,35 @@
     (document.head || document.documentElement).appendChild(s);
   }
 
+  /** Run expansion in the page (read more, show more, accordions), then resolve. Used before print-to-PDF. */
+  function runExpandForPdf() {
+    return new Promise((resolve) => {
+      let readyTimeout;
+      let doneTimeout;
+      const done = () => {
+        document.removeEventListener("drp-expand-done", done);
+        document.removeEventListener("drp-expand-ready", onReady);
+        clearTimeout(readyTimeout);
+        clearTimeout(doneTimeout);
+        resolve();
+      };
+      const onReady = () => {
+        document.removeEventListener("drp-expand-ready", onReady);
+        clearTimeout(readyTimeout);
+        document.addEventListener("drp-expand-done", done);
+        document.dispatchEvent(new CustomEvent("drp-expand-for-pdf"));
+        doneTimeout = setTimeout(done, 60000);
+      };
+      document.addEventListener("drp-expand-ready", onReady);
+      readyTimeout = setTimeout(() => {
+        document.removeEventListener("drp-expand-ready", onReady);
+        document.addEventListener("drp-expand-done", done);
+        document.dispatchEvent(new CustomEvent("drp-expand-for-pdf"));
+        doneTimeout = setTimeout(done, 60000);
+      }, 5000);
+    });
+  }
+
   function createPdfBlob(collectorBase) {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -284,7 +316,30 @@
       };
       document.addEventListener("drp-pdf-ready", onReady);
       document.addEventListener("drp-pdf-error", onErr);
-      document.dispatchEvent(new CustomEvent("drp-generate-pdf", { detail: { collectorBase } }));
+      try {
+        console.log("[DRP] In-page PDF: waiting for page script...");
+      } catch (e) {}
+      let dispatched = false;
+      const onPageReady = () => {
+        if (dispatched) return;
+        dispatched = true;
+        document.removeEventListener("drp-page-ready", onPageReady);
+        clearTimeout(pageReadyTimeout);
+        try {
+          console.log("[DRP] In-page PDF: dispatching drp-generate-pdf (expansion will run; look for [DRP expand] in console)");
+        } catch (e) {}
+        document.dispatchEvent(new CustomEvent("drp-generate-pdf", { detail: { collectorBase } }));
+      };
+      document.addEventListener("drp-page-ready", onPageReady);
+      const pageReadyTimeout = setTimeout(() => {
+        if (dispatched) return;
+        dispatched = true;
+        document.removeEventListener("drp-page-ready", onPageReady);
+        try {
+          console.log("[DRP] In-page PDF: page script not ready in 15s, dispatching anyway");
+        } catch (e) {}
+        document.dispatchEvent(new CustomEvent("drp-generate-pdf", { detail: { collectorBase } }));
+      }, 15000);
     });
   }
 
@@ -332,8 +387,12 @@
 
       btn.disabled = true;
       btn.textContent = "Saving...";
-      showToast("Generating PDF...", false);
+      showToast("Expanding content...", false);
       try {
+        console.log("[DRP] Save as PDF clicked");
+        injectPageScript();
+        await runExpandForPdf();
+        showToast("Generating PDF...", false);
         var res = await chrome.runtime.sendMessage({
           type: "drp-print-to-pdf",
           collectorBase,
@@ -343,10 +402,12 @@
           title: (document.title || "").trim() || "",
         });
         if (res && res.ok) {
+          console.log("[DRP] PDF saved via print (page was expanded first)");
           showToast("Saved: " + (res.filename || "OK"), false);
           return;
         }
         if (res && res.fallback) {
+          console.log("[DRP] Using in-page PDF (expansion will run)");
           showToast("Using alternative PDF method...", false);
           const pdfBase64 = await createPdfBlob(collectorBase);
           if (!pdfBase64 || typeof pdfBase64 !== "string") {
