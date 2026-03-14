@@ -1,5 +1,15 @@
 # DRP Pipeline MCP Servers — Design Plan
 
+## Table of Contents
+
+- [Goals](#goals)
+- [MCP 1 — Orchestration](#mcp-1--orchestration)
+- [MCP 2 — Collector Development](#mcp-2--collector-development)
+- [MCP 3 — Uploader Development](#mcp-3--uploader-development)
+- [Open Questions / Future Work](#open-questions--future-work)
+
+---
+
 ## Goals
 
 Make it possible for users to move data without having to write code or interact with the pipeline through technically challenging command line interfaces.
@@ -114,7 +124,9 @@ Note: `publisher` also processes `not_found` and `no_links` status projects (she
 
 ## MCP 2 — Collector Development
 
-Enables adding support for a new data source without writing code. Claude uses this MCP to inspect a source site, scaffold a new collector, register it, and verify it works — producing a tested, integrated collector as output.
+Enables adding support for a new data source without writing code.  The orchestrator uses this MCP to inspect a source site, scaffold a new collector, register it, and verify it works — producing a tested, integrated collector as output.
+
+For the first version the user of MCP 2 will be a pretty technical users. While they won't be writing code themselves, what MCP2 produces itself is a code module that will have to be checked into version control, etc. But we will consider for subsequent versions fronting the collector development itself with some sort of UI (eg. a web interface) so that even non-technical users could have collector development done for them with AI help.
 
 ### What a collector is
 
@@ -129,19 +141,37 @@ A collector is a Python class with a single public method: `run(drpid: int) -> N
 
 The class is registered in `orchestration/Orchestrator.py` under `MODULES` with a `prereq` of `"sourcing"`. The two existing collectors (`SocrataCollector`, `CatalogDataCollector`) serve as reference implementations.
 
-### Proposed workflow
+### Dataflow
 
-```
-1. Inspect     — Claude fetches the source URL and analyzes its structure
-2. Reference   — Claude reads the interface spec and existing collector examples
-3. Scaffold    — MCP tool generates a new collector file from the standard template
-4. Write       — Claude fills in the implementation (standard code editing)
-5. Register    — MCP tool adds the module to Orchestrator.MODULES (with dry-run)
-6. Test        — MCP tool runs the collector on a single real project and reports results
-7. Verify      — MCP 1's verify_module_run confirms the project advanced to "collector"
-```
+Proposed workflow:
 
-Steps 1–2 and 4 use Claude Code's normal file/web tools. Steps 3, 5, and 6 need MCP tools.
+1. **Inspect** -- Fetch the source URL and analyzes its structure. Use AI to analyze the site to pull out the key information needed when populating the site later.
+2. **Reference** -- Claude reads the interface spec and existing collector examples
+3. **Scaffold** -- MCP tool generates a new collector file from the standard template
+4. **Write** -- Claude fills in the implementation (standard code editing)
+5. **Register** -- MCP tool adds the module to Orchestrator.MODULES (with dry-run)
+6. **Test** -- MCP tool runs the collector on a single real project and reports results
+7. **Verify** -- MCP 1's verify_module_run confirms the project advanced to "collector"
+
+Steps 1–2 and 4 use Claude Code's normal file/web tools. Steps 3, 5, and 6 need
+MCP tools.
+
+For the first version we can assumed that the user has their own Claude Code license to do this work. For future versions consider other models depending on what license the user has.
+
+### Training and Prompt Development
+
+We can use [DSPy] to managing the loop for inspecting sites to download from and developing the "prompts" to develop collectors. DSPy's goal is to not produce prompts per se, but programmatic LLM drivers.
+
+We have one collector examples to work from that we could use as input to DSPy to develop its interfaces so we don't have to rely on writing and maintaining prompts.
+
+But most of the iteration should be done over the wealth of manual rescue work done already. The Data Rescue Project tracks its work in a large [Google Spreadsheet][track]. Each tab represents a dataset to copy. The ones that have already been completed can be our training data.
+
+* Look for tabs that have "DONE" in the tab name, for example "[NRLB - Done - In Tracker][nrlb]". Each row represents a site we have already done a manual collection on. Looking more at this example, the "URL" column H is where data came from, and the "Download Location" column N is where it went to.
+* Since these URL's are generally unauthenticated and available, Claude should be able to iterate on each one to examine what fields in the source mapped which fields in DataLumos.
+
+[DSPy]: https://dspy.ai/
+[track]: https://docs.google.com/spreadsheets/d/1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY/edit?gid=1855551901#gid=1855551901
+[nrlb]: https://docs.google.com/spreadsheets/d/1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY/edit?gid=1333679334#gid=1333679334
 
 ### Files
 

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "drp-collector-dev": {
+      "command": ".venv/bin/python",
+      "args": ["mcp_collector_dev/server.py"]
+    }
+  }
+}
