@@ -112,7 +112,7 @@ To run a given module, e.g., sourcing, upload, publisher, just press the corresp
 `Max Workers` - Use multithreaded executors to speed things up.
 
 
-### Interactive collector (SPA or legacy)
+### Interactive collector
 
 Most modules run as batch processes. The Interactive collector is the exception. 
 Make sure you have installed the browser extension. See [Setup](Setup.md#browser-extension-optional)
@@ -133,6 +133,7 @@ If you don't want to keep working on the current project, but want to come back 
 If you want to work on a particular DRPID (not necessarily the next eligible), enter the id in the **Load DRPID** field and press **Load**.
 
 The **Scoreboard** field keeps track of the files which have been collected for the given project.
+The extension is considered to be active when `collecting`. The **Save as PDF** button and the capture of downloaded files is only active when in collecting mode. We enter this mode when **Copy & Open** is pressed, and exit when **Save**, **No Links**, or **Skip** is pressed. You may also exist collecting mode by clicking on the **Collecting** indicator.
 
 ---
 

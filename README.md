@@ -93,14 +93,14 @@ The Interactive Collector is available in two modes:
 2. **Frontend (dev):** `cd interactive_collector/frontend && npm run dev` — Vite proxies `/api` to Flask.
 3. **Production:** Build with `npm run build`, then Flask serves the built app at `/collector/`.
 
-### SPA Architecture
+### SPA Implementation
 
 - **Backend:** `interactive_collector/api.py` — Blueprint with `/api/projects/*`, `/api/projects/load`, `/api/scoreboard`, `/api/save`, `/api/download-file`, `/api/pipeline/*`, `/api/proxy`, `/api/extension/save-pdf`, `/api/metadata-from-page`, `/api/downloads-watcher/*`.
 - **Frontend:** `interactive_collector/frontend/` — Vite + React + Zustand. Link clicks are intercepted via postMessage; pages load via API and update the Linked pane without reload.
 
 ### Chrome extension
 
-The **DRP Collector** Chrome extension (`interactive_collector/extension/`) works with the Interactive Collector when you use **Copy & Open** to browse in a separate tab. It only shows its UI when the collector’s downloads watcher is active (i.e. you are actively collecting).
+The **DRP Collector** Chrome extension (`interactive_collector/extension/`) allows the user to freely browse source files and interactively decide which metadata, pages, and files to include in the collection for later uploading. See [Interactive collector](docs/Setup.md#Interactive collector)
 
 - **Manifest:** Manifest V3; permissions include `storage`, `debugger` (for browser print-to-PDF), `tabs`, `contextMenus`; host access for localhost and `*.data.gov` (and all URLs for the content script).
 - **Content script** (`content.js`): Injected into all pages. On the launcher page (`/extension/launcher?drpid=…&url=…`), stores `drpid`, `collectorBase`, and `sourcePageUrl`, then redirects to the target URL. On other pages, if the watcher is active, shows a **Save as PDF** button; runs metadata preload (e.g. for data.cms.gov) and sends it to `/api/metadata-from-page`; intercepts clicks on PDF links and sends those URLs to the background so the PDF can be fetched and posted to the project.
