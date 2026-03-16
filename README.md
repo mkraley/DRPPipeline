@@ -10,26 +10,29 @@ A modular pipeline for collecting data from various sources (e.g., government we
 The DRP Pipeline is a Python-based data collection and processing system that:
 
 - **Sources** candidate URLs from inventory spreadsheets (e.g. Data_Inventories)
-- **Collects** data and metadata from web sources (e.g., Socrata)
+- **Collects** datasets and metadata from web sources (e.g., government web sites)
 - **Tracks** project status and progress in a SQLite database
 - **Uploads** to repositories (e.g., DataLumos)
 - **Publishes** projects, i.e., final committment in the repository
 - **Updates** the original inventory spreadsheet
 
 Projects move through a series of modules in order; each module updates status so the next can process eligible projects.
+In some cases, we have multiple implementations of a particular module. This allows us to support different source and destination formats
 
 ## Terminology
+-  source URL/file - a file which is the gateway to a set of information, typically an entry in a data repository index
 -  project - all the work done on behalf of a single source url - named after a datalumos project
--  asset - an individual file. projects usually have more than one file
+-  drpid - a numeric identifier for a project. Unique for a given database
+-  asset - an individual file, e.g., dataset, PDF file. Projects usually have more than one file
 -  metadata - information not contained in a file - often represents information extracted from a landing page
--  a stage in the pipeline that does a specific function, such as collection or uploading
+-  module - a stage in the pipeline that does a specific function, such as collection or uploading
 -  batch - a set of projects run through a specific module
 
 ## Architecture
 
 The code is broken up into a set of modules, each of which performs a step of the pipeline. There can be multiple modules for a given function, e.g. separate collectors for source websites that have different formatting.
 
-The work of the pipeline is coordinated via a SQLite database. Metadata about each project is initialized by the **sourcing** module. More detailed info, e.g. metadata and files, is then **collected**. The metadata itself is stored in the database; files are kept on local disk and pointed to by a field in the database. Project contents are then **uploaded** to the repository. When all is complete, the project is **published** and the original source spreadsheet is **updated**.
+The work of the pipeline is coordinated amongst the modules via a SQLite database. The list of potential source URLs are obtained by the **sourcing** module. The  e.g. metadata and files, is then **collected**. The metadata itself is stored in the database; files are kept on local disk in a folder pointed to by a field in the database. Project contents are then **uploaded** to the repository. When all is complete, the project is **published** and the original source spreadsheet is **updated**.
 
 Not all modules need to be used. For example, data can be collected by other means, a spreadsheet that contains the structure can then be imported into a sqllite database and then uploaded and published.
 
@@ -41,6 +44,8 @@ DRPPipeline/
 ├── cleanup_inprogress/ # Delete DataLumos projects in Deposit In Progress
 ├── debug/              # Debug scripts
 ├── docs/               # Setup, Usage, Google Sheets setup
+├── interactive_collector/  # Flask app, SPA frontend, Chrome extension
+│   └── extension/         # Chrome extension (Save as PDF, metadata preload, PDF-to-project)
 ├── duplicate_checking/ # Duplicate detection (e.g., DataLumos search)
 ├── orchestration/     # Orchestrator and module protocol
 ├── publisher/         # DataLumos publish and optional Google Sheet update
@@ -56,7 +61,6 @@ DRPPipeline/
 
 | Module | Purpose |
 |--------|--------|
-| **noop** | No-op; useful for testing. |
 | **sourcing** | Fetches candidate URLs from a spreadsheet, checks duplicates, creates DB records. |
 | **socrata_collector** | Collects data and metadata from Socrata-hosted pages (e.g. data.cdc.gov). |
 | **catalog_collector** | Collects download links from catalog.data.gov dataset pages. |
@@ -64,6 +68,7 @@ DRPPipeline/
 | **upload** | Uploads collected data to DataLumos via browser automation. |
 | **publisher** | Runs DataLumos publish workflow; also updates source inventory|
 | **cleanup_inprogress** | Standalone utility that deletes DataLumos workspace projects in “Deposit In Progress” state (no DB changes). |
+| **noop** | No-op; useful for testing. |
 
 Each module (except `noop` and `cleanup_inprogress`) advances project `status` so the next module can run on eligible projects. See [Usage](docs/Usage.md) for how to run them and how the database is used.
 
@@ -79,19 +84,30 @@ See [Usage](docs/Usage.md) for database fields and eligibility rules.
 
 The Interactive Collector is available in two modes:
 
-- **Legacy:** Server-rendered at `/` (Flask templates, full-page reloads).
 - **SPA:** React app at `/collector/` with JSON API, no full-page reloads.
+- **Legacy:** Server-rendered at `/` (Flask templates, full-page reloads).
 
 ### Running the SPA
 
-1. **Backend:** `flask run` (or via orchestrator).
+1. **Backend:** `flask run`.
 2. **Frontend (dev):** `cd interactive_collector/frontend && npm run dev` — Vite proxies `/api` to Flask.
 3. **Production:** Build with `npm run build`, then Flask serves the built app at `/collector/`.
 
 ### SPA Architecture
 
-- **Backend:** `interactive_collector/api.py` — Blueprint with `/api/projects/*`, `/api/projects/load`, `/api/scoreboard`, `/api/save`, `/api/download-file`, `/api/pipeline/*`, `/api/proxy`, `/extension/save-pdf`.
+- **Backend:** `interactive_collector/api.py` — Blueprint with `/api/projects/*`, `/api/projects/load`, `/api/scoreboard`, `/api/save`, `/api/download-file`, `/api/pipeline/*`, `/api/proxy`, `/api/extension/save-pdf`, `/api/metadata-from-page`, `/api/downloads-watcher/*`.
 - **Frontend:** `interactive_collector/frontend/` — Vite + React + Zustand. Link clicks are intercepted via postMessage; pages load via API and update the Linked pane without reload.
+
+### Chrome extension
+
+The **DRP Collector** Chrome extension (`interactive_collector/extension/`) works with the Interactive Collector when you use **Copy & Open** to browse in a separate tab. It only shows its UI when the collector’s downloads watcher is active (i.e. you are actively collecting).
+
+- **Manifest:** Manifest V3; permissions include `storage`, `debugger` (for browser print-to-PDF), `tabs`, `contextMenus`; host access for localhost and `*.data.gov` (and all URLs for the content script).
+- **Content script** (`content.js`): Injected into all pages. On the launcher page (`/extension/launcher?drpid=…&url=…`), stores `drpid`, `collectorBase`, and `sourcePageUrl`, then redirects to the target URL. On other pages, if the watcher is active, shows a **Save as PDF** button; runs metadata preload (e.g. for data.cms.gov) and sends it to `/api/metadata-from-page`; intercepts clicks on PDF links and sends those URLs to the background so the PDF can be fetched and posted to the project.
+- **Background** (`background.js`): Service worker. Handles messages: watcher status/stop, save PDF (blob or print-to-PDF via debugger API), metadata-from-page POST, and fetch-PDF-to-project (for direct PDF URLs). Adds context menu items: **Save this PDF to DRP project** (current tab) and **Save linked PDF to DRP project** (right-click on a link). Fetches PDFs from URLs and POSTs them to `/api/extension/save-pdf`.
+- **Page script** (`page.js`): Injected into the page context for PDF generation: expands “Show more”, accordions, etc., then uses html2pdf/jsPDF or triggers Chrome’s print-to-PDF. Fires custom events so the content script can coordinate.
+
+The extension calls the Flask backend at the collector origin (e.g. `http://localhost:5000`) for save-pdf, metadata-from-page, and downloads-watcher status/stop. See [Setup](docs/Setup.md#browser-extension-optional) for loading the extension and [Usage](docs/Usage.md) for the Copy & Open workflow.
 
 ## Development
 

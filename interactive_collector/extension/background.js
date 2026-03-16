@@ -42,6 +42,99 @@ function postMetadataFromPage(collectorBase, payload) {
   }).then(r => r.json().catch(() => ({}))).then(data => ({ ok: !!data.ok }));
 }
 
+/** Extract real PDF URL from tab URL (handles chrome-extension://id/https://... viewer URLs). */
+function extractPdfUrl(tabUrl) {
+  if (!tabUrl || typeof tabUrl !== "string") return null;
+  const u = tabUrl.trim();
+  const lower = u.toLowerCase();
+  if (lower.endsWith(".pdf")) return u;
+  const idx = u.indexOf("https://");
+  if (idx !== -1) return u.slice(idx);
+  const idxHttp = u.indexOf("http://");
+  if (idxHttp !== -1) return u.slice(idxHttp);
+  return null;
+}
+
+function isPdfUrl(url) {
+  if (!url) return false;
+  return url.toLowerCase().endsWith(".pdf") || /\.pdf(\?|#|$)/i.test(url);
+}
+
+/** Fetch PDF from url and POST to collector save-pdf. */
+function fetchPdfAndPostToCollector(collectorBase, drpid, pdfUrl, referrer, pageTitle) {
+  return fetch(pdfUrl, { method: "GET", credentials: "omit" })
+    .then(r => {
+      if (!r.ok) throw new Error("Fetch failed: " + r.status);
+      return r.blob();
+    })
+    .then(blob => {
+      if (!blob || blob.size === 0) throw new Error("Empty response");
+      const fd = new FormData();
+      fd.append("drpid", String(drpid));
+      fd.append("url", pdfUrl);
+      fd.append("referrer", referrer || "");
+      if (pageTitle && String(pageTitle).trim()) fd.append("title", String(pageTitle).trim());
+      const safeName = (pageTitle && pageTitle.length <= 80)
+        ? (pageTitle.replace(/[^\w\s.-]/g, "_").replace(/\.[pP][dD][fF]$/, "").trim() || "document")
+        : "document";
+      fd.append("pdf", blob, (safeName.endsWith(".pdf") ? safeName : safeName + ".pdf"));
+      return fetch(`${collectorBase}/api/extension/save-pdf`, { method: "POST", body: fd });
+    })
+    .then(r => r.json().catch(() => ({})))
+    .then(data => ({ ok: !!data.ok, error: data.error, filename: data.filename }));
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: "drp-save-this-pdf",
+    title: "Save this PDF to DRP project",
+    contexts: ["page"],
+  });
+  chrome.contextMenus.create({
+    id: "drp-save-linked-pdf",
+    title: "Save linked PDF to DRP project",
+    contexts: ["link"],
+  });
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === "drp-save-linked-pdf") {
+    const pdfUrl = (info.linkUrl || "").trim();
+    if (!isPdfUrl(pdfUrl)) {
+      console.warn("[DRP] Not a PDF link:", pdfUrl);
+      return;
+    }
+    chrome.storage.local.get(["drpid", "collectorBase"]).then(stored => {
+      if (!stored.drpid || !stored.collectorBase) {
+        console.warn("[DRP] No project context (use Copy & Open first)");
+        return;
+      }
+      fetchPdfAndPostToCollector(stored.collectorBase, stored.drpid, pdfUrl, tab && tab.url ? tab.url : null, null)
+        .then(result => { if (result.ok) console.log("[DRP] PDF saved:", result.filename); else console.warn("[DRP] Save failed:", result.error); })
+        .catch(e => console.warn("[DRP] Save failed:", e));
+    });
+    return;
+  }
+  if (info.menuItemId === "drp-save-this-pdf" && tab && tab.id) {
+    const tabUrl = (tab.url || "").trim();
+    const pdfUrl = extractPdfUrl(tabUrl) || (isPdfUrl(tabUrl) ? tabUrl : null);
+    if (!pdfUrl) {
+      console.warn("[DRP] Current tab is not a PDF:", tabUrl);
+      return;
+    }
+    chrome.storage.local.get(["drpid", "collectorBase"]).then(stored => {
+      if (!stored.drpid || !stored.collectorBase) {
+        console.warn("[DRP] No project context (use Copy & Open first)");
+        return;
+      }
+      const pageTitle = (tab.title || "").trim();
+      fetchPdfAndPostToCollector(stored.collectorBase, stored.drpid, pdfUrl, null, pageTitle)
+        .then(result => { if (result.ok) console.log("[DRP] PDF saved:", result.filename); else console.warn("[DRP] Save failed:", result.error); })
+        .catch(e => console.warn("[DRP] Save failed:", e));
+    });
+  }
+});
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "drp-watcher-status") {
     const { collectorBase } = msg;
@@ -80,11 +173,42 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "drp-metadata-from-page") {
     const { collectorBase, payload } = msg;
+    console.log("[DRP meta] background: received metadata-from-page", { collectorBase, drpid: payload && payload.drpid, keys: payload && Object.keys(payload) });
     if (!collectorBase || !payload) {
+      console.log("[DRP meta] background: bail missing collectorBase or payload");
       sendResponse({ ok: false });
       return true;
     }
-    postMetadataFromPage(collectorBase, payload).then(sendResponse).catch(() => sendResponse({ ok: false }));
+    postMetadataFromPage(collectorBase, payload)
+      .then((data) => {
+        console.log("[DRP meta] background: POST result", data);
+        sendResponse(data);
+      })
+      .catch((err) => {
+        console.log("[DRP meta] background: POST failed", err);
+        sendResponse({ ok: false });
+      });
+    return true;
+  }
+  if (msg.type === "drp-fetch-pdf-to-project") {
+    const { pdfUrl } = msg;
+    if (!pdfUrl || typeof pdfUrl !== "string") {
+      sendResponse({ ok: false, error: "pdfUrl required" });
+      return true;
+    }
+    (async () => {
+      try {
+        const stored = await chrome.storage.local.get(["drpid", "collectorBase"]);
+        if (!stored.drpid || !stored.collectorBase) {
+          sendResponse({ ok: false, error: "No project context (use Copy & Open first)" });
+          return;
+        }
+        const result = await fetchPdfAndPostToCollector(stored.collectorBase, stored.drpid, pdfUrl, msg.referrer || null, msg.pageTitle || null);
+        sendResponse(result);
+      } catch (e) {
+        sendResponse({ ok: false, error: String(e && e.message || e) });
+      }
+    })();
     return true;
   }
   if (msg.type === "drp-print-to-pdf") {

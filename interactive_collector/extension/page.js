@@ -76,8 +76,28 @@
       .then(function () {
         // CMS "Show more" - may load more content; keep clicking until no new buttons (max 15 rounds)
         var round = 0, maxRounds = 15;
+        function findShowMoreButtons() {
+          var byContainer = document.querySelectorAll(".ShowMoreContainer .btn.btn-primary, .ShowMoreContainer button");
+          var byText = [];
+          var allBtns = document.querySelectorAll("button");
+          for (var b = 0; b < allBtns.length; b++) {
+            var t = (allBtns[b].textContent || "").trim();
+            if (/show\s*more\s*\(/i.test(t) || (t.toLowerCase().indexOf("show more") === 0 && t.length < 25)) {
+              byText.push(allBtns[b]);
+            }
+          }
+          var seen = {};
+          var out = [];
+          for (var i = 0; i < byContainer.length; i++) {
+            if (!seen[byContainer[i]]) { seen[byContainer[i]] = 1; out.push(byContainer[i]); }
+          }
+          for (var k = 0; k < byText.length; k++) {
+            if (!seen[byText[k]]) { seen[byText[k]] = 1; out.push(byText[k]); }
+          }
+          return out;
+        }
         function doShowMore() {
-          sel = document.querySelectorAll(".ShowMoreContainer .btn.btn-primary, .ShowMoreContainer button");
+          sel = findShowMoreButtons();
           for (var j = 0; j < sel.length; j++) {
             if (safeClick(sel[j])) showMore++;
           }
