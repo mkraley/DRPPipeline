@@ -80,12 +80,10 @@ Each module (except `noop` and `cleanup_inprogress`) advances project `status` s
 
 See [Usage](docs/Usage.md) for database fields and eligibility rules.
 
-## Interactive Collector (SPA)
+## Interactive Collector 
 
-The Interactive Collector is available in two modes:
-
-- **SPA:** React app at `/collector/` with JSON API, no full-page reloads.
-- **Legacy:** Server-rendered at `/` (Flask templates, full-page reloads).
+Most modules run as batch processes. The Interactive collector is the exception. 
+The interactive collector allows the user to freely navigatge among source pages to choose the appropriate metadata, web pages, and datasets to save for later uploading. By taking advantage of a Chrome extension, the user can interact with the pipeline while browsing. One additional advantage is that by using a user controlled browser, we can handle most "are you a human" challenges as well as any required login credentials.
 
 ### Running the SPA
 
