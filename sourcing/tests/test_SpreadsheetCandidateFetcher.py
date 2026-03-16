@@ -91,7 +91,7 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         self.assertIn("Download Location", str(cm.exception))
 
     def test_row_passes_filter_both_empty(self) -> None:
-        """Test _row_passes_filter returns True when Claimed and Download Location empty and URL is catalog.data.gov."""
+        """Test _row_passes_filter returns True when Claimed and Download Location empty and URL matches sourcing_url_prefix."""
         row = {"Claimed (add your name)": "", "Download Location": "", "URL": "https://catalog.data.gov/dataset/x"}
         self.assertTrue(self.fetcher._row_passes_filter(row))
 
@@ -106,9 +106,25 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         self.assertFalse(self.fetcher._row_passes_filter(row))
 
     def test_row_passes_filter_missing_url_treated_empty_fails(self) -> None:
-        """Test _row_passes_filter returns False when URL is missing (empty); requires catalog.data.gov."""
-        # Missing URL yields "".startswith("https://catalog.data.gov/") -> False.
+        """Test _row_passes_filter returns False when URL is missing (empty); requires matching sourcing_url_prefix."""
+        # Missing URL yields "".startswith(prefix) -> False when prefix is set.
         self.assertFalse(self.fetcher._row_passes_filter({}))
+
+    def test_row_passes_filter_custom_prefix(self) -> None:
+        """Test _row_passes_filter respects sourcing_url_prefix config."""
+        Args._config["sourcing_url_prefix"] = "https://data.cms.gov/"
+        row = {"Claimed (add your name)": "", "Download Location": "", "URL": "https://data.cms.gov/dataset/x"}
+        self.assertTrue(self.fetcher._row_passes_filter(row))
+        row_wrong = {"Claimed (add your name)": "", "Download Location": "", "URL": "https://catalog.data.gov/dataset/x"}
+        self.assertFalse(self.fetcher._row_passes_filter(row_wrong))
+        Args._config["sourcing_url_prefix"] = "https://catalog.data.gov/"
+
+    def test_row_passes_filter_empty_prefix_allows_any_url(self) -> None:
+        """Test _row_passes_filter with empty sourcing_url_prefix accepts any URL."""
+        Args._config["sourcing_url_prefix"] = ""
+        row = {"Claimed (add your name)": "", "Download Location": "", "URL": "https://example.com/dataset"}
+        self.assertTrue(self.fetcher._row_passes_filter(row))
+        Args._config["sourcing_url_prefix"] = "https://catalog.data.gov/"
 
     def test_get_candidate_urls_requires_google_sheet_id(self) -> None:
         """Test get_candidate_urls raises ValueError when google_sheet_id is missing."""

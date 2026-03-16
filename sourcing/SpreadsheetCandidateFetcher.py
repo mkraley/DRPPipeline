@@ -94,18 +94,20 @@ class SpreadsheetCandidateFetcher:
         """
         Return True if the row meets the desired criteria.
 
-        Keeps rows where Claimed (add your name) and Download Location are empty.
-        
+        Keeps rows where Claimed (add your name) and Download Location are empty,
+        and URL starts with the sourcing_url_prefix config value (if set).
+
         Note: This method assumes required columns are present (validated in
         _extract_urls_from_csv). Missing columns would indicate a bug.
         """
+        url_prefix = (getattr(Args, "sourcing_url_prefix", None) or "").strip()
         claimed = (row.get("Claimed (add your name)") or "").strip()
         download_location = (row.get("Download Location") or "").strip()
         url = (row.get("URL") or "").strip()
         return (
             claimed == ""
             and download_location == ""
-            and url.startswith("https://catalog.data.gov/")
+            and (not url_prefix or url.startswith(url_prefix))
         )
 
     def _extract_urls_from_csv(

@@ -62,6 +62,7 @@ class Args(metaclass=ArgsMeta):
         "log_level": "INFO",
         "log_color": True,  # Set True with --log-color to color severity in terminal (only when TTY)
         "sourcing_url_column": "URL",
+        "sourcing_url_prefix": "https://catalog.data.gov/",  # Only source rows whose URL starts with this prefix
         "sourcing_fetch_timeout": 15,  # Seconds per URL when checking availability in sourcing; reduces delay from slow catalog.data.gov pages
         "num_rows": None,  # None = unlimited; batch limit for orchestration
         "start_row": None,  # If set, skip first (start_row - 1) rows (1-origin); used when listing from DB

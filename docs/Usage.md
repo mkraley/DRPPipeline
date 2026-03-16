@@ -34,6 +34,7 @@ If the config file does not exist, a warning is shown but the pipeline continues
 | `download_timeout_ms` | yes | — | `1800000` (30 min) | Download timeout in milliseconds |
 | `no_use_url_download` | yes | — | `false` | Use Playwright save_as instead of URL + requests (no progress/resume) |
 | `sourcing_url_column` | — | yes | `URL` | Column name for candidate URLs in sourcing sheet |
+| `sourcing_url_prefix` | — | yes | `https://catalog.data.gov/` | Only source rows whose URL starts with this prefix; set to `""` for no filtering |
 | `sourcing_fetch_timeout` | — | yes | `15` | Seconds per URL when checking availability in sourcing |
 | `base_output_dir` | — | yes | `C:\Documents\DataRescue\DRPData` | Base directory for collected files |
 | `datalumos_username` | — | yes (required for upload) | — | DataLumos login email |
