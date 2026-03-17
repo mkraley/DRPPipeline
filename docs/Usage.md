@@ -55,6 +55,107 @@ All write tools and `run_module` default to `dry_run=True`. See [MCP.md](../MCP.
 8. verify_module_run("cms_collector")         → confirm results
 ```
 
+### Worked example: recovery operations
+
+The following shows actual tool inputs and outputs for a recovery session.
+
+**Step 1 — Check overall state**
+
+```
+get_pipeline_stats()
+```
+```
+Database: drp_pipeline.db
+Total projects: 11
+With errors:    2
+With warnings:  0
+
+By status:
+  collected: 8
+  error: 2
+  uploaded: 1
+```
+
+**Step 2 — Find stuck projects**
+
+```
+list_projects(has_errors=True)
+```
+```
+Showing 2 of 2 matching projects (offset=0):
+
+  DRPID=5  status='error' [ERRORS]  'https://data.cms.gov/medicare-shared-savings-program/...'
+  DRPID=8  status='error' [ERRORS]  'https://data.cms.gov/provider-compliance/cost-report/...'
+```
+
+**Step 3 — Inspect one project**
+
+```
+get_project(drpid=5)
+```
+```
+Project DRPID=5:
+  DRPID: 5
+  status: 'error'
+  errors: 'Slug API returned nothing for path: /medicare-shared-savings-program/...'
+  source_url: 'https://data.cms.gov/medicare-shared-savings-program/...'
+  office: 'CMS'
+```
+
+**Step 4 — Preview clearing the error (dry run)**
+
+```
+clear_errors(drpid=5, dry_run=True)
+```
+```
+[DRY RUN] clear_errors(DRPID=5):
+  Current errors: 'Slug API returned nothing for path: /medicare-shared-savings-program/...'
+  Status: 'error'
+
+Run with dry_run=False to clear.
+```
+
+**Step 5 — Preview what upload would run (dry run)**
+
+```
+run_module("upload", dry_run=True, num_rows=5)
+```
+```
+[DRY RUN] run_module('upload')
+  prereq status: 'collected'
+  output status: 'uploaded'
+  Eligible projects (status='collected', no errors): 5
+  num_rows limit: 5
+
+  DRPID=1  'Skilled Nursing Facility Change of Ownership - Owner Information'
+  DRPID=2  'Federally Qualified Health Center Enrollments'
+  DRPID=3  'Federally Qualified Health Center All Owners'
+  DRPID=4  'Medicare Geographic Variation - by Hospital Referral Region'
+  DRPID=6  'Home Infusion Therapy Providers'
+
+Run with dry_run=False to execute.
+```
+
+**Step 6 — Verify results after a collection run**
+
+```
+verify_module_run("cms_collector")
+```
+```
+=== verify_module_run('cms_collector') ===
+Expected output status: 'collected'
+Projects at 'collected': 8
+Projects with errors:   2
+
+Sample errors (up to 5):
+
+  DRPID=5:
+    Slug API returned nothing for path: /medicare-shared-savings-program/...
+
+  DRPID=8:
+    Slug API returned nothing for path: /provider-compliance/cost-report/...
+```
+
 ---
 
 ## 2. Parameters
