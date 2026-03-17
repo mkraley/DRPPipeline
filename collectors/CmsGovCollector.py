@@ -129,6 +129,15 @@ class CmsGovCollector:
         else:
             self._download_files(drpid, all_files, folder_path)
 
+        # Infer time_start / time_end from dataset_version_date on Primary resources.
+        # This is more accurate than current_dataset.version (which only reflects the
+        # latest release) and avoids using last_modified_date (website update date).
+        date_range = self._extract_date_range(all_files)
+        if date_range.get("time_start"):
+            result["time_start"] = date_range["time_start"]
+        if date_range.get("time_end"):
+            result["time_end"] = date_range["time_end"]
+
         exts, total_bytes = folder_extensions_and_size(folder_path)
         if exts:
             result["extensions"] = ",".join(exts)
@@ -281,6 +290,23 @@ class CmsGovCollector:
                     record_warning(drpid, f"Download failed: {file_url}")
             except Exception as exc:
                 record_warning(drpid, f"Download error for {file_url}: {exc}")
+
+    def _extract_date_range(self, files: List[Dict[str, Any]]) -> Dict[str, str]:
+        """
+        Extract time_start and time_end from Primary resource version dates.
+
+        Uses dataset_version_date on Primary resources (e.g. "2013-12-31", "2016-12-01").
+        Returns the earliest as time_start and latest as time_end.
+        Returns an empty dict if no Primary resources have a dataset_version_date.
+        """
+        dates = sorted(
+            f["dataset_version_date"]
+            for f in files
+            if f.get("type") == "Primary" and f.get("dataset_version_date")
+        )
+        if not dates:
+            return {}
+        return {"time_start": dates[0], "time_end": dates[-1]}
 
     def _scrape_description(self, url: str, drpid: int) -> Optional[str]:
         """Render source_url with Playwright and extract the dataset description."""

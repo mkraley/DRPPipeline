@@ -231,3 +231,23 @@ mcp_collector_dev/
 - `run_module` with `dry_run=False` blocks until the subprocess finishes and returns the full output. For long-running modules (upload, publisher with browser automation), this could take many minutes. A future enhancement could add a background-run mode that returns a job ID and a separate `poll_run` tool to check status.
 - `cleanup_inprogress` has no DB effect and no verifiable output status; it only affects DataLumos. `verify_module_run` will return an error for this module.
 - If `config.json` is absent, the server falls back to `drp_pipeline.db` in the project root. If the DB does not exist, all tools return a clear error.
+
+## Comparison Tool Prompt
+
+Please write an end-to-end test.
+
+Use a project that has already been fetched. A good candidate is row 13 from the spreadsheet, where "Title of Site" = "Value Modifier". for this one project
+
+- use the sourcing module to get this one row
+- use the cms_collector module to get its data
+- use use the upload module to create a new datalumos project and upload its data
+
+Then once that's done, have the test compare the datalumos project that we created today ("treatment") vs. the one that was done previously
+("control"). Column G has the control.
+
+I'd like to eventually summarize the results
+- green - identical
+- yellow - some differences, e.g. missing some data or some metadata is different. There should be a summary of the differences
+- red - pipeline failure, data not present or mostly incomplete, metadata significantly differnt, etc.
+
+Once we get this working I plan to run over many more samples. But for this first test, let's just do one.

@@ -378,5 +378,47 @@ class TestCmsGovCollector(unittest.TestCase):
         self.assertEqual(fields["status"], "error")
 
 
+    # ── _extract_date_range ───────────────────────────────────────────────────
+
+    def test_extract_date_range_picks_min_and_max(self) -> None:
+        """Returns earliest dataset_version_date as time_start, latest as time_end."""
+        resources = [
+            {"type": "Primary", "file_name": "f2013.csv", "dataset_version_date": "2013-12-31"},
+            {"type": "Primary", "file_name": "f2014.csv", "dataset_version_date": "2014-12-31"},
+            {"type": "Primary", "file_name": "f2016.csv", "dataset_version_date": "2016-12-01"},
+            {"type": "Data Dictionary", "file_name": "dict.pdf", "dataset_version_date": "2020-01-01"},
+        ]
+        result = self.collector._extract_date_range(resources)
+        self.assertEqual(result["time_start"], "2013-12-31")
+        self.assertEqual(result["time_end"], "2016-12-01")
+
+    def test_extract_date_range_single_primary(self) -> None:
+        """With one Primary resource, time_start and time_end are the same."""
+        resources = [
+            {"type": "Primary", "file_name": "f.csv", "dataset_version_date": "2024-01-01"},
+        ]
+        result = self.collector._extract_date_range(resources)
+        self.assertEqual(result["time_start"], "2024-01-01")
+        self.assertEqual(result["time_end"], "2024-01-01")
+
+    def test_extract_date_range_no_primary_returns_empty(self) -> None:
+        """Returns empty dict when no Primary resources are present."""
+        resources = [
+            {"type": "Data Dictionary", "file_name": "dict.pdf", "dataset_version_date": "2020-01-01"},
+        ]
+        self.assertEqual(self.collector._extract_date_range(resources), {})
+
+    def test_extract_date_range_primary_without_date_ignored(self) -> None:
+        """Primary resources with no dataset_version_date are skipped."""
+        resources = [
+            {"type": "Primary", "file_name": "f.csv", "dataset_version_date": None},
+            {"type": "Primary", "file_name": "g.csv", "dataset_version_date": ""},
+        ]
+        self.assertEqual(self.collector._extract_date_range(resources), {})
+
+    def test_extract_date_range_empty_list(self) -> None:
+        self.assertEqual(self.collector._extract_date_range([]), {})
+
+
 if __name__ == "__main__":
     unittest.main()
