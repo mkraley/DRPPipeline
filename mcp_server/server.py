@@ -9,12 +9,15 @@ Usage:
 """
 from __future__ import annotations
 
+import csv
+import io
 import json
 import sqlite3
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Optional
+from urllib.request import Request, urlopen
 
 from mcp.server.fastmcp import FastMCP
 
@@ -61,6 +64,19 @@ def _read_config() -> dict:
         with open(config_path) as f:
             return json.load(f)
     return {}
+
+
+def _get_sourcing_config() -> dict:
+    """Return sourcing-related config values with their defaults."""
+    config = _read_config()
+    return {
+        "google_sheet_id":   config.get("google_sheet_id", ""),
+        "google_sheet_name": config.get("google_sheet_name", "CDC"),
+        "google_credentials": config.get("google_credentials", ""),
+        "sourcing_url_column": config.get("sourcing_url_column", "URL"),
+        "sourcing_url_prefix": config.get("sourcing_url_prefix", "https://catalog.data.gov/"),
+        "sourcing_mode":     config.get("sourcing_mode", "unclaimed"),
+    }
 
 
 def _get_db_path() -> str:
@@ -230,6 +246,7 @@ def run_module(
     max_workers: Optional[int] = None,
     start_drpid: Optional[int] = None,
     log_level: str = "INFO",
+    sourcing_mode: Optional[str] = None,
 ) -> str:
     """
     Run a pipeline module.
@@ -241,12 +258,15 @@ def run_module(
     cms_collector, upload, publisher, cleanup_inprogress.
 
     Args:
-        module:      Module name to run.
-        dry_run:     If True, show eligible projects without executing.
-        num_rows:    Max projects to process (None = all eligible).
-        max_workers: Parallel workers (None = use config default).
-        start_drpid: Only process projects with DRPID >= this value.
-        log_level:   Logging verbosity (DEBUG, INFO, WARNING, ERROR).
+        module:        Module name to run.
+        dry_run:       If True, show eligible projects without executing.
+        num_rows:      Max projects to process (None = all eligible).
+        max_workers:   Parallel workers (None = use config default).
+        start_drpid:   Only process projects with DRPID >= this value.
+        log_level:     Logging verbosity (DEBUG, INFO, WARNING, ERROR).
+        sourcing_mode: For sourcing only — row filter: "unclaimed" (default),
+                       "completed" (Download Location filled), or "all".
+                       Overrides the sourcing_mode in config.json for this run.
     """
     if module not in _MODULES:
         valid = ", ".join(sorted(_MODULES.keys()))
@@ -262,9 +282,25 @@ def run_module(
         lines.append(f"  output status: {output!r}")
 
         if prereq is None:
-            lines.append("  This module runs once (no per-project loop).")
-            if module == "cleanup_inprogress":
+            if module == "sourcing":
+                sc = _get_sourcing_config()
+                effective_mode = sourcing_mode or sc["sourcing_mode"]
+                lines.append("  Sourcing reads from a Google Sheet and creates DB records.")
+                lines.append(f"  Sheet:        {sc['google_sheet_id'] or '(not configured)'}")
+                lines.append(f"  Tab:          {sc['google_sheet_name']}")
+                lines.append(f"  URL column:   {sc['sourcing_url_column']}")
+                lines.append(f"  URL prefix:   {sc['sourcing_url_prefix'] or '(none)'}")
+                lines.append(f"  Mode:         {effective_mode}")
+                if num_rows is not None:
+                    lines.append(f"  Limit:        {num_rows} rows")
+                lines.append("")
+                lines.append("  Use preview_sourcing() to see which sheet rows would be pulled")
+                lines.append("  without creating any DB records.")
+            elif module == "cleanup_inprogress":
+                lines.append("  This module runs once (no per-project loop).")
                 lines.append("  Note: cleanup_inprogress only affects DataLumos, no DB changes.")
+            else:
+                lines.append("  This module runs once (no per-project loop).")
         else:
             try:
                 con = _connect()
@@ -313,6 +349,8 @@ def run_module(
         cmd += ["--max-workers", str(max_workers)]
     if start_drpid is not None:
         cmd += ["--start-drpid", str(start_drpid)]
+    if sourcing_mode is not None:
+        cmd += ["--sourcing-mode", sourcing_mode]
 
     try:
         proc = subprocess.run(
@@ -337,6 +375,137 @@ def run_module(
     if proc.stderr:
         parts += ["", "── stderr ──", proc.stderr[:3000]]
     return "\n".join(parts)
+
+
+# ── Sourcing helpers ─────────────────────────────────────────────────────────
+
+def _fetch_sheet_csv(sheet_id: str, gid: str) -> str:
+    export_url = (
+        f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+    )
+    req = Request(export_url, headers={"User-Agent": "DRPPipeline/1.0"})
+    with urlopen(req, timeout=30) as resp:
+        return resp.read().decode("utf-8-sig")
+
+
+def _row_passes_sourcing_filter(row: dict, mode: str, url_prefix: str) -> bool:
+    claimed = (row.get("Claimed (add your name)") or "").strip()
+    download_location = (row.get("Download Location") or "").strip()
+    url = (row.get("URL") or "").strip()
+    if mode == "unclaimed":
+        passes = claimed == "" and download_location == ""
+    elif mode == "completed":
+        passes = download_location != ""
+    elif mode == "all":
+        passes = True
+    else:
+        passes = claimed == "" and download_location == ""
+    return passes and (not url_prefix or url.startswith(url_prefix))
+
+
+@mcp.tool()
+def preview_sourcing(
+    num_rows: Optional[int] = 20,
+    sourcing_mode: Optional[str] = None,
+) -> str:
+    """
+    Fetch candidate URLs from the configured Google Sheet and show what sourcing
+    would process — without creating any database records.
+
+    Applies the same row filter as the real sourcing run (mode + URL prefix).
+    Does NOT check URL availability or deduplicate against the DB.
+
+    Args:
+        num_rows:      Max rows to preview (default 20, None = all matching).
+        sourcing_mode: Row filter override: "unclaimed" (default), "completed",
+                       or "all". If omitted, uses sourcing_mode from config.json.
+    """
+    sc = _get_sourcing_config()
+    sheet_id = sc["google_sheet_id"]
+    sheet_name = sc["google_sheet_name"]
+    creds_path_str = sc["google_credentials"]
+    url_column = sc["sourcing_url_column"]
+    url_prefix = sc["sourcing_url_prefix"]
+    effective_mode = sourcing_mode or sc["sourcing_mode"]
+
+    if not sheet_id:
+        return "Error: google_sheet_id is not set in config.json."
+    if not creds_path_str:
+        return "Error: google_credentials is not set in config.json."
+
+    creds_path = Path(creds_path_str)
+    if not creds_path.exists():
+        return f"Error: google_credentials file not found: {creds_path}"
+
+    # Resolve sheet name to gid via Sheets API
+    try:
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from utils.sheet_url_utils import get_gid_for_sheet_name
+        gid = get_gid_for_sheet_name(sheet_id, sheet_name, creds_path)
+    except Exception as e:
+        return f"Error resolving sheet tab '{sheet_name}': {e}"
+
+    if gid is None:
+        return (
+            f"Error: tab '{sheet_name}' not found in spreadsheet. "
+            "Check google_sheet_name in config.json."
+        )
+
+    # Fetch CSV
+    try:
+        csv_text = _fetch_sheet_csv(sheet_id, gid)
+    except Exception as e:
+        return f"Error fetching sheet CSV: {e}"
+
+    # Parse and filter
+    reader = csv.DictReader(io.StringIO(csv_text))
+    fieldnames = list(reader.fieldnames or [])
+
+    if url_column not in fieldnames:
+        return (
+            f"Error: URL column '{url_column}' not found in sheet. "
+            f"Available columns: {fieldnames}"
+        )
+
+    matching: list[dict] = []
+    skipped = 0
+    total_rows = 0
+
+    for row in reader:
+        total_rows += 1
+        url = (row.get(url_column) or "").strip()
+        if not url:
+            skipped += 1
+            continue
+        if _row_passes_sourcing_filter(row, effective_mode, url_prefix):
+            matching.append({
+                "url": url,
+                "office": (row.get("Office") or "").strip(),
+                "agency": (row.get("Agency") or "").strip(),
+            })
+        else:
+            skipped += 1
+
+        if num_rows is not None and len(matching) >= num_rows:
+            break
+
+    lines = [
+        f"preview_sourcing — sheet: '{sheet_name}', mode: '{effective_mode}'",
+        f"URL prefix filter: {url_prefix or '(none)'}",
+        f"Sheet rows scanned: {total_rows}  |  Matching: {len(matching)}  |  Skipped: {skipped}",
+        "",
+    ]
+    for item in matching:
+        office = f"  [{item['office']}]" if item["office"] else ""
+        lines.append(f"  {item['url']}{office}")
+
+    if num_rows is not None and len(matching) >= num_rows:
+        lines.append(f"  ... (showing first {num_rows}; pass num_rows=None for all)")
+
+    lines.append("")
+    lines.append("Note: URL availability and DB deduplication are not checked here.")
+    lines.append("Run run_module('sourcing', dry_run=False) to execute.")
+    return "\n".join(lines)
 
 
 # ── Write tools ───────────────────────────────────────────────────────────────
