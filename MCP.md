@@ -20,9 +20,21 @@ Make it possible for users to move data without having to write code or interact
 
 ---
 
-## MCP 1 — Orchestration
+## MCP 1 — DRP Pipeline Orchestration
 
-The most commonly used MCP. Manages the pipeline using existing Collectors and Uploaders: inspecting project state, running modules, fixing problems, and verifying results.
+This will be the most commonly used MCP. The goal is to provide a programmatic
+interface around the modules described in [the usage documentation](docs/Usage.md) 
+
+There are two initial use cases we're building for.
+
+1. **Collector Development**. Developing a new collector is iterative. While
+   being developed, the *DRP Pipeline Orchestration MCP* can be used as part of
+   an iterative refinement loop to drive the pipeline and produce a measures of
+   each iteration's quality.
+
+2. **Recovery Operations**. Enable a *Recovery Engineer* as part of their the
+   day-to-day use of the DRP Pipeline. In addition to managing work through the
+   various modules, this user would like visibility and debugging assistance.
 
 ### Architecture
 
@@ -88,7 +100,7 @@ requirements.txt       # add: mcp>=1.0.0
 |------|-------------|
 | `update_project` | Update metadata fields (title, agency, office, summary, keywords, time_start, time_end, data_types, extensions, download_date, collection_notes, file_size, status_notes). Returns a diff of old vs new values. |
 | `clear_errors` | Clear the `errors` field on a project so it becomes eligible for re-processing. |
-| `set_project_status` | Manually set a project's status (e.g. roll back to `sourcing` to re-collect). |
+| `set_project_status` | Manually set a project's status (e.g. roll back to `sourced` to re-collect). |
 | `delete_project` | Delete a project record. Does not delete files from disk. |
 
 #### Verification tools
@@ -107,18 +119,18 @@ requirements.txt       # add: mcp>=1.0.0
 
 ### Module registry (from `orchestration/Orchestrator.py`)
 
-| Module | Prereq status | Output status |
-|--------|--------------|---------------|
-| `noop` | — | — |
-| `sourcing` | — | `sourcing` |
-| `interactive_collector` | `sourcing` | `collector` |
-| `socrata_collector` | `sourcing` | `collector` |
-| `catalog_collector` | `sourcing` | `collector` |
-| `upload` | `collector` | `upload` |
-| `publisher` | `upload` | `publisher` |
-| `cleanup_inprogress` | — | — (DataLumos only, no DB changes) |
+| Module | Prereq status | Output status | Notes |
+|--------|--------------|---------------|-------|
+| `noop` | — | — | |
+| `sourcing` | — | `sourced` | |
+| `socrata_collector` | `sourced` | `collected` | |
+| `catalog_collector` | `sourced` | `collected` | |
+| `cms_collector` | `sourced` | `collected` | |
+| `upload` | `collected` | `uploaded` | |
+| `publisher` | `uploaded` | `published` | Also processes `not_found` and `no_links` (sheet-only update); dry-run shows all three buckets. |
+| `cleanup_inprogress` | — | — | DataLumos only, no DB changes; `verify_module_run` will return an error for this module. |
 
-Note: `publisher` also processes `not_found` and `no_links` status projects (sheet-only update). The dry-run for `run_module publisher` will show all three buckets.
+This list is not exhaustive — more collectors will be added over time. `interactive_collector` is **not** managed by MCP 1; it is under active development as a separate tool and runs as a Flask app, which is incompatible with the subprocess execution model used here.
 
 ---
 
@@ -126,7 +138,7 @@ Note: `publisher` also processes `not_found` and `no_links` status projects (she
 
 Enables adding support for a new data source without writing code.  The orchestrator uses this MCP to inspect a source site, scaffold a new collector, register it, and verify it works — producing a tested, integrated collector as output.
 
-For the first version the user of MCP 2 will be a pretty technical users. While they won't be writing code themselves, what MCP2 produces itself is a code module that will have to be checked into version control, etc. But we will consider for subsequent versions fronting the collector development itself with some sort of UI (eg. a web interface) so that even non-technical users could have collector development done for them with AI help.
+For the first version the user of MCP 2 will be technical users. While they won't be writing code themselves, what MCP2 produces itself is a code module that will have to be checked into version control and run manually. But we will consider for subsequent versions fronting the collector development itself with some sort of UI (eg. a web interface) so that even non-technical users could have collector development done for them with AI help.
 
 ### What a collector is
 
@@ -208,7 +220,7 @@ mcp_collector_dev/
 
 | Tool | Description |
 |------|-------------|
-| `test_collector_on_project` | Run the new collector against a single DRPID (`--num-rows 1 --start-drpid <drpid>`). Returns: Storage record before and after, files created in the output folder, any errors recorded. Designed to verify the collector works end-to-end before batch use. |
+| `test_collector_on_project` | Run the new collector against a single DRPID (`--num-rows 1 --start-drpid <drpid>`). Returns: Storage record before and after, files created in the output folder, any errors recorded. Designed to verify the collector works end-to-end before batch use. **Note:** this is a proof-of-concept tool. Once MCP 1 is built, this step should be refactored to use MCP 1's `run_module` (with `num_rows=1` and `start_drpid`) so the two MCPs share a single execution path. |
 
 ### Safety design
 
