@@ -43,8 +43,8 @@ DRPPipeline/
 ├── debug/               # Debug scripts
 ├── docs/                # Setup, Usage, Google Sheets setup
 ├── duplicate_checking/  # Duplicate detection (e.g., DataLumos search)
-├── mcp_collector_dev/   # MCP 2: collector development tools
 ├── mcp_server/          # MCP 1: pipeline orchestration tools
+├── mcp_collector_dev/   # MCP 2: collector development tools
 ├── orchestration/       # Orchestrator and module protocol
 ├── publisher/           # DataLumos publish and optional Google Sheet update
 ├── sourcing/            # Source URL discovery and project creation
