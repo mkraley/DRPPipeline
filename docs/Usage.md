@@ -381,7 +381,7 @@ Create `config.json` in the project root:
   "google_sheet_id": "1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY",
   "google_credentials": "C:\\path\\to\\service-account.json",
   "google_sheet_name": "CDC",
-  "google_username": "mkraley",
+  "google_username": "Your username",
   "gwda_your_name": "Your Name"
 }
 ```
@@ -391,8 +391,6 @@ For Google Sheets setup, see [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md).
 ---
 
 ## 3. SPA usage
-
-The **interactive collector** and **pipeline controls** are available as a single-page app (SPA) or as a server-rendered legacy UI.
 
 ### Running the SPA
 
@@ -414,22 +412,45 @@ The **interactive collector** and **pipeline controls** are available as a singl
 3. **Production:**  
    Build with `npm run build`, then Flask serves the built app at `/collector/`.
 
-### Interactive collector (SPA or legacy)
+### Executing modules
 
-The collector uses the pipeline database. It can run **standalone** (form-driven) or **pipeline-driven** (first eligible project auto-loaded).
+To run a given module, e.g., sourcing, upload, publisher, just press the corresponding button on the main page. Output will be shown in the log window.
 
-- **Standalone:** `python -m interactive_collector` — uses `drp_pipeline.db` in the current directory. Open http://127.0.0.1:5000/ and click **Interactive collector**. If there are no eligible projects, the form is shown; you can set **Start DRPID** or load by DRPID.
-- **Pipeline-driven:** `python main.py interactive_collector` — same DB and args as other modules. The orchestrator loads the first project with `status="sourced"` and no errors. Open http://127.0.0.1:5000/.
+#### Parameters
+`Start DRPID` - Begin scanning the database for the specified project and work from there. Blank means to start from the beginning.
+`Max Rows` - Only execute this many projects, then exit. Blank means no limit.
+`Log level` - Display log messages with this severity or higher.
+`Max Workers` - Use multithreaded executors to speed things up.
 
-**In the collector:** Scoreboard (left) lists visited/saved URLs by referrer with status (OK, 404, DL). Use **Copy & Open** to copy the launcher URL and paste it in a browser with the extension; save pages as PDF from there. **Load DRPID** / **Load** loads a project by ID. **Next** fetches the next eligible project. **Save** updates metadata and writes visited URLs to `status_notes`. Export scoreboard as JSON or visited URLs as CSV. Link clicks load pages in the Linked pane without full reloads. Status uses the same 404 and logical-404 detection as the pipeline.
 
-### Browser extension
+### Interactive collector
 
-For sites that block automated access, use the browser extension to save PDFs from a real Chrome session. See [Setup](Setup.md#browser-extension-optional).
+Most modules run as batch processes. The Interactive collector is the exception. 
+Make sure you have installed the browser extension. See [Setup](Setup.md#browser-extension-optional)
+
+Start the collector by pressing the `Interactive collector` button.
+The UI will initally load the first project eligible for collection. Now press **Copy & Open**. The source URL for the project will open in another tab.
+A **Save as PDF** button will be overlaid in the lower right corner. Press this convert the current web page's HTML to PDF and save it in the output folder created for this project. 
+Now explore the links on the source page to find other relevant pages and/or datasets. As you encounter HTML pages of interest, press **Save as PDF**. If you click on a link which results in a download that would otherwise end up in your Downloads folder, the collector will intercept the downloaded file and move it to the output folder for the project. 
+
+The collector also attempts to preload the Metadata fields where possible. Update these fields (typically from the source page) by manual entry or copy/paste.
+
+Continue navigating until you have collected all the data that is appropriate for this project. Now press **Save**. The database will be updated to say that collection is complete `status = 'collected'` and to save the metadata values. Now press **Next** to load the next eligible project and repeat.
+
+If the source page has no useful information, e.g., the datasets have been deleted or can't be found, press **No Links**. The project is updated in the database to record this status (`status = 'no links'`) and the project is not subject to further processing.
+
+If you don't want to keep working on the current project, but want to come back later, e.g., the project will need more elaborate scripting, press **Skip**. A dialog will come up and ask for a reason. The database will be updated to `status = collector hold - {reason}`
+
+If you want to work on a particular DRPID (not necessarily the next eligible), enter the id in the **Load DRPID** field and press **Load**.
+
+The **Scoreboard** field keeps track of the files which have been collected for the given project.
+The extension is considered to be active when `collecting`. The **Save as PDF** button and the capture of downloaded files is only active when in collecting mode. We enter this mode when **Copy & Open** is pressed, and exit when **Save**, **No Links**, or **Skip** is pressed. You may also exist collecting mode by clicking on the **Collecting** indicator.
 
 ---
 
 ## 4. Command line usage
+
+This mode is similar to pressing the buttons on the SPA to run a particular module, but might be better suited to run batch processing.
 
 ### Basic invocation
 
@@ -454,7 +475,6 @@ python main.py cleanup_inprogress --log-color
 
 | Module | Purpose |
 |--------|---------|
-| **noop** | No-op; useful for testing. |
 | **sourcing** | Fetches candidate URLs from the configured spreadsheet, checks duplicates, creates DB records. Requires `google_sheet_id`. Use `--sourcing-mode` to control which rows are selected (see below). |
 | **socrata_collector** | Collects data and metadata from Socrata-hosted pages (e.g. data.cdc.gov). Processes `status="sourced"`. |
 | **catalog_collector** | Collects download links from catalog.data.gov dataset pages. Processes `status="sourced"`. |
@@ -463,6 +483,7 @@ python main.py cleanup_inprogress --log-color
 | **upload** | Uploads collected data to DataLumos. Requires `datalumos_username`, `datalumos_password`. Processes `status="collected"`. |
 | **publisher** | Runs DataLumos publish; optionally updates Google Sheet. Processes `status="uploaded"`. |
 | **cleanup_inprogress** | Deletes DataLumos projects in Deposit In Progress state (no DB changes). |
+| **noop** | No-op; useful for testing. |
 
 ### Sourcing modes
 
@@ -486,10 +507,8 @@ python main.py cms_collector --db-path benchmark.db
 
 ### Database
 
-- **Path:** `drp_pipeline.db` (default); use `--db-path` or `db_path` in config.
-- **Key fields:** DRPID, source_url, status, warnings, errors.
-- **Status:** Past-tense values (e.g. `sourced`, `collected`, `uploaded`, `published`).
-- **Eligibility:** A project is eligible when `status` matches the module prerequisite and `errors` is empty.
+You can create different databases to keep track of sets of projects, e.g. different sources. Just use `--db-path` or `db_path` in config. The default is `drp_pipeline.db`. An empty database will be created if none exists at the specified (or default) path.
+
 
 ### Batch and concurrency
 
@@ -511,3 +530,13 @@ To run only the interactive collector tests:
 ```bash
 python -m pytest interactive_collector/tests -v
 ```
+
+### Coverage
+
+To measure line coverage (requires `pytest-cov`):
+
+```bash
+python -m pytest --cov=. --cov-report=term-missing
+```
+
+This prints per-file coverage and highlights missing lines. Overall coverage is summarized at the end (e.g. ~77% for the full suite).

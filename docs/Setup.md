@@ -191,7 +191,7 @@ Step 2: google-credentials.json
 
 For Google Sheets provisioning details, see [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md).
 
-## Browser extension (optional)
+## Browser extension (optional - used by the interactive_collector)
 
 The browser extension lets you browse source pages in a real browser and save pages as PDF to the interactive collector when AWS WAF blocks automated access.
 
@@ -202,16 +202,4 @@ The browser extension lets you browse source pages in a real browser and save pa
 3. Click **Load unpacked**.
 4. Select the `interactive_collector/extension` folder in this project.
 5. The extension is now loaded.
-
-### Extension usage
-
-1. Start the collector (Flask app) and load a project with a source URL.
-2. In the collector, click **Copy & Open** next to the source URL.
-3. Open the extended browser (the same Chrome where the extension is installed).
-4. Paste the copied URL into the address bar and press Enter.
-5. The launcher page loads briefly, stores the project ID, then redirects to the source URL.
-6. Browse the site. When you find a page to save, click **Save as PDF** (floating button in the bottom-right corner).
-7. The PDF is sent to the collector and added to the scoreboard.
-8. In the collector window, click **Refresh** on the scoreboard to see the new entry.
-
-**PDF quality:** The extension uses html2pdf/html2canvas. Cross-origin images load via the collector's `/api/proxy`. Wait for the page and lazy images to load before saving.
+6. If the extension code is updated, make sure the version number in manifest.json is bumped. Then navigate to `chrome://extensions` and click the circular arrow to reload the code.
