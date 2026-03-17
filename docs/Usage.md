@@ -182,6 +182,137 @@ Sample errors (up to 5):
     Slug API returned nothing for path: /provider-compliance/cost-report/...
 ```
 
+### Worked example: sourcing new projects (conversational)
+
+This example shows how a recovery engineer would use natural language to pull new candidate URLs from the Google Sheet into the pipeline.
+
+> **"How many new datasets could we pull from the CMS sheet?"**
+
+Claude calls `preview_sourcing(num_rows=None)` and replies: *"The CMS sheet has 48 unclaimed rows matching the data.cms.gov prefix. I can see the full list — want me to show you a sample before running?"*
+
+> **"Show me the first 5, then run sourcing to add the next batch."**
+
+Claude calls `preview_sourcing(num_rows=5)` and shows 5 URLs from the sheet, then calls `run_module("sourcing", dry_run=True, num_rows=15)` to confirm the configured sheet and mode, then asks for confirmation.
+
+> **"Looks good, go ahead."**
+
+Claude calls `run_module("sourcing", dry_run=False, num_rows=15)`, waits for completion, then calls `verify_module_run("sourcing")` and `get_pipeline_stats()` and reports: *"Sourcing complete. 5 new projects added (DRPIDs 12–16), 10 skipped as duplicates already in the database. Pipeline now has 16 projects total, 5 ready to collect."*
+
+---
+
+### Worked example: sourcing new projects (tool-level)
+
+The following shows the exact tool calls and outputs for the same scenario above.
+
+**Step 1 — Preview what the sheet would yield**
+
+```
+preview_sourcing(num_rows=5)
+```
+```
+preview_sourcing — sheet: 'CMS', mode: 'unclaimed'
+URL prefix filter: https://data.cms.gov/
+Sheet rows scanned: 50  |  Matching: 5  |  Skipped: 45
+
+  https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/skilled-nursing-facility-change-of-ownership-owner-information  [CMS]
+  https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/federally-qualified-health-center-enrollments  [CMS]
+  https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/federally-qualified-health-center-all-owners  [CMS]
+  https://data.cms.gov/summary-statistics-on-use-and-payments/medicare-geographic-comparisons/medicare-geographic-variation-by-hospital-referral-region  [CMS]
+  https://data.cms.gov/medicare-shared-savings-program/county-level-aggregate-expenditure-and-risk-score-data-on-assignable-beneficiaries  [CMS]
+  ... (showing first 5; pass num_rows=None for all)
+
+Note: URL availability and DB deduplication are not checked here.
+Run run_module('sourcing', dry_run=False) to execute.
+```
+
+**Step 2 — Confirm sourcing configuration (dry run)**
+
+```
+run_module("sourcing", dry_run=True, num_rows=15)
+```
+```
+[DRY RUN] run_module('sourcing')
+  prereq status: None
+  output status: 'sourced'
+  Sourcing reads from a Google Sheet and creates DB records.
+  Sheet:        1fpNctIesSYc2giu0aHduYLBxVYqlsMMMVhKIPVtY7P0
+  Tab:          CMS
+  URL column:   URL
+  URL prefix:   https://data.cms.gov/
+  Mode:         unclaimed
+  Limit:        15 rows
+
+  Use preview_sourcing() to see which sheet rows would be pulled
+  without creating any DB records.
+
+Run with dry_run=False to execute.
+```
+
+**Step 3 — Run sourcing**
+
+```
+run_module("sourcing", dry_run=False, num_rows=15)
+```
+```
+=== run_module('sourcing') ===
+Exit code: 0
+
+── stdout ──
+2026-03-17 - INFO - Storage initialized: drp_pipeline.db
+2026-03-17 - INFO - Orchestrator running module='sourcing' num_rows=15
+2026-03-17 - ERROR - Duplicate source URL already in storage, skipping (no row created): ...  [×10]
+2026-03-17 - INFO - Sourcing: checking availability for 5 URLs (max_workers=1, timeout=15s)
+2026-03-17 - INFO - Sourcing complete: 5 good (sourcing) (DRPIDs: 12-16),
+                    10 dupe_in_storage (skipped, no row), 0 not_found, 0 errors
+```
+
+**Step 4 — Verify results**
+
+```
+verify_module_run("sourcing")
+```
+```
+=== verify_module_run('sourcing') ===
+Expected output status: 'sourced'
+Projects at 'sourced': 5
+Projects with errors:   2
+```
+
+**Step 5 — Check overall state**
+
+```
+get_pipeline_stats()
+```
+```
+Database: drp_pipeline.db
+Total projects: 16
+With errors:    2
+With warnings:  0
+
+By status:
+  collected: 8
+  sourced: 5
+  error: 2
+  uploaded: 1
+```
+
+**Step 6 — Inspect the new projects**
+
+```
+list_projects(status="sourced")
+```
+```
+Showing 5 of 5 matching projects (offset=0):
+
+  DRPID=12  status='sourced'  'https://data.cms.gov/quality-of-care/deficit-reduction-act-...'
+  DRPID=13  status='sourced'  'https://data.cms.gov/summary-statistics-on-use-and-payments/...'
+  DRPID=14  status='sourced'  'https://data.cms.gov/cms-innovation-center-programs/end-stage-...'
+  DRPID=15  status='sourced'  'https://data.cms.gov/cms-innovation-center-programs/end-stage-...'
+  DRPID=16  status='sourced'  'https://data.cms.gov/summary-statistics-on-use-and-payments/...'
+```
+
+These projects are now ready to be processed by a collector (`cms_collector`, etc.).
+
 ---
 
 ## 2. Parameters
