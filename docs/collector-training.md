@@ -19,6 +19,7 @@ training data and AI-driven refinement.
 - [Database Schema](#database-schema)
 - [MCP Extensions](#mcp-extensions)
 - [Parallel Agents](#parallel-agents)
+- [Observer Console](#observer-console)
 - [Risks and Future Work](#risks-and-future-work)
 
 ---
@@ -86,13 +87,25 @@ extraction logic — repeating until quality plateaus.
         ┌─────────────────────────────────────┐
         │         Training Database           │
         │  (iterations, scores, diffs, cost)  │
-        └─────────────────┬───────────────────┘
-                          │
-                          v
-        ┌─────────────────────────────────────┐
-        │         Training Data Store         │
-        │  (human-verified ground truth)      │
-        └─────────────────────────────────────┘
+        └──────────────┬──────────────────────┘
+                       │                ^
+                       │                │ reads
+                       v                │
+        ┌──────────────────────────────────────┐
+        │         Training Data Store          │
+        │  (human-verified ground truth)       │
+        └──────────────────────────────────────┘
+
+        ┌──────────────────────────────────────┐
+        │         Observer Console             │
+        │  (read-only view of live training)   │
+        │                                      │
+        │  score trend · active agents · cost  │
+        │  per-field breakdown · recent diffs  │
+        └──────────────────────────────────────┘
+                       │ reads
+                       v
+              Training Database (above)
 ```
 
 ### Design principle: one collector per source
@@ -127,6 +140,13 @@ trains one collector at a time against training data from that source.
 - Imported from the Data Inventory spreadsheet
 - Stored locally so evaluation doesn't depend on Google Sheets availability
 - Includes all metadata fields and file manifests
+
+**Observer Console** — A live read-only view of training progress:
+- Reads directly from the training database; does not interact with agents
+- Shows score trend, active agent count, token cost, and per-field breakdown
+- Designed for a human to watch a training run without interrupting it
+- Future: ability to send guidance or interrupt the run (see Risks and Future
+  Work)
 
 ---
 
@@ -803,11 +823,83 @@ system to dispatch parallel work:
 3. Test with Gemini Flash as the cheap-model option
 4. Add MCP tools for monitoring training runs
 
+### Phase 4b: Observer console
+
+1. Build `observer.py` — console interface that tails the training database
+2. Auto-refreshes every few seconds while a training run is active
+3. Exits cleanly when the run completes
+
 ### Phase 5: Parallel agents
 
 1. Add cross-strategy parallelism to coordinator
 2. Test with multiple agents on different refinement strategies
 3. Tune the coordinator's agent dispatch logic
+
+---
+
+## Observer Console
+
+A training run can take many iterations and several minutes to hours. The
+observer console gives a human a live view of what is happening without
+requiring them to read log files or query the database directly.
+
+### Interface choice
+
+A **console (terminal) interface** is preferred for v1:
+
+- No server to start, no browser to open — just `python observer.py <run_id>`
+- Runs alongside the training process in a second terminal pane
+- Works over SSH for remote runs
+- Easy to implement with Python's `curses` or simple timed-refresh printing
+
+A web interface remains a future option if richer visualization is needed
+(e.g., score charts, diff highlighting), but adds infrastructure complexity
+that isn't warranted for v1.
+
+### What the console shows
+
+The display refreshes every few seconds, reading directly from the training
+database. Layout (example):
+
+```
+DRP Collector Training — cms_collector  [run_id=7]
+Started: 2026-03-18 14:02  Elapsed: 12m  Status: RUNNING
+
+Score trend
+  It 1   ████████░░░░░░░░░░░░  0.41
+  It 2   ██████████████░░░░░░  0.68
+  It 3   ███████████████░░░░░  0.73  ← current
+
+Per-field (iteration 3)
+  files          0.61  ████████████░░░░░░░░
+  title          0.89  █████████████████░░░
+  summary        0.75  ███████████████░░░░░
+  agency         0.92  ██████████████████░░
+  keywords       0.70  ██████████████░░░░░░
+
+Active agents: 2 of 3
+  Agent A  refining → focus: files
+  Agent B  evaluating (11/14 projects)
+  Agent C  idle
+
+Cost  $0.43 of $10.00 budget (4%)
+  Training set:  14 projects (2 large, deferred)
+  Validation:     4 projects (held out)
+  Best score:    0.73 (iteration 3)
+
+[q] quit observer   [training continues in background]
+```
+
+### Read-only in v1
+
+The console is deliberately passive — it observes but does not control. The
+coordinator and agents are not aware of it. Quitting the console (`q`) has
+no effect on the training run.
+
+### Future: interactive control
+
+See Risks and Future Work for the planned enhancement to allow the observer
+to send guidance or interrupt the run.
 
 ---
 
@@ -836,7 +928,8 @@ system to dispatch parallel work:
   to crawl a source site and enumerate its datasets — would make it feasible
   to bring up training for a new data source much faster.
 
-- **Human-in-the-loop**: A mode where the system pauses after N iterations
-  for a human to review the collector and provide guidance. This could help
-  when the system is stuck on a plateau — a human can spot structural issues
-  that the AI keeps missing.
+- **Interactive observer**: Extend the observer console (currently read-only)
+  to allow a human to send guidance or interrupt the run — for example,
+  pausing after N iterations to steer toward a specific fix. This is
+  particularly useful when stuck on a plateau, where a human can spot
+  structural issues that the AI keeps missing.
