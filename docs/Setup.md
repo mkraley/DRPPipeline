@@ -196,17 +196,29 @@ For Google Sheets provisioning details, see [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEE
 The SPA main page includes a pipeline chat panel that can translate natural-language
 requests into MCP 1 tool calls (e.g. `get_pipeline_stats`, `list_projects`, `run_module`).
 
-### Required environment variables
+### Configure OpenAI (recommended: `config.json`)
 
-Set one of the following API key vars for OpenAI planning:
+This repo’s SPA pipeline chat planner reads OpenAI credentials from `config.json`
+to avoid relying on environment variables.
+
+Add these keys:
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `pipeline_chat_openai_api_key` | Yes | OpenAI API key used for tool planning |
+| `pipeline_chat_openai_model` | No | Model name (default: `gpt-4o-mini`) |
+
+Optional tuning:
+
+- `PIPELINE_CHAT_TOOL_TIMEOUT_SECONDS` (default: `120`) — tool execution timeout guardrail
+
+### Env var fallback (optional)
+
+For convenience, the planner also supports:
 
 - `PIPELINE_CHAT_OPENAI_API_KEY` (preferred)
 - `OPENAI_API_KEY` (fallback)
-
-Optional tuning variables:
-
 - `PIPELINE_CHAT_OPENAI_MODEL` (default: `gpt-4o-mini`)
-- `PIPELINE_CHAT_TOOL_TIMEOUT_SECONDS` (default: `120`)
 
 ### Cursor MCP config location
 

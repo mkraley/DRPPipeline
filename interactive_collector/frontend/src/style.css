@@ -888,6 +888,11 @@ body {
   margin-top: 6px;
 }
 
+.pipeline-chat-item-text {
+  white-space: pre-wrap;
+  margin-top: 2px;
+}
+
 .pipeline-chat-input-row {
   display: flex;
   gap: 8px;

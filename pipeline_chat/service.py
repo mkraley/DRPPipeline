@@ -14,6 +14,7 @@ from typing import Any
 from pipeline_chat.confirmations import consume_pending_action, create_pending_action
 from pipeline_chat.executor import (
     ToolExecutionError,
+    is_mutating_tool,
     execute_mutating_tool,
     execute_read_only_tool,
     list_mutating_tools,
@@ -58,7 +59,37 @@ def _heuristic_tool_selection(message: str) -> ToolCall | None:
     s = (message or "").strip().lower()
     if not s:
         return None
-    if "database status" in s or "pipeline stats" in s:
+    # Mutating: reset/clear/error recovery patterns
+    # Example: "reset drpid21 so it is eligible for collection"
+    if ("reset" in s or "make" in s or "mark" in s) and "drpid" in s:
+        m = re.search(r"\bdrpid\s*#?\s*(\d+)\b", s)
+        if m:
+            drpid = int(m.group(1))
+            if "eligible" in s and "collection" in s:
+                return ToolCall(tool_name="set_project_status", arguments={"drpid": drpid, "status": "sourced"})
+            if "eligible" in s and "collect" in s:
+                return ToolCall(tool_name="set_project_status", arguments={"drpid": drpid, "status": "sourced"})
+    if "eligible" in s and "collection" in s and "drpid" in s:
+        m = re.search(r"\bdrpid\s*#?\s*(\d+)\b", s)
+        if m:
+            drpid = int(m.group(1))
+            return ToolCall(tool_name="set_project_status", arguments={"drpid": drpid, "status": "sourced"})
+    if ("clear" in s and "error" in s) and "drpid" in s:
+        m = re.search(r"\bdrpid\s*#?\s*(\d+)\b", s)
+        if m:
+            drpid = int(m.group(1))
+            return ToolCall(tool_name="clear_errors", arguments={"drpid": drpid})
+
+    if (
+        "database status" in s
+        or "pipeline stats" in s
+        or "pipeline status" in s
+        or ("pipeline" in s and "status" in s)
+        or "how's the pipeline" in s
+        or "how is the pipeline" in s
+        or "pipeline looking" in s
+        or "pipeline overview" in s
+    ):
         return ToolCall(tool_name="get_pipeline_stats", arguments={})
     if "next eligible" in s and "collection" in s:
         return ToolCall(tool_name="list_projects", arguments={"status": "sourced", "limit": 1, "offset": 0})
@@ -74,7 +105,7 @@ def run_chat_query(message: str, session_id: str = "anon") -> ChatQueryResponse:
     explicit_call = _parse_call_syntax(message)
     if explicit_call:
         call = explicit_call
-        is_mutating = False
+        is_mutating = is_mutating_tool(call.tool_name)
     else:
         try:
             decision = plan_tool_call(message)
@@ -84,7 +115,7 @@ def run_chat_query(message: str, session_id: str = "anon") -> ChatQueryResponse:
             heuristic_call = _heuristic_tool_selection(message)
             if heuristic_call:
                 call = heuristic_call
-                is_mutating = False
+                is_mutating = is_mutating_tool(call.tool_name)
             else:
                 call = None
                 is_mutating = False

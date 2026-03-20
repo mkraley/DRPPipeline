@@ -409,6 +409,20 @@ For Google Sheets setup, see [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md).
    ```
    Vite proxies `/api` to the Flask backend.
 
+   Dev-mode on `:5000` (Flask stays the public port with hot reload):
+
+   - Start Vite (keeps running on `:5173`):  
+     ```bash
+     cd interactive_collector/frontend && npm run dev
+     ```
+   - Start Flask in debug mode (Flask on `:5000` proxies SPA requests to Vite):
+     ```bash
+     flask --app .\interactive_collector\app run --debug
+     ```
+   - Open `http://127.0.0.1:5000/`
+
+   (If your Vite dev server is at a different origin/port, set `VITE_DEV_ORIGIN`.)
+
 3. **Production:**  
    Build with `npm run build`, then Flask serves the built app at `/collector/`.
 

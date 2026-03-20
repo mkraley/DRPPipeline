@@ -57,10 +57,41 @@ def _validate_planner_json(payload: Any) -> PlannerDecision:
 
 
 def _call_openai_json(user_message: str) -> dict[str, Any]:
-    api_key = os.environ.get("PIPELINE_CHAT_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    """
+    Call OpenAI Chat Completions and return parsed JSON.
+
+    Credentials are preferred from config.json via `utils.Args`:
+      - pipeline_chat_openai_api_key
+      - pipeline_chat_openai_model
+
+    Env var fallback is supported for convenience:
+      - PIPELINE_CHAT_OPENAI_API_KEY / OPENAI_API_KEY
+      - PIPELINE_CHAT_OPENAI_MODEL
+    """
+    api_key: str | None = None
+    model: str | None = None
+
+    # Prefer config.json values (Args singleton), when available.
+    try:
+        from utils.Args import Args
+
+        if getattr(Args, "_initialized", False):
+            api_key = getattr(Args, "pipeline_chat_openai_api_key", None)
+            model = getattr(Args, "pipeline_chat_openai_model", None)
+    except Exception:
+        # If Args isn't available/initialized, fall back to env vars below.
+        api_key = None
+        model = None
+
+    # Fallback to env vars.
+    api_key = api_key or os.environ.get("PIPELINE_CHAT_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    model = model or os.environ.get("PIPELINE_CHAT_OPENAI_MODEL") or "gpt-4o-mini"
+
     if not api_key:
-        raise PlannerError("OpenAI API key not configured. Set PIPELINE_CHAT_OPENAI_API_KEY or OPENAI_API_KEY.")
-    model = os.environ.get("PIPELINE_CHAT_OPENAI_MODEL", "gpt-4o-mini")
+        raise PlannerError(
+            "OpenAI API key not configured. Set config.json pipeline_chat_openai_api_key "
+            "or PIPELINE_CHAT_OPENAI_API_KEY/OPENAI_API_KEY."
+        )
     body = {
         "model": model,
         "response_format": {"type": "json_object"},

@@ -99,7 +99,17 @@ def execute_mutating_tool(tool_name: str, arguments: dict[str, Any] | None = Non
             f"Allowed: {list_mutating_tools()}"
         )
     fn = MUTATING_TOOLS[tool_name]
-    kwargs = arguments or {}
+    kwargs = dict(arguments or {})
+
+    # All MCP mutating tools default to `dry_run=True`. After explicit user
+    # confirmation, we want the mutation to actually execute unless the
+    # caller explicitly opted into another mode.
+    try:
+        sig = inspect.signature(fn)
+        if "dry_run" in sig.parameters and "dry_run" not in kwargs:
+            kwargs["dry_run"] = False
+    except Exception:
+        pass
     try:
         inspect.signature(fn).bind(**kwargs)
     except TypeError as exc:
