@@ -509,7 +509,7 @@ python main.py publisher
 python main.py cleanup_inprogress --log-color
 ```
 
-**Claimed-by-name across all tabs:** Tallies non-empty cells in columns whose header in **row 1 or row 2** includes the whole word `claimed` (case-insensitive; not `unclaimed` / `disclaimed`). Also prints, per worksheet, how many rows have a non-empty **URL** column (`sourcing_url_column`, default `URL`) while every claimed header column is empty; lists tabs that have claimed columns but no exact URL header match. Then totals, unique claimants, worksheets with no claimed header, and per-name counts sorted descending. Downloads the spreadsheet once as XLSX using `google_sheet_id` and `google_credentials`:
+**Claimed-by-name across all tabs:** Tallies non-empty cells in columns whose header in **row 1 or row 2** includes the whole word `claimed` (case-insensitive; not `unclaimed` / `disclaimed`). Also prints rows with **Claimed** filled and every **Download Location** header column empty (header contains the substring `download location`, case-insensitive)—grouped **by claimant** then **by tab** (only tabs that have both header types). Lists worksheets missing a claimed header, missing a download-location header, and the **union** of those. Same script also reports URL-filled-but-unclaimed rows (`sourcing_url_column`). Downloads the spreadsheet once as XLSX using `google_sheet_id` and `google_credentials`:
 
 ```bash
 python debug/tally_claimed_all_tabs.py

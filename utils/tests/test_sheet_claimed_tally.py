@@ -8,8 +8,10 @@ from openpyxl import Workbook
 from utils.sheet_claimed_tally import (
     ClaimedTallyReport,
     find_claimed_columns_with_header_skips,
+    find_download_location_columns_with_header_skips,
     find_named_column_index_and_skip,
     header_cell_matches_claimed,
+    header_cell_matches_download_location,
     tally_claimed_from_xlsx_bytes,
 )
 
@@ -19,6 +21,19 @@ class TestSheetClaimedTally(unittest.TestCase):
         self.assertEqual(result.unclaimed_url_rows_by_sheet, ())
         self.assertEqual(result.sheets_without_url_column, ())
         self.assertIsNone(result.url_column_name)
+
+    def test_header_cell_matches_download_location(self) -> None:
+        self.assertTrue(header_cell_matches_download_location("Download Location"))
+        self.assertTrue(header_cell_matches_download_location("My Download Location link"))
+        self.assertFalse(header_cell_matches_download_location("URL"))
+        self.assertFalse(header_cell_matches_download_location(""))
+
+    def test_find_download_location_columns_with_header_skips(self) -> None:
+        row1 = ["URL", "DL"]
+        row2 = ["x", "Download Location"]
+        cols, skips = find_download_location_columns_with_header_skips(row1, row2)
+        self.assertEqual(cols, [1])
+        self.assertEqual(skips[1], 2)
 
     def test_header_cell_matches_claimed_word(self) -> None:
         self.assertTrue(header_cell_matches_claimed("Claimed"))
@@ -86,6 +101,16 @@ class TestSheetClaimedTally(unittest.TestCase):
         self.assertIn("TabB", result.sheets_without_url_column)
         self.assertEqual(dict(result.unclaimed_url_rows_by_sheet), {"TabA": 0})
         self.assertEqual(result.url_column_name, "URL")
+        self.assertEqual(result.claimed_without_download_location_by_claimant, ())
+        self.assertEqual(result.claimed_without_download_location_by_sheet, ())
+        self.assertEqual(
+            set(result.sheets_without_download_location_column),
+            {"NoClaimCol", "TabA", "TabB"},
+        )
+        self.assertEqual(
+            set(result.sheets_missing_claimed_or_download_location),
+            {"NoClaimCol", "TabA", "TabB"},
+        )
 
     def test_tally_counts_multiple_claimed_columns_same_row(self) -> None:
         wb = Workbook()
@@ -99,6 +124,7 @@ class TestSheetClaimedTally(unittest.TestCase):
         self.assertEqual(result.total_claimed_entries, 2)
         self.assertEqual(result.unique_claimant_count, 1)
         self.assertEqual(result.sheets_without_claimed_column, ())
+        self.assertEqual(result.claimed_without_download_location_by_claimant, ())
         self._assert_url_tally_skipped(result)
 
     def test_claimed_label_on_row2_data_starts_row3(self) -> None:
@@ -141,7 +167,40 @@ class TestSheetClaimedTally(unittest.TestCase):
         self.assertEqual(result.total_claimed_entries, 0)
         self.assertEqual(result.unique_claimant_count, 0)
         self.assertEqual(result.sheets_without_claimed_column, ())
+        self.assertEqual(result.claimed_without_download_location_by_claimant, ())
         self._assert_url_tally_skipped(result)
+
+    def test_claimed_without_download_location_tally(self) -> None:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Inv"
+        ws.append(["URL", "Claimed", "Download Location"])
+        ws.append(["http://a", "Sue", ""])
+        ws.append(["http://b", "Pat", "https://file"])
+        ws.append(["http://c", "", ""])
+        buf = io.BytesIO()
+        wb.save(buf)
+        result = tally_claimed_from_xlsx_bytes(buf.getvalue())
+        self.assertEqual(dict(result.claimed_without_download_location_by_claimant), {"Sue": 1})
+        self.assertEqual(dict(result.claimed_without_download_location_by_sheet), {"Inv": 1})
+        self.assertEqual(result.sheets_without_download_location_column, ())
+        self.assertEqual(result.sheets_missing_claimed_or_download_location, ())
+
+    def test_claimed_without_dl_by_tab_two_sheets(self) -> None:
+        wb = Workbook()
+        ws1 = wb.active
+        ws1.title = "A"
+        ws1.append(["Claimed", "Download Location"])
+        ws1.append(["X", ""])
+        ws2 = wb.create_sheet("B")
+        ws2.append(["Who claimed", "DL"])
+        ws2.append(["x", "Download Location here"])
+        ws2.append(["Y", ""])
+        buf = io.BytesIO()
+        wb.save(buf)
+        result = tally_claimed_from_xlsx_bytes(buf.getvalue())
+        self.assertEqual(dict(result.claimed_without_download_location_by_claimant), {"X": 1, "Y": 1})
+        self.assertEqual(dict(result.claimed_without_download_location_by_sheet), {"A": 1, "B": 1})
 
     def test_unclaimed_url_rows_count_by_sheet(self) -> None:
         wb = Workbook()
@@ -156,6 +215,8 @@ class TestSheetClaimedTally(unittest.TestCase):
         result = tally_claimed_from_xlsx_bytes(buf.getvalue(), url_column_name="URL")
         self.assertEqual(dict(result.unclaimed_url_rows_by_sheet), {"Inv": 1})
         self.assertEqual(result.sheets_without_url_column, ())
+        self.assertEqual(result.claimed_without_download_location_by_claimant, ())
+        self.assertEqual(result.sheets_without_download_location_column, ("Inv",))
 
     def test_unclaimed_url_multi_sheet(self) -> None:
         wb = Workbook()

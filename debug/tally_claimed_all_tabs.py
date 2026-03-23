@@ -5,8 +5,9 @@ For each worksheet, finds columns where row 1 or row 2 includes the whole word
 \"claimed\" (case-insensitive; e.g. \"Person who claimed\", \"Claimed (add your name)\").
 \"Unclaimed\" / \"disclaimed\" are ignored. Counts non-empty cells below the header row(s),
 aggregates across all tabs. Prints URL-but-unclaimed row counts by tab (using
-sourcing_url_column), sheets missing that URL header, then total entries, unique claimants,
-sheets with no claimed header, and \"count<TAB>name\" sorted by count descending.
+sourcing_url_column), sheets missing that URL header, claimed-but-no-Download-Location tallies
+(by claimant and by tab), sheets missing claimed or download location headers, then totals and
+per-claimant counts sorted descending.
 
 Run from repo root:
 
@@ -49,9 +50,44 @@ def _print_report(result: ClaimedTallyReport) -> None:
         else:
             print("  (none)")
         print()
+    print(
+        "Rows with at least one Claimed cell filled and every Download Location column empty "
+        "(only tabs that have both header types):"
+    )
+    print("  By claimant (count descending):")
+    if result.claimed_without_download_location_by_claimant:
+        for name, count in result.claimed_without_download_location_by_claimant:
+            print(f"    {count}\t{name}")
+    else:
+        print("    (none)")
+    print("  By tab:")
+    if result.claimed_without_download_location_by_sheet:
+        for title, count in result.claimed_without_download_location_by_sheet:
+            print(f"    {count}\t{title}")
+    else:
+        print("    (none)")
+    print()
+    print(
+        'Sheets missing a "claimed" header or a "Download Location" header in rows 1 or 2 (union):'
+    )
+    if result.sheets_missing_claimed_or_download_location:
+        for title in result.sheets_missing_claimed_or_download_location:
+            print(f"  {title}")
+    else:
+        print("  (none)")
+    print()
     print('Sheets with no column header in rows 1 or 2 containing the word "claimed":')
     if result.sheets_without_claimed_column:
         for title in result.sheets_without_claimed_column:
+            print(f"  {title}")
+    else:
+        print("  (none)")
+    print()
+    print(
+        'Sheets with no column header in rows 1 or 2 containing "download location" (substring):'
+    )
+    if result.sheets_without_download_location_column:
+        for title in result.sheets_without_download_location_column:
             print(f"  {title}")
     else:
         print("  (none)")
