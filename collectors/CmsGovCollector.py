@@ -140,7 +140,8 @@ class CmsGovCollector:
         if date_range.get("time_end"):
             result["time_end"] = date_range["time_end"]
 
-        exts, total_bytes = folder_extensions_and_size(folder_path)
+        exts, total_bytes, num_files = folder_extensions_and_size(folder_path)
+        result["num_files"] = num_files
         if exts:
             result["extensions"] = ",".join(exts)
             tabular = {".csv", ".tsv", ".xlsx", ".xls"}

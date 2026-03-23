@@ -217,6 +217,20 @@ class DataLumosFileUploader:
         except PlaywrightTimeoutError:
             Logger.warning("Timeout waiting for busy overlay to disappear")
 
+    def count_upload_batches(self, folder_path: str) -> int:
+        """
+        Number of upload operations ``upload_files`` would perform for this folder.
+
+        Returns 1 when using Import From Zip (subfolders present), otherwise the count
+        of regular files in the folder's top level (same scope as ``folder_extensions_and_size``).
+        """
+        folder = Path(folder_path)
+        if not folder.exists() or not folder.is_dir():
+            return 0
+        if self._folder_has_subfolders(folder_path):
+            return 1
+        return len(self.get_file_paths(folder_path))
+
     def get_file_paths(self, folder_path: str) -> List[Path]:
         """
         Get list of file paths to upload from a folder.

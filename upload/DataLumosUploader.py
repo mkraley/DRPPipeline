@@ -17,6 +17,24 @@ from utils.Errors import record_error
 from utils.Logger import Logger
 
 
+def _warn_if_num_files_mismatch(drpid: int, project: Dict[str, Any], upload_batches: int) -> None:
+    """Log a warning when collected ``num_files`` does not match upload batch count."""
+    nf_raw = project.get("num_files")
+    if nf_raw is None:
+        return
+    try:
+        expected_files = int(nf_raw)
+    except (TypeError, ValueError):
+        return
+    if expected_files == upload_batches:
+        return
+    Logger.warning(
+        f"DRPID={drpid}: upload batch count ({upload_batches}) does not match "
+        f"num_files from collection ({expected_files}). "
+        "(Zip import counts as 1; num_files is top-level file count.)"
+    )
+
+
 class DataLumosUploader:
     """
     Upload module that uploads collected project data to DataLumos.
@@ -177,7 +195,9 @@ class DataLumosUploader:
         if folder_path:
             from upload.DataLumosFileUploader import DataLumosFileUploader
             file_uploader = DataLumosFileUploader(page, timeout=Args.upload_timeout)
+            upload_batches = file_uploader.count_upload_batches(folder_path)
             file_uploader.upload_files(folder_path)
+            _warn_if_num_files_mismatch(drpid, project, upload_batches)
 
         return workspace_id
     

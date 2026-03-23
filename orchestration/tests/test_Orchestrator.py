@@ -161,7 +161,7 @@ class TestOrchestrator(unittest.TestCase):
     def test_run_sourcing_with_delete_all_db_entries_clears_storage(
         self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
     ) -> None:
-        """Test run with delete_all_db_entries calls Storage.clear_all_records."""
+        """Sourcing clears storage when delete_all_db_entries is true (e.g. from CLI or config)."""
         mock_storage = MagicMock()
         mock_storage_cls.initialize.return_value = mock_storage
         mock_storage_cls.get_instance.return_value = mock_storage
@@ -169,10 +169,45 @@ class TestOrchestrator(unittest.TestCase):
         mock_find_class.return_value = MagicMock(return_value=mock_sourcing_instance)
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls), \
              patch.object(Args, "delete_all_db_entries", True), \
-             patch("orchestration.Orchestrator.Logger") as mock_logger:
+             patch("orchestration.Orchestrator.Logger"):
             Orchestrator.run("sourcing")
         mock_storage_cls.clear_all_records.assert_called_once()
         mock_sourcing_instance.run.assert_called_once_with(-1)
+
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
+    def test_run_sourcing_without_delete_all_does_not_clear(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
+    ) -> None:
+        """Sourcing does not clear when delete_all_db_entries is false (default)."""
+        mock_storage = MagicMock()
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_sourcing_instance = MagicMock()
+        mock_find_class.return_value = MagicMock(return_value=mock_sourcing_instance)
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls), \
+             patch.object(Args, "delete_all_db_entries", False), \
+             patch("orchestration.Orchestrator.Logger"):
+            Orchestrator.run("sourcing")
+        mock_storage_cls.clear_all_records.assert_not_called()
+        mock_sourcing_instance.run.assert_called_once_with(-1)
+
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
+    def test_run_upload_delete_all_true_does_not_clear_storage(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
+    ) -> None:
+        """delete_all_db_entries is ignored outside sourcing (e.g. upload)."""
+        mock_storage = MagicMock()
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.get_instance.return_value = mock_storage
+        mock_upload_instance = MagicMock()
+        mock_find_class.return_value = MagicMock(return_value=mock_upload_instance)
+        mock_storage_cls.list_eligible_projects.return_value = []
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls), \
+             patch.object(Args, "delete_all_db_entries", True), \
+             patch("orchestration.Orchestrator.Logger"):
+            Orchestrator.run("upload")
+        mock_storage_cls.clear_all_records.assert_not_called()
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")

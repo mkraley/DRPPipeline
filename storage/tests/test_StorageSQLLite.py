@@ -371,6 +371,7 @@ class TestStorageSQLLite(unittest.TestCase):
             "DRPID", "source_url", "folder_path", "title", "agency", "office",
             "summary", "keywords", "time_start", "time_end", "data_types",
             "extensions", "download_date", "collection_notes", "file_size",
+            "num_files",
             "datalumos_id",
             "published_url", "status", "status_notes", "warnings", "errors"
         ]
@@ -380,6 +381,7 @@ class TestStorageSQLLite(unittest.TestCase):
         
         # Verify file_size is TEXT, not INTEGER
         self.assertEqual(columns["file_size"], "TEXT")
+        self.assertEqual(columns["num_files"], "INTEGER")
         
         # Verify DRPID is INTEGER
         self.assertEqual(columns["DRPID"], "INTEGER")

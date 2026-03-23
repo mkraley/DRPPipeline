@@ -201,7 +201,12 @@ class Args(metaclass=ArgsMeta):
             start_drpid: Optional[int] = typer.Option(None, "--start-drpid", help="Only process projects with DRPID >= this value"),
             db_path: Optional[Path] = typer.Option(None, "--db-path", help="Path to SQLite database file"),
             storage: Optional[str] = typer.Option(None, "--storage", help="Storage implementation (e.g. StorageSQLLite)"),
-            delete_all_db_entries: bool = typer.Option(False, "--delete-all-db-entries", help="Delete all database entries and reset auto-increment before proceeding"),
+            delete_all_db_entries: bool = typer.Option(
+                False,
+                "--delete-all-db-entries",
+                help="For sourcing only: delete all database entries before proceeding. "
+                "May also be set via delete_all_db_entries in config.json; default is false.",
+            ),
             max_workers: Optional[int] = typer.Option(None, "--max-workers", "-w", help="Max concurrent projects for modules with prereq (e.g. collector). Default 1 = sequential."),
             download_timeout_ms: Optional[int] = typer.Option(None, "--download-timeout-ms", help="Download timeout in milliseconds (default 30 min). Use for large datasets."),
             no_use_url_download: bool = typer.Option(False, "--no-use-url-download", help="Use Playwright save_as instead of capturing URL and downloading with requests (no progress/resume)."),

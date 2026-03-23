@@ -231,9 +231,10 @@ class TestFolderExtensionsAndSize(unittest.TestCase):
 
     def test_empty_folder(self) -> None:
         with tempfile.TemporaryDirectory() as d:
-            exts, size = _folder_extensions_and_size(Path(d))
+            exts, size, n = _folder_extensions_and_size(Path(d))
         self.assertEqual(exts, [])
         self.assertEqual(size, 0)
+        self.assertEqual(n, 0)
 
     def test_collects_extensions_and_total_size(self) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -241,9 +242,10 @@ class TestFolderExtensionsAndSize(unittest.TestCase):
             (p / "a.pdf").write_bytes(b"x" * 100)
             (p / "b.csv").write_bytes(b"y" * 50)
             (p / "c.PDF").write_bytes(b"z" * 30)
-            exts, size = _folder_extensions_and_size(p)
+            exts, size, n = _folder_extensions_and_size(p)
         self.assertEqual(sorted(exts), ["csv", "pdf"])
         self.assertEqual(size, 180)
+        self.assertEqual(n, 3)
 
 
 class TestAppRoutes(unittest.TestCase):
@@ -653,6 +655,7 @@ class TestAppRoutes(unittest.TestCase):
         self.assertEqual(values.get("download_date"), "2024-01-15")
         self.assertIn("extensions", values)
         self.assertIn("file_size", values)
+        self.assertEqual(values.get("num_files"), 0)
         self.assertEqual(values.get("folder_path"), d)
 
     def test_scoreboard_render_with_save_form_includes_checkbox_name(self) -> None:

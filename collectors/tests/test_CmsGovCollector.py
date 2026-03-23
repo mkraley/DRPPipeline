@@ -278,7 +278,7 @@ class TestCmsGovCollector(unittest.TestCase):
         mock_gather.return_value = [_SAMPLE_CURRENT_RESOURCES[0]]
         mock_create_folder.return_value = Path("/tmp/DRP000001")
         mock_download.return_value = (26951355, True)
-        mock_ext_size.return_value = ([".csv"], 26951355)
+        mock_ext_size.return_value = ([".csv"], 26951355, 1)
 
         result = self.collector._collect(
             "https://data.cms.gov/provider-summary-by-type-of-service/medicare-inpatient-hospitals/hospital-service-area",
@@ -291,6 +291,7 @@ class TestCmsGovCollector(unittest.TestCase):
         self.assertEqual(result["folder_path"], "/tmp/DRP000001")
         self.assertEqual(result["extensions"], ".csv")
         self.assertEqual(result["data_types"], "tabular")
+        self.assertEqual(result["num_files"], 1)
         mock_download.assert_called_once()
 
     @patch("collectors.CmsGovCollector.record_warning")
@@ -315,7 +316,7 @@ class TestCmsGovCollector(unittest.TestCase):
         mock_gather.return_value = [_SAMPLE_CURRENT_RESOURCES[0]]
         mock_create_folder.return_value = Path("/tmp/DRP000001")
         mock_download.return_value = (0, False)
-        mock_ext_size.return_value = ([], 0)
+        mock_ext_size.return_value = ([], 0, 0)
 
         self.collector._collect("https://data.cms.gov/some/path", 1)
 

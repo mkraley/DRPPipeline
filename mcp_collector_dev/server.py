@@ -202,6 +202,7 @@ def get_collector_interface() -> str:
       download_date   TEXT      Date collected (ISO)
       collection_notes TEXT     Free-form notes about the collection
       file_size       TEXT      Human-readable total size (e.g. "12.3 MB")
+      num_files       INTEGER   Count of regular files in output folder (top-level; set with extensions/file_size)
       published_url   TEXT      DataLumos published URL (set by publisher)
 
     Storage methods used by collectors:
@@ -240,7 +241,7 @@ def get_collector_interface() -> str:
         create_output_folder,       → create DRP{drpid:06d} folder
         sanitize_filename,          → make a string safe for filenames
         format_file_size,           → e.g. "1.2 MB"
-        folder_extensions_and_size, → (list[str], total_bytes)
+        folder_extensions_and_size, → (list[str], total_bytes, num_files)
     )
 
     from utils.url_utils import access_url, fetch_page_body, fetch_url_head, infer_file_type, is_valid_url
@@ -370,10 +371,11 @@ class {class_name}:
         # result["time_end"] = ...
 
         # --- Record folder and file stats ---
-        extensions, total_bytes = folder_extensions_and_size(folder_path)
+        extensions, total_bytes, num_files = folder_extensions_and_size(folder_path)
         result["folder_path"] = str(folder_path)
         result["file_size"] = format_file_size(total_bytes)
         result["extensions"] = ",".join(extensions)
+        result["num_files"] = num_files
         return result
 
     def _update_storage_from_result(self, drpid: int, result: Dict[str, Any]) -> None:

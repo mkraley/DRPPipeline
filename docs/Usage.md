@@ -338,7 +338,7 @@ If the config file does not exist, a warning is shown but the pipeline continues
 | `start_drpid` | yes | `start_drpid` | `null` | Only process projects with DRPID ≥ this value |
 | `db_path` | yes | `db_path` | `drp_pipeline.db` | Path to SQLite database file |
 | `storage` | yes | — | `StorageSQLLite` | Storage implementation |
-| `delete_all_db_entries` | yes | — | `false` | Delete all DB entries and reset auto-increment before running |
+| `delete_all_db_entries` | yes (`--delete-all-db-entries`) | yes | `false` | **Sourcing only:** when true (CLI or config), clears the DB before sourcing. Ignored for all other modules. If neither CLI nor config sets it, the DB is not cleared. |
 | `max_workers` / `-w` | yes | — | `1` | Max concurrent projects for modules that support it |
 | `download_timeout_ms` | yes | — | `1800000` (30 min) | Download timeout in milliseconds |
 | `no_use_url_download` | yes | — | `false` | Use Playwright save_as instead of URL + requests (no progress/resume) |
@@ -521,7 +521,7 @@ python debug/tally_claimed_all_tabs.py
 
 | Module | Purpose |
 |--------|---------|
-| **sourcing** | Fetches candidate URLs from the configured spreadsheet, checks duplicates, creates DB records. Requires `google_sheet_id`. Use `--sourcing-mode` to control which rows are selected (see below). |
+| **sourcing** | Fetches candidate URLs from the configured spreadsheet, checks duplicates, creates DB records (new rows append unless `delete_all_db_entries` is true in config and/or `--delete-all-db-entries` on the CLI). Requires `google_sheet_id`. Use `--sourcing-mode` to control which rows are selected (see below). |
 | **socrata_collector** | Collects data and metadata from Socrata-hosted pages (e.g. data.cdc.gov). Processes `status="sourced"`. |
 | **catalog_collector** | Collects download links from catalog.data.gov dataset pages. Processes `status="sourced"`. |
 | **cms_collector** | Collects data from data.cms.gov API pages. Processes `status="sourced"`. |

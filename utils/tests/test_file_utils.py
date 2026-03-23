@@ -69,14 +69,15 @@ class TestFileUtils(unittest.TestCase):
         self.assertEqual(file_utils.format_file_size(500), "500 B")
 
     def test_folder_extensions_and_size(self) -> None:
-        """Test folder_extensions_and_size returns extensions and total bytes."""
+        """Test folder_extensions_and_size returns extensions, total bytes, and file count."""
         d = self.temp_dir / "testdir"
         d.mkdir()
         (d / "a.csv").write_text("1,2,3")
         (d / "b.xlsx").write_bytes(b"x")
         (d / "c.CSV").write_text("x")
-        exts, total = file_utils.folder_extensions_and_size(d)
+        exts, total, n = file_utils.folder_extensions_and_size(d)
         self.assertEqual(sorted(exts), ["csv", "xlsx"])
+        self.assertEqual(n, 3)
         self.assertGreaterEqual(total, 6)
 
     def test_format_file_size_kb_mb_gb(self) -> None:

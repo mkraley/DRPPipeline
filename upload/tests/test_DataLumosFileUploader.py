@@ -49,6 +49,23 @@ class TestDataLumosFileUploader(unittest.TestCase):
             paths = uploader.get_file_paths(tmp)
             self.assertEqual(paths, [])
 
+    def test_count_upload_batches_flat_folder(self) -> None:
+        """Flat folder: batch count equals number of top-level files."""
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "a.txt").write_text("a")
+            (Path(tmp) / "b.txt").write_text("b")
+            uploader = DataLumosFileUploader(MagicMock())
+            self.assertEqual(uploader.count_upload_batches(tmp), 2)
+
+    def test_count_upload_batches_zip_when_subfolder(self) -> None:
+        """Subfolder present: single zip upload counts as 1 batch."""
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "a.txt").write_text("a")
+            (Path(tmp) / "sub").mkdir()
+            (Path(tmp) / "sub" / "b.txt").write_text("b")
+            uploader = DataLumosFileUploader(MagicMock())
+            self.assertEqual(uploader.count_upload_batches(tmp), 1)
+
     def test_upload_files_empty_folder_returns_without_error(self) -> None:
         """Test upload_files with empty folder returns without opening modal or raising."""
         with tempfile.TemporaryDirectory() as tmp:

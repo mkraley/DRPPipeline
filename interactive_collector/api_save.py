@@ -79,15 +79,18 @@ def save_metadata(
         values["folder_path"] = folder_path_str
         folder_path = Path(folder_path_str)
         if folder_path.is_dir():
-            exts_list, total_bytes = folder_extensions_and_size(folder_path)
+            exts_list, total_bytes, num_files = folder_extensions_and_size(folder_path)
             values["extensions"] = ", ".join(exts_list) if exts_list else ""
             values["file_size"] = format_file_size(total_bytes)
+            values["num_files"] = num_files
         else:
             values["extensions"] = ""
             values["file_size"] = ""
+            values["num_files"] = 0
     else:
         values["extensions"] = ""
         values["file_size"] = ""
+        values["num_files"] = 0
     try:
         Storage.update_record(drpid, values)
     except ValueError as e:

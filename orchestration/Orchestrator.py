@@ -157,10 +157,14 @@ class Orchestrator:
         
         # Initialize storage
         Storage.initialize(Args.storage_implementation, db_path=Path(Args.db_path))
-        
-        # Clear database if requested
-        if Args.delete_all_db_entries:
-            Logger.warning("Deleting all database entries as requested by --delete-all-db-entries flag")
+
+        # Only sourcing may wipe the DB, and only when delete_all_db_entries is true in config and/or CLI
+        # (default false — omit both and the database is left intact).
+        if module == "sourcing" and bool(Args.delete_all_db_entries):
+            Logger.warning(
+                "Deleting all database entries before sourcing (delete_all_db_entries in config and/or "
+                "--delete-all-db-entries on command line)"
+            )
             Storage.clear_all_records()
         
         num_rows: Optional[int] = Args.num_rows

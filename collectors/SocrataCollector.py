@@ -19,7 +19,7 @@ from utils.Logger import Logger
 from utils.Errors import record_error
 from utils.Args import Args
 from utils.url_utils import is_valid_url, access_url
-from utils.file_utils import sanitize_filename, create_output_folder
+from utils.file_utils import sanitize_filename, create_output_folder, folder_extensions_and_size
 from collectors.SocrataPageProcessor import SocrataPageProcessor
 from collectors.SocrataMetadataExtractor import SocrataMetadataExtractor
 from collectors.SocrataDatasetDownloader import SocrataDatasetDownloader
@@ -150,7 +150,14 @@ class SocrataCollector:
             )
         finally:
             self._cleanup_browser()
-        
+
+        fp = self._result.get("folder_path")
+        if fp:
+            folder = Path(fp)
+            if folder.is_dir():
+                _exts, _total_bytes, num_files = folder_extensions_and_size(folder)
+                self._result["num_files"] = num_files
+
         return self._result
     
     def _validate_and_access_url(self, url: str) -> bool:

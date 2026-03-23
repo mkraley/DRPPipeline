@@ -38,6 +38,7 @@ COMMON OPTIONS
   --start-drpid INT       Only process projects with DRPID >= this value
   -l, --log-level LEVEL   DEBUG, INFO, WARNING, ERROR (default: INFO)
   --log-color             Colorize log severity in terminal
+  --delete-all-db-entries  For sourcing only: wipe the SQLite DB before run (or set delete_all_db_entries in config; default off)
 
 FIRST TIME?
   Run setup to create your configuration files and verify everything works:

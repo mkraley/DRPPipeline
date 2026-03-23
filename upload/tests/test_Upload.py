@@ -6,13 +6,13 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from storage import Storage
 from utils.Args import Args
 from utils.Logger import Logger
 
-from upload.DataLumosUploader import DataLumosUploader
+from upload.DataLumosUploader import DataLumosUploader, _warn_if_num_files_mismatch
 
 
 class TestDataLumosUploader(unittest.TestCase):
@@ -108,6 +108,25 @@ class TestDataLumosUploader(unittest.TestCase):
         project = {"title": "  x  ", "missing": None}
         self.assertEqual(get_field(project, "title"), "x")
         self.assertEqual(get_field(project, "missing"), "")
+
+    @patch("upload.DataLumosUploader.Logger")
+    def test_warn_if_num_files_mismatch_logs_when_differs(self, mock_logger: MagicMock) -> None:
+        _warn_if_num_files_mismatch(42, {"num_files": 3}, 2)
+        mock_logger.warning.assert_called_once()
+        msg = mock_logger.warning.call_args[0][0]
+        self.assertIn("DRPID=42", msg)
+        self.assertIn("3", msg)
+        self.assertIn("2", msg)
+
+    @patch("upload.DataLumosUploader.Logger")
+    def test_warn_if_num_files_mismatch_skips_when_match(self, mock_logger: MagicMock) -> None:
+        _warn_if_num_files_mismatch(1, {"num_files": 2}, 2)
+        mock_logger.warning.assert_not_called()
+
+    @patch("upload.DataLumosUploader.Logger")
+    def test_warn_if_num_files_skips_when_num_files_null(self, mock_logger: MagicMock) -> None:
+        _warn_if_num_files_mismatch(1, {}, 2)
+        mock_logger.warning.assert_not_called()
 
 
 class TestDataLumosUploaderValidation(unittest.TestCase):
