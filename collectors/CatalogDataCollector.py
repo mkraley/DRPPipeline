@@ -1,6 +1,8 @@
 """
 Catalog Data Collector for DRP Pipeline.
 
+NOTE: not fully implemented, and not used in the current pipeline, but may be useful for future reference.
+
 Collects data from catalog.data.gov dataset pages:
 - Validates and accesses source_url (source page)
 - Locates "Downloads & Resources" section

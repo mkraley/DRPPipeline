@@ -386,7 +386,19 @@ class GoogleSheetUpdater:
         url_column_letter: str,
         source_url: str,
     ) -> Optional[int]:
-        """Return 1-based row number where URL column matches source_url, or None."""
+        """
+        Return 1-based row number where URL column best matches source_url, or None.
+
+        Matching order:
+        1. Exact string match (after strip + lower), first row in sheet order.
+        2. Else: sheet cell is a strict prefix of source_url — pick the longest such
+           cell (most specific prefix). Tie: earlier row in the sheet.
+        3. Else: source_url is a strict prefix of sheet cell — pick the shortest such
+           cell (minimal extension). Tie: earlier row in the sheet.
+
+        This avoids updating a row whose URL is only a substring/prefix of the real
+        source URL when a more specific row exists later in the column.
+        """
         range_name = f"{sheet_name}!{url_column_letter}2:{url_column_letter}"
         result = (
             service.spreadsheets()
@@ -396,16 +408,43 @@ class GoogleSheetUpdater:
         )
         values = result.get("values", [])
         source_clean = source_url.strip().lower()
+        if not source_clean:
+            return None
 
+        pairs: List[Tuple[int, str]] = []
         for idx, row in enumerate(values):
             if row and len(row) > 0:
                 cell_url = str(row[0]).strip().lower()
-                if (
-                    source_clean == cell_url
-                    or source_clean in cell_url
-                    or cell_url in source_clean
+                if cell_url:
+                    pairs.append((idx, cell_url))
+
+        # Phase 1: exact match
+        for idx, cell_url in pairs:
+            if cell_url == source_clean:
+                return idx + 2
+
+        # Phase 2: cell is strict prefix of source — longest cell wins
+        best_prefix: Optional[Tuple[int, int]] = None  # (len, idx)
+        for idx, cell_url in pairs:
+            if source_clean.startswith(cell_url) and len(cell_url) < len(source_clean):
+                if best_prefix is None or len(cell_url) > best_prefix[0] or (
+                    len(cell_url) == best_prefix[0] and idx < best_prefix[1]
                 ):
-                    return idx + 2
+                    best_prefix = (len(cell_url), idx)
+        if best_prefix is not None:
+            return best_prefix[1] + 2
+
+        # Phase 3: source is strict prefix of cell — shortest extension wins
+        best_ext: Optional[Tuple[int, int]] = None  # (len, idx)
+        for idx, cell_url in pairs:
+            if cell_url.startswith(source_clean) and len(cell_url) > len(source_clean):
+                if best_ext is None or len(cell_url) < best_ext[0] or (
+                    len(cell_url) == best_ext[0] and idx < best_ext[1]
+                ):
+                    best_ext = (len(cell_url), idx)
+        if best_ext is not None:
+            return best_ext[1] + 2
+
         return None
 
     def _build_update_requests(

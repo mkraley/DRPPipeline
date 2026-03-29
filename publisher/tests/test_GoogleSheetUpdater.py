@@ -56,6 +56,58 @@ class TestGoogleSheetUpdater(unittest.TestCase):
             "https://www.datalumos.org/datalumos/project/239181/version/V1/view",
         )
 
+    def test_find_row_by_url_exact_wins_over_earlier_prefix(self) -> None:
+        """Exact URL row must win even if a shorter prefix appears first in the column."""
+        updater = GoogleSheetUpdater()
+        mock_service = MagicMock()
+        short_u = "https://data.cms.gov/provider-summary/a/b"
+        long_u = "https://data.cms.gov/provider-summary/a/b-by-geography"
+        mock_service.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
+            "values": [[short_u], [long_u]]
+        }
+        row = updater._find_row_by_url(
+            mock_service, "sheet1", "CDC", "A", long_u
+        )
+        self.assertEqual(row, 3)
+
+    def test_find_row_by_url_longest_prefix_when_no_exact(self) -> None:
+        """With no exact row, choose the sheet row whose URL is the longest strict prefix of source."""
+        updater = GoogleSheetUpdater()
+        mock_service = MagicMock()
+        full = "https://data.cms.gov/a/b/c/d"
+        mid = "https://data.cms.gov/a/b/c"
+        short = "https://data.cms.gov/a/b"
+        mock_service.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
+            "values": [[short], [mid]]
+        }
+        row = updater._find_row_by_url(mock_service, "sheet1", "CDC", "A", full)
+        self.assertEqual(row, 3)
+
+    def test_find_row_by_url_shortest_extension_when_source_prefix_of_cell(self) -> None:
+        """When source is a strict prefix of sheet URLs, pick the shortest extending cell."""
+        updater = GoogleSheetUpdater()
+        mock_service = MagicMock()
+        src = "https://data.cms.gov/a/b"
+        ext1 = "https://data.cms.gov/a/b/c"
+        ext2 = "https://data.cms.gov/a/b/c/d"
+        mock_service.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
+            "values": [[ext2], [ext1]]
+        }
+        row = updater._find_row_by_url(mock_service, "sheet1", "CDC", "A", src)
+        self.assertEqual(row, 3)
+
+    def test_find_row_by_url_no_match(self) -> None:
+        """Unrelated URLs do not match via substring."""
+        updater = GoogleSheetUpdater()
+        mock_service = MagicMock()
+        mock_service.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
+            "values": [["https://other.example.com/x"]]
+        }
+        row = updater._find_row_by_url(
+            mock_service, "sheet1", "CDC", "A", "https://data.cms.gov/unrelated"
+        )
+        self.assertIsNone(row)
+
     def test_build_update_requests_formats_file_size(self) -> None:
         """Test _build_update_requests formats raw byte count as user-friendly size."""
         updater = GoogleSheetUpdater()
