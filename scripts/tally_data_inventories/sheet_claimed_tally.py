@@ -2,7 +2,7 @@
 Tally non-empty cells in columns whose header (row 1 and/or 2) includes the word \"claimed\".
 
 Uses a single authenticated XLSX export (docs.google.com export URL) — not per-cell Sheets API
-reads — then parses locally. Used by debug/tally_claimed_all_tabs.py.
+reads — then parses locally. Used by scripts/tally_data_inventories/tally_claimed_all_tabs.py.
 """
 
 from __future__ import annotations
@@ -62,6 +62,21 @@ class ClaimedTallyReport:
     claimed_without_download_location_by_sheet: tuple[tuple[str, int], ...]
     """Same rows as ``claimed_without_download_location_by_claimant``, counted by tab. Sorted by tab name."""
 
+    uploaded_entries_by_sheet: tuple[tuple[str, int], ...]
+    """Rows with at least one Download Location cell filled, counted by tab. Sorted by tab name."""
+
+    total_url_filled_entries: int
+    """Rows where URL column is non-empty (tabs with a URL header match)."""
+
+    total_uploaded_url_entries: int
+    """Rows where URL is non-empty and at least one Download Location cell is non-empty."""
+
+    total_remaining_claimed_entries: int
+    """Rows where URL is non-empty and Download Location is empty, with at least one claimed cell non-empty."""
+
+    total_remaining_unclaimed_entries: int
+    """Rows where URL is non-empty and Download Location is empty, with no claimed cells filled."""
+
     @property
     def total_claimed_entries(self) -> int:
         """Total non-empty cells counted in all matching columns (sum of occurrences)."""
@@ -71,6 +86,11 @@ class ClaimedTallyReport:
     def unique_claimant_count(self) -> int:
         """Number of distinct claimant strings."""
         return len(self.tally)
+
+    @property
+    def total_uploaded_entries(self) -> int:
+        """Total rows across all tabs where at least one Download Location cell is non-empty."""
+        return int(sum(count for _, count in self.uploaded_entries_by_sheet))
 
 
 def header_cell_matches_claimed(text: object) -> bool:
@@ -277,6 +297,20 @@ def _maybe_claimed_without_download_location(
     return claimant
 
 
+def _maybe_count_uploaded_row(
+    sheet_row: int,
+    row_list: List[object],
+    dl_cols: List[int],
+    dl_skips: Dict[int, int],
+) -> bool:
+    """True when this is a data row and any Download Location cell is non-empty."""
+    if not dl_cols:
+        return False
+    if not _row_is_data_for_skips(sheet_row, dl_cols, dl_skips):
+        return False
+    return not _all_dl_empty(row_list, dl_cols)
+
+
 def tally_claimed_from_xlsx_bytes(
     data: bytes,
     url_column_name: Optional[str] = None,
@@ -295,6 +329,11 @@ def tally_claimed_from_xlsx_bytes(
     unclaimed_by_sheet: Dict[str, int] = {}
     claimed_no_dl_by_claimant: Counter[str] = collections.Counter()
     claimed_no_dl_by_sheet: Dict[str, int] = {}
+    uploaded_by_sheet: Dict[str, int] = {}
+    total_url_filled = 0
+    total_uploaded_url = 0
+    total_remaining_claimed = 0
+    total_remaining_unclaimed = 0
 
     url_name = (url_column_name or "").strip() or None
 
@@ -320,13 +359,10 @@ def tally_claimed_from_xlsx_bytes(
             if not dl_cols:
                 no_dl.append(ws.title)
 
-            if not cols:
-                continue
-
             url_match: Optional[Tuple[int, int]] = None
             if url_name:
                 url_match = find_named_column_index_and_skip(row1, row2, url_name)
-                if url_match is None:
+                if cols and url_match is None:
                     no_url.append(ws.title)
 
             unclaimed_delta = 0
@@ -336,7 +372,7 @@ def tally_claimed_from_xlsx_bytes(
                 for ci in cols:
                     if sheet_row > skips[ci]:
                         _tally_cell(tally, row2, ci)
-                if url_match is not None:
+                if url_match is not None and cols:
                     url_ci, url_skip = url_match
                     if _maybe_count_unclaimed_url_row(sheet_row, row2, url_ci, url_skip, cols, skips):
                         unclaimed_delta += 1
@@ -346,13 +382,32 @@ def tally_claimed_from_xlsx_bytes(
                 if cl is not None:
                     claimed_no_dl_by_claimant[cl] += 1
                     claimed_no_dl_by_sheet[ws.title] = claimed_no_dl_by_sheet.get(ws.title, 0) + 1
+                if _maybe_count_uploaded_row(sheet_row, row2, dl_cols, dl_skips):
+                    uploaded_by_sheet[ws.title] = uploaded_by_sheet.get(ws.title, 0) + 1
+                if url_match is not None:
+                    url_ci, url_skip = url_match
+                    if sheet_row > url_skip and _cell_nonempty(row2, url_ci):
+                        total_url_filled += 1
+                        dl_is_empty = _all_dl_empty(row2, dl_cols) if dl_cols else True
+                        if dl_cols and _maybe_count_uploaded_row(sheet_row, row2, dl_cols, dl_skips):
+                            total_uploaded_url += 1
+                        elif dl_is_empty:
+                            claimed_nonempty = (
+                                cols
+                                and _row_is_data_for_skips(sheet_row, cols, skips)
+                                and not _all_claimed_empty(row2, cols)
+                            )
+                            if claimed_nonempty:
+                                total_remaining_claimed += 1
+                            else:
+                                total_remaining_unclaimed += 1
                 sheet_row = 3
                 for row in it:
                     row_list = list(row)
                     for ci in cols:
                         if sheet_row > skips[ci]:
                             _tally_cell(tally, row_list, ci)
-                    if url_match is not None:
+                    if url_match is not None and cols:
                         url_ci, url_skip = url_match
                         if _maybe_count_unclaimed_url_row(
                             sheet_row, row_list, url_ci, url_skip, cols, skips
@@ -366,6 +421,27 @@ def tally_claimed_from_xlsx_bytes(
                         claimed_no_dl_by_sheet[ws.title] = (
                             claimed_no_dl_by_sheet.get(ws.title, 0) + 1
                         )
+                    if _maybe_count_uploaded_row(sheet_row, row_list, dl_cols, dl_skips):
+                        uploaded_by_sheet[ws.title] = uploaded_by_sheet.get(ws.title, 0) + 1
+                    if url_match is not None:
+                        url_ci, url_skip = url_match
+                        if sheet_row > url_skip and _cell_nonempty(row_list, url_ci):
+                            total_url_filled += 1
+                            dl_is_empty = _all_dl_empty(row_list, dl_cols) if dl_cols else True
+                            if dl_cols and _maybe_count_uploaded_row(
+                                sheet_row, row_list, dl_cols, dl_skips
+                            ):
+                                total_uploaded_url += 1
+                            elif dl_is_empty:
+                                claimed_nonempty = (
+                                    cols
+                                    and _row_is_data_for_skips(sheet_row, cols, skips)
+                                    and not _all_claimed_empty(row_list, cols)
+                                )
+                                if claimed_nonempty:
+                                    total_remaining_claimed += 1
+                                else:
+                                    total_remaining_unclaimed += 1
                     sheet_row += 1
             else:
                 sheet_row = 2
@@ -374,7 +450,7 @@ def tally_claimed_from_xlsx_bytes(
                     for ci in cols:
                         if sheet_row > skips[ci]:
                             _tally_cell(tally, row_list, ci)
-                    if url_match is not None:
+                    if url_match is not None and cols:
                         url_ci, url_skip = url_match
                         if _maybe_count_unclaimed_url_row(
                             sheet_row, row_list, url_ci, url_skip, cols, skips
@@ -388,9 +464,30 @@ def tally_claimed_from_xlsx_bytes(
                         claimed_no_dl_by_sheet[ws.title] = (
                             claimed_no_dl_by_sheet.get(ws.title, 0) + 1
                         )
+                    if _maybe_count_uploaded_row(sheet_row, row_list, dl_cols, dl_skips):
+                        uploaded_by_sheet[ws.title] = uploaded_by_sheet.get(ws.title, 0) + 1
+                    if url_match is not None:
+                        url_ci, url_skip = url_match
+                        if sheet_row > url_skip and _cell_nonempty(row_list, url_ci):
+                            total_url_filled += 1
+                            dl_is_empty = _all_dl_empty(row_list, dl_cols) if dl_cols else True
+                            if dl_cols and _maybe_count_uploaded_row(
+                                sheet_row, row_list, dl_cols, dl_skips
+                            ):
+                                total_uploaded_url += 1
+                            elif dl_is_empty:
+                                claimed_nonempty = (
+                                    cols
+                                    and _row_is_data_for_skips(sheet_row, cols, skips)
+                                    and not _all_claimed_empty(row_list, cols)
+                                )
+                                if claimed_nonempty:
+                                    total_remaining_claimed += 1
+                                else:
+                                    total_remaining_unclaimed += 1
                     sheet_row += 1
 
-            if url_match is not None:
+            if url_match is not None and cols:
                 unclaimed_by_sheet[ws.title] = unclaimed_delta
     finally:
         wb.close()
@@ -404,6 +501,7 @@ def tally_claimed_from_xlsx_bytes(
         sorted(claimed_no_dl_by_claimant.items(), key=lambda x: (-x[1], x[0].lower()))
     )
     by_sheet_no_dl = tuple(sorted(claimed_no_dl_by_sheet.items()))
+    uploaded_by_sheet_tuple = tuple(sorted(uploaded_by_sheet.items()))
     return ClaimedTallyReport(
         tally=tally,
         sheets_without_claimed_column=no_claim_sorted,
@@ -414,6 +512,11 @@ def tally_claimed_from_xlsx_bytes(
         url_column_name=url_name,
         claimed_without_download_location_by_claimant=by_claimant_no_dl,
         claimed_without_download_location_by_sheet=by_sheet_no_dl,
+        uploaded_entries_by_sheet=uploaded_by_sheet_tuple,
+        total_url_filled_entries=total_url_filled,
+        total_uploaded_url_entries=total_uploaded_url,
+        total_remaining_claimed_entries=total_remaining_claimed,
+        total_remaining_unclaimed_entries=total_remaining_unclaimed,
     )
 
 

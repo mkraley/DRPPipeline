@@ -11,7 +11,7 @@ per-claimant counts sorted descending.
 
 Run from repo root:
 
-    python debug/tally_claimed_all_tabs.py
+    python scripts/tally_data_inventories/tally_claimed_all_tabs.py
 
 Uses config.json: google_sheet_id, google_credentials, and sourcing_url_column (default ``URL``)
 for the \"URL filled but all Claimed columns empty\" per-tab tally. Fetches the workbook once as XLSX.
@@ -21,14 +21,32 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_REPO_ROOT))
 
 from utils.Args import Args
-from utils.sheet_claimed_tally import ClaimedTallyReport, tally_claimed_across_tabs
+from scripts.tally_data_inventories.sheet_claimed_tally import ClaimedTallyReport, tally_claimed_across_tabs
 
 
 def _print_report(result: ClaimedTallyReport) -> None:
+    print(f'Total entries ("URL" non-empty): {result.total_url_filled_entries}')
+    print(
+        "Total uploaded (URL non-empty and Download Location non-empty): "
+        f"{result.total_uploaded_url_entries}"
+    )
+    print(
+        "Remaining (URL non-empty and Download Location empty) - claimed: "
+        f"{result.total_remaining_claimed_entries}"
+    )
+    print(
+        "Remaining (URL non-empty and Download Location empty) - not claimed: "
+        f"{result.total_remaining_unclaimed_entries}"
+    )
     print(f"Total claimed entries (non-empty cells): {result.total_claimed_entries}")
+    print(
+        "Total uploaded entries (rows with non-empty Download Location): "
+        f"{result.total_uploaded_entries}"
+    )
     print(f"Unique claimants: {result.unique_claimant_count}")
     print()
     if result.url_column_name:

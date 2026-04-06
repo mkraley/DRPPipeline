@@ -5,7 +5,7 @@ import unittest
 
 from openpyxl import Workbook
 
-from utils.sheet_claimed_tally import (
+from scripts.tally_data_inventories.sheet_claimed_tally import (
     ClaimedTallyReport,
     find_claimed_columns_with_header_skips,
     find_download_location_columns_with_header_skips,
@@ -103,6 +103,12 @@ class TestSheetClaimedTally(unittest.TestCase):
         self.assertEqual(result.url_column_name, "URL")
         self.assertEqual(result.claimed_without_download_location_by_claimant, ())
         self.assertEqual(result.claimed_without_download_location_by_sheet, ())
+        self.assertEqual(result.uploaded_entries_by_sheet, ())
+        self.assertEqual(result.total_uploaded_entries, 0)
+        self.assertEqual(result.total_url_filled_entries, 2)
+        self.assertEqual(result.total_uploaded_url_entries, 0)
+        self.assertEqual(result.total_remaining_claimed_entries, 2)
+        self.assertEqual(result.total_remaining_unclaimed_entries, 0)
         self.assertEqual(
             set(result.sheets_without_download_location_column),
             {"NoClaimCol", "TabA", "TabB"},
@@ -125,6 +131,8 @@ class TestSheetClaimedTally(unittest.TestCase):
         self.assertEqual(result.unique_claimant_count, 1)
         self.assertEqual(result.sheets_without_claimed_column, ())
         self.assertEqual(result.claimed_without_download_location_by_claimant, ())
+        self.assertEqual(result.uploaded_entries_by_sheet, ())
+        self.assertEqual(result.total_uploaded_entries, 0)
         self._assert_url_tally_skipped(result)
 
     def test_claimed_label_on_row2_data_starts_row3(self) -> None:
@@ -183,6 +191,12 @@ class TestSheetClaimedTally(unittest.TestCase):
         result = tally_claimed_from_xlsx_bytes(buf.getvalue())
         self.assertEqual(dict(result.claimed_without_download_location_by_claimant), {"Sue": 1})
         self.assertEqual(dict(result.claimed_without_download_location_by_sheet), {"Inv": 1})
+        self.assertEqual(dict(result.uploaded_entries_by_sheet), {"Inv": 1})
+        self.assertEqual(result.total_uploaded_entries, 1)
+        self.assertEqual(result.total_url_filled_entries, 0)
+        self.assertEqual(result.total_uploaded_url_entries, 0)
+        self.assertEqual(result.total_remaining_claimed_entries, 0)
+        self.assertEqual(result.total_remaining_unclaimed_entries, 0)
         self.assertEqual(result.sheets_without_download_location_column, ())
         self.assertEqual(result.sheets_missing_claimed_or_download_location, ())
 
@@ -193,14 +207,16 @@ class TestSheetClaimedTally(unittest.TestCase):
         ws1.append(["Claimed", "Download Location"])
         ws1.append(["X", ""])
         ws2 = wb.create_sheet("B")
-        ws2.append(["Who claimed", "DL"])
-        ws2.append(["x", "Download Location here"])
+        ws2.append(["Who claimed", "Download Location"])
+        ws2.append(["x", "https://example.com/file"])
         ws2.append(["Y", ""])
         buf = io.BytesIO()
         wb.save(buf)
         result = tally_claimed_from_xlsx_bytes(buf.getvalue())
         self.assertEqual(dict(result.claimed_without_download_location_by_claimant), {"X": 1, "Y": 1})
         self.assertEqual(dict(result.claimed_without_download_location_by_sheet), {"A": 1, "B": 1})
+        self.assertEqual(dict(result.uploaded_entries_by_sheet), {"B": 1})
+        self.assertEqual(result.total_uploaded_entries, 1)
 
     def test_unclaimed_url_rows_count_by_sheet(self) -> None:
         wb = Workbook()
@@ -217,6 +233,10 @@ class TestSheetClaimedTally(unittest.TestCase):
         self.assertEqual(result.sheets_without_url_column, ())
         self.assertEqual(result.claimed_without_download_location_by_claimant, ())
         self.assertEqual(result.sheets_without_download_location_column, ("Inv",))
+        self.assertEqual(result.total_url_filled_entries, 2)
+        self.assertEqual(result.total_uploaded_url_entries, 0)
+        self.assertEqual(result.total_remaining_claimed_entries, 1)
+        self.assertEqual(result.total_remaining_unclaimed_entries, 1)
 
     def test_unclaimed_url_multi_sheet(self) -> None:
         wb = Workbook()
@@ -232,6 +252,22 @@ class TestSheetClaimedTally(unittest.TestCase):
         wb.save(buf)
         result = tally_claimed_from_xlsx_bytes(buf.getvalue(), url_column_name="URL")
         self.assertEqual(dict(result.unclaimed_url_rows_by_sheet), {"One": 2, "Two": 1})
+
+    def test_url_and_download_totals_without_claimed_column(self) -> None:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Inv"
+        ws.append(["URL", "Download Location"])
+        ws.append(["http://a", ""])  # remaining, not claimed
+        ws.append(["http://b", "https://file"])  # uploaded
+        ws.append(["", "https://skip"])  # no URL, ignored
+        buf = io.BytesIO()
+        wb.save(buf)
+        result = tally_claimed_from_xlsx_bytes(buf.getvalue(), url_column_name="URL")
+        self.assertEqual(result.total_url_filled_entries, 2)
+        self.assertEqual(result.total_uploaded_url_entries, 1)
+        self.assertEqual(result.total_remaining_claimed_entries, 0)
+        self.assertEqual(result.total_remaining_unclaimed_entries, 1)
 
 
 if __name__ == "__main__":
