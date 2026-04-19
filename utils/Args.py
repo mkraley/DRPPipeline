@@ -82,6 +82,11 @@ class Args(metaclass=ArgsMeta):
         "datalumos_password": None,  # Required for upload; set in config file
         "upload_headless": False,  # Run browser in headless mode for upload
         "upload_timeout": 60000,  # Default timeout in ms for upload operations
+        # Browser viewport; when upload_record_video_dir is set, record_video_size matches this
+        "upload_viewport_width": 1920,
+        "upload_viewport_height": 1080,
+        # When set (directory path), Playwright saves a WebM per page when the context closes (upload/publisher/cleanup)
+        "upload_record_video_dir": None,
         # GWDA nomination (before DataLumos upload; gwda_your_name required in config)
         "gwda_your_name": "",
         "gwda_institution": "Data Rescue Project",

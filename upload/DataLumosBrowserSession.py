@@ -4,7 +4,8 @@ Shared browser session for DataLumos (upload and publisher).
 Provides ensure_browser(), ensure_authenticated(), and close() using Args for config.
 """
 
-from typing import Optional
+from pathlib import Path
+from typing import Any, Optional
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 
@@ -16,7 +17,8 @@ class DataLumosBrowserSession:
     """
     Shared Playwright browser session for DataLumos workflows.
 
-    Reads Args.upload_headless, Args.upload_timeout, Args.datalumos_username,
+    Reads Args.upload_headless, Args.upload_timeout, Args.upload_viewport_width,
+    Args.upload_viewport_height, Args.upload_record_video_dir, Args.datalumos_username,
     Args.datalumos_password. Call ensure_browser() then ensure_authenticated()
     before using the page; call close() when done.
     """
@@ -44,15 +46,33 @@ class DataLumosBrowserSession:
                 "--no-sandbox",
             ],
         )
-        self._context = self._browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent=(
+        viewport = {
+            "width": int(Args.upload_viewport_width),
+            "height": int(Args.upload_viewport_height),
+        }
+        ctx_kwargs: dict[str, Any] = {
+            "viewport": viewport,
+            "user_agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
             ),
-            locale="en-US",
-            timezone_id="America/New_York",
-        )
+            "locale": "en-US",
+            "timezone_id": "America/New_York",
+        }
+        record_dir = Args.upload_record_video_dir
+        if record_dir:
+            out_dir = Path(str(record_dir)).expanduser()
+            ctx_kwargs["record_video_dir"] = str(out_dir)
+            ctx_kwargs["record_video_size"] = viewport
+            try:
+                resolved = str(out_dir.resolve())
+            except OSError:
+                resolved = str(out_dir)
+            Logger.info(
+                "Playwright video recording enabled; WebM files are written under %s when the session closes.",
+                resolved,
+            )
+        self._context = self._browser.new_context(**ctx_kwargs)
         self._context.set_default_timeout(Args.upload_timeout)
         self._page = self._context.new_page()
         return self._page
