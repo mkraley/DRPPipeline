@@ -110,7 +110,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
         return;
       }
       fetchPdfAndPostToCollector(stored.collectorBase, stored.drpid, pdfUrl, tab && tab.url ? tab.url : null, null)
-        .then(result => { if (result.ok) console.log("[DRP] PDF saved:", result.filename); else console.warn("[DRP] Save failed:", result.error); })
+        .then(result => { if (!result || !result.ok) console.warn("[DRP] Save failed:", result && result.error); })
         .catch(e => console.warn("[DRP] Save failed:", e));
     });
     return;
@@ -129,7 +129,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       }
       const pageTitle = (tab.title || "").trim();
       fetchPdfAndPostToCollector(stored.collectorBase, stored.drpid, pdfUrl, null, pageTitle)
-        .then(result => { if (result.ok) console.log("[DRP] PDF saved:", result.filename); else console.warn("[DRP] Save failed:", result.error); })
+        .then(result => { if (!result || !result.ok) console.warn("[DRP] Save failed:", result && result.error); })
         .catch(e => console.warn("[DRP] Save failed:", e));
     });
   }
@@ -173,19 +173,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "drp-metadata-from-page") {
     const { collectorBase, payload } = msg;
-    console.log("[DRP meta] background: received metadata-from-page", { collectorBase, drpid: payload && payload.drpid, keys: payload && Object.keys(payload) });
     if (!collectorBase || !payload) {
-      console.log("[DRP meta] background: bail missing collectorBase or payload");
       sendResponse({ ok: false });
       return true;
     }
     postMetadataFromPage(collectorBase, payload)
       .then((data) => {
-        console.log("[DRP meta] background: POST result", data);
         sendResponse(data);
       })
-      .catch((err) => {
-        console.log("[DRP meta] background: POST failed", err);
+      .catch(() => {
         sendResponse({ ok: false });
       });
     return true;

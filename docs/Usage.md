@@ -469,7 +469,9 @@ Most modules run as batch processes. The Interactive collector is the exception.
 Make sure you have installed the browser extension. See [Setup](Setup.md#browser-extension-optional)
 
 Start the collector by pressing the `Interactive collector` button.
-The UI will initally load the first project eligible for collection. Now press **Copy & Open**. The source URL for the project will open in another tab.
+The UI will initially load the first project eligible for collection. Now press **Copy & Open**. The source URL for the project will open in another tab.
+
+**Add** (SPA toolbar): use this when you want to collect a page that is not already in the database as the next eligible project. Click **Add**, enter a **source URL** in the prompt (`http` or `https` only), and confirm. The backend creates a new row (`Storage.create_record`), sets `status` to `sourced` (same as sourcing), returns a new **DRPID**, loads that project in the UI, then runs the same **Copy & Open** flow (launcher URL, extension context, downloads watcher). If that URL already exists as a project’s `source_url`, the server responds with an error and nothing is created.
 A **Save as PDF** button will be overlaid in the lower right corner. Press this convert the current web page's HTML to PDF and save it in the output folder created for this project. 
 Now explore the links on the source page to find other relevant pages and/or datasets. As you encounter HTML pages of interest, press **Save as PDF**. If you click on a link which results in a download that would otherwise end up in your Downloads folder, the collector will intercept the downloaded file and move it to the output folder for the project. 
 

@@ -2,12 +2,10 @@
  * Runs in page context (injected via script src). Loads html2pdf, html2canvas, jsPDF
  * and listens for drp-generate-pdf; generates PDF (chunked for long pages to avoid
  * canvas size limits), converts to base64, dispatches drp-pdf-ready.
- * Before capture, expands "read more", "Show more", and accordions (Socrata + CMS).
+ * Before capture, expands "read more", "Show more", accordions (Socrata + CMS),
+ * and dataset toggles such as "+ Show Full Description" / "Show all data fields".
  */
 (function () {
-  try {
-    console.log("[DRP expand] page.js loaded");
-  } catch (e) {}
   var base = document.currentScript.src.replace(/\/[^/]*$/, "/");
   var CHUNK_HEIGHT = 6000;
   var MAX_HEIGHT_SINGLE = 7000;
@@ -25,18 +23,10 @@
    * - CMS: accordions - expand one at a time, re-query after each (Bootstrap/React)
    * Returns { readMore, showMore, accordions } counts.
    */
-  var DRP_DEBUG = true;
-  function drpLog() {
-    if (DRP_DEBUG && typeof console !== "undefined" && console.log) {
-      var a = ["[DRP expand]"];
-      for (var i = 0; i < arguments.length; i++) a.push(arguments[i]);
-      console.log.apply(console, a);
-    }
-  }
-
   function expandForPdf() {
-    drpLog("start");
-    var readMore = 0, showMore = 0, accordions = 0;
+    var readMore = 0, showMore = 0, accordions = 0, fullDescription = 0, dataFields = 0, collapsePanels = 0;
+    /** Skip same DOM node across pulse rounds (was re-clicking #showMore 8× while UI stayed closed). */
+    var clickedOnceForPdf = new WeakSet();
     function safeClick(el, scrollIntoView) {
       try {
         if (!el) return false;
@@ -71,8 +61,304 @@
     for (var i = 0; i < sel.length; i++) {
       if (safeClick(sel[i])) readMore++;
     }
-    drpLog("Socrata read more: found", sel.length, "clicked", readMore);
     return wait(300)
+      .then(function () {
+        return wait(1200);
+      })
+      .then(function () {
+        // data.gov / Drupal / Bootstrap toggles: "+ Show Full Description", "Show all data fields".
+        // These are often inside Shadow DOM or hydrate after load — shallow querySelector misses them.
+
+        function normalizeLabel(s) {
+          return (s || "").replace(/[\s\u00a0]+/g, " ").trim();
+        }
+
+        /** Visible label for matching (Drupal/React often put wording in aria-label only). */
+        function effectiveToggleLabel(el) {
+          if (!el || !el.getAttribute) return normalizeLabel(el && el.textContent);
+          var bits = [];
+          var al = el.getAttribute("aria-label");
+          if (al) bits.push(al);
+          var tl = el.getAttribute("title");
+          if (tl) bits.push(tl);
+          bits.push(el.textContent || "");
+          return normalizeLabel(bits.join(" "));
+        }
+
+        /** Strip leading + / fullwidth plus / spaces so "+Show all…" matches show… patterns. */
+        function labelForTextMatch(el) {
+          var s = effectiveToggleLabel(el);
+          return normalizeLabel(s)
+            .replace(/^[\uFEFF\u200B]+/g, "")
+            .replace(/^[\+\uFF0B\u2795\s\u00a0]+/g, "")
+            .trim();
+        }
+
+        function isToggleLike(el) {
+          if (!el || el.nodeType !== 1) return false;
+          var tag = el.tagName;
+          if (tag === "BUTTON") return true;
+          if (tag === "SUMMARY") return true;
+          // Anchor toggles often omit href (e.g. DOL <a class="showMore" id="showMore" tabindex="0">).
+          if (tag === "A") {
+            if (el.hasAttribute("href")) return true;
+            var ti = el.getAttribute("tabindex");
+            if (ti !== null && ti !== "" && ti !== "-1") return true;
+            if (el.classList && el.classList.contains("showMore")) return true;
+            if (el.id === "showMore") return true;
+          }
+          if (tag === "INPUT" && (el.type === "button" || el.type === "submit")) return true;
+          var role = (el.getAttribute("role") || "").toLowerCase();
+          if (role === "button" || role === "link" || role === "tab") return true;
+          var dt = (el.getAttribute("data-bs-toggle") || el.getAttribute("data-toggle") || "").toLowerCase();
+          if (dt && dt.indexOf("collapse") !== -1) return true;
+          if (el.classList && el.classList.contains("btn")) return true;
+          if (el.classList && el.classList.contains("usa-accordion__button")) return true;
+          if (el.classList && el.classList.contains("fieldset-title")) return true;
+          return false;
+        }
+
+        function walkInteractiveDeep(root, out) {
+          if (!root || root.nodeType !== 1) return;
+          if (isToggleLike(root)) out.push(root);
+          var sr = root.shadowRoot;
+          if (sr) walkInteractiveDeep(sr, out);
+          for (var c = root.firstElementChild; c; c = c.nextElementSibling) {
+            walkInteractiveDeep(c, out);
+          }
+        }
+
+        function collectInteractiveDeep() {
+          var out = [];
+          walkInteractiveDeep(document.documentElement, out);
+          var iframes = document.getElementsByTagName("iframe");
+          for (var f = 0; f < iframes.length; f++) {
+            try {
+              var idoc = iframes[f].contentDocument;
+              if (idoc && idoc.documentElement) walkInteractiveDeep(idoc.documentElement, out);
+            } catch (e) {}
+          }
+          return out;
+        }
+
+        function expandBootstrapTargetFromTrigger(el) {
+          try {
+            var root = el.ownerDocument || document;
+            var sel = (el.getAttribute && (el.getAttribute("data-bs-target") || el.getAttribute("data-target"))) || "";
+            if (!sel) {
+              var href = el.getAttribute && el.getAttribute("href");
+              if (href && href.charAt(0) === "#") sel = href;
+            }
+            if (!sel || sel.charAt(0) !== "#") return false;
+            var tgt = root.querySelector(sel);
+            if (!tgt || !tgt.classList || !tgt.classList.contains("collapse")) return false;
+            if (tgt.classList.contains("show")) return true;
+            tgt.classList.add("show");
+            tgt.style.height = "auto";
+            tgt.style.overflow = "visible";
+            if (el.setAttribute) el.setAttribute("aria-expanded", "true");
+            if (el.classList) el.classList.remove("collapsed");
+            return true;
+          } catch (_) {
+            return false;
+          }
+        }
+
+        function clickToggleOnce(el) {
+          try {
+            el.scrollIntoView({ block: "nearest", behavior: "auto" });
+          } catch (_) {}
+          try {
+            var det = el.closest && el.closest("details");
+            if (el.tagName === "SUMMARY" && det) {
+              det.open = true;
+              return true;
+            }
+          } catch (_) {}
+          if (expandBootstrapTargetFromTrigger(el)) return true;
+          if (safeClickWithDispatch(el, false)) return true;
+          return safeClick(el, false);
+        }
+
+        function expandNonAccordionCollapsesInDocument(doc) {
+          if (!doc || !doc.querySelectorAll) return 0;
+          var n = 0;
+          var sel = doc.querySelectorAll(".collapse:not(.show)");
+          for (var i = 0; i < sel.length; i++) {
+            var panel = sel[i];
+            if (panel.classList.contains("accordion-collapse")) continue;
+            panel.classList.add("show");
+            panel.style.height = "auto";
+            panel.style.overflow = "visible";
+            var pid = panel.id;
+            if (pid) {
+              var trig = doc.querySelector(
+                "[aria-controls=\"" + pid + "\"], [href=\"#" + pid + "\"], [data-bs-target=\"#" + pid + "\"], [data-target=\"#" + pid + "\"]"
+              );
+              if (trig) {
+                trig.setAttribute("aria-expanded", "true");
+                if (trig.classList) trig.classList.remove("collapsed");
+              }
+            }
+            n++;
+          }
+          return n;
+        }
+
+        function expandAllDetailsInDocument(doc) {
+          if (!doc || !doc.querySelectorAll) return 0;
+          var n = 0;
+          var dets = doc.querySelectorAll("details:not([open])");
+          for (var i = 0; i < dets.length; i++) {
+            try {
+              dets[i].open = true;
+              n++;
+            } catch (_) {}
+          }
+          return n;
+        }
+
+        /**
+         * Drupal fieldsets (e.g. DOL data.dol.gov): "Show all data fields" is often a
+         * legend link; the fieldset may use .collapsed or only hide .fieldset-wrapper.
+         */
+        function expandDrupalFieldsetsByLabel(doc, re) {
+          if (!doc || !doc.querySelectorAll) return 0;
+          var n = 0;
+          var seen = {};
+          var links = doc.querySelectorAll("fieldset legend a, fieldset legend button");
+          for (var i = 0; i < links.length; i++) {
+            var link = links[i];
+            if (!re.test(labelForTextMatch(link))) continue;
+            var fs = link.closest && link.closest("fieldset");
+            if (!fs || seen[fs]) continue;
+            seen[fs] = 1;
+            fs.classList.remove("collapsed");
+            fs.classList.remove("js-fieldset-collapsed");
+            var wrap = fs.querySelector(".fieldset-wrapper");
+            if (wrap) {
+              wrap.style.display = "";
+              wrap.style.visibility = "visible";
+              wrap.style.height = "auto";
+              wrap.style.maxHeight = "none";
+            }
+            link.setAttribute("aria-expanded", "true");
+            try {
+              link.click();
+            } catch (_) {}
+            n++;
+          }
+          return n;
+        }
+
+        function clickElementsMatchingText(re) {
+          var n = 0;
+          var nodes = collectInteractiveDeep();
+          var seen = {};
+          for (var i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            if (seen[el]) continue;
+            if (clickedOnceForPdf.has(el)) continue;
+            var t = labelForTextMatch(el);
+            if (!re.test(t)) continue;
+            seen[el] = 1;
+            if (clickToggleOnce(el)) {
+              n++;
+              clickedOnceForPdf.add(el);
+            }
+          }
+          return n;
+        }
+
+        /** DOL uses jQuery .click() handlers; native click() may not run them. page.js runs in page world. */
+        function tryJqueryTriggerShowMore() {
+          try {
+            var $ = window.jQuery || window.$;
+            if (!$ || !$.fn || !$.fn.trigger) return;
+            var sm = document.getElementById("showMore");
+            if (!sm || !sm.classList || !sm.classList.contains("showMore")) return;
+            $(sm).trigger("click");
+          } catch (e) {}
+        }
+
+        /** If JS handlers never ran, unhide siblings / parent row (Drupal collapse pattern). */
+        function revealDolDataFieldsNearShowMore() {
+          var sm = document.getElementById("showMore");
+          if (!sm) return;
+          function reveal(el) {
+            if (!el || el.nodeType !== 1) return;
+            try {
+              el.classList.remove("hidden", "u-hidden", "hide", "d-none", "collapse");
+              el.classList.add("show");
+              el.removeAttribute("hidden");
+            } catch (_) {}
+            try {
+              if (el.style && String(el.style.display).toLowerCase() === "none") el.style.display = "block";
+              el.style.visibility = "visible";
+              el.style.maxHeight = "none";
+              el.style.height = "auto";
+              el.style.overflow = "visible";
+            } catch (_) {}
+          }
+          var p = sm.parentElement;
+          if (p) {
+            var after = false;
+            for (var i = 0; i < p.children.length; i++) {
+              var kid = p.children[i];
+              if (kid === sm) {
+                after = true;
+                continue;
+              }
+              if (after) reveal(kid);
+            }
+          }
+        }
+
+        function pulseExpandByText(re, maxRounds, delayMs) {
+          var total = 0;
+          var round = 0;
+          function step() {
+            var k = clickElementsMatchingText(re);
+            total += k;
+            round++;
+            if (k > 0 && round < maxRounds) return wait(delayMs).then(step);
+            return Promise.resolve(total);
+          }
+          return step();
+        }
+
+        // Partial labels (sites vary: "Show full description", typos, etc.)
+        var reFullDesc = /show\s+full\s+desc/i;
+        // DOL / Drupal: "+Show all data fields", optional + / spaces; columns / dictionary wording
+        var reDataFields =
+          /\+?\s*show\s+all\s+(data\s+)?fields?|show\s+all\s+(data\s+)?fields?|view\s+all\s+(data\s+)?fields?|all\s+data\s+fields?|show\s+all\s+columns?|expand\s+(all\s+)?(data\s+)?fields?|field\s+list|data\s+dictionary/i;
+
+        return pulseExpandByText(reFullDesc, 8, 500)
+          .then(function (n) {
+            fullDescription = n;
+            return pulseExpandByText(reDataFields, 8, 600);
+          })
+          .then(function (n) {
+            dataFields = n;
+            var fsMain = expandDrupalFieldsetsByLabel(document, reDataFields);
+            dataFields += fsMain;
+            collapsePanels += expandNonAccordionCollapsesInDocument(document);
+            collapsePanels += expandAllDetailsInDocument(document);
+            var iframes = document.getElementsByTagName("iframe");
+            for (var f = 0; f < iframes.length; f++) {
+              try {
+                var idoc = iframes[f].contentDocument;
+                if (idoc) {
+                  dataFields += expandDrupalFieldsetsByLabel(idoc, reDataFields);
+                  collapsePanels += expandNonAccordionCollapsesInDocument(idoc);
+                  collapsePanels += expandAllDetailsInDocument(idoc);
+                }
+              } catch (e) {}
+            }
+            tryJqueryTriggerShowMore();
+            revealDolDataFieldsNearShowMore();
+          });
+      })
       .then(function () {
         // CMS "Show more" - may load more content; keep clicking until no new buttons (max 15 rounds)
         var round = 0, maxRounds = 15;
@@ -101,7 +387,6 @@
           for (var j = 0; j < sel.length; j++) {
             if (safeClick(sel[j])) showMore++;
           }
-          drpLog("Show more round", round + 1, "found", sel.length, "clicked this round", sel.length, "total showMore", showMore);
           round++;
           if (sel.length > 0 && round < maxRounds) {
             return wait(500).then(doShowMore);
@@ -125,15 +410,20 @@
           }
           accordions++;
         }
-        if (panels.length > 0) drpLog("accordions: expanded", panels.length, "via DOM");
         return wait(400);
       })
       .then(function () {
         return wait(600);
       })
       .then(function () {
-        drpLog("done", { readMore: readMore, showMore: showMore, accordions: accordions });
-        return { readMore: readMore, showMore: showMore, accordions: accordions };
+        return {
+          readMore: readMore,
+          showMore: showMore,
+          accordions: accordions,
+          fullDescription: fullDescription,
+          dataFields: dataFields,
+          collapsePanels: collapsePanels,
+        };
       });
   }
 
@@ -147,9 +437,6 @@
   }
 
   function run() {
-    try {
-      console.log("[DRP expand] in-page PDF ready (html2pdf loaded)");
-    } catch (e) {}
     document.dispatchEvent(new CustomEvent("drp-page-ready"));
     var h = window.html2pdf;
     var fn = typeof h === "function" ? h : h && h.default;
@@ -367,9 +654,6 @@
 
   // Expansion can run as soon as this script loads; PDF libs only needed for in-page PDF path.
   function attachExpandOnly() {
-    try {
-      console.log("[DRP expand] ready for expansion");
-    } catch (e) {}
     document.dispatchEvent(new CustomEvent("drp-expand-ready"));
     document.addEventListener("drp-expand-for-pdf", function () {
       expandForPdf()

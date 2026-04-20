@@ -6,8 +6,11 @@ Provides project listing, next-eligible lookup, and output folder creation
 for the Interactive Collector SPA.
 """
 
+import sqlite3
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+from utils.url_utils import is_valid_url
 
 from interactive_collector.collector_state import get_base_output_dir, get_db_path, get_result_by_drpid
 
@@ -100,6 +103,39 @@ def ensure_output_folder(drpid: int) -> Optional[str]:
     path_str = str(folder_path)
     result[drpid] = {"folder_path": path_str}
     return path_str
+
+
+def add_project_with_source_url(source_url: str) -> Dict[str, Any]:
+    """
+    Insert a new project with the given source_url and set status to sourced.
+
+    Matches sourcing outcomes so the row is eligible for Next / first load.
+
+    Args:
+        source_url: HTTP or HTTPS URL (trimmed).
+
+    Returns:
+        Dict with DRPID and source_url.
+
+    Raises:
+        ValueError: If URL is missing or invalid, or source_url is already in the DB.
+    """
+    url = (source_url or "").strip()
+    if not url or not is_valid_url(url):
+        raise ValueError("valid source_url is required")
+
+    _ensure_storage()
+    from storage import Storage
+
+    try:
+        drpid = Storage.create_record(url)
+    except sqlite3.IntegrityError as e:
+        raise ValueError("duplicate_source_url") from e
+
+    Storage.update_record(drpid, {"status": "sourced"})
+    rec = Storage.get(drpid) or {}
+    stored_url = (rec.get("source_url") or url).strip()
+    return {"DRPID": drpid, "source_url": stored_url}
 
 
 def folder_path_for_drpid(display_drpid: Optional[str]) -> Optional[str]:

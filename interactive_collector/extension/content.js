@@ -14,12 +14,6 @@
   const WATCHER_POLL_MS = 25000;
   var pageScriptInjected = false;
   var watcherPollTimer = null;
-  var DRP_META_DEBUG = true;
-  function drpLog() {
-    if (DRP_META_DEBUG && typeof console !== "undefined" && console.log) {
-      console.log.apply(console, ["[DRP meta]"].concat(Array.prototype.slice.call(arguments)));
-    }
-  }
 
   function isLauncherPage() {
     return LAUNCHER_MATCH.test(window.location.pathname);
@@ -174,12 +168,6 @@
 
     var today = new Date();
     meta.download_date = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0") + "-" + String(today.getDate()).padStart(2, "0");
-    drpLog("extract result", {
-      title: meta.title ? meta.title.substring(0, 50) + (meta.title.length > 50 ? "..." : "") : null,
-      summaryLen: meta.summary ? meta.summary.length : 0,
-      keywords: meta.keywords ? meta.keywords.substring(0, 40) + "..." : null,
-      agency: meta.agency || null
-    });
     return meta;
   }
 
@@ -193,9 +181,7 @@
   }
 
   function doSendMetadataFromPage(collectorBase, drpid, sourcePageUrl, allowSameHostMetadataOnce) {
-    drpLog("doSendMetadataFromPage", { collectorBase: collectorBase, drpid: drpid, sourcePageUrl: sourcePageUrl });
     if (!sourcePageUrl) {
-      drpLog("bail: no sourcePageUrl");
       return;
     }
     var currentKey = urlOriginAndPath(window.location.href);
@@ -205,23 +191,18 @@
     var sourceHost = urlHost(sourcePageUrl);
     var sameHost = currentHost && sourceHost && currentHost === sourceHost;
     var allowSend = exactMatch || (sameHost && allowSameHostMetadataOnce);
-    drpLog("URL check", { currentKey: currentKey, sourceKey: sourceKey, exactMatch: exactMatch, sameHost: sameHost, allowSameHostOnce: !!allowSameHostMetadataOnce, allowSend: allowSend });
     if (!allowSend) {
-      drpLog("bail: not source URL and no one-time same-host allowance (or already used)");
       return;
     }
     var meta = extractMetadataFromPage();
     meta.drpid = parseInt(drpid, 10);
     delete meta.office;
-    drpLog("extracted meta keys", Object.keys(meta), "title?", !!meta.title, "summary?", !!meta.summary);
     if (Object.keys(meta).length <= 1) {
-      drpLog("bail: too few keys (will not POST)");
       return;
     }
     chrome.runtime.sendMessage(
       { type: "drp-metadata-from-page", collectorBase: collectorBase, payload: meta },
       function (response) {
-        drpLog("POST response", response);
         if (response && response.ok) {
           chrome.storage.local.remove(["sourcePageUrl", "allowSameHostMetadataOnce"]).catch(function () {});
         }
@@ -240,13 +221,10 @@
   }
 
   function sendMetadataFromPageIfSource(collectorBase, drpid, sourcePageUrl, allowSameHostMetadataOnce) {
-    drpLog("sendMetadataFromPageIfSource", { isCms: isCmsDomain() });
     if (!collectorBase || !drpid || !sourcePageUrl) {
-      drpLog("bail: missing collectorBase, drpid, or sourcePageUrl");
       return;
     }
     if (isCmsDomain()) {
-      drpLog("CMS: starting wait-for-content then extract");
       var delays = [3000, 6000, 10000];
       var attempt = 0;
       var pollMs = 400;
@@ -255,8 +233,6 @@
       function waitThenExtract() {
         var ready = cmsContentReady();
         var elapsed = Date.now() - pollStart;
-        if (elapsed >= pollMax) drpLog("CMS: content wait timeout after " + (pollMax / 1000) + "s, extracting anyway");
-        if (ready) drpLog("CMS: content ready after " + (elapsed / 1000).toFixed(1) + "s");
         if (ready || elapsed >= pollMax) {
           tryExtract();
           return;
@@ -265,19 +241,15 @@
       }
       function tryExtract() {
         var m = extractMetadataFromPage();
-        drpLog("CMS tryExtract attempt " + (attempt + 1), "title?", !!m.title, "summary?", !!m.summary);
         if (m.title || m.summary) {
-          drpLog("CMS: got title or summary, sending");
           doSendMetadataFromPage(collectorBase, drpid, sourcePageUrl, allowSameHostMetadataOnce);
           return;
         }
         attempt++;
         if (attempt < delays.length) {
           var nextMs = attempt === 1 ? 3000 : (delays[attempt] - delays[attempt - 1]);
-          drpLog("CMS: retry in " + (nextMs / 1000) + "s");
           setTimeout(tryExtract, nextMs);
         } else {
-          drpLog("CMS: no more retries, sending what we have");
           doSendMetadataFromPage(collectorBase, drpid, sourcePageUrl, allowSameHostMetadataOnce);
         }
       }
@@ -308,9 +280,7 @@
     chrome.storage.local.get(["drpid", "collectorBase", "sourcePageUrl", "allowSameHostMetadataOnce"]).then(
       function (stored) {
         var drpid = stored.drpid, collectorBase = stored.collectorBase, sourcePageUrl = stored.sourcePageUrl, allowSameHostMetadataOnce = stored.allowSameHostMetadataOnce;
-        drpLog("storage get", { drpid: drpid, collectorBase: collectorBase, sourcePageUrl: sourcePageUrl, allowSameHostOnce: !!allowSameHostMetadataOnce });
         if (!drpid || !collectorBase) {
-          drpLog("bail: missing drpid or collectorBase");
           removeCollectorButtons();
           clearWatcherPoll();
           return;
@@ -318,17 +288,13 @@
         chrome.runtime.sendMessage({ type: "drp-watcher-status", collectorBase: collectorBase }).then(
           function (res) {
             if (!res || !res.watching) {
-              drpLog("watcher not active – hide button and clear storage");
               removeCollectorButtons();
               clearWatcherPoll();
               chrome.storage.local.remove(["drpid", "collectorBase", "sourcePageUrl", "allowSameHostMetadataOnce"]).catch(function () {});
               return;
             }
-            if (!sourcePageUrl) drpLog("no sourcePageUrl – metadata preload will not run");
             if (!isLauncherPage()) {
               sendMetadataFromPageIfSource(collectorBase, drpid, sourcePageUrl, allowSameHostMetadataOnce);
-            } else {
-              drpLog("on launcher page – skip metadata preload until redirect to target");
             }
             addSaveButton();
             startWatcherPoll(collectorBase);
@@ -393,6 +359,70 @@
     (document.head || document.documentElement).appendChild(s);
   }
 
+  /**
+   * Clicks that must run in the *content-script* world on the same synchronous turn as the
+   * user's Save click. After `await chrome.storage…` or `await runExpandForPdf()`, user
+   * activation is gone and React/DOL may ignore clicks dispatched from injected page.js.
+   * DOL: <a class="showMore" id="showMore" tabindex="0">+Show all data fields</a>
+   */
+  function trustedClicksForPdfExpansion() {
+    function labelLooksLikeShowAllDataFields(el) {
+      var raw = ((el.getAttribute && el.getAttribute("aria-label")) || "") + " " + (el.textContent || "");
+      var t = raw.replace(/[\s\u00a0]+/g, " ").trim().replace(/^[\+\uFF0B\s]+/, "");
+      return /show\s+all|all\s+data\s+fields?|data\s+fields?/i.test(t);
+    }
+    function tryClick(el) {
+      if (!el || typeof el.click !== "function") return;
+      if (!labelLooksLikeShowAllDataFields(el)) return;
+      try {
+        el.scrollIntoView({ block: "nearest", behavior: "auto" });
+      } catch (e) {}
+      try {
+        if (el.focus) el.focus();
+      } catch (e) {}
+      try {
+        el.click();
+      } catch (e) {}
+    }
+    tryClick(document.getElementById("showMore"));
+    var links = document.querySelectorAll("a.showMore");
+    for (var i = 0; i < links.length; i++) {
+      tryClick(links[i]);
+    }
+  }
+
+  /** Unhide panels after #showMore when Drupal/jQuery handlers did not run (see page.js twin). */
+  function dolRevealDataFieldsNearShowMoreInContentScript() {
+    var sm = document.getElementById("showMore");
+    if (!sm) return;
+    function reveal(el) {
+      if (!el || el.nodeType !== 1) return;
+      try {
+        el.classList.remove("hidden", "u-hidden", "hide", "d-none");
+        el.classList.add("show");
+        el.removeAttribute("hidden");
+      } catch (e) {}
+      try {
+        if (el.style && String(el.style.display).toLowerCase() === "none") el.style.display = "block";
+        el.style.visibility = "visible";
+        el.style.maxHeight = "none";
+        el.style.height = "auto";
+        el.style.overflow = "visible";
+      } catch (e2) {}
+    }
+    var p = sm.parentElement;
+    if (!p) return;
+    var after = false;
+    for (var i = 0; i < p.children.length; i++) {
+      var kid = p.children[i];
+      if (kid === sm) {
+        after = true;
+        continue;
+      }
+      if (after) reveal(kid);
+    }
+  }
+
   /** Run expansion in the page (read more, show more, accordions), then resolve. Used before print-to-PDF. */
   function runExpandForPdf() {
     return new Promise((resolve) => {
@@ -443,18 +473,12 @@
       };
       document.addEventListener("drp-pdf-ready", onReady);
       document.addEventListener("drp-pdf-error", onErr);
-      try {
-        console.log("[DRP] In-page PDF: waiting for page script...");
-      } catch (e) {}
       let dispatched = false;
       const onPageReady = () => {
         if (dispatched) return;
         dispatched = true;
         document.removeEventListener("drp-page-ready", onPageReady);
         clearTimeout(pageReadyTimeout);
-        try {
-          console.log("[DRP] In-page PDF: dispatching drp-generate-pdf (expansion will run; look for [DRP expand] in console)");
-        } catch (e) {}
         document.dispatchEvent(new CustomEvent("drp-generate-pdf", { detail: { collectorBase } }));
       };
       document.addEventListener("drp-page-ready", onPageReady);
@@ -462,9 +486,6 @@
         if (dispatched) return;
         dispatched = true;
         document.removeEventListener("drp-page-ready", onPageReady);
-        try {
-          console.log("[DRP] In-page PDF: page script not ready in 15s, dispatching anyway");
-        } catch (e) {}
         document.dispatchEvent(new CustomEvent("drp-generate-pdf", { detail: { collectorBase } }));
       }, 15000);
     });
@@ -496,6 +517,7 @@
     document.body.appendChild(btn);
 
     btn.addEventListener("click", async () => {
+      trustedClicksForPdfExpansion();
       var stored;
       try {
         stored = await chrome.storage.local.get(["drpid", "collectorBase"]);
@@ -516,9 +538,12 @@
       btn.textContent = "Saving...";
       showToast("Expanding content...", false);
       try {
-        console.log("[DRP] Save as PDF clicked");
         injectPageScript();
         await runExpandForPdf();
+        dolRevealDataFieldsNearShowMoreInContentScript();
+        await new Promise(function (r) {
+          setTimeout(r, 400);
+        });
         showToast("Generating PDF...", false);
         var res = await chrome.runtime.sendMessage({
           type: "drp-print-to-pdf",
@@ -529,12 +554,10 @@
           title: (document.title || "").trim() || "",
         });
         if (res && res.ok) {
-          console.log("[DRP] PDF saved via print (page was expanded first)");
           showToast("Saved: " + (res.filename || "OK"), false);
           return;
         }
         if (res && res.fallback) {
-          console.log("[DRP] Using in-page PDF (expansion will run)");
           showToast("Using alternative PDF method...", false);
           const pdfBase64 = await createPdfBlob(collectorBase);
           if (!pdfBase64 || typeof pdfBase64 !== "string") {

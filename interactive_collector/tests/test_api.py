@@ -3,6 +3,7 @@ Unit tests for the Interactive Collector JSON API.
 """
 
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -105,6 +106,109 @@ class TestApiProjectsLoad(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
         data = json.loads(resp.data)
         self.assertIn("error", data)
+
+
+class TestApiProjectsAdd(unittest.TestCase):
+    """Tests for POST /api/projects/add."""
+
+    def setUp(self) -> None:
+        self.client = app.test_client()
+
+    def test_projects_add_requires_source_url(self) -> None:
+        """POST /api/projects/add without source_url returns 400."""
+        resp = self.client.post("/api/projects/add", json={}, content_type="application/json")
+        self.assertEqual(resp.status_code, 400)
+        data = json.loads(resp.data)
+        self.assertIn("error", data)
+
+    def test_projects_add_success(self) -> None:
+        """POST /api/projects/add returns DRPID and source_url."""
+        with patch(
+            "interactive_collector.api.add_project_with_source_url",
+            return_value={"DRPID": 42, "source_url": "https://new.example/page"},
+        ):
+            resp = self.client.post(
+                "/api/projects/add",
+                json={"source_url": "https://new.example/page"},
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertEqual(data["DRPID"], 42)
+        self.assertEqual(data["source_url"], "https://new.example/page")
+
+    def test_projects_add_duplicate_returns_409(self) -> None:
+        """Duplicate source_url maps to 409."""
+        with patch(
+            "interactive_collector.api.add_project_with_source_url",
+            side_effect=ValueError("duplicate_source_url"),
+        ):
+            resp = self.client.post(
+                "/api/projects/add",
+                json={"source_url": "https://exists.example/"},
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 409)
+        data = json.loads(resp.data)
+        self.assertIn("error", data)
+
+    def test_projects_add_invalid_url_returns_400(self) -> None:
+        """Invalid URL returns 400 from ValueError message."""
+        with patch(
+            "interactive_collector.api.add_project_with_source_url",
+            side_effect=ValueError("valid source_url is required"),
+        ):
+            resp = self.client.post(
+                "/api/projects/add",
+                json={"source_url": "ftp://bad"},
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 400)
+
+
+class TestAddProjectWithSourceUrlIntegration(unittest.TestCase):
+    """Integration tests for add_project_with_source_url against SQLite."""
+
+    def setUp(self) -> None:
+        self.tmpdir = tempfile.mkdtemp()
+        self.db_path = Path(self.tmpdir) / "add_project_test.db"
+        self._patcher = patch("interactive_collector.api_projects.get_db_path", return_value=self.db_path)
+        self._patcher.start()
+        from utils.Logger import Logger
+        from storage import Storage
+
+        Logger.initialize(log_level="WARNING")
+        Storage.reset()
+        Storage.initialize("StorageSQLLite", db_path=self.db_path)
+
+    def tearDown(self) -> None:
+        from storage import Storage
+
+        Storage.close()
+        Storage.reset()
+        self._patcher.stop()
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_add_project_persists_sourced(self) -> None:
+        """New row has status sourced and correct source_url."""
+        from interactive_collector.api_projects import add_project_with_source_url
+        from storage import Storage
+
+        out = add_project_with_source_url("https://integration-add-test.example/a")
+        drpid = out["DRPID"]
+        row = Storage.get(drpid)
+        assert row is not None
+        self.assertEqual(row["source_url"], "https://integration-add-test.example/a")
+        self.assertEqual(row["status"], "sourced")
+
+    def test_add_project_duplicate_raises(self) -> None:
+        """Second insert with same URL raises duplicate_source_url."""
+        from interactive_collector.api_projects import add_project_with_source_url
+
+        add_project_with_source_url("https://dup-integration.example/b")
+        with self.assertRaises(ValueError) as cm:
+            add_project_with_source_url("https://dup-integration.example/b")
+        self.assertEqual(str(cm.exception), "duplicate_source_url")
 
 
 class TestApiMetadataFromPage(unittest.TestCase):

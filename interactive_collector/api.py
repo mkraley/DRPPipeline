@@ -16,6 +16,7 @@ import requests
 
 from interactive_collector.api_download import generate_download_progress
 from interactive_collector.api_projects import (
+    add_project_with_source_url,
     ensure_output_folder,
     folder_path_for_drpid,
     get_first_eligible,
@@ -93,6 +94,29 @@ def projects_get(drpid: int) -> Any:
     if not proj:
         return {"error": "Project not found"}, 404
     return proj
+
+
+@api_bp.route("/projects/add", methods=["POST"])
+def projects_add() -> Any:
+    """
+    Create a new project row (new DRPID) with source_url and status sourced.
+
+    Expects JSON: { "source_url": "https://..." }.
+    """
+    if request.is_json:
+        data = request.get_json() or {}
+    else:
+        data = {}
+    source_url = _str_or_none(data.get("source_url"))
+    if not source_url:
+        return {"error": "source_url required"}, 400
+    try:
+        return add_project_with_source_url(source_url)
+    except ValueError as e:
+        msg = str(e)
+        if msg == "duplicate_source_url":
+            return {"error": "A project with this source URL already exists"}, 409
+        return {"error": msg}, 400
 
 
 @api_bp.route("/projects/load", methods=["POST"])

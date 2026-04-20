@@ -84,44 +84,90 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const copyAndOpen = useCallback(async () => {
-    if (!sourceUrl || !drpid || !/^https?:\/\//.test(sourceUrl)) {
-      setToast("Load a project with a source URL first.");
+  const runCopyAndOpen = useCallback(
+    async (overrides?: { drpid: number; sourceUrl: string }) => {
+      const d = overrides?.drpid ?? drpid;
+      const u = ((overrides?.sourceUrl ?? sourceUrl) || "").trim();
+      if (d == null || !u || !/^https?:\/\//.test(u)) {
+        setToast("Load a project with a source URL first.");
+        return;
+      }
+      const launcher = `${window.location.origin}/extension/launcher?drpid=${d}&url=${encodeURIComponent(u)}`;
+      // Open window first (synchronously) so it’s in the user gesture chain and not blocked as a popup.
+      const a = document.createElement("a");
+      a.href = launcher;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      try {
+        await startDownloadsWatcher();
+        await navigator.clipboard.writeText(launcher);
+        setToast("Copied and opened in new window. If it didn’t open, check popup blocker or paste from clipboard.");
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Watcher could not start";
+        try {
+          await navigator.clipboard.writeText(launcher);
+          setToast(`URL copied. Watcher failed: ${msg}`);
+        } catch {
+          setToast(`Watcher failed: ${msg}. Paste this URL in browser: ${launcher.slice(0, 50)}…`);
+        }
+      }
+      try {
+        const halfW = Math.floor((typeof screen !== "undefined" ? screen.availWidth : 1920) / 2);
+        const availH = typeof screen !== "undefined" ? screen.availHeight : 1000;
+        const availX = typeof screen !== "undefined" ? (screen as { availLeft?: number }).availLeft ?? 0 : 0;
+        const availY = typeof screen !== "undefined" ? (screen as { availTop?: number }).availTop ?? 0 : 0;
+        window.resizeTo(halfW, availH);
+        window.moveTo(availX, availY);
+      } catch {
+        /* ignore */
+      }
+    },
+    [sourceUrl, drpid, startDownloadsWatcher]
+  );
+
+  const copyAndOpen = useCallback(() => runCopyAndOpen(), [runCopyAndOpen]);
+
+  const onAddProject = useCallback(async () => {
+    const raw = window.prompt("New project: enter source URL (https://…)", "https://");
+    if (raw === null) return;
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      setToast("No URL entered.");
       return;
     }
-    const launcher = `${window.location.origin}/extension/launcher?drpid=${drpid}&url=${encodeURIComponent(sourceUrl)}`;
-    // Open window first (synchronously) so it’s in the user gesture chain and not blocked as a popup.
-    const a = document.createElement("a");
-    a.href = launcher;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
     try {
-      await startDownloadsWatcher();
-      await navigator.clipboard.writeText(launcher);
-      setToast("Copied and opened in new window. If it didn’t open, check popup blocker or paste from clipboard.");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Watcher could not start";
+      const res = await fetch("/api/projects/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_url: trimmed }),
+      });
+      const text = await res.text();
+      let data: { DRPID?: number; source_url?: string; error?: string } = {};
       try {
-        await navigator.clipboard.writeText(launcher);
-        setToast(`URL copied. Watcher failed: ${msg}`);
+        data = text ? (JSON.parse(text) as typeof data) : {};
       } catch {
-        setToast(`Watcher failed: ${msg}. Paste this URL in browser: ${launcher.slice(0, 50)}…`);
+        setToast(text || `HTTP ${res.status}`);
+        return;
       }
+      if (!res.ok) {
+        setToast(data.error || text || `HTTP ${res.status}`);
+        return;
+      }
+      const id = data.DRPID;
+      const src = (data.source_url || trimmed).trim();
+      if (id == null) {
+        setToast("Invalid response from server.");
+        return;
+      }
+      await loadProject(id);
+      await runCopyAndOpen({ drpid: id, sourceUrl: src });
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : "Add failed");
     }
-    try {
-      const halfW = Math.floor((typeof screen !== "undefined" ? screen.availWidth : 1920) / 2);
-      const availH = typeof screen !== "undefined" ? screen.availHeight : 1000;
-      const availX = typeof screen !== "undefined" ? (screen as { availLeft?: number }).availLeft ?? 0 : 0;
-      const availY = typeof screen !== "undefined" ? (screen as { availTop?: number }).availTop ?? 0 : 0;
-      window.resizeTo(halfW, availH);
-      window.moveTo(availX, availY);
-    } catch {
-      /* ignore */
-    }
-  }, [sourceUrl, drpid, startDownloadsWatcher]);
+  }, [loadProject, runCopyAndOpen]);
 
   const onLoadDrpidSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
@@ -165,6 +211,9 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
             Load
           </button>
         </form>
+        <button type="button" className="btn-top" onClick={onAddProject} disabled={loading} title="Create a new row in the database, then Copy &amp; Open">
+          Add
+        </button>
         {sourceUrl && drpid != null && (
           <button
             type="button"
