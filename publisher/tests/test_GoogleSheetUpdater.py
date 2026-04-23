@@ -125,11 +125,57 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         }
         project = {"file_size": "10485760", "download_date": "2025-01-15", "extensions": "csv"}
         requests = updater._build_update_requests(
-            "CDC", 2, column_map, "239181", project, "testuser"
+            "CDC", 2, column_map, "239181", project, "testuser", ""
         )
         dataset_size_requests = [r for r in requests if "F2" in r.get("range", "")]
         self.assertEqual(len(dataset_size_requests), 1)
         self.assertEqual(dataset_size_requests[0]["values"], [["10.0 MB"]])
+
+    def test_build_update_requests_prepends_url_for_new_row(self) -> None:
+        """When source_url_for_new_row is set, URL column is written first."""
+        updater = GoogleSheetUpdater()
+        column_map = {
+            "URL": "A",
+            "Claimed": "B",
+            "Data Added": "C",
+            "Download Location": "D",
+            "Date Downloaded": "E",
+            "Dataset Size": "F",
+            "File extensions of data uploads": "G",
+            "Metadata availability info": "H",
+            "Dataset Download Possible?": "I",
+            "Nominated to EOT / USGWDA": "J",
+        }
+        project = {"download_date": "2025-01-15", "extensions": "csv"}
+        requests = updater._build_update_requests(
+            "CDC",
+            5,
+            column_map,
+            "999",
+            project,
+            "u",
+            "https://example.com/new",
+        )
+        self.assertTrue(requests[0]["range"].startswith("CDC!A5"))
+        self.assertEqual(requests[0]["values"], [["https://example.com/new"]])
+
+    def test_get_next_append_row_counts_url_column(self) -> None:
+        """Next append row is 2 + number of returned URL cells."""
+        updater = GoogleSheetUpdater()
+        mock_service = MagicMock()
+        mock_service.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
+            "values": [["https://a.com"], ["https://b.com"]]
+        }
+        r = updater._get_next_append_row(mock_service, "sid", "Tab1", "A")
+        self.assertEqual(r, 4)
+
+    def test_get_next_append_row_empty_below_header(self) -> None:
+        """Empty URL column means first data row is 2."""
+        updater = GoogleSheetUpdater()
+        mock_service = MagicMock()
+        mock_service.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {}
+        r = updater._get_next_append_row(mock_service, "sid", "Tab1", "A")
+        self.assertEqual(r, 2)
 
     @patch("publisher.GoogleSheetUpdater._GOOGLE_SHEETS_AVAILABLE", True)
     def test_update_missing_sheet_id(self) -> None:
@@ -251,3 +297,214 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertTrue(success)
         self.assertIsNone(msg)
         mock_service.spreadsheets.return_value.values.return_value.batchUpdate.assert_called_once()
+
+    @skip_if_no_google
+    @patch("publisher.GoogleSheetUpdater.build")
+    @patch("google.oauth2.service_account.Credentials.from_service_account_file")
+    def test_update_appends_when_no_url_match(
+        self, mock_from_sa: MagicMock, mock_build: MagicMock
+    ) -> None:
+        """When no row matches, updates target the next append row and include URL."""
+        mock_creds = MagicMock()
+        mock_creds.universe_domain = "googleapis.com"
+        mock_from_sa.return_value = mock_creds
+        mock_service = MagicMock()
+
+        header_response = {
+            "values": [
+                [
+                    "URL",
+                    "Title",
+                    "Agency",
+                    "Office",
+                    "Claimed",
+                    "Data Added",
+                    "Download Location",
+                    "Date Downloaded",
+                    "Dataset Size",
+                    "File extensions of data uploads",
+                    "Metadata availability info",
+                    "Dataset Download Possible?",
+                    "Nominated to EOT / USGWDA",
+                ]
+            ]
+        }
+        other_only = {"values": [["https://other-only.example/row"]]}
+        mock_get = mock_service.spreadsheets.return_value.values.return_value.get.return_value
+        mock_get.execute.side_effect = [header_response, other_only, other_only]
+        mock_service.spreadsheets.return_value.values.return_value.batchUpdate.return_value.execute.return_value = {}
+
+        mock_build.return_value = mock_service
+
+        cred_path = Path(tempfile.gettempdir()) / "creds_pub_append_test.json"
+        cred_path.write_text("{}")
+
+        updater = GoogleSheetUpdater()
+        with patch.object(Args, "google_sheet_id", "sheet123"), patch.object(
+            Args, "google_credentials", cred_path
+        ), patch.object(Args, "google_sheet_name", "CDC"), patch.object(Args, "google_username", "testuser"):
+            success, msg = updater.update(
+                "https://brand-new.example/page",
+                "239181",
+                {
+                    "title": "Appended Row Title",
+                    "agency": "HHS",
+                    "office": "OASH",
+                    "download_date": "2025-01-15",
+                    "file_size": "1024",
+                    "extensions": "csv",
+                },
+            )
+
+        cred_path.unlink(missing_ok=True)
+
+        self.assertTrue(success)
+        self.assertIsNone(msg)
+        batch = mock_service.spreadsheets.return_value.values.return_value.batchUpdate
+        batch.assert_called_once()
+        body = batch.call_args[1]["body"]
+        data = body["data"]
+        ranges = [d["range"] for d in data]
+        self.assertTrue(any("CDC!A3" in r for r in ranges))
+        url_vals = [d for d in data if "CDC!A3" in d.get("range", "")]
+        self.assertEqual(url_vals[0]["values"], [["https://brand-new.example/page"]])
+        b3 = [d for d in data if "CDC!B3" in d.get("range", "")]
+        self.assertEqual(b3[0]["values"], [["Appended Row Title"]])
+        c3 = [d for d in data if "CDC!C3" in d.get("range", "")]
+        self.assertEqual(c3[0]["values"], [["HHS"]])
+        d3 = [d for d in data if "CDC!D3" in d.get("range", "")]
+        self.assertEqual(d3[0]["values"], [["OASH"]])
+
+    def test_read_cell_text_empty_and_trim(self) -> None:
+        """_read_cell_text returns trimmed string or empty."""
+        updater = GoogleSheetUpdater()
+        mock_service = MagicMock()
+        g = mock_service.spreadsheets.return_value.values.return_value.get.return_value
+        g.execute.side_effect = [
+            {"values": []},
+            {"values": [[]]},
+            {"values": [["  x  "]]},
+        ]
+        self.assertEqual(
+            updater._read_cell_text(mock_service, "s", "CDC", "B", 2), ""
+        )
+        self.assertEqual(
+            updater._read_cell_text(mock_service, "s", "CDC", "B", 3), ""
+        )
+        self.assertEqual(
+            updater._read_cell_text(mock_service, "s", "CDC", "B", 4), "x"
+        )
+
+    def test_build_update_requests_writes_title(self) -> None:
+        """title_to_write, agency_to_write, office_to_write populate optional columns."""
+        updater = GoogleSheetUpdater()
+        column_map = {
+            "URL": "A",
+            "Title": "B",
+            "Agency": "C",
+            "Office": "D",
+            "Claimed": "E",
+            "Data Added": "F",
+            "Download Location": "G",
+            "Date Downloaded": "H",
+            "Dataset Size": "I",
+            "File extensions of data uploads": "J",
+            "Metadata availability info": "K",
+            "Dataset Download Possible?": "L",
+            "Nominated to EOT / USGWDA": "M",
+        }
+        project = {"download_date": "2025-01-15", "extensions": "csv"}
+        req = updater._build_update_requests(
+            "CDC",
+            2,
+            column_map,
+            "1",
+            project,
+            "u",
+            "",
+            "The Dataset Name",
+            "CMS",
+            "Office of Data",
+        )
+        title_req = [r for r in req if "B2" in r.get("range", "")]
+        self.assertEqual(len(title_req), 1)
+        self.assertEqual(title_req[0]["values"], [["The Dataset Name"]])
+        c2 = [r for r in req if "C2" in r.get("range", "")]
+        self.assertEqual(c2[0]["values"], [["CMS"]])
+        d2 = [r for r in req if "D2" in r.get("range", "")]
+        self.assertEqual(d2[0]["values"], [["Office of Data"]])
+
+    @skip_if_no_google
+    @patch("publisher.GoogleSheetUpdater.build")
+    @patch("google.oauth2.service_account.Credentials.from_service_account_file")
+    def test_update_matched_fills_title_when_empty(
+        self, mock_from_sa: MagicMock, mock_build: MagicMock
+    ) -> None:
+        """When optional metadata columns are blank, values come from the project record."""
+        mock_creds = MagicMock()
+        mock_creds.universe_domain = "googleapis.com"
+        mock_from_sa.return_value = mock_creds
+        mock_service = MagicMock()
+        header_response = {
+            "values": [
+                [
+                    "URL",
+                    "Title",
+                    "Agency",
+                    "Office",
+                    "Claimed",
+                    "Data Added",
+                    "Download Location",
+                    "Date Downloaded",
+                    "Dataset Size",
+                    "File extensions of data uploads",
+                    "Metadata availability info",
+                    "Dataset Download Possible?",
+                    "Nominated to EOT / USGWDA",
+                ]
+            ]
+        }
+        url_column_response = {"values": [["https://example.com/data"], ["https://other.com"]]}
+        title_cell_empty = {"values": [[]]}
+        mock_get = mock_service.spreadsheets.return_value.values.return_value.get.return_value
+        mock_get.execute.side_effect = [
+            header_response,
+            url_column_response,
+            title_cell_empty,
+            title_cell_empty,
+            title_cell_empty,
+        ]
+        mock_service.spreadsheets.return_value.values.return_value.batchUpdate.return_value.execute.return_value = {}
+        mock_build.return_value = mock_service
+
+        cred_path = Path(tempfile.gettempdir()) / "creds_title_test.json"
+        cred_path.write_text("{}")
+
+        updater = GoogleSheetUpdater()
+        with patch.object(Args, "google_sheet_id", "sheet123"), patch.object(
+            Args, "google_credentials", cred_path
+        ), patch.object(Args, "google_sheet_name", "CDC"), patch.object(Args, "google_username", "u"):
+            success, msg = updater.update(
+                "https://example.com/data",
+                "99",
+                {
+                    "title": "Metadata Title",
+                    "agency": "Agency X",
+                    "office": "Office Y",
+                    "download_date": "2025-01-15",
+                    "file_size": "1",
+                    "extensions": "csv",
+                },
+            )
+        cred_path.unlink(missing_ok=True)
+        self.assertTrue(success)
+        self.assertIsNone(msg)
+        body = mock_service.spreadsheets.return_value.values.return_value.batchUpdate.call_args[1][
+            "body"
+        ]
+        b2 = [d for d in body["data"] if "CDC!B2" in d.get("range", "")]
+        self.assertEqual(b2[0]["values"], [["Metadata Title"]])
+        c2 = [d for d in body["data"] if "CDC!C2" in d.get("range", "")]
+        self.assertEqual(c2[0]["values"], [["Agency X"]])
+        d2 = [d for d in body["data"] if "CDC!D2" in d.get("range", "")]
+        self.assertEqual(d2[0]["values"], [["Office Y"]])

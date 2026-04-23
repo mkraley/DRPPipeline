@@ -173,7 +173,8 @@ class DataLumosPublisher:
         If Google Sheet ID and credentials are configured, update the sheet
         with publishing results (Claimed, Data Added, Download Location, etc.).
         Missing credentials file or missing Google Sheets libraries: record_crash (fatal).
-        Other failures (e.g. API error, row not found): append warning and continue.
+        Other failures (e.g. API error): append warning and continue. If the source URL
+        is not in the sheet, a new row is appended (see `GoogleSheetUpdater`).
         """
         from publisher.GoogleSheetUpdater import GoogleSheetUpdater
 

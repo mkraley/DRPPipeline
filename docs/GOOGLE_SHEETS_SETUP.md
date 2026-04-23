@@ -86,8 +86,11 @@ Use `google_sheet_id` and `google_sheet_name` in config; the same sheet and tab 
   - **Dataset Size** — writes formatted value from storage `file_size` (if available)
   - **File extensions of data uploads** — writes value from storage `extensions` (if available)
   - **Metadata availability info** — writes "Y"
-- For **not_found** or **no_links** projects, the publisher updates only: Claimed, Data Added, Dataset Download Possible?, Nominated to EOT / USGWDA, Notes
-- If no matching row is found, a warning is appended and the script continues
+  - **Title** (optional column) — if present and the project has a `title` in the database, the cell is set when still empty, or when appending a new row
+  - **Agency** (optional) — from project `agency` when the cell is still empty, or on append
+  - **Office** (optional) — from project `office` when the cell is still empty, or on append
+- For **not_found** or **no_links** projects, the publisher updates only: Claimed, Data Added, Dataset Download Possible?, Nominated to EOT / USGWDA, Notes (on a matched row). If no row matches, it **appends** a new row at the bottom of the tab, sets **URL** to the project’s source URL, and writes those same fields.
+- If no matching row is found for a normal publish, a **new row is appended** below existing URL cells, and all of the columns above are filled (including **URL**). This supports projects that were created outside the inventory sheet (e.g. interactive collector **Add**).
 
 ## Troubleshooting
 
@@ -108,13 +111,8 @@ Use `google_sheet_id` and `google_sheet_name` in config; the same sheet and tab 
 
 **Error: "Google Sheets API error: 400"**
 - Check that the sheet name (tab name) is correct (default: "CDC")
-- Verify the URL in your CSV matches the URL in column F of the sheet
-- URLs are matched case-insensitively and can be partial matches
-
-**Error: "Could not find row with matching URL"**
-- Verify the source URL in your CSV (column `7_original_distribution_url`) exists in column F of the Google Sheet
-- Check for URL formatting differences (trailing slashes, http vs https, etc.)
-- The script tries to match URLs flexibly (exact match, contains, or contained in)
+- Verify required column headers exist in row 1 of the tab (see “How It Works” above)
+- URLs are matched case-insensitively with flexible prefix rules before falling back to appending a row
 
 **Import errors when running the script**
 - Install the required packages: `pip install -r requirements.txt`

@@ -3,7 +3,9 @@ Google Sheet updater for publisher module.
 
 Updates a Google Sheet (e.g. master inventory) with publishing results by finding
 the row via source_url match and writing Claimed, Data Added, Download Location, etc.
-Logic derived from chiara_upload.update_google_sheet().
+If no row matches the source URL, appends a new row at the bottom of the tab and
+writes the same fields (including the URL in the **URL** column). Logic derived from
+chiara_upload.update_google_sheet().
 """
 
 from pathlib import Path
@@ -55,6 +57,13 @@ class GoogleSheetUpdater:
 
     Finds the row by matching source_url in the URL column, then writes
     Claimed, Data Added, Download Location, Date Downloaded, etc.
+    If there is no matching row, appends a new row below existing URL cells and
+    writes the same columns, including the source URL in the URL column.
+    Optional **Title**, **Agency**, and **Office** columns are filled from project
+    metadata when those cells are empty (or for every such column on a new row).
+    If the tab has **Title**, **Agency**, or **Office** columns and the project has
+    the matching fields in storage (`title`, `agency`, `office`), those cells are
+    set from metadata when still empty, or when appending a new row.
     """
 
     def _update_row(
@@ -67,14 +76,15 @@ class GoogleSheetUpdater:
         **build_kwargs: Any,
     ) -> Tuple[bool, Optional[str]]:
         """
-        Shared logic: validate, get service, map columns, find row, build requests, batchUpdate.
+        Shared logic: validate, get service, map columns, find row (or next append row),
+        build requests, batchUpdate.
 
         Args:
-            source_url: URL to match in sheet
+            source_url: URL to match in sheet (also written to the **URL** column when appending)
             required_columns: Required column names
             optional_columns: Optional column names
             build_requests: Callable that returns list of update dicts. Called with
-                (sheet_name, row_number, column_map, **build_kwargs).
+                (sheet_name, row_number, column_map, append_new_row, source_url, title_to_write, agency_to_write, office_to_write, **build_kwargs).
             log_suffix: Suffix for debug/info logs (e.g. " (not_found/no_links)")
             **build_kwargs: Passed to build_requests
         """
@@ -115,15 +125,65 @@ class GoogleSheetUpdater:
             row_number = self._find_row_by_url(
                 service, sheet_id, sheet_name, url_col_letter, source_url.strip()
             )
+            append_new = False
             if not row_number:
-                return False, f"Could not find row with matching URL: {source_url}"
+                row_number = self._get_next_append_row(
+                    service, sheet_id, sheet_name, url_col_letter
+                )
+                append_new = True
+                Logger.info(
+                    f"No sheet row matches source URL; appending at row {row_number}{log_suffix}"
+                )
 
-            Logger.debug(f"Updating Google Sheet row {row_number}{log_suffix}")
+            Logger.debug(
+                f"{'Appending' if append_new else 'Updating'} Google Sheet row {row_number}{log_suffix}"
+            )
+
+            _proj = build_kwargs.get("project")
+            _proj = _proj if isinstance(_proj, dict) else None
+            title_to_write = self._metadata_value_if_cell_empty(
+                service,
+                sheet_id,
+                sheet_name,
+                row_number,
+                append_new,
+                column_map,
+                _proj,
+                "Title",
+                "title",
+            )
+            agency_to_write = self._metadata_value_if_cell_empty(
+                service,
+                sheet_id,
+                sheet_name,
+                row_number,
+                append_new,
+                column_map,
+                _proj,
+                "Agency",
+                "agency",
+            )
+            office_to_write = self._metadata_value_if_cell_empty(
+                service,
+                sheet_id,
+                sheet_name,
+                row_number,
+                append_new,
+                column_map,
+                _proj,
+                "Office",
+                "office",
+            )
 
             update_requests = build_requests(
                 sheet_name=sheet_name,
                 row_number=row_number,
                 column_map=column_map,
+                append_new_row=append_new,
+                source_url=source_url.strip(),
+                title_to_write=title_to_write,
+                agency_to_write=agency_to_write,
+                office_to_write=office_to_write,
                 service=service,
                 sheet_id=sheet_id,
                 **build_kwargs,
@@ -137,8 +197,9 @@ class GoogleSheetUpdater:
                 body=body,
             ).execute()
 
+            action = "Appended" if append_new else "Updated"
             Logger.info(
-                f"Updated Google Sheet row {row_number}{log_suffix} with {len(update_requests)} columns"
+                f"{action} Google Sheet row {row_number}{log_suffix} with {len(update_requests)} columns"
             )
             return True, None
 
@@ -165,7 +226,7 @@ class GoogleSheetUpdater:
         Args:
             source_url: Source URL to match in the URL column.
             workspace_id: DataLumos workspace ID (for Download Location).
-            project: Project dict (download_date, file_size, extensions).
+            project: Project dict (download_date, file_size, extensions, title, agency, office).
 
         Returns:
             (True, None) on success, (False, error_message) on failure.
@@ -174,19 +235,33 @@ class GoogleSheetUpdater:
             sheet_name: str,
             row_number: int,
             column_map: Dict[str, str],
+            append_new_row: bool,
+            source_url: str,
+            title_to_write: Optional[str],
+            agency_to_write: Optional[str],
+            office_to_write: Optional[str],
             workspace_id: str,
             project: Dict[str, Any],
             username: str,
             **kwargs: Any,
         ) -> List[Dict[str, Any]]:
             return self._build_update_requests(
-                sheet_name, row_number, column_map, workspace_id, project, username
+                sheet_name,
+                row_number,
+                column_map,
+                workspace_id,
+                project,
+                username,
+                source_url_for_new_row=source_url if append_new_row else "",
+                title_to_write=title_to_write or "",
+                agency_to_write=agency_to_write or "",
+                office_to_write=office_to_write or "",
             )
 
         return self._update_row(
             source_url=source_url,
             required_columns=_REQUIRED_COLUMNS,
-            optional_columns=None,
+            optional_columns=["Title", "Agency", "Office"],
             build_requests=_build,
             workspace_id=workspace_id,
             project=project,
@@ -204,7 +279,8 @@ class GoogleSheetUpdater:
         Writes only: Claimed=username, Data Added=N, Dataset Download Possible?=N,
         Nominated to EOT / USGWDA=N, Notes=notes_value. If Notes column does not
         exist, adds it after the last existing column.
-        Other columns are not updated.
+        Other columns are not updated on a matched row. If no row matches, appends
+        a new row and sets **URL** to source_url in addition to the fields above.
 
         Args:
             source_url: Source URL to match in the URL column.
@@ -227,6 +303,8 @@ class GoogleSheetUpdater:
         sheet_name: str,
         row_number: int,
         column_map: Dict[str, str],
+        append_new_row: bool,
+        source_url: str,
         notes_value: str,
         service: Any = None,
         sheet_id: str = "",
@@ -235,6 +313,13 @@ class GoogleSheetUpdater:
         """Build update requests for not_found/no_links sheet update."""
         username = Args.google_username or ""
         requests: List[Dict[str, Any]] = []
+
+        u = (source_url or "").strip()
+        if append_new_row and u and column_map.get("URL"):
+            requests.append({
+                "range": f"{sheet_name}!{column_map['URL']}{row_number}",
+                "values": [[u]],
+            })
 
         for col_key, col_letter in column_map.items():
             if col_key == "URL":
@@ -447,6 +532,78 @@ class GoogleSheetUpdater:
 
         return None
 
+    def _get_next_append_row(
+        self,
+        service: Any,
+        sheet_id: str,
+        sheet_name: str,
+        url_column_letter: str,
+    ) -> int:
+        """
+        1-based row number for a new data row: first row after existing URL column cells
+        (same range as _find_row_by_url). If column is empty below the header, returns 2.
+        """
+        range_name = f"{sheet_name}!{url_column_letter}2:{url_column_letter}"
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=sheet_id, range=range_name)
+            .execute()
+        )
+        values = result.get("values", [])
+        return 2 + len(values)
+
+    def _read_cell_text(
+        self,
+        service: Any,
+        sheet_id: str,
+        sheet_name: str,
+        col_letter: str,
+        row_number: int,
+    ) -> str:
+        """Return trimmed string for a single cell, or empty if blank/missing."""
+        rng = f"{sheet_name}!{col_letter}{row_number}"
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=sheet_id, range=rng)
+            .execute()
+        )
+        values = result.get("values", [])
+        if not values or not values[0]:
+            return ""
+        return str(values[0][0]).strip()
+
+    def _metadata_value_if_cell_empty(
+        self,
+        service: Any,
+        sheet_id: str,
+        sheet_name: str,
+        row_number: int,
+        append_new: bool,
+        column_map: Dict[str, str],
+        project: Optional[Dict[str, Any]],
+        column_key: str,
+        project_field: str,
+    ) -> Optional[str]:
+        """
+        Return project metadata for optional sheet column when the cell is empty
+        (or on a newly appended row). If project has no value for project_field, returns None.
+        """
+        if not project:
+            return None
+        col_letter = column_map.get(column_key)
+        if not col_letter:
+            return None
+        val = (project.get(project_field) or "").strip()
+        if not val:
+            return None
+        if append_new:
+            return val
+        if not self._read_cell_text(service, sheet_id, sheet_name, col_letter, row_number):
+            return val
+        return None
+
     def _build_update_requests(
         self,
         sheet_name: str,
@@ -455,9 +612,20 @@ class GoogleSheetUpdater:
         workspace_id: str,
         project: Dict[str, Any],
         username: str,
+        source_url_for_new_row: str = "",
+        title_to_write: str = "",
+        agency_to_write: str = "",
+        office_to_write: str = "",
     ) -> List[Dict[str, Any]]:
         """Build list of range/value update dicts for batchUpdate."""
         requests: List[Dict[str, Any]] = []
+
+        new_url = (source_url_for_new_row or "").strip()
+        if new_url and column_map.get("URL"):
+            requests.append({
+                "range": f"{sheet_name}!{column_map['URL']}{row_number}",
+                "values": [[new_url]],
+            })
 
         def _add(col_key: str, value: str) -> None:
             col_letter = column_map.get(col_key)
@@ -466,6 +634,16 @@ class GoogleSheetUpdater:
                     "range": f"{sheet_name}!{col_letter}{row_number}",
                     "values": [[value]],
                 })
+
+        t_title = (title_to_write or "").strip()
+        if t_title and column_map.get("Title"):
+            _add("Title", t_title)
+        t_agency = (agency_to_write or "").strip()
+        if t_agency and column_map.get("Agency"):
+            _add("Agency", t_agency)
+        t_office = (office_to_write or "").strip()
+        if t_office and column_map.get("Office"):
+            _add("Office", t_office)
 
         if column_map.get("Claimed"):
             requests.append({
