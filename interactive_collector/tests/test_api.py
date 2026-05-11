@@ -443,6 +443,8 @@ class TestApiExtensionSaveMarkdown(unittest.TestCase):
             data = json.loads(resp.data)
             self.assertEqual(data.get("ok"), True)
             self.assertIn("filename", data)
+            self.assertEqual(data.get("table_expand_ok"), 0)
+            self.assertEqual(data.get("table_expand_fail"), 0)
             self.assertTrue(str(data["filename"]).endswith(".md"))
             written = Path(tmpdir) / data["filename"]
             self.assertTrue(written.is_file())

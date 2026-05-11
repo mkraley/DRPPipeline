@@ -34,6 +34,7 @@ from interactive_collector.collector_state import (
 from bs4 import BeautifulSoup
 from markdownify import markdownify as html_to_markdown
 
+from interactive_collector.html_table_expand import expand_tables_for_markdown
 from utils.file_utils import sanitize_filename
 from utils.url_utils import BROWSER_HEADERS, is_valid_url
 
@@ -271,13 +272,17 @@ def extension_save_pdf() -> Any:
     )
 
 
-def _page_html_to_markdown_document(html: str, page_url: str, page_title: str) -> str:
-    """Strip scripts/noise and convert HTML fragment to markdown with a short header."""
+def _page_html_to_markdown_document(html: str, page_url: str, page_title: str) -> tuple[str, int, int]:
+    """Strip scripts/noise and convert HTML fragment to markdown with a short header.
+
+    Returns ``(markdown_text, table_expand_ok, table_expand_fail)``.
+    """
     soup = BeautifulSoup(html or "", "html.parser")
     for tag in soup(["script", "style", "noscript"]):
         tag.decompose()
     for el in soup.select("#drp-collector-save-btn, #drp-collector-save-md-btn, #drp-collector-save-btn-toast"):
         el.decompose()
+    table_expand_ok, table_expand_fail = expand_tables_for_markdown(soup)
     root = soup.body
     if root is None:
         root = soup.find("main") or soup.find("article") or soup
@@ -288,7 +293,8 @@ def _page_html_to_markdown_document(html: str, page_url: str, page_title: str) -
         strip=["script", "style"],
     )
     header_lines = [f"Source URL: {page_url.strip()}", f"Title: {(page_title or '').strip()}", ""]
-    return "\n".join(header_lines) + (md_body.strip() + "\n" if md_body.strip() else "")
+    text = "\n".join(header_lines) + (md_body.strip() + "\n" if md_body.strip() else "")
+    return text, table_expand_ok, table_expand_fail
 
 
 @api_bp.route("/extension/save-markdown", methods=["POST", "OPTIONS"])
@@ -357,14 +363,22 @@ def extension_save_markdown() -> Any:
     dest = folder_path / basename
 
     try:
-        markdown_text = _page_html_to_markdown_document(html_raw, url, page_title)
+        markdown_text, table_expand_ok, table_expand_fail = _page_html_to_markdown_document(
+            html_raw, url, page_title
+        )
         dest.write_text(markdown_text, encoding="utf-8")
     except OSError as e:
         return {"error": str(e)[:200]}, 500
 
     add_to_scoreboard(url, referrer, "OK", page_title or None)
     return (
-        {"ok": True, "filename": basename, "path": str(dest)},
+        {
+            "ok": True,
+            "filename": basename,
+            "path": str(dest),
+            "table_expand_ok": table_expand_ok,
+            "table_expand_fail": table_expand_fail,
+        },
         200,
         {"Access-Control-Allow-Origin": "*"},
     )

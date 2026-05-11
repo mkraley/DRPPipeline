@@ -604,7 +604,6 @@
       }
       mdBtn.disabled = true;
       mdBtn.textContent = "Saving MD...";
-      showToast("Expanding content...", false);
       try {
         injectPageScript();
         await runExpandForPdf();
@@ -612,7 +611,6 @@
         await new Promise(function (r) {
           setTimeout(r, 400);
         });
-        showToast("Converting to Markdown...", false);
         var htmlFrag = extractMainHtmlForMarkdown();
         if (!htmlFrag || htmlFrag.length < 20) {
           showToast("Could not read page HTML", true);
@@ -626,7 +624,19 @@
           (document.title || "").trim() || "",
           htmlFrag
         );
-        showToast("Saved: " + (dataMd.filename || "OK"), false);
+        var okT = dataMd.table_expand_ok;
+        var flT = dataMd.table_expand_fail;
+        var tblMsg = "";
+        if (typeof okT === "number" || typeof flT === "number") {
+          okT = typeof okT === "number" ? okT : 0;
+          flT = typeof flT === "number" ? flT : 0;
+          if (flT > 0) {
+            tblMsg = " (" + okT + " table(s) normalized, " + flT + " skipped)";
+          } else if (okT > 0) {
+            tblMsg = " (" + okT + " table(s) normalized)";
+          }
+        }
+        showToast("Saved: " + (dataMd.filename || "OK") + tblMsg, false);
       } catch (e) {
         var errMd = e && e.message ? String(e.message) : "Failed to save";
         if (errMd.indexOf("invalidated") !== -1) {
