@@ -95,6 +95,8 @@ class Args(metaclass=ArgsMeta):
         "google_sheet_id": None,  # Google Sheet ID from URL; set in config for sourcing and/or publisher
         "google_credentials": None,  # Path to service account JSON; required for publisher sheet updates
         "google_sheet_name": "CDC",  # Worksheet/tab name (sourcing CSV tab and publisher updates)
+        # PEM file path: optional; use behind TLS inspection when Google API fails SSL verify
+        "ssl_ca_bundle": None,
         "google_username": "mkraley",  # Value for "Claimed" column
         "stop_file": None,  # When set (e.g. via env DRP_STOP_FILE), orchestrator checks this path each iteration and exits if file exists
 

@@ -240,7 +240,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertIn("not found", (msg or "").lower())
 
     @skip_if_no_google
-    @patch("publisher.GoogleSheetUpdater.build")
+    @patch("publisher.GoogleSheetUpdater.build_sheets_v4_service")
     @patch("google.oauth2.service_account.Credentials.from_service_account_file")
     def test_update_success_mocked(
         self, mock_from_sa: MagicMock, mock_build: MagicMock
@@ -299,7 +299,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         mock_service.spreadsheets.return_value.values.return_value.batchUpdate.assert_called_once()
 
     @skip_if_no_google
-    @patch("publisher.GoogleSheetUpdater.build")
+    @patch("publisher.GoogleSheetUpdater.build_sheets_v4_service")
     @patch("google.oauth2.service_account.Credentials.from_service_account_file")
     def test_update_appends_when_no_url_match(
         self, mock_from_sa: MagicMock, mock_build: MagicMock
@@ -435,7 +435,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertEqual(d2[0]["values"], [["Office of Data"]])
 
     @skip_if_no_google
-    @patch("publisher.GoogleSheetUpdater.build")
+    @patch("publisher.GoogleSheetUpdater.build_sheets_v4_service")
     @patch("google.oauth2.service_account.Credentials.from_service_account_file")
     def test_update_matched_fills_title_when_empty(
         self, mock_from_sa: MagicMock, mock_build: MagicMock

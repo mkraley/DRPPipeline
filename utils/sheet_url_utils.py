@@ -33,7 +33,7 @@ def get_gid_for_sheet_name(
         return None
     try:
         from google.oauth2 import service_account
-        from googleapiclient.discovery import build
+        from utils.google_sheets_service import build_sheets_v4_service
     except ImportError:
         return None
     try:
@@ -41,7 +41,7 @@ def get_gid_for_sheet_name(
             str(credentials_path),
             scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
         )
-        service = build("sheets", "v4", credentials=creds, cache_discovery=False)
+        service = build_sheets_v4_service(creds, cache_discovery=False)
         meta = (
             service.spreadsheets()
             .get(

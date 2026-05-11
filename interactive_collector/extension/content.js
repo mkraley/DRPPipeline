@@ -2,7 +2,8 @@
  * DRP Collector extension - content script.
  *
  * On launcher page: store drpid and collectorBase from URL, let redirect proceed.
- * On other pages: show "Save as PDF" when the collector's downloads watcher is on
+ * On other pages: show "Save as Markdown" and "Save as PDF" when the collector's
+ * downloads watcher is on
  * (same as Copy & Open). When Save is pressed in the collector, watcher turns off
  * and we hide the button (via polling).
  */
@@ -11,6 +12,7 @@
 
   const LAUNCHER_MATCH = /\/extension\/launcher/;
   const DRP_ID = "drp-collector-save-btn";
+  const DRP_MD_ID = "drp-collector-save-md-btn";
   const WATCHER_POLL_MS = 25000;
   var pageScriptInjected = false;
   var watcherPollTimer = null;
@@ -296,7 +298,7 @@
             if (!isLauncherPage()) {
               sendMetadataFromPageIfSource(collectorBase, drpid, sourcePageUrl, allowSameHostMetadataOnce);
             }
-            addSaveButton();
+            addSaveButtons();
             startWatcherPoll(collectorBase);
           },
           function () {
@@ -347,8 +349,73 @@
   }
 
   function removeCollectorButtons() {
-    var btn = document.getElementById(DRP_ID);
-    if (btn) btn.remove();
+    var pdfBtn = document.getElementById(DRP_ID);
+    if (pdfBtn) pdfBtn.remove();
+    var mdBtn = document.getElementById(DRP_MD_ID);
+    if (mdBtn) mdBtn.remove();
+  }
+
+  /**
+   * Prefer main/article content so chrome, nav, and extension UI are omitted when possible.
+   */
+  function extractMainHtmlForMarkdown() {
+    var selectors = [
+      "main",
+      'article[role="main"]',
+      "article",
+      '[role="main"]',
+      "#main-content",
+      "#content",
+      ".region-content",
+    ];
+    var i;
+    var el;
+    var txt;
+    for (i = 0; i < selectors.length; i++) {
+      el = document.querySelector(selectors[i]);
+      if (el) {
+        txt = getElementText(el);
+        if (txt && txt.length >= 80) {
+          return el.outerHTML;
+        }
+      }
+    }
+    el = document.body;
+    if (!el) {
+      return document.documentElement ? document.documentElement.outerHTML : "";
+    }
+    var clone = el.cloneNode(true);
+    var rm = clone.querySelectorAll(
+      "#drp-collector-save-btn, #drp-collector-save-md-btn, #drp-collector-save-btn-toast"
+    );
+    for (i = 0; i < rm.length; i++) {
+      rm[i].remove();
+    }
+    return clone.innerHTML;
+  }
+
+  async function postMarkdownToCollector(collectorBase, drpid, url, referrer, title, html) {
+    var base = (collectorBase || "").replace(/\/$/, "");
+    var fd = new FormData();
+    fd.append("drpid", String(drpid));
+    fd.append("url", url);
+    fd.append("referrer", referrer || "");
+    if (title) fd.append("title", title);
+    fd.append("html", html);
+    var r = await fetch(base + "/api/extension/save-markdown", { method: "POST", body: fd });
+    var data = {};
+    try {
+      data = await r.json();
+    } catch (e) {
+      data = {};
+    }
+    if (!r.ok) {
+      throw new Error((data && data.error) || "HTTP " + r.status);
+    }
+    if (!data.ok) {
+      throw new Error((data && data.error) || "Save failed");
+    }
+    return data;
   }
 
   function injectPageScript() {
@@ -505,15 +572,79 @@
     setTimeout(() => toast.remove(), isError ? 6000 : 5000);
   }
 
-  function addSaveButton() {
-    if (document.getElementById(DRP_ID)) return;
+  function addSaveButtons() {
+    if (document.getElementById(DRP_ID) || document.getElementById(DRP_MD_ID)) return;
 
     injectPageScript();
+
+    const mdBtn = document.createElement("button");
+    mdBtn.id = DRP_MD_ID;
+    mdBtn.textContent = "Save as Markdown";
+    mdBtn.className = "drp-collector-btn drp-collector-btn-md";
+    mdBtn.title = "Save main page content as Markdown in the project folder";
+    document.body.appendChild(mdBtn);
+
+    mdBtn.addEventListener("click", async () => {
+      trustedClicksForPdfExpansion();
+      var storedMd;
+      try {
+        storedMd = await chrome.storage.local.get(["drpid", "collectorBase"]);
+      } catch (e) {
+        if (e && e.message && String(e.message).indexOf("invalidated") !== -1) {
+          showToast("Extension was reloaded. Refresh this page and use Copy & Open again.", true);
+          return;
+        }
+        throw e;
+      }
+      var drpidMd = storedMd.drpid;
+      var collectorBaseMd = storedMd.collectorBase;
+      if (!drpidMd || !collectorBaseMd) {
+        showToast("Use Copy & Open from collector first.", true);
+        return;
+      }
+      mdBtn.disabled = true;
+      mdBtn.textContent = "Saving MD...";
+      showToast("Expanding content...", false);
+      try {
+        injectPageScript();
+        await runExpandForPdf();
+        dolRevealDataFieldsNearShowMoreInContentScript();
+        await new Promise(function (r) {
+          setTimeout(r, 400);
+        });
+        showToast("Converting to Markdown...", false);
+        var htmlFrag = extractMainHtmlForMarkdown();
+        if (!htmlFrag || htmlFrag.length < 20) {
+          showToast("Could not read page HTML", true);
+          return;
+        }
+        var dataMd = await postMarkdownToCollector(
+          collectorBaseMd,
+          drpidMd,
+          window.location.href,
+          (document.referrer || "").trim() || "",
+          (document.title || "").trim() || "",
+          htmlFrag
+        );
+        showToast("Saved: " + (dataMd.filename || "OK"), false);
+      } catch (e) {
+        var errMd = e && e.message ? String(e.message) : "Failed to save";
+        if (errMd.indexOf("invalidated") !== -1) {
+          showToast("Extension was reloaded. Refresh this page and use Copy & Open again.", true);
+        } else {
+          showToast(errMd, true);
+        }
+      } finally {
+        mdBtn.disabled = false;
+        mdBtn.textContent = "Save as Markdown";
+      }
+    });
 
     const btn = document.createElement("button");
     btn.id = DRP_ID;
     btn.textContent = "Save as PDF";
     btn.className = "drp-collector-btn";
+    btn.title = "Save page as PDF via print (or fallback capture)";
     document.body.appendChild(btn);
 
     btn.addEventListener("click", async () => {
@@ -638,7 +769,7 @@
   }, true);
 
   function ensureButtons() {
-    if (document.getElementById(DRP_ID)) return;
+    if (document.getElementById(DRP_ID) || document.getElementById(DRP_MD_ID)) return;
     try {
       checkWatcherAndShowOrHide();
     } catch (e) {

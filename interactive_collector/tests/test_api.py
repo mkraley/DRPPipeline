@@ -389,6 +389,69 @@ class TestApiExtensionSavePdf(unittest.TestCase):
             self.assertIn("filename", data)
 
 
+class TestApiExtensionSaveMarkdown(unittest.TestCase):
+    """Tests for /api/extension/save-markdown."""
+
+    def setUp(self) -> None:
+        self.client = app.test_client()
+
+    def test_extension_save_markdown_options_returns_204(self) -> None:
+        """OPTIONS /api/extension/save-markdown returns 204 with CORS headers."""
+        resp = self.client.open("/api/extension/save-markdown", method="OPTIONS")
+        self.assertEqual(resp.status_code, 204)
+        self.assertIn("Access-Control-Allow-Origin", resp.headers)
+
+    def test_extension_save_markdown_requires_drpid(self) -> None:
+        """POST without drpid returns 400."""
+        resp = self.client.post(
+            "/api/extension/save-markdown",
+            data={"url": "https://example.com/page", "html": "<p>x</p>"},
+            content_type="multipart/form-data",
+        )
+        self.assertIn(resp.status_code, (400, 500))
+        if resp.status_code == 400:
+            data = json.loads(resp.data)
+            self.assertIn("error", data)
+
+    def test_extension_save_markdown_requires_html(self) -> None:
+        """POST without html returns 400."""
+        resp = self.client.post(
+            "/api/extension/save-markdown",
+            data={"drpid": "1", "url": "https://example.com/page"},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(resp.status_code, 400)
+        data = json.loads(resp.data)
+        self.assertIn("error", data)
+
+    def test_extension_save_markdown_success(self) -> None:
+        """POST with drpid, url, and html writes .md file and returns 200."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("interactive_collector.api.get_result_by_drpid", return_value={1: {"folder_path": None}}):
+                with patch("interactive_collector.api.ensure_output_folder", return_value=tmpdir):
+                    resp = self.client.post(
+                        "/api/extension/save-markdown",
+                        data={
+                            "drpid": "1",
+                            "url": "https://example.com/page",
+                            "title": "Test Page",
+                            "html": "<main><h1>Hello</h1><p>Body</p></main>",
+                        },
+                        content_type="multipart/form-data",
+                    )
+            self.assertEqual(resp.status_code, 200)
+            data = json.loads(resp.data)
+            self.assertEqual(data.get("ok"), True)
+            self.assertIn("filename", data)
+            self.assertTrue(str(data["filename"]).endswith(".md"))
+            written = Path(tmpdir) / data["filename"]
+            self.assertTrue(written.is_file())
+            text = written.read_text(encoding="utf-8")
+            self.assertIn("Source URL: https://example.com/page", text)
+            self.assertIn("Title: Test Page", text)
+            self.assertIn("Hello", text)
+
+
 class TestDownloadsWatcher(unittest.TestCase):
     """Tests for /api/downloads-watcher/* endpoints."""
 

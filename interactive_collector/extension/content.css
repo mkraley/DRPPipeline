@@ -18,6 +18,15 @@
   background: #059;
 }
 
+.drp-collector-btn-md {
+  bottom: 68px;
+  background: #1a7f37;
+}
+
+.drp-collector-btn-md:hover {
+  background: #146c2e;
+}
+
 .drp-collector-btn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
@@ -37,6 +46,7 @@
 
 @media print {
   .drp-collector-btn,
+  .drp-collector-btn-md,
   .drp-collector-disable-btn,
   #drp-collector-save-btn-toast {
     display: none !important;

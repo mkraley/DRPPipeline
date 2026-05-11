@@ -391,7 +391,7 @@ def _validate_together(config_path: Path, creds_path: Optional[Path]) -> list[tu
 
     try:
         from google.oauth2 import service_account
-        from googleapiclient.discovery import build
+        from utils.google_sheets_service import build_sheets_v4_service
     except ImportError:
         checks.append(("Google API libraries installed", "FAIL",
                         "pip install google-auth google-api-python-client"))
@@ -403,7 +403,12 @@ def _validate_together(config_path: Path, creds_path: Optional[Path]) -> list[tu
             str(creds_path),
             scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
         )
-        service = build("sheets", "v4", credentials=creds_obj, cache_discovery=False)
+        bundle = cfg.get("ssl_ca_bundle")
+        service = build_sheets_v4_service(
+            creds_obj,
+            cache_discovery=False,
+            ssl_ca_bundle=bundle,
+        )
         meta = (
             service.spreadsheets()
             .get(

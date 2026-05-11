@@ -31,6 +31,9 @@ from interactive_collector.collector_state import (
     get_scoreboard,
     set_metadata_from_page,
 )
+from bs4 import BeautifulSoup
+from markdownify import markdownify as html_to_markdown
+
 from utils.file_utils import sanitize_filename
 from utils.url_utils import BROWSER_HEADERS, is_valid_url
 
@@ -171,16 +174,29 @@ def projects_load() -> Any:
     }
 
 
-def _unique_pdf_basename_for_folder(base: str, folder_path: Path) -> str:
-    """Return unique sanitized PDF basename (base.pdf or base_1.pdf, etc.)."""
+def _unique_basename_for_folder(base: str, folder_path: Path, file_ext: str) -> str:
+    """Return unique sanitized basename with extension (file_ext e.g. '.pdf', '.md')."""
     safe = sanitize_filename(base, max_length=80) if base else "page"
     if not safe:
         safe = "page"
+    low = safe.lower()
+    for sfx in (".pdf", ".md", ".markdown"):
+        if low.endswith(sfx):
+            safe = safe[: -len(sfx)].rstrip("._")
+            if not safe:
+                safe = "page"
+            low = safe.lower()
+            break
     for i in range(1000):
-        name = f"{safe}.pdf" if i == 0 else f"{safe}_{i}.pdf"
+        name = f"{safe}{file_ext}" if i == 0 else f"{safe}_{i}{file_ext}"
         if not (folder_path / name).exists():
             return name
-    return f"{safe}_999.pdf"
+    return f"{safe}_999{file_ext}"
+
+
+def _unique_pdf_basename_for_folder(base: str, folder_path: Path) -> str:
+    """Return unique sanitized PDF basename (base.pdf or base_1.pdf, etc.)."""
+    return _unique_basename_for_folder(base, folder_path, ".pdf")
 
 
 @api_bp.route("/extension/save-pdf", methods=["POST", "OPTIONS"])
@@ -244,6 +260,105 @@ def extension_save_pdf() -> Any:
 
     try:
         pdf_file.save(str(dest))
+    except OSError as e:
+        return {"error": str(e)[:200]}, 500
+
+    add_to_scoreboard(url, referrer, "OK", page_title or None)
+    return (
+        {"ok": True, "filename": basename, "path": str(dest)},
+        200,
+        {"Access-Control-Allow-Origin": "*"},
+    )
+
+
+def _page_html_to_markdown_document(html: str, page_url: str, page_title: str) -> str:
+    """Strip scripts/noise and convert HTML fragment to markdown with a short header."""
+    soup = BeautifulSoup(html or "", "html.parser")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    for el in soup.select("#drp-collector-save-btn, #drp-collector-save-md-btn, #drp-collector-save-btn-toast"):
+        el.decompose()
+    root = soup.body
+    if root is None:
+        root = soup.find("main") or soup.find("article") or soup
+    md_body = html_to_markdown(
+        str(root),
+        heading_style="ATX",
+        bullets="-",
+        strip=["script", "style"],
+    )
+    header_lines = [f"Source URL: {page_url.strip()}", f"Title: {(page_title or '').strip()}", ""]
+    return "\n".join(header_lines) + (md_body.strip() + "\n" if md_body.strip() else "")
+
+
+@api_bp.route("/extension/save-markdown", methods=["POST", "OPTIONS"])
+def extension_save_markdown() -> Any:
+    """
+    Receive HTML from the browser extension; convert to markdown and write to output folder.
+
+    Expects multipart form: drpid, url, referrer (optional), title (optional), html (file or field).
+    CORS: allow extension origin.
+    """
+    if request.method == "OPTIONS":
+        return "", 204, {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+        }
+    drpid_str = (request.form.get("drpid") or "").strip()
+    url = (request.form.get("url") or "").strip()
+    referrer = (request.form.get("referrer") or "").strip() or None
+    page_title = (request.form.get("title") or request.form.get("page_title") or "").strip()
+    html_raw = (request.form.get("html") or "").strip()
+    html_file = request.files.get("html")
+    if html_file:
+        try:
+            blob = html_file.read()
+            if blob:
+                html_raw = blob.decode("utf-8", errors="replace").strip()
+        except Exception:
+            pass
+
+    if not drpid_str:
+        return {"error": "drpid required"}, 400
+    if not url or not is_valid_url(url):
+        return {"error": "valid url required"}, 400
+    if not html_raw:
+        return {"error": "html required"}, 400
+    try:
+        drpid = int(drpid_str)
+    except (ValueError, TypeError):
+        return {"error": "invalid drpid"}, 400
+
+    folder_path_str = get_result_by_drpid().get(drpid, {}).get("folder_path")
+    if not folder_path_str:
+        folder_path_str = ensure_output_folder(drpid)
+    if not folder_path_str:
+        return {"error": "no output folder for project"}, 400
+
+    folder_path = Path(folder_path_str)
+    if not folder_path.is_dir():
+        return {"error": "output folder not found"}, 400
+
+    from urllib.parse import urlparse
+
+    if page_title and len(page_title) <= 80:
+        base = sanitize_filename(page_title, max_length=80) or "page"
+    else:
+        parsed = urlparse(url)
+        path = (parsed.path or "").rstrip("/")
+        base = path.split("/")[-1] if path else (parsed.netloc or "page").split(".")[0]
+        if not base or len(base) > 80:
+            base = (parsed.netloc or "page").split(".")[0] or "page"
+        base = sanitize_filename(base, max_length=80) if base else "page"
+    if not base:
+        base = "page"
+    basename = _unique_basename_for_folder(base, folder_path, ".md")
+    dest = folder_path / basename
+
+    try:
+        markdown_text = _page_html_to_markdown_document(html_raw, url, page_title)
+        dest.write_text(markdown_text, encoding="utf-8")
     except OSError as e:
         return {"error": str(e)[:200]}, 500
 

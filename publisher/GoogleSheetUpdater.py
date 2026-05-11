@@ -12,12 +12,12 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from utils.Args import Args
+from utils.google_sheets_service import build_sheets_v4_service
 from utils.Logger import Logger
 from utils.file_utils import format_file_size
 
 try:
     from google.oauth2 import service_account
-    from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
     _GOOGLE_SHEETS_AVAILABLE = True
 except ImportError:
@@ -111,7 +111,7 @@ class GoogleSheetUpdater:
             )
             # cache_discovery=False avoids "file_cache is only supported with oauth2client<4.0.0"
             # (google-auth does not use oauth2client's file cache for discovery documents).
-            service = build("sheets", "v4", credentials=credentials, cache_discovery=False)
+            service = build_sheets_v4_service(credentials, cache_discovery=False)
 
             column_map = self._get_column_mapping(
                 service, sheet_id, sheet_name, required_columns, optional_columns
