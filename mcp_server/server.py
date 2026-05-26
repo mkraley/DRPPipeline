@@ -47,7 +47,7 @@ _MODULES: dict[str, dict[str, Optional[str]]] = {
 _UPDATABLE_FIELDS = {
     "title", "agency", "office", "summary", "keywords",
     "time_start", "time_end", "data_types", "extensions",
-    "download_date", "collection_notes", "file_size", "num_files", "status_notes",
+    "download_date", "collection_notes", "file_size", "num_files", "downloads", "status_notes",
 }
 
 # Fields that are protected from update_project (require dedicated tools)

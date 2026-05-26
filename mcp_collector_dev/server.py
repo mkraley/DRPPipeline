@@ -203,6 +203,7 @@ def get_collector_interface() -> str:
       collection_notes TEXT     Free-form notes about the collection
       file_size       TEXT      Human-readable total size (e.g. "12.3 MB")
       num_files       INTEGER   Count of regular files in output folder (top-level; set with extensions/file_size)
+      downloads       INTEGER   USFS RDS catalog download count from Metrics
       published_url   TEXT      DataLumos published URL (set by publisher)
 
     Storage methods used by collectors:

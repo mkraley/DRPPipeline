@@ -53,7 +53,8 @@ class StorageSQLLite:
         collection_notes TEXT,
         file_size TEXT,
         published_url TEXT,
-        num_files INTEGER
+        num_files INTEGER,
+        downloads INTEGER
     );
     
     CREATE INDEX IF NOT EXISTS idx_source_url ON projects(source_url);
@@ -171,6 +172,15 @@ class StorageSQLLite:
             try:
                 self._connection.execute(
                     "ALTER TABLE projects ADD COLUMN num_files INTEGER"
+                )
+                self._connection.commit()
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+
+            try:
+                self._connection.execute(
+                    "ALTER TABLE projects ADD COLUMN downloads INTEGER"
                 )
                 self._connection.commit()
             except sqlite3.OperationalError as e:

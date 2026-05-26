@@ -10,10 +10,10 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
+from collectors.UsfsMetadataExtractor import AGENCY, OFFICE
 from utils.url_utils import fetch_page_body
 
 CATALOG_BASE = "https://www.fs.usda.gov/rds/archive/catalog"
-AGENCY = "USDA Forest Service"
 DEFAULT_PAGE_SIZE = 10
 
 
@@ -96,6 +96,7 @@ class UsfsCatalogCandidateFetcher:
                         "url": entry["url"],
                         "title": entry["title"],
                         "agency": AGENCY,
+                        "office": OFFICE,
                     }
                 )
 

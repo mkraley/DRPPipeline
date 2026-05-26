@@ -43,8 +43,12 @@ MODULES: Dict[str, Dict[str, Any]] = {
     "cms_collector": {
         "prereq": "sourced",
         "class_name": "CmsGovCollector",
-    }
-    ,"upload": {
+    },
+    "usfs_collector": {
+        "prereq": "sourced",
+        "class_name": "UsfsCollector",
+    },
+    "upload": {
         "prereq": "collected",
         "class_name": "DataLumosUploader",
     },

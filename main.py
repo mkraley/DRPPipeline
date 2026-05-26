@@ -25,6 +25,7 @@ MODULES
   socrata_collector     Download datasets from Socrata (data.gov) sources
   catalog_collector     Download datasets from catalog.data.gov sources
   cms_collector         Download datasets from data.cms.gov sources
+  usfs_collector        Harvest metadata from USFS Research Data Archive pages
   interactive_collector Browser-assisted collector for sites that block automation
   upload                Upload collected datasets to DataLumos
   publisher             Update the Google Sheet with DataLumos links

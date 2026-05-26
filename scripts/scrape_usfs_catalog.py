@@ -46,6 +46,8 @@ def populate_db(rows: list[dict[str, str]]) -> tuple[int, int]:
             {
                 "title": row.get("title", ""),
                 "agency": row.get("agency", ""),
+                "office": row.get("office", ""),
+                "status": "sourced",
             },
         )
         inserted += 1
@@ -85,7 +87,8 @@ def main() -> None:
         print(
             f"  {row['url']}\n"
             f"    title:  {row.get('title', '')}\n"
-            f"    agency: {row.get('agency', '')}",
+            f"    agency: {row.get('agency', '')}\n"
+            f"    office: {row.get('office', '')}",
             file=sys.stderr,
         )
 
