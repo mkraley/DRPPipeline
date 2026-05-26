@@ -2,23 +2,13 @@
  * MetadataForm - Title, summary, keywords, agency, dates.
  *
  * Values are synced with the store and persisted to Storage on Save.
- * Description is rich text (contentEditable). Keywords converts spaces to "; " on paste/blur.
+ * Description is rich text (contentEditable). Keywords converts DOL Tags HTML or spaces on paste/blur.
  */
 import { useCallback, useEffect, useRef } from "react";
+import { keywordsFromClipboard, normalizeKeywords } from "../keywordsUtils";
 import { useCollectorStore } from "../store";
 
 const STORAGE_KEY = "metadata_draft_";
-
-/** Convert spaces to "; " when no commas or semicolons present. */
-function normalizeKeywords(value: string): string {
-  const trimmed = value.replace(/\s+/g, " ").trim();
-  if (!trimmed) return "";
-  if (/[;,]/.test(trimmed)) return value;
-  if (/\s/.test(trimmed)) {
-    return trimmed.split(/\s+/).filter(Boolean).join("; ");
-  }
-  return value;
-}
 
 export function MetadataForm() {
   const { drpid, metadata, setMetadata } = useCollectorStore();
@@ -125,8 +115,7 @@ export function MetadataForm() {
   const handleKeywordsPaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       e.preventDefault();
-      const text = e.clipboardData.getData("text/plain") || "";
-      const normalized = normalizeKeywords(text);
+      const normalized = keywordsFromClipboard(e.clipboardData);
       const ta = e.currentTarget;
       const start = ta.selectionStart;
       const end = ta.selectionEnd;

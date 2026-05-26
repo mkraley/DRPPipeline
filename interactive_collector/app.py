@@ -376,15 +376,51 @@ _INDEX_HTML = """<!DOCTYPE html>
           </div>
           <script>
           (function() {
+            function tagTextFromSpan(span) {
+              var anchor = span.querySelector("a");
+              var t = ((anchor || span).textContent || "").trim();
+              if (!t || /^tags:?$/i.test(t)) return null;
+              return t.toLowerCase();
+            }
+            function convertTagsHtmlPaste(input) {
+              var raw = (input || "").trim();
+              if (!raw || !/<[a-z][\\s\\S]*>/i.test(raw)) return null;
+              if (!/card-footer|agency_abv|#mainTitle/i.test(raw)) return null;
+              var doc = new DOMParser().parseFromString(raw, "text/html");
+              var keywords = [];
+              doc.querySelectorAll("span.agency_abv").forEach(function(span) {
+                var t = tagTextFromSpan(span);
+                if (t) keywords.push(t);
+              });
+              if (!keywords.length) {
+                doc.querySelectorAll(
+                  ".card-footer span a, a[href='#mainTitle'], a[href=\\"#mainTitle\\"]"
+                ).forEach(function(a) {
+                  var t = (a.textContent || "").trim();
+                  if (!t || /^tags:?$/i.test(t)) return;
+                  keywords.push(t.toLowerCase());
+                });
+              }
+              return keywords.length ? keywords.join("; ") : null;
+            }
+            function keywordsFromClipboard(cd) {
+              var html = cd.getData("text/html") || "";
+              var plain = cd.getData("text/plain") || "";
+              var tags = convertTagsHtmlPaste(html) || convertTagsHtmlPaste(plain);
+              if (tags) return tags;
+              var trimmed = plain.replace(/\\s+/g, " ").trim();
+              if (!trimmed) return "";
+              if (/[;,]/.test(trimmed)) return plain;
+              if (/\\s/.test(trimmed)) {
+                return trimmed.split(/\\s+/).filter(Boolean).join("; ");
+              }
+              return plain;
+            }
             var kw = document.getElementById("metadata-keywords");
             if (kw) kw.addEventListener("paste", function(e) {
               e.preventDefault();
-              var text = (e.clipboardData || window.clipboardData).getData("text/plain") || "";
-              var trimmed = text.replace(/\\s+/g, " ").trim();
-              if (/\\s/.test(trimmed) && !/[;,]/.test(trimmed)) {
-                var parts = trimmed.split(/\\s+/).filter(Boolean);
-                text = parts.join("; ");
-              }
+              var cd = e.clipboardData || window.clipboardData;
+              var text = keywordsFromClipboard(cd);
               var start = kw.selectionStart, end = kw.selectionEnd, val = kw.value;
               kw.value = val.slice(0, start) + text + val.slice(end);
               kw.selectionStart = kw.selectionEnd = start + text.length;
