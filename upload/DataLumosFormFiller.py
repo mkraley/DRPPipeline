@@ -222,14 +222,30 @@ class DataLumosFormFiller:
                 Logger.warning(f"Could not add keyword '{keyword}': {e}")
     
     def fill_geographic_coverage(self, coverage: str) -> None:
-        """Fill the geographic coverage field."""
-        if _is_empty(coverage):
+        """
+        Fill the geographic coverage field with one or more ICPSR thesaurus terms.
+
+        ``coverage`` is semicolon-delimited. The first term uses the inline editor;
+        additional terms use "add value" in the same section.
+        """
+        from utils.IcpsrGeographicNormalizer import parse_geographic_coverage_field
+
+        terms = parse_geographic_coverage_field(coverage)
+        if not terms:
             return
-        _debug_form_field("geographic_coverage (dcterms_location)", coverage)
-        self._fill_editable_inline(
-            "#edit-dcterms_location_0 > span:nth-child(1) > span:nth-child(2)",
-            coverage,
-        )
+
+        edit_selector = "#edit-dcterms_location_0 > span:nth-child(1) > span:nth-child(2)"
+        add_value_selector = "#groupAttr0 a"
+
+        for index, term in enumerate(terms):
+            _debug_form_field("geographic_coverage (dcterms_location)", term)
+            if index == 0:
+                self._fill_editable_inline(edit_selector, term)
+            else:
+                add_btn = self._page.locator(add_value_selector).filter(has_text="add value").last
+                self.wait_for_obscuring_elements()
+                add_btn.click()
+                self._fill_editable_inline(edit_selector, term)
     
     def fill_time_period(self, start: Optional[str], end: Optional[str]) -> None:
         """Fill the time period fields."""

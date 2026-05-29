@@ -175,11 +175,22 @@ class TestDataLumosUploaderHelpers(unittest.TestCase):
     def test_parse_keywords_semicolon_or_comma(self) -> None:
         """Test _parse_keywords splits on semicolons or commas."""
         from upload.DataLumosUploader import DataLumosUploader
-        
+
         uploader = DataLumosUploader()
         self.assertEqual(uploader._parse_keywords("a; b; c"), ["a", "b", "c"])
         self.assertEqual(uploader._parse_keywords("a, b; c"), ["a", "b", "c"])
-        self.assertEqual(uploader._parse_keywords("a;b,c"), ["a", "b", "c"])
+        self.assertEqual(
+            uploader._parse_keywords(
+                "inlandWaters; Ecology, Ecosystems, & Environment; organic matter"
+            ),
+            [
+                "inlandWaters",
+                "Ecology",
+                "Ecosystems",
+                "Environment",
+                "organic matter",
+            ],
+        )
 
     def test_parse_keywords_empty(self) -> None:
         """Test _parse_keywords returns empty list for empty input."""

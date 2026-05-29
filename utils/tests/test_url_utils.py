@@ -4,7 +4,9 @@ Unit tests for url_utils module.
 
 import sys
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, ANY
+
+import requests
 
 from utils.Args import Args
 from utils.Logger import Logger
@@ -309,6 +311,7 @@ class TestUrlUtils(unittest.TestCase):
             timeout=30,
             allow_redirects=True,
             headers=expected_headers,
+            verify=ANY,
         )
 
     @patch("utils.url_utils.requests.get")
@@ -368,6 +371,21 @@ class TestUrlUtils(unittest.TestCase):
         self.assertEqual(body, "")
         self.assertIsNone(ct)
         self.assertFalse(is_logical)
+
+    @patch("utils.url_utils._fetch_page_body_with_playwright")
+    @patch("utils.url_utils.requests.get")
+    def test_fetch_page_body_ssl_error_uses_playwright(
+        self, mock_get: Mock, mock_pw: Mock
+    ) -> None:
+        """SSL verification failure falls back to Playwright."""
+        mock_get.side_effect = requests.exceptions.SSLError("CERTIFICATE_VERIFY_FAILED")
+        mock_pw.return_value = (200, "<html>ok</html>", "text/html", False)
+
+        status, body, ct, is_logical = url_utils.fetch_page_body("https://example.com/x")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body, "<html>ok</html>")
+        mock_pw.assert_called_once()
 
     @patch("utils.url_utils.requests.get")
     def test_fetch_page_body_binary_content_returns_empty_body(self, mock_get: Mock) -> None:

@@ -4,6 +4,7 @@ Utilities for URL validation and access.
 Provides functions for validating URLs and checking their availability.
 """
 
+import os
 import re
 from typing import Dict, Optional, Tuple
 import requests
@@ -398,6 +399,75 @@ def is_waf_challenge(status_code: int, body: str) -> bool:
     return _is_aws_waf_challenge(status_code, body)
 
 
+def _playwright_headless() -> bool:
+    """True unless DRP_FETCH_HEADED requests a visible browser window."""
+    headed = (os.environ.get("DRP_FETCH_HEADED") or "").strip().lower()
+    return headed not in ("1", "true", "yes", "on")
+
+
+def _is_ssl_error(exc: BaseException) -> bool:
+    """True when *exc* is an SSL certificate verification failure."""
+    if isinstance(exc, requests.exceptions.SSLError):
+        return True
+    cause = exc.__cause__
+    if isinstance(cause, BaseException) and cause is not exc:
+        return _is_ssl_error(cause)
+    return "CERTIFICATE_VERIFY_FAILED" in str(exc) or "SSLError" in type(exc).__name__
+
+
+def _fetch_html_with_playwright_page(
+    page: "object", url: str, timeout: int
+) -> Tuple[int, str, Optional[str], bool]:
+    """Fetch URL HTML using an existing Playwright page."""
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
+        page.wait_for_load_state("load", timeout=max((timeout - 10), 10) * 1000)
+        page.wait_for_timeout(2000)
+        body = page.content()
+    except Exception:
+        return -1, "", None, False
+
+    if not body or len(body) < 100:
+        return -1, body or "", "text/html", False
+    if _is_aws_waf_challenge(200, body):
+        return 202, body, "text/html", False
+    return 200, body, "text/html", False
+
+
+class PlaywrightFetchSession:
+    """Reuse one Chromium browser for multiple page fetches."""
+
+    def __init__(self, timeout: int = 60) -> None:
+        self._timeout = timeout
+        self._playwright = None
+        self._browser = None
+        self._page = None
+
+    def __enter__(self) -> "PlaywrightFetchSession":
+        from playwright.sync_api import sync_playwright
+
+        self._playwright = sync_playwright().start()
+        self._browser = self._playwright.chromium.launch(headless=_playwright_headless())
+        self._page = self._browser.new_page()
+        self._page.set_default_timeout(self._timeout * 1000)
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        if self._browser is not None:
+            self._browser.close()
+        if self._playwright is not None:
+            self._playwright.stop()
+        self._browser = None
+        self._page = None
+        self._playwright = None
+
+    def fetch_page_body(self, url: str) -> Tuple[int, str, Optional[str], bool]:
+        """Fetch *url*; same return shape as :func:`fetch_page_body`."""
+        if self._page is None:
+            return -1, "", None, False
+        return _fetch_html_with_playwright_page(self._page, url, self._timeout)
+
+
 def _fetch_page_body_with_playwright(
     url: str, timeout: int = 60
 ) -> Tuple[int, str, Optional[str], bool]:
@@ -405,7 +475,7 @@ def _fetch_page_body_with_playwright(
     Fetch a page using Playwright to bypass AWS WAF bot challenges.
 
     Returns same tuple as fetch_page_body. Used as fallback when requests.get
-    returns a WAF challenge (HTTP 202 with challenge page).
+    returns a WAF challenge (HTTP 202 with challenge page) or SSL verification fails.
     Set DRP_FETCH_HEADED=1 to use a visible browser (may help pass WAF in some environments).
     """
     try:
@@ -413,29 +483,15 @@ def _fetch_page_body_with_playwright(
     except ImportError:
         return -1, "", None, False
 
-    import os
-    headless = False #(os.environ.get("DRP_FETCH_HEADED") or "").strip().lower() not in ("1", "true", "yes", "on")
-
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=headless)
+            browser = p.chromium.launch(headless=_playwright_headless())
             try:
                 page = browser.new_page()
                 page.set_default_timeout(timeout * 1000)
-                page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
-                # Allow WAF challenge to complete (it may trigger reload)
-                page.wait_for_load_state("load", timeout=(timeout - 10) * 1000)
-                page.wait_for_timeout(2000)  # Extra for post-load content
-                body = page.content()
+                return _fetch_html_with_playwright_page(page, url, timeout)
             finally:
                 browser.close()
-
-        if not body or len(body) < 100:
-            return -1, body or "", "text/html", False
-        # Check if we still got a challenge page (e.g. headless detected)
-        if _is_aws_waf_challenge(200, body):
-            return 202, body, "text/html", False
-        return 200, body, "text/html", False
     except Exception:
         return -1, "", None, False
 
@@ -459,11 +515,19 @@ def _http_get(url: str, headers: Dict[str, str], timeout: int) -> "requests.Resp
         )
     except ImportError:
         pass
+    verify: bool | str = True
+    try:
+        import certifi
+
+        verify = certifi.where()
+    except ImportError:
+        pass
     return requests.get(
         url,
         headers=headers,
         timeout=timeout,
         allow_redirects=True,
+        verify=verify,
     )
 
 
@@ -523,6 +587,12 @@ def fetch_page_body(
             # If Playwright also failed, return original response
         return response.status_code, body, content_type, False
     except Exception as exc:
+        if _is_ssl_error(exc):
+            pw_status, pw_body, pw_ct, pw_404 = _fetch_page_body_with_playwright(
+                url, max(timeout, 60)
+            )
+            if pw_status == 200 and pw_body:
+                return pw_status, pw_body, pw_ct or "text/html", pw_404
         cause = exc.__cause__ if exc.__cause__ is not None else exc
         err_str = str(cause)
         if "Failed to establish a new connection" in err_str:

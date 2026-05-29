@@ -370,6 +370,7 @@ class TestStorageSQLLite(unittest.TestCase):
         required_fields = [
             "DRPID", "source_url", "folder_path", "title", "agency", "office",
             "summary", "keywords", "time_start", "time_end", "data_types",
+            "geographic_coverage",
             "extensions", "download_date", "collection_notes", "file_size",
             "num_files", "downloads",
             "datalumos_id",

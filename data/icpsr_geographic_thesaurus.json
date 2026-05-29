@@ -1,0 +1,3583 @@
+{
+  "thesaurus_id": "10003",
+  "source_url": "https://www.icpsr.umich.edu/web/ICPSR/thesaurus/10003",
+  "term_count": 894,
+  "terms": [
+    {
+      "preferred": "Aberdeen (South Dakota)",
+      "aliases": []
+    },
+    {
+      "preferred": "Abilene",
+      "aliases": []
+    },
+    {
+      "preferred": "Ad Dammam",
+      "aliases": []
+    },
+    {
+      "preferred": "Afghanistan",
+      "aliases": []
+    },
+    {
+      "preferred": "Africa",
+      "aliases": []
+    },
+    {
+      "preferred": "Akron",
+      "aliases": []
+    },
+    {
+      "preferred": "Alabama",
+      "aliases": []
+    },
+    {
+      "preferred": "Alaska",
+      "aliases": []
+    },
+    {
+      "preferred": "Albania",
+      "aliases": []
+    },
+    {
+      "preferred": "Albany (Georgia)",
+      "aliases": []
+    },
+    {
+      "preferred": "Albany (New York)",
+      "aliases": []
+    },
+    {
+      "preferred": "Alberta",
+      "aliases": []
+    },
+    {
+      "preferred": "Albuquerque",
+      "aliases": []
+    },
+    {
+      "preferred": "Alexandria",
+      "aliases": []
+    },
+    {
+      "preferred": "Alexandria (Egypt)",
+      "aliases": []
+    },
+    {
+      "preferred": "Algeria",
+      "aliases": []
+    },
+    {
+      "preferred": "Allentown",
+      "aliases": []
+    },
+    {
+      "preferred": "Altamira",
+      "aliases": []
+    },
+    {
+      "preferred": "Altoona",
+      "aliases": []
+    },
+    {
+      "preferred": "Amarillo",
+      "aliases": []
+    },
+    {
+      "preferred": "America",
+      "aliases": []
+    },
+    {
+      "preferred": "American Samoa",
+      "aliases": []
+    },
+    {
+      "preferred": "Amiens",
+      "aliases": []
+    },
+    {
+      "preferred": "Amsterdam",
+      "aliases": []
+    },
+    {
+      "preferred": "Anaheim",
+      "aliases": []
+    },
+    {
+      "preferred": "Anchorage",
+      "aliases": []
+    },
+    {
+      "preferred": "Anderson",
+      "aliases": []
+    },
+    {
+      "preferred": "Andorra",
+      "aliases": []
+    },
+    {
+      "preferred": "Andover",
+      "aliases": []
+    },
+    {
+      "preferred": "Angola",
+      "aliases": []
+    },
+    {
+      "preferred": "Anguilla",
+      "aliases": []
+    },
+    {
+      "preferred": "Ann Arbor",
+      "aliases": []
+    },
+    {
+      "preferred": "Antigua and Barbuda",
+      "aliases": []
+    },
+    {
+      "preferred": "Aomori (prefecture)",
+      "aliases": []
+    },
+    {
+      "preferred": "Appleton",
+      "aliases": []
+    },
+    {
+      "preferred": "Argentina",
+      "aliases": []
+    },
+    {
+      "preferred": "Arizona",
+      "aliases": []
+    },
+    {
+      "preferred": "Arkansas",
+      "aliases": []
+    },
+    {
+      "preferred": "Arlington",
+      "aliases": []
+    },
+    {
+      "preferred": "Armenia",
+      "aliases": []
+    },
+    {
+      "preferred": "Aruba",
+      "aliases": []
+    },
+    {
+      "preferred": "Asheville",
+      "aliases": []
+    },
+    {
+      "preferred": "Asia",
+      "aliases": []
+    },
+    {
+      "preferred": "Atlanta",
+      "aliases": []
+    },
+    {
+      "preferred": "Atlantic City",
+      "aliases": []
+    },
+    {
+      "preferred": "Atlantic Ocean",
+      "aliases": []
+    },
+    {
+      "preferred": "Auburn",
+      "aliases": []
+    },
+    {
+      "preferred": "Augusta",
+      "aliases": []
+    },
+    {
+      "preferred": "Aurora",
+      "aliases": []
+    },
+    {
+      "preferred": "Austin",
+      "aliases": []
+    },
+    {
+      "preferred": "Australia",
+      "aliases": []
+    },
+    {
+      "preferred": "Austria",
+      "aliases": []
+    },
+    {
+      "preferred": "Austria-Hungary",
+      "aliases": []
+    },
+    {
+      "preferred": "Azerbaijan",
+      "aliases": []
+    },
+    {
+      "preferred": "Azores",
+      "aliases": []
+    },
+    {
+      "preferred": "Bagdad",
+      "aliases": []
+    },
+    {
+      "preferred": "Baghdad",
+      "aliases": []
+    },
+    {
+      "preferred": "Bahamas",
+      "aliases": []
+    },
+    {
+      "preferred": "Bahia Blanca",
+      "aliases": []
+    },
+    {
+      "preferred": "Bahrain",
+      "aliases": []
+    },
+    {
+      "preferred": "Bakersfield",
+      "aliases": []
+    },
+    {
+      "preferred": "Bali",
+      "aliases": []
+    },
+    {
+      "preferred": "Baltimore",
+      "aliases": []
+    },
+    {
+      "preferred": "Bangladesh",
+      "aliases": []
+    },
+    {
+      "preferred": "Barbados",
+      "aliases": []
+    },
+    {
+      "preferred": "Barcelona",
+      "aliases": []
+    },
+    {
+      "preferred": "Baton Rouge",
+      "aliases": []
+    },
+    {
+      "preferred": "Bay City",
+      "aliases": []
+    },
+    {
+      "preferred": "Beaumont",
+      "aliases": []
+    },
+    {
+      "preferred": "Beijing",
+      "aliases": []
+    },
+    {
+      "preferred": "Belarus",
+      "aliases": []
+    },
+    {
+      "preferred": "Belgian Congo",
+      "aliases": []
+    },
+    {
+      "preferred": "Belgium",
+      "aliases": []
+    },
+    {
+      "preferred": "Belgrade",
+      "aliases": []
+    },
+    {
+      "preferred": "Belize",
+      "aliases": []
+    },
+    {
+      "preferred": "Bellevue",
+      "aliases": []
+    },
+    {
+      "preferred": "Belo Horizonte",
+      "aliases": []
+    },
+    {
+      "preferred": "Benin",
+      "aliases": []
+    },
+    {
+      "preferred": "Berkeley",
+      "aliases": []
+    },
+    {
+      "preferred": "Berlin",
+      "aliases": []
+    },
+    {
+      "preferred": "Bermuda Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Bethel",
+      "aliases": []
+    },
+    {
+      "preferred": "Bethlehem",
+      "aliases": []
+    },
+    {
+      "preferred": "Bhutan",
+      "aliases": []
+    },
+    {
+      "preferred": "Billings",
+      "aliases": []
+    },
+    {
+      "preferred": "Biloxi",
+      "aliases": []
+    },
+    {
+      "preferred": "Binghamton",
+      "aliases": []
+    },
+    {
+      "preferred": "Birmingham",
+      "aliases": []
+    },
+    {
+      "preferred": "Bloomington",
+      "aliases": []
+    },
+    {
+      "preferred": "Bogota",
+      "aliases": []
+    },
+    {
+      "preferred": "Boise City",
+      "aliases": []
+    },
+    {
+      "preferred": "Bolivia",
+      "aliases": []
+    },
+    {
+      "preferred": "Bologna",
+      "aliases": []
+    },
+    {
+      "preferred": "Bombay",
+      "aliases": []
+    },
+    {
+      "preferred": "Bonaire",
+      "aliases": []
+    },
+    {
+      "preferred": "Bosnia-Hercegovina",
+      "aliases": []
+    },
+    {
+      "preferred": "Boston",
+      "aliases": []
+    },
+    {
+      "preferred": "Botswana",
+      "aliases": []
+    },
+    {
+      "preferred": "Boulder",
+      "aliases": []
+    },
+    {
+      "preferred": "Bouvet Island",
+      "aliases": []
+    },
+    {
+      "preferred": "Bradenton",
+      "aliases": []
+    },
+    {
+      "preferred": "Brazil",
+      "aliases": []
+    },
+    {
+      "preferred": "Bridgeport",
+      "aliases": []
+    },
+    {
+      "preferred": "Bridgewater",
+      "aliases": []
+    },
+    {
+      "preferred": "Brisbane",
+      "aliases": []
+    },
+    {
+      "preferred": "Bristol",
+      "aliases": []
+    },
+    {
+      "preferred": "British Columbia",
+      "aliases": []
+    },
+    {
+      "preferred": "British Virgin Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Brockton",
+      "aliases": []
+    },
+    {
+      "preferred": "Brooklyn",
+      "aliases": []
+    },
+    {
+      "preferred": "Broward County",
+      "aliases": []
+    },
+    {
+      "preferred": "Brownsville",
+      "aliases": []
+    },
+    {
+      "preferred": "Brunei",
+      "aliases": []
+    },
+    {
+      "preferred": "Bryan",
+      "aliases": []
+    },
+    {
+      "preferred": "Buenos Aires",
+      "aliases": []
+    },
+    {
+      "preferred": "Buffalo",
+      "aliases": []
+    },
+    {
+      "preferred": "Bulgaria",
+      "aliases": []
+    },
+    {
+      "preferred": "Burkina Faso",
+      "aliases": []
+    },
+    {
+      "preferred": "Burma",
+      "aliases": []
+    },
+    {
+      "preferred": "Burundi",
+      "aliases": []
+    },
+    {
+      "preferred": "Byelarus",
+      "aliases": []
+    },
+    {
+      "preferred": "Cagliari",
+      "aliases": []
+    },
+    {
+      "preferred": "Cairo",
+      "aliases": []
+    },
+    {
+      "preferred": "California",
+      "aliases": []
+    },
+    {
+      "preferred": "Cambodia",
+      "aliases": []
+    },
+    {
+      "preferred": "Cambridge",
+      "aliases": []
+    },
+    {
+      "preferred": "Camden",
+      "aliases": []
+    },
+    {
+      "preferred": "Cameroon",
+      "aliases": []
+    },
+    {
+      "preferred": "Can Tho",
+      "aliases": []
+    },
+    {
+      "preferred": "Canada",
+      "aliases": []
+    },
+    {
+      "preferred": "Canton",
+      "aliases": []
+    },
+    {
+      "preferred": "Cape Verde",
+      "aliases": []
+    },
+    {
+      "preferred": "Caribbean",
+      "aliases": []
+    },
+    {
+      "preferred": "Cayman Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Cedar Rapids",
+      "aliases": []
+    },
+    {
+      "preferred": "Central African Republic",
+      "aliases": []
+    },
+    {
+      "preferred": "Central America",
+      "aliases": []
+    },
+    {
+      "preferred": "Central Province",
+      "aliases": []
+    },
+    {
+      "preferred": "Central Valley (California)",
+      "aliases": []
+    },
+    {
+      "preferred": "Chad",
+      "aliases": []
+    },
+    {
+      "preferred": "Champaign-Urbana",
+      "aliases": []
+    },
+    {
+      "preferred": "Channel Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Charleston (South Carolina)",
+      "aliases": []
+    },
+    {
+      "preferred": "Charleston (West Virginia)",
+      "aliases": []
+    },
+    {
+      "preferred": "Charlotte",
+      "aliases": []
+    },
+    {
+      "preferred": "Chattanooga",
+      "aliases": []
+    },
+    {
+      "preferred": "Chechnia",
+      "aliases": []
+    },
+    {
+      "preferred": "Chechnya",
+      "aliases": []
+    },
+    {
+      "preferred": "Chester",
+      "aliases": []
+    },
+    {
+      "preferred": "Chicago",
+      "aliases": []
+    },
+    {
+      "preferred": "Chicopee",
+      "aliases": []
+    },
+    {
+      "preferred": "Chihuahua",
+      "aliases": []
+    },
+    {
+      "preferred": "Chile",
+      "aliases": []
+    },
+    {
+      "preferred": "China",
+      "aliases": []
+    },
+    {
+      "preferred": "China (Peoples Republic)",
+      "aliases": []
+    },
+    {
+      "preferred": "Christmas Island",
+      "aliases": []
+    },
+    {
+      "preferred": "Chula Vista",
+      "aliases": []
+    },
+    {
+      "preferred": "Chungnam Province",
+      "aliases": []
+    },
+    {
+      "preferred": "Cincinnati",
+      "aliases": []
+    },
+    {
+      "preferred": "Ciudad Jauvez",
+      "aliases": []
+    },
+    {
+      "preferred": "Clearwater",
+      "aliases": []
+    },
+    {
+      "preferred": "Cleveland",
+      "aliases": []
+    },
+    {
+      "preferred": "Clifton",
+      "aliases": []
+    },
+    {
+      "preferred": "Coast Province",
+      "aliases": []
+    },
+    {
+      "preferred": "Cocos (Keeling) Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "College Station",
+      "aliases": []
+    },
+    {
+      "preferred": "Cologne",
+      "aliases": []
+    },
+    {
+      "preferred": "Colombia",
+      "aliases": []
+    },
+    {
+      "preferred": "Colonial Heights",
+      "aliases": []
+    },
+    {
+      "preferred": "Colorado",
+      "aliases": []
+    },
+    {
+      "preferred": "Colorado Springs",
+      "aliases": []
+    },
+    {
+      "preferred": "Colton",
+      "aliases": []
+    },
+    {
+      "preferred": "Columbia (Missouri)",
+      "aliases": []
+    },
+    {
+      "preferred": "Columbia (South Carolina)",
+      "aliases": []
+    },
+    {
+      "preferred": "Columbus (Georgia)",
+      "aliases": []
+    },
+    {
+      "preferred": "Columbus (Ohio)",
+      "aliases": []
+    },
+    {
+      "preferred": "Comoros",
+      "aliases": []
+    },
+    {
+      "preferred": "Concepcion",
+      "aliases": []
+    },
+    {
+      "preferred": "Congo",
+      "aliases": []
+    },
+    {
+      "preferred": "Connecticut",
+      "aliases": []
+    },
+    {
+      "preferred": "Cook Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Copenhagen",
+      "aliases": []
+    },
+    {
+      "preferred": "Cordoba",
+      "aliases": []
+    },
+    {
+      "preferred": "Corpus Christi",
+      "aliases": []
+    },
+    {
+      "preferred": "Corsica",
+      "aliases": []
+    },
+    {
+      "preferred": "Costa Rica",
+      "aliases": []
+    },
+    {
+      "preferred": "Cote d'Ivoire",
+      "aliases": []
+    },
+    {
+      "preferred": "Croatia",
+      "aliases": []
+    },
+    {
+      "preferred": "Cuba",
+      "aliases": []
+    },
+    {
+      "preferred": "Curacao",
+      "aliases": []
+    },
+    {
+      "preferred": "Cyprus",
+      "aliases": []
+    },
+    {
+      "preferred": "Czech Republic",
+      "aliases": []
+    },
+    {
+      "preferred": "Czechoslovakia",
+      "aliases": []
+    },
+    {
+      "preferred": "Dallas",
+      "aliases": []
+    },
+    {
+      "preferred": "Danbury",
+      "aliases": []
+    },
+    {
+      "preferred": "Davenport",
+      "aliases": []
+    },
+    {
+      "preferred": "Dayton",
+      "aliases": []
+    },
+    {
+      "preferred": "Decatur",
+      "aliases": []
+    },
+    {
+      "preferred": "Deerfield",
+      "aliases": []
+    },
+    {
+      "preferred": "Delaware",
+      "aliases": []
+    },
+    {
+      "preferred": "Democratic Republic of Congo",
+      "aliases": []
+    },
+    {
+      "preferred": "Denison",
+      "aliases": []
+    },
+    {
+      "preferred": "Denmark",
+      "aliases": []
+    },
+    {
+      "preferred": "Denver",
+      "aliases": []
+    },
+    {
+      "preferred": "Des Moines",
+      "aliases": []
+    },
+    {
+      "preferred": "Detroit",
+      "aliases": []
+    },
+    {
+      "preferred": "District of Columbia",
+      "aliases": []
+    },
+    {
+      "preferred": "Distrito Federal (Mexico)",
+      "aliases": []
+    },
+    {
+      "preferred": "Djibouti",
+      "aliases": []
+    },
+    {
+      "preferred": "Dominica",
+      "aliases": []
+    },
+    {
+      "preferred": "Dominican Republic",
+      "aliases": []
+    },
+    {
+      "preferred": "Duluth",
+      "aliases": []
+    },
+    {
+      "preferred": "Durham",
+      "aliases": []
+    },
+    {
+      "preferred": "East Germany",
+      "aliases": []
+    },
+    {
+      "preferred": "East St. Louis",
+      "aliases": []
+    },
+    {
+      "preferred": "East Timor",
+      "aliases": []
+    },
+    {
+      "preferred": "Easter Island",
+      "aliases": []
+    },
+    {
+      "preferred": "Eastern Province",
+      "aliases": []
+    },
+    {
+      "preferred": "Eastern Samoa",
+      "aliases": []
+    },
+    {
+      "preferred": "Easton",
+      "aliases": []
+    },
+    {
+      "preferred": "Ecuador",
+      "aliases": []
+    },
+    {
+      "preferred": "Egypt",
+      "aliases": []
+    },
+    {
+      "preferred": "El Paso",
+      "aliases": []
+    },
+    {
+      "preferred": "El Salvador",
+      "aliases": []
+    },
+    {
+      "preferred": "El-Minya",
+      "aliases": []
+    },
+    {
+      "preferred": "Elizabeth",
+      "aliases": []
+    },
+    {
+      "preferred": "Ellice Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Elmira",
+      "aliases": []
+    },
+    {
+      "preferred": "Elyria",
+      "aliases": []
+    },
+    {
+      "preferred": "England",
+      "aliases": []
+    },
+    {
+      "preferred": "Equatorial Guinea",
+      "aliases": []
+    },
+    {
+      "preferred": "Erie",
+      "aliases": []
+    },
+    {
+      "preferred": "Erie County",
+      "aliases": []
+    },
+    {
+      "preferred": "Eritrea",
+      "aliases": []
+    },
+    {
+      "preferred": "Estado de Mexico",
+      "aliases": []
+    },
+    {
+      "preferred": "Estonia",
+      "aliases": []
+    },
+    {
+      "preferred": "Ethiopia",
+      "aliases": []
+    },
+    {
+      "preferred": "Euclid",
+      "aliases": []
+    },
+    {
+      "preferred": "Eugene",
+      "aliases": []
+    },
+    {
+      "preferred": "Europe",
+      "aliases": []
+    },
+    {
+      "preferred": "European Russia",
+      "aliases": []
+    },
+    {
+      "preferred": "European Union",
+      "aliases": []
+    },
+    {
+      "preferred": "Evanston",
+      "aliases": []
+    },
+    {
+      "preferred": "Evansville",
+      "aliases": []
+    },
+    {
+      "preferred": "Everett",
+      "aliases": []
+    },
+    {
+      "preferred": "Fairbanks",
+      "aliases": []
+    },
+    {
+      "preferred": "Falkland Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Fall River",
+      "aliases": []
+    },
+    {
+      "preferred": "Faroe Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Fayetteville",
+      "aliases": []
+    },
+    {
+      "preferred": "Federal Republic of Germany",
+      "aliases": []
+    },
+    {
+      "preferred": "Federated States of Micronesia",
+      "aliases": []
+    },
+    {
+      "preferred": "Fiji",
+      "aliases": []
+    },
+    {
+      "preferred": "Finland",
+      "aliases": []
+    },
+    {
+      "preferred": "Fitchburg",
+      "aliases": []
+    },
+    {
+      "preferred": "Flint",
+      "aliases": []
+    },
+    {
+      "preferred": "Florida",
+      "aliases": []
+    },
+    {
+      "preferred": "Fort Lauderdale",
+      "aliases": []
+    },
+    {
+      "preferred": "Fort Smith",
+      "aliases": []
+    },
+    {
+      "preferred": "Fort Wayne",
+      "aliases": []
+    },
+    {
+      "preferred": "Fort Worth",
+      "aliases": []
+    },
+    {
+      "preferred": "France",
+      "aliases": []
+    },
+    {
+      "preferred": "French Guiana",
+      "aliases": []
+    },
+    {
+      "preferred": "French Polynesia",
+      "aliases": []
+    },
+    {
+      "preferred": "French Somaliland",
+      "aliases": []
+    },
+    {
+      "preferred": "French Territory of the Afars and Issas",
+      "aliases": []
+    },
+    {
+      "preferred": "Fresno",
+      "aliases": []
+    },
+    {
+      "preferred": "Fullerton",
+      "aliases": []
+    },
+    {
+      "preferred": "Gabon",
+      "aliases": []
+    },
+    {
+      "preferred": "Gadsden",
+      "aliases": []
+    },
+    {
+      "preferred": "Gainesville",
+      "aliases": []
+    },
+    {
+      "preferred": "Galena",
+      "aliases": []
+    },
+    {
+      "preferred": "Galveston",
+      "aliases": []
+    },
+    {
+      "preferred": "Gambia",
+      "aliases": []
+    },
+    {
+      "preferred": "Garden Grove",
+      "aliases": []
+    },
+    {
+      "preferred": "Gary",
+      "aliases": []
+    },
+    {
+      "preferred": "Gastonia",
+      "aliases": []
+    },
+    {
+      "preferred": "Gaza Strip",
+      "aliases": []
+    },
+    {
+      "preferred": "Georgia",
+      "aliases": []
+    },
+    {
+      "preferred": "Georgia (Republic)",
+      "aliases": []
+    },
+    {
+      "preferred": "German Democratic Republic",
+      "aliases": []
+    },
+    {
+      "preferred": "Germany",
+      "aliases": []
+    },
+    {
+      "preferred": "Ghana",
+      "aliases": []
+    },
+    {
+      "preferred": "Gibralter",
+      "aliases": []
+    },
+    {
+      "preferred": "Gilbert Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Gilroy",
+      "aliases": []
+    },
+    {
+      "preferred": "Global",
+      "aliases": []
+    },
+    {
+      "preferred": "Gold Coast (Australia)",
+      "aliases": []
+    },
+    {
+      "preferred": "Grand Forks",
+      "aliases": []
+    },
+    {
+      "preferred": "Grand Rapids",
+      "aliases": []
+    },
+    {
+      "preferred": "Great Britain",
+      "aliases": []
+    },
+    {
+      "preferred": "Great Falls",
+      "aliases": []
+    },
+    {
+      "preferred": "Greece",
+      "aliases": []
+    },
+    {
+      "preferred": "Green Bay",
+      "aliases": []
+    },
+    {
+      "preferred": "Greenland",
+      "aliases": []
+    },
+    {
+      "preferred": "Greensboro",
+      "aliases": []
+    },
+    {
+      "preferred": "Greenville",
+      "aliases": []
+    },
+    {
+      "preferred": "Grenada",
+      "aliases": []
+    },
+    {
+      "preferred": "Groningen",
+      "aliases": []
+    },
+    {
+      "preferred": "Guadalajara",
+      "aliases": []
+    },
+    {
+      "preferred": "Guadeloupe",
+      "aliases": []
+    },
+    {
+      "preferred": "Guam",
+      "aliases": []
+    },
+    {
+      "preferred": "Guanabara",
+      "aliases": []
+    },
+    {
+      "preferred": "Guatemala",
+      "aliases": []
+    },
+    {
+      "preferred": "Guerrero",
+      "aliases": []
+    },
+    {
+      "preferred": "Guinea",
+      "aliases": []
+    },
+    {
+      "preferred": "Guinea-Bissau",
+      "aliases": []
+    },
+    {
+      "preferred": "Gulfport",
+      "aliases": []
+    },
+    {
+      "preferred": "Guyana",
+      "aliases": []
+    },
+    {
+      "preferred": "Gyeonggi Province",
+      "aliases": []
+    },
+    {
+      "preferred": "Hackensack",
+      "aliases": []
+    },
+    {
+      "preferred": "Hai Duong",
+      "aliases": []
+    },
+    {
+      "preferred": "Haiti",
+      "aliases": []
+    },
+    {
+      "preferred": "Hamilton",
+      "aliases": []
+    },
+    {
+      "preferred": "Hamilton County",
+      "aliases": []
+    },
+    {
+      "preferred": "Hammond",
+      "aliases": []
+    },
+    {
+      "preferred": "Hampton",
+      "aliases": []
+    },
+    {
+      "preferred": "Harlem",
+      "aliases": []
+    },
+    {
+      "preferred": "Harlingen",
+      "aliases": []
+    },
+    {
+      "preferred": "Harrisburg",
+      "aliases": []
+    },
+    {
+      "preferred": "Hartford",
+      "aliases": []
+    },
+    {
+      "preferred": "Haverhill",
+      "aliases": []
+    },
+    {
+      "preferred": "Hawaii",
+      "aliases": []
+    },
+    {
+      "preferred": "Hazleton",
+      "aliases": []
+    },
+    {
+      "preferred": "Heard And Mcdonald Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Hialeah",
+      "aliases": []
+    },
+    {
+      "preferred": "High Point",
+      "aliases": []
+    },
+    {
+      "preferred": "Hingham",
+      "aliases": []
+    },
+    {
+      "preferred": "Hiroshima",
+      "aliases": []
+    },
+    {
+      "preferred": "Hiroshima (prefecture)",
+      "aliases": []
+    },
+    {
+      "preferred": "Hokkaido (prefecture)",
+      "aliases": []
+    },
+    {
+      "preferred": "Hollywood (Florida)",
+      "aliases": []
+    },
+    {
+      "preferred": "Holyoke",
+      "aliases": []
+    },
+    {
+      "preferred": "Homer",
+      "aliases": []
+    },
+    {
+      "preferred": "Honduras",
+      "aliases": []
+    },
+    {
+      "preferred": "Hong Kong",
+      "aliases": []
+    },
+    {
+      "preferred": "Honolulu",
+      "aliases": []
+    },
+    {
+      "preferred": "Houston",
+      "aliases": []
+    },
+    {
+      "preferred": "Hungary",
+      "aliases": []
+    },
+    {
+      "preferred": "Hyogo (prefecture)",
+      "aliases": []
+    },
+    {
+      "preferred": "Iceland",
+      "aliases": []
+    },
+    {
+      "preferred": "Idaho",
+      "aliases": []
+    },
+    {
+      "preferred": "Illinois",
+      "aliases": []
+    },
+    {
+      "preferred": "India",
+      "aliases": []
+    },
+    {
+      "preferred": "Indian Ocean",
+      "aliases": []
+    },
+    {
+      "preferred": "Indiana",
+      "aliases": []
+    },
+    {
+      "preferred": "Indianapolis",
+      "aliases": []
+    },
+    {
+      "preferred": "Indonesia",
+      "aliases": []
+    },
+    {
+      "preferred": "Inkster",
+      "aliases": []
+    },
+    {
+      "preferred": "Iowa",
+      "aliases": []
+    },
+    {
+      "preferred": "Iran",
+      "aliases": []
+    },
+    {
+      "preferred": "Iraq",
+      "aliases": []
+    },
+    {
+      "preferred": "Ireland",
+      "aliases": []
+    },
+    {
+      "preferred": "Irvington",
+      "aliases": []
+    },
+    {
+      "preferred": "Ishikawa (prefecture)",
+      "aliases": []
+    },
+    {
+      "preferred": "Isle of Man",
+      "aliases": []
+    },
+    {
+      "preferred": "Israel",
+      "aliases": []
+    },
+    {
+      "preferred": "Italy",
+      "aliases": []
+    },
+    {
+      "preferred": "Ivory Coast",
+      "aliases": []
+    },
+    {
+      "preferred": "Izumo",
+      "aliases": []
+    },
+    {
+      "preferred": "Jackson (Michigan)",
+      "aliases": []
+    },
+    {
+      "preferred": "Jackson (Mississippi)",
+      "aliases": []
+    },
+    {
+      "preferred": "Jacksonville",
+      "aliases": []
+    },
+    {
+      "preferred": "Jalisco",
+      "aliases": []
+    },
+    {
+      "preferred": "Jamaica",
+      "aliases": []
+    },
+    {
+      "preferred": "Japan",
+      "aliases": []
+    },
+    {
+      "preferred": "Java",
+      "aliases": []
+    },
+    {
+      "preferred": "Jeddah",
+      "aliases": []
+    },
+    {
+      "preferred": "Jeonbuk Province",
+      "aliases": []
+    },
+    {
+      "preferred": "Jersey City",
+      "aliases": []
+    },
+    {
+      "preferred": "Johnston Atoll",
+      "aliases": []
+    },
+    {
+      "preferred": "Johnstown",
+      "aliases": []
+    },
+    {
+      "preferred": "Jordan",
+      "aliases": []
+    },
+    {
+      "preferred": "Juan Fernandez Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Juneau",
+      "aliases": []
+    },
+    {
+      "preferred": "Kalamazoo",
+      "aliases": []
+    },
+    {
+      "preferred": "Kalimantan",
+      "aliases": []
+    },
+    {
+      "preferred": "Kanazawa",
+      "aliases": []
+    },
+    {
+      "preferred": "Kansas",
+      "aliases": []
+    },
+    {
+      "preferred": "Kansas City (Kansas)",
+      "aliases": []
+    },
+    {
+      "preferred": "Kansas City (Missouri)",
+      "aliases": []
+    },
+    {
+      "preferred": "Kanto",
+      "aliases": []
+    },
+    {
+      "preferred": "Kazakhstan",
+      "aliases": []
+    },
+    {
+      "preferred": "Kenosha",
+      "aliases": []
+    },
+    {
+      "preferred": "Kentucky",
+      "aliases": []
+    },
+    {
+      "preferred": "Kenya",
+      "aliases": []
+    },
+    {
+      "preferred": "Kettering",
+      "aliases": []
+    },
+    {
+      "preferred": "Kirgiz",
+      "aliases": []
+    },
+    {
+      "preferred": "Kiribati",
+      "aliases": []
+    },
+    {
+      "preferred": "Klamath Falls",
+      "aliases": []
+    },
+    {
+      "preferred": "Knoxville",
+      "aliases": []
+    },
+    {
+      "preferred": "Kobe",
+      "aliases": []
+    },
+    {
+      "preferred": "Kodiak",
+      "aliases": []
+    },
+    {
+      "preferred": "Kosovo",
+      "aliases": []
+    },
+    {
+      "preferred": "Kotzebue",
+      "aliases": []
+    },
+    {
+      "preferred": "Kuwait",
+      "aliases": []
+    },
+    {
+      "preferred": "Kuwait City",
+      "aliases": []
+    },
+    {
+      "preferred": "Kyota (prefecture)",
+      "aliases": []
+    },
+    {
+      "preferred": "Kyoto",
+      "aliases": []
+    },
+    {
+      "preferred": "Kyrgyzstan",
+      "aliases": []
+    },
+    {
+      "preferred": "Lacrosse",
+      "aliases": []
+    },
+    {
+      "preferred": "Lafayette (Indiana)",
+      "aliases": []
+    },
+    {
+      "preferred": "Lafayette (Louisina)",
+      "aliases": []
+    },
+    {
+      "preferred": "Lake Charles",
+      "aliases": []
+    },
+    {
+      "preferred": "Lancaster",
+      "aliases": []
+    },
+    {
+      "preferred": "Landshut",
+      "aliases": []
+    },
+    {
+      "preferred": "Lansing",
+      "aliases": []
+    },
+    {
+      "preferred": "Laos",
+      "aliases": []
+    },
+    {
+      "preferred": "Laredo",
+      "aliases": []
+    },
+    {
+      "preferred": "Las Vegas",
+      "aliases": []
+    },
+    {
+      "preferred": "Latin America",
+      "aliases": []
+    },
+    {
+      "preferred": "Latvia",
+      "aliases": []
+    },
+    {
+      "preferred": "Lausanne",
+      "aliases": []
+    },
+    {
+      "preferred": "Lawrence",
+      "aliases": []
+    },
+    {
+      "preferred": "Lawton",
+      "aliases": []
+    },
+    {
+      "preferred": "Lebanon",
+      "aliases": []
+    },
+    {
+      "preferred": "Leominster",
+      "aliases": []
+    },
+    {
+      "preferred": "Lesotho",
+      "aliases": []
+    },
+    {
+      "preferred": "Lewiston",
+      "aliases": []
+    },
+    {
+      "preferred": "Lexington",
+      "aliases": []
+    },
+    {
+      "preferred": "Liberia",
+      "aliases": []
+    },
+    {
+      "preferred": "Libya",
+      "aliases": []
+    },
+    {
+      "preferred": "Liechtenstein",
+      "aliases": []
+    },
+    {
+      "preferred": "Lima",
+      "aliases": []
+    },
+    {
+      "preferred": "Lincoln",
+      "aliases": []
+    },
+    {
+      "preferred": "Lisbon",
+      "aliases": []
+    },
+    {
+      "preferred": "Lithuania",
+      "aliases": []
+    },
+    {
+      "preferred": "Little Rock",
+      "aliases": []
+    },
+    {
+      "preferred": "London",
+      "aliases": []
+    },
+    {
+      "preferred": "Long Beach",
+      "aliases": []
+    },
+    {
+      "preferred": "Long Ho",
+      "aliases": []
+    },
+    {
+      "preferred": "Lorain",
+      "aliases": []
+    },
+    {
+      "preferred": "Los Angeles",
+      "aliases": []
+    },
+    {
+      "preferred": "Louisiana",
+      "aliases": []
+    },
+    {
+      "preferred": "Louisville",
+      "aliases": []
+    },
+    {
+      "preferred": "Lowell",
+      "aliases": []
+    },
+    {
+      "preferred": "Lubbock",
+      "aliases": []
+    },
+    {
+      "preferred": "Lusaka",
+      "aliases": []
+    },
+    {
+      "preferred": "Luxembourg",
+      "aliases": []
+    },
+    {
+      "preferred": "Luzon",
+      "aliases": []
+    },
+    {
+      "preferred": "Lynchburg",
+      "aliases": []
+    },
+    {
+      "preferred": "Macao",
+      "aliases": []
+    },
+    {
+      "preferred": "Macedonia",
+      "aliases": []
+    },
+    {
+      "preferred": "Macon",
+      "aliases": []
+    },
+    {
+      "preferred": "Madagascar",
+      "aliases": []
+    },
+    {
+      "preferred": "Madison",
+      "aliases": []
+    },
+    {
+      "preferred": "Madrid",
+      "aliases": []
+    },
+    {
+      "preferred": "Maine",
+      "aliases": []
+    },
+    {
+      "preferred": "Malawi",
+      "aliases": []
+    },
+    {
+      "preferred": "Malaysia",
+      "aliases": []
+    },
+    {
+      "preferred": "Malden",
+      "aliases": []
+    },
+    {
+      "preferred": "Maldives",
+      "aliases": []
+    },
+    {
+      "preferred": "Mali",
+      "aliases": []
+    },
+    {
+      "preferred": "Malta",
+      "aliases": []
+    },
+    {
+      "preferred": "Manchester",
+      "aliases": []
+    },
+    {
+      "preferred": "Manhattan (Kansas)",
+      "aliases": []
+    },
+    {
+      "preferred": "Manhattan (New York City)",
+      "aliases": []
+    },
+    {
+      "preferred": "Manila",
+      "aliases": []
+    },
+    {
+      "preferred": "Manitoba",
+      "aliases": []
+    },
+    {
+      "preferred": "Mannheim",
+      "aliases": []
+    },
+    {
+      "preferred": "Mansfield",
+      "aliases": []
+    },
+    {
+      "preferred": "Mar Del Plata",
+      "aliases": []
+    },
+    {
+      "preferred": "Marshall Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Martinique",
+      "aliases": []
+    },
+    {
+      "preferred": "Maryland",
+      "aliases": []
+    },
+    {
+      "preferred": "Massachusetts",
+      "aliases": []
+    },
+    {
+      "preferred": "Maui",
+      "aliases": []
+    },
+    {
+      "preferred": "Mauritania",
+      "aliases": []
+    },
+    {
+      "preferred": "Mauritius",
+      "aliases": []
+    },
+    {
+      "preferred": "Mayfair",
+      "aliases": []
+    },
+    {
+      "preferred": "Mayotte",
+      "aliases": []
+    },
+    {
+      "preferred": "Mecklenburg",
+      "aliases": []
+    },
+    {
+      "preferred": "Memphis",
+      "aliases": []
+    },
+    {
+      "preferred": "Mendoza",
+      "aliases": []
+    },
+    {
+      "preferred": "Meriden",
+      "aliases": []
+    },
+    {
+      "preferred": "Mexico",
+      "aliases": []
+    },
+    {
+      "preferred": "Mexico City",
+      "aliases": []
+    },
+    {
+      "preferred": "Miami",
+      "aliases": []
+    },
+    {
+      "preferred": "Miami Beach",
+      "aliases": []
+    },
+    {
+      "preferred": "Michigan",
+      "aliases": []
+    },
+    {
+      "preferred": "Michoacan",
+      "aliases": []
+    },
+    {
+      "preferred": "Micronesia (Federated States)",
+      "aliases": []
+    },
+    {
+      "preferred": "Middle East",
+      "aliases": []
+    },
+    {
+      "preferred": "Middletown",
+      "aliases": []
+    },
+    {
+      "preferred": "Midland",
+      "aliases": []
+    },
+    {
+      "preferred": "Midway Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Milan",
+      "aliases": []
+    },
+    {
+      "preferred": "Milledgeville",
+      "aliases": []
+    },
+    {
+      "preferred": "Milpitas",
+      "aliases": []
+    },
+    {
+      "preferred": "Milwaukee",
+      "aliases": []
+    },
+    {
+      "preferred": "Minas Gerais",
+      "aliases": []
+    },
+    {
+      "preferred": "Mindanao",
+      "aliases": []
+    },
+    {
+      "preferred": "Minneapolis",
+      "aliases": []
+    },
+    {
+      "preferred": "Minnesota",
+      "aliases": []
+    },
+    {
+      "preferred": "Mississippi",
+      "aliases": []
+    },
+    {
+      "preferred": "Missouri",
+      "aliases": []
+    },
+    {
+      "preferred": "Mobile",
+      "aliases": []
+    },
+    {
+      "preferred": "Moldavia",
+      "aliases": []
+    },
+    {
+      "preferred": "Moldova",
+      "aliases": []
+    },
+    {
+      "preferred": "Monaco",
+      "aliases": []
+    },
+    {
+      "preferred": "Mongolia",
+      "aliases": []
+    },
+    {
+      "preferred": "Monroe",
+      "aliases": []
+    },
+    {
+      "preferred": "Montana",
+      "aliases": []
+    },
+    {
+      "preferred": "Montenegro",
+      "aliases": []
+    },
+    {
+      "preferred": "Montgomery",
+      "aliases": []
+    },
+    {
+      "preferred": "Montgomery County",
+      "aliases": []
+    },
+    {
+      "preferred": "Montreal",
+      "aliases": []
+    },
+    {
+      "preferred": "Montserrat",
+      "aliases": []
+    },
+    {
+      "preferred": "Morocco",
+      "aliases": []
+    },
+    {
+      "preferred": "Moscow",
+      "aliases": []
+    },
+    {
+      "preferred": "Mozambique",
+      "aliases": []
+    },
+    {
+      "preferred": "Mumbai",
+      "aliases": []
+    },
+    {
+      "preferred": "Muncie",
+      "aliases": []
+    },
+    {
+      "preferred": "Munich",
+      "aliases": []
+    },
+    {
+      "preferred": "Muskegon",
+      "aliases": []
+    },
+    {
+      "preferred": "Myanmar",
+      "aliases": []
+    },
+    {
+      "preferred": "Myrtle Beach",
+      "aliases": []
+    },
+    {
+      "preferred": "Nagasaki",
+      "aliases": []
+    },
+    {
+      "preferred": "Nagasaki (prefecture)",
+      "aliases": []
+    },
+    {
+      "preferred": "Nairobi Province",
+      "aliases": []
+    },
+    {
+      "preferred": "Namibia",
+      "aliases": []
+    },
+    {
+      "preferred": "Naples",
+      "aliases": []
+    },
+    {
+      "preferred": "Nashua",
+      "aliases": []
+    },
+    {
+      "preferred": "Nashville",
+      "aliases": []
+    },
+    {
+      "preferred": "Nauru",
+      "aliases": []
+    },
+    {
+      "preferred": "Near East",
+      "aliases": []
+    },
+    {
+      "preferred": "Nebraska",
+      "aliases": []
+    },
+    {
+      "preferred": "Nepal",
+      "aliases": []
+    },
+    {
+      "preferred": "Netherlands",
+      "aliases": []
+    },
+    {
+      "preferred": "Netherlands Antilles",
+      "aliases": []
+    },
+    {
+      "preferred": "Nevada",
+      "aliases": []
+    },
+    {
+      "preferred": "New Bedford",
+      "aliases": []
+    },
+    {
+      "preferred": "New Britain",
+      "aliases": []
+    },
+    {
+      "preferred": "New Brunswick",
+      "aliases": []
+    },
+    {
+      "preferred": "New Caledonia",
+      "aliases": []
+    },
+    {
+      "preferred": "New England",
+      "aliases": []
+    },
+    {
+      "preferred": "New Hampshire",
+      "aliases": []
+    },
+    {
+      "preferred": "New Haven",
+      "aliases": []
+    },
+    {
+      "preferred": "New Hebrides",
+      "aliases": []
+    },
+    {
+      "preferred": "New Jersey",
+      "aliases": []
+    },
+    {
+      "preferred": "New Mexico",
+      "aliases": []
+    },
+    {
+      "preferred": "New Orleans",
+      "aliases": []
+    },
+    {
+      "preferred": "New York (state)",
+      "aliases": []
+    },
+    {
+      "preferred": "New York City",
+      "aliases": []
+    },
+    {
+      "preferred": "New Zealand",
+      "aliases": []
+    },
+    {
+      "preferred": "Newark",
+      "aliases": []
+    },
+    {
+      "preferred": "Newfoundland",
+      "aliases": []
+    },
+    {
+      "preferred": "Newport News",
+      "aliases": []
+    },
+    {
+      "preferred": "Nicaragua",
+      "aliases": []
+    },
+    {
+      "preferred": "Niger",
+      "aliases": []
+    },
+    {
+      "preferred": "Nigeria",
+      "aliases": []
+    },
+    {
+      "preferred": "Niue",
+      "aliases": []
+    },
+    {
+      "preferred": "Nome",
+      "aliases": []
+    },
+    {
+      "preferred": "Norfolk",
+      "aliases": []
+    },
+    {
+      "preferred": "Norfolk Island",
+      "aliases": []
+    },
+    {
+      "preferred": "Normal",
+      "aliases": []
+    },
+    {
+      "preferred": "North Africa",
+      "aliases": []
+    },
+    {
+      "preferred": "North America",
+      "aliases": []
+    },
+    {
+      "preferred": "North Carolina",
+      "aliases": []
+    },
+    {
+      "preferred": "North Dakota",
+      "aliases": []
+    },
+    {
+      "preferred": "North Eastern Province",
+      "aliases": []
+    },
+    {
+      "preferred": "North Korea",
+      "aliases": []
+    },
+    {
+      "preferred": "North Vietnam",
+      "aliases": []
+    },
+    {
+      "preferred": "Northern Ireland",
+      "aliases": []
+    },
+    {
+      "preferred": "Northern Mariana Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Northwest Territories",
+      "aliases": []
+    },
+    {
+      "preferred": "Norwalk",
+      "aliases": []
+    },
+    {
+      "preferred": "Norway",
+      "aliases": []
+    },
+    {
+      "preferred": "Nova Scotia",
+      "aliases": []
+    },
+    {
+      "preferred": "Nuevo Leon",
+      "aliases": []
+    },
+    {
+      "preferred": "Nyanza Province",
+      "aliases": []
+    },
+    {
+      "preferred": "Oahu",
+      "aliases": []
+    },
+    {
+      "preferred": "Oakland",
+      "aliases": []
+    },
+    {
+      "preferred": "Odessa",
+      "aliases": []
+    },
+    {
+      "preferred": "Ogden",
+      "aliases": []
+    },
+    {
+      "preferred": "Ohio",
+      "aliases": []
+    },
+    {
+      "preferred": "Oklahoma",
+      "aliases": []
+    },
+    {
+      "preferred": "Oklahoma City",
+      "aliases": []
+    },
+    {
+      "preferred": "Omaha",
+      "aliases": []
+    },
+    {
+      "preferred": "Oman",
+      "aliases": []
+    },
+    {
+      "preferred": "Ontario",
+      "aliases": []
+    },
+    {
+      "preferred": "Ontario (California)",
+      "aliases": []
+    },
+    {
+      "preferred": "Orange",
+      "aliases": []
+    },
+    {
+      "preferred": "Orasac",
+      "aliases": []
+    },
+    {
+      "preferred": "Oregon",
+      "aliases": []
+    },
+    {
+      "preferred": "Orem",
+      "aliases": []
+    },
+    {
+      "preferred": "Orlando",
+      "aliases": []
+    },
+    {
+      "preferred": "Osaka",
+      "aliases": []
+    },
+    {
+      "preferred": "Osaka (prefecture)",
+      "aliases": []
+    },
+    {
+      "preferred": "Oshkosh",
+      "aliases": []
+    },
+    {
+      "preferred": "Oskaloosa",
+      "aliases": []
+    },
+    {
+      "preferred": "Pacific Ocean",
+      "aliases": []
+    },
+    {
+      "preferred": "Padua",
+      "aliases": []
+    },
+    {
+      "preferred": "Pakistan",
+      "aliases": []
+    },
+    {
+      "preferred": "Palau",
+      "aliases": []
+    },
+    {
+      "preferred": "Palestine",
+      "aliases": []
+    },
+    {
+      "preferred": "Palm Beach",
+      "aliases": []
+    },
+    {
+      "preferred": "Palo Alto",
+      "aliases": []
+    },
+    {
+      "preferred": "Panama",
+      "aliases": []
+    },
+    {
+      "preferred": "Panama Canal Zone",
+      "aliases": []
+    },
+    {
+      "preferred": "Papua New Guinea",
+      "aliases": []
+    },
+    {
+      "preferred": "Paracel Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Paraguay",
+      "aliases": []
+    },
+    {
+      "preferred": "Paris",
+      "aliases": []
+    },
+    {
+      "preferred": "Pasadena",
+      "aliases": []
+    },
+    {
+      "preferred": "Passaic",
+      "aliases": []
+    },
+    {
+      "preferred": "Passau",
+      "aliases": []
+    },
+    {
+      "preferred": "Paterson",
+      "aliases": []
+    },
+    {
+      "preferred": "Pavia",
+      "aliases": []
+    },
+    {
+      "preferred": "Pawtucket",
+      "aliases": []
+    },
+    {
+      "preferred": "Pennsylvania",
+      "aliases": []
+    },
+    {
+      "preferred": "Pensacola",
+      "aliases": []
+    },
+    {
+      "preferred": "Peoria",
+      "aliases": []
+    },
+    {
+      "preferred": "Persian Gulf",
+      "aliases": []
+    },
+    {
+      "preferred": "Persian Gulf States",
+      "aliases": []
+    },
+    {
+      "preferred": "Peru",
+      "aliases": []
+    },
+    {
+      "preferred": "Petersburg",
+      "aliases": []
+    },
+    {
+      "preferred": "Phenix City",
+      "aliases": []
+    },
+    {
+      "preferred": "Philadelphia",
+      "aliases": []
+    },
+    {
+      "preferred": "Philippines",
+      "aliases": []
+    },
+    {
+      "preferred": "Phoenix",
+      "aliases": []
+    },
+    {
+      "preferred": "Pine Bluff",
+      "aliases": []
+    },
+    {
+      "preferred": "Pisa",
+      "aliases": []
+    },
+    {
+      "preferred": "Pitcairn Island",
+      "aliases": []
+    },
+    {
+      "preferred": "Pittsburgh",
+      "aliases": []
+    },
+    {
+      "preferred": "Pittsfield",
+      "aliases": []
+    },
+    {
+      "preferred": "Pleasantville",
+      "aliases": []
+    },
+    {
+      "preferred": "Poland",
+      "aliases": []
+    },
+    {
+      "preferred": "Pomona",
+      "aliases": []
+    },
+    {
+      "preferred": "Port Arthur",
+      "aliases": []
+    },
+    {
+      "preferred": "Portland (Maine)",
+      "aliases": []
+    },
+    {
+      "preferred": "Portland (Oregon)",
+      "aliases": []
+    },
+    {
+      "preferred": "Portsmouth",
+      "aliases": []
+    },
+    {
+      "preferred": "Portugal",
+      "aliases": []
+    },
+    {
+      "preferred": "Portuguese Timor",
+      "aliases": []
+    },
+    {
+      "preferred": "Prince Edward Island",
+      "aliases": []
+    },
+    {
+      "preferred": "Providence",
+      "aliases": []
+    },
+    {
+      "preferred": "Provo",
+      "aliases": []
+    },
+    {
+      "preferred": "Prussia",
+      "aliases": []
+    },
+    {
+      "preferred": "Pueblo",
+      "aliases": []
+    },
+    {
+      "preferred": "Puerto Rico",
+      "aliases": []
+    },
+    {
+      "preferred": "Qatar",
+      "aliases": []
+    },
+    {
+      "preferred": "Quebec (province)",
+      "aliases": []
+    },
+    {
+      "preferred": "Queensland",
+      "aliases": []
+    },
+    {
+      "preferred": "Quincy",
+      "aliases": []
+    },
+    {
+      "preferred": "Quito",
+      "aliases": []
+    },
+    {
+      "preferred": "Racine",
+      "aliases": []
+    },
+    {
+      "preferred": "Raleigh",
+      "aliases": []
+    },
+    {
+      "preferred": "Reading",
+      "aliases": []
+    },
+    {
+      "preferred": "Redlands",
+      "aliases": []
+    },
+    {
+      "preferred": "Reno",
+      "aliases": []
+    },
+    {
+      "preferred": "Republic of Congo",
+      "aliases": []
+    },
+    {
+      "preferred": "Resistencia",
+      "aliases": []
+    },
+    {
+      "preferred": "Reunion",
+      "aliases": []
+    },
+    {
+      "preferred": "Rhode Island",
+      "aliases": []
+    },
+    {
+      "preferred": "Rhodesia",
+      "aliases": []
+    },
+    {
+      "preferred": "Richmond",
+      "aliases": []
+    },
+    {
+      "preferred": "Rift Valley Province",
+      "aliases": []
+    },
+    {
+      "preferred": "Rio Arriba",
+      "aliases": []
+    },
+    {
+      "preferred": "Rio de Janeiro",
+      "aliases": []
+    },
+    {
+      "preferred": "Rio Grande do Sul",
+      "aliases": []
+    },
+    {
+      "preferred": "Riverside",
+      "aliases": []
+    },
+    {
+      "preferred": "Riyadh",
+      "aliases": []
+    },
+    {
+      "preferred": "Roanoke",
+      "aliases": []
+    },
+    {
+      "preferred": "Rochester (Minnesota)",
+      "aliases": []
+    },
+    {
+      "preferred": "Rochester (New York)",
+      "aliases": []
+    },
+    {
+      "preferred": "Rock Hill",
+      "aliases": []
+    },
+    {
+      "preferred": "Rockford",
+      "aliases": []
+    },
+    {
+      "preferred": "Romania",
+      "aliases": []
+    },
+    {
+      "preferred": "Rome (New York)",
+      "aliases": []
+    },
+    {
+      "preferred": "Rondonia",
+      "aliases": []
+    },
+    {
+      "preferred": "Rosario",
+      "aliases": []
+    },
+    {
+      "preferred": "Rosenheim",
+      "aliases": []
+    },
+    {
+      "preferred": "RSFSR",
+      "aliases": []
+    },
+    {
+      "preferred": "Rumania",
+      "aliases": []
+    },
+    {
+      "preferred": "Russia",
+      "aliases": []
+    },
+    {
+      "preferred": "Russian Federation",
+      "aliases": []
+    },
+    {
+      "preferred": "Russian Soviet Federated Socialist Republic",
+      "aliases": []
+    },
+    {
+      "preferred": "Rwanda",
+      "aliases": []
+    },
+    {
+      "preferred": "Saba",
+      "aliases": []
+    },
+    {
+      "preferred": "Sacramento",
+      "aliases": []
+    },
+    {
+      "preferred": "Saginaw",
+      "aliases": []
+    },
+    {
+      "preferred": "Saint Charles",
+      "aliases": []
+    },
+    {
+      "preferred": "Saint Christopher-Nevis",
+      "aliases": []
+    },
+    {
+      "preferred": "Saint Eustatius",
+      "aliases": []
+    },
+    {
+      "preferred": "Saint Helena",
+      "aliases": []
+    },
+    {
+      "preferred": "Saint Kitts-Nevis",
+      "aliases": []
+    },
+    {
+      "preferred": "Saint Lucia",
+      "aliases": []
+    },
+    {
+      "preferred": "Saint Pierre and Miquelon",
+      "aliases": []
+    },
+    {
+      "preferred": "Saint Vincent and the Grenadines",
+      "aliases": []
+    },
+    {
+      "preferred": "Salem (Oregon)",
+      "aliases": []
+    },
+    {
+      "preferred": "Salt Lake City",
+      "aliases": []
+    },
+    {
+      "preferred": "Samoa",
+      "aliases": []
+    },
+    {
+      "preferred": "San Angelo",
+      "aliases": []
+    },
+    {
+      "preferred": "San Antonio",
+      "aliases": []
+    },
+    {
+      "preferred": "San Benito",
+      "aliases": []
+    },
+    {
+      "preferred": "San Bernardino",
+      "aliases": []
+    },
+    {
+      "preferred": "San Diego",
+      "aliases": []
+    },
+    {
+      "preferred": "San Francisco",
+      "aliases": []
+    },
+    {
+      "preferred": "San Jose",
+      "aliases": []
+    },
+    {
+      "preferred": "San Marino",
+      "aliases": []
+    },
+    {
+      "preferred": "Santa Ana",
+      "aliases": []
+    },
+    {
+      "preferred": "Santa Barbara",
+      "aliases": []
+    },
+    {
+      "preferred": "Santa Clara",
+      "aliases": []
+    },
+    {
+      "preferred": "Santa Monica",
+      "aliases": []
+    },
+    {
+      "preferred": "Santarem",
+      "aliases": []
+    },
+    {
+      "preferred": "Santiago",
+      "aliases": []
+    },
+    {
+      "preferred": "Sao Paulo",
+      "aliases": []
+    },
+    {
+      "preferred": "Sao Tome and Principe",
+      "aliases": []
+    },
+    {
+      "preferred": "Sapporo",
+      "aliases": []
+    },
+    {
+      "preferred": "Sarasota",
+      "aliases": []
+    },
+    {
+      "preferred": "Sart",
+      "aliases": []
+    },
+    {
+      "preferred": "Saskatchewan",
+      "aliases": []
+    },
+    {
+      "preferred": "Sassari",
+      "aliases": []
+    },
+    {
+      "preferred": "Saudi Arabia",
+      "aliases": []
+    },
+    {
+      "preferred": "Savannah",
+      "aliases": []
+    },
+    {
+      "preferred": "Schenectady",
+      "aliases": []
+    },
+    {
+      "preferred": "Scotland",
+      "aliases": []
+    },
+    {
+      "preferred": "Scranton",
+      "aliases": []
+    },
+    {
+      "preferred": "Seattle",
+      "aliases": []
+    },
+    {
+      "preferred": "Sedona",
+      "aliases": []
+    },
+    {
+      "preferred": "Senegal",
+      "aliases": []
+    },
+    {
+      "preferred": "Seoul",
+      "aliases": []
+    },
+    {
+      "preferred": "Serbia",
+      "aliases": []
+    },
+    {
+      "preferred": "Serbia and Montenegro",
+      "aliases": []
+    },
+    {
+      "preferred": "Seychelles",
+      "aliases": []
+    },
+    {
+      "preferred": "Shanghai",
+      "aliases": []
+    },
+    {
+      "preferred": "Sherman",
+      "aliases": []
+    },
+    {
+      "preferred": "Shimane (prefecture)",
+      "aliases": []
+    },
+    {
+      "preferred": "Shreveport",
+      "aliases": []
+    },
+    {
+      "preferred": "Sichuan Province",
+      "aliases": []
+    },
+    {
+      "preferred": "Sierra Leone",
+      "aliases": []
+    },
+    {
+      "preferred": "Singapore",
+      "aliases": []
+    },
+    {
+      "preferred": "Sioux City",
+      "aliases": []
+    },
+    {
+      "preferred": "Sioux Falls",
+      "aliases": []
+    },
+    {
+      "preferred": "Slovakia",
+      "aliases": []
+    },
+    {
+      "preferred": "Slovenia",
+      "aliases": []
+    },
+    {
+      "preferred": "Soldotna",
+      "aliases": []
+    },
+    {
+      "preferred": "Solomon Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Somalia",
+      "aliases": []
+    },
+    {
+      "preferred": "South Africa",
+      "aliases": []
+    },
+    {
+      "preferred": "South America",
+      "aliases": []
+    },
+    {
+      "preferred": "South Bend",
+      "aliases": []
+    },
+    {
+      "preferred": "South Carolina",
+      "aliases": []
+    },
+    {
+      "preferred": "South Dakota",
+      "aliases": []
+    },
+    {
+      "preferred": "South Georgia and the South Sandwich Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "South Korea",
+      "aliases": []
+    },
+    {
+      "preferred": "South Vietnam",
+      "aliases": []
+    },
+    {
+      "preferred": "Southeast Asia",
+      "aliases": []
+    },
+    {
+      "preferred": "Southern Rhodesia",
+      "aliases": []
+    },
+    {
+      "preferred": "Soviet Union",
+      "aliases": []
+    },
+    {
+      "preferred": "Spain",
+      "aliases": []
+    },
+    {
+      "preferred": "Spokane",
+      "aliases": []
+    },
+    {
+      "preferred": "Spratley Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Springfield (Illinois)",
+      "aliases": []
+    },
+    {
+      "preferred": "Springfield (Massachusetts)",
+      "aliases": []
+    },
+    {
+      "preferred": "Springfield (Missouri)",
+      "aliases": []
+    },
+    {
+      "preferred": "Springfield (Ohio)",
+      "aliases": []
+    },
+    {
+      "preferred": "Sri Lanka",
+      "aliases": []
+    },
+    {
+      "preferred": "St. Joseph",
+      "aliases": []
+    },
+    {
+      "preferred": "St. Louis",
+      "aliases": []
+    },
+    {
+      "preferred": "St. Paul",
+      "aliases": []
+    },
+    {
+      "preferred": "St. Petersburg",
+      "aliases": []
+    },
+    {
+      "preferred": "Stamford",
+      "aliases": []
+    },
+    {
+      "preferred": "State College",
+      "aliases": []
+    },
+    {
+      "preferred": "Steubenville",
+      "aliases": []
+    },
+    {
+      "preferred": "Stockholm",
+      "aliases": []
+    },
+    {
+      "preferred": "Stockport",
+      "aliases": []
+    },
+    {
+      "preferred": "Stockton",
+      "aliases": []
+    },
+    {
+      "preferred": "Sub-Saharan Africa",
+      "aliases": []
+    },
+    {
+      "preferred": "Sudan",
+      "aliases": []
+    },
+    {
+      "preferred": "Sulawesi",
+      "aliases": []
+    },
+    {
+      "preferred": "Sumatra",
+      "aliases": []
+    },
+    {
+      "preferred": "Superior",
+      "aliases": []
+    },
+    {
+      "preferred": "Suriname",
+      "aliases": []
+    },
+    {
+      "preferred": "Swaziland",
+      "aliases": []
+    },
+    {
+      "preferred": "Sweden",
+      "aliases": []
+    },
+    {
+      "preferred": "Switzerland",
+      "aliases": []
+    },
+    {
+      "preferred": "Syracuse",
+      "aliases": []
+    },
+    {
+      "preferred": "Syria",
+      "aliases": []
+    },
+    {
+      "preferred": "Tacoma",
+      "aliases": []
+    },
+    {
+      "preferred": "Tadzhik",
+      "aliases": []
+    },
+    {
+      "preferred": "Taiwan",
+      "aliases": []
+    },
+    {
+      "preferred": "Tajikistan",
+      "aliases": []
+    },
+    {
+      "preferred": "Tallahassee",
+      "aliases": []
+    },
+    {
+      "preferred": "Tampa",
+      "aliases": []
+    },
+    {
+      "preferred": "Tanzania",
+      "aliases": []
+    },
+    {
+      "preferred": "Tecumseh",
+      "aliases": []
+    },
+    {
+      "preferred": "Temuco",
+      "aliases": []
+    },
+    {
+      "preferred": "Tennessee",
+      "aliases": []
+    },
+    {
+      "preferred": "Terre Haute",
+      "aliases": []
+    },
+    {
+      "preferred": "Texarkana",
+      "aliases": []
+    },
+    {
+      "preferred": "Texas",
+      "aliases": []
+    },
+    {
+      "preferred": "Texas City",
+      "aliases": []
+    },
+    {
+      "preferred": "Thailand",
+      "aliases": []
+    },
+    {
+      "preferred": "Tianjin",
+      "aliases": []
+    },
+    {
+      "preferred": "Tien Tien",
+      "aliases": []
+    },
+    {
+      "preferred": "Tijuana",
+      "aliases": []
+    },
+    {
+      "preferred": "Timor",
+      "aliases": []
+    },
+    {
+      "preferred": "Togo",
+      "aliases": []
+    },
+    {
+      "preferred": "Tokelau",
+      "aliases": []
+    },
+    {
+      "preferred": "Tokyo",
+      "aliases": []
+    },
+    {
+      "preferred": "Toledo",
+      "aliases": []
+    },
+    {
+      "preferred": "Tonga",
+      "aliases": []
+    },
+    {
+      "preferred": "Topeka",
+      "aliases": []
+    },
+    {
+      "preferred": "Toronto",
+      "aliases": []
+    },
+    {
+      "preferred": "Trenton",
+      "aliases": []
+    },
+    {
+      "preferred": "Trieste",
+      "aliases": []
+    },
+    {
+      "preferred": "Trinidad and Tobago",
+      "aliases": []
+    },
+    {
+      "preferred": "Troy",
+      "aliases": []
+    },
+    {
+      "preferred": "Trust Territory of the Pacific Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Tucson",
+      "aliases": []
+    },
+    {
+      "preferred": "Tulsa",
+      "aliases": []
+    },
+    {
+      "preferred": "Tunisia",
+      "aliases": []
+    },
+    {
+      "preferred": "Turkey",
+      "aliases": []
+    },
+    {
+      "preferred": "Turkmenistan",
+      "aliases": []
+    },
+    {
+      "preferred": "Turks and Caicos Islands",
+      "aliases": []
+    },
+    {
+      "preferred": "Tuvalu",
+      "aliases": []
+    },
+    {
+      "preferred": "Tyler",
+      "aliases": []
+    },
+    {
+      "preferred": "Uganda",
+      "aliases": []
+    },
+    {
+      "preferred": "Uji",
+      "aliases": []
+    },
+    {
+      "preferred": "Ukraine",
+      "aliases": []
+    },
+    {
+      "preferred": "Union of Soviet Socialist Republics",
+      "aliases": []
+    },
+    {
+      "preferred": "United Arab Emirates",
+      "aliases": []
+    },
+    {
+      "preferred": "United Kingdom",
+      "aliases": []
+    },
+    {
+      "preferred": "United States",
+      "aliases": []
+    },
+    {
+      "preferred": "United States of America",
+      "aliases": []
+    },
+    {
+      "preferred": "Upper Volta",
+      "aliases": []
+    },
+    {
+      "preferred": "Uruguay",
+      "aliases": []
+    },
+    {
+      "preferred": "USA",
+      "aliases": []
+    },
+    {
+      "preferred": "USSR",
+      "aliases": []
+    },
+    {
+      "preferred": "Utah",
+      "aliases": []
+    },
+    {
+      "preferred": "Utica",
+      "aliases": []
+    },
+    {
+      "preferred": "Uzbek",
+      "aliases": []
+    },
+    {
+      "preferred": "Uzbekistan",
+      "aliases": []
+    },
+    {
+      "preferred": "Valparaiso",
+      "aliases": []
+    },
+    {
+      "preferred": "Vancouver",
+      "aliases": []
+    },
+    {
+      "preferred": "Vancouver (Washington)",
+      "aliases": []
+    },
+    {
+      "preferred": "Vanuatu",
+      "aliases": []
+    },
+    {
+      "preferred": "Vatican City",
+      "aliases": []
+    },
+    {
+      "preferred": "Venezuela",
+      "aliases": []
+    },
+    {
+      "preferred": "Veracruz (city)",
+      "aliases": []
+    },
+    {
+      "preferred": "Vermont",
+      "aliases": []
+    },
+    {
+      "preferred": "Vietnam",
+      "aliases": []
+    },
+    {
+      "preferred": "Vietnam (Socialist Republic)",
+      "aliases": []
+    },
+    {
+      "preferred": "Virgin Islands of the United States",
+      "aliases": []
+    },
+    {
+      "preferred": "Virginia",
+      "aliases": []
+    },
+    {
+      "preferred": "Virginia Beach",
+      "aliases": []
+    },
+    {
+      "preferred": "Visayas",
+      "aliases": []
+    },
+    {
+      "preferred": "Waco",
+      "aliases": []
+    },
+    {
+      "preferred": "Wake Island",
+      "aliases": []
+    },
+    {
+      "preferred": "Wales",
+      "aliases": []
+    },
+    {
+      "preferred": "Wallis and Futuna",
+      "aliases": []
+    },
+    {
+      "preferred": "Warren",
+      "aliases": []
+    },
+    {
+      "preferred": "Warwick",
+      "aliases": []
+    },
+    {
+      "preferred": "Washington",
+      "aliases": []
+    },
+    {
+      "preferred": "Washington, DC",
+      "aliases": []
+    },
+    {
+      "preferred": "Waterbury",
+      "aliases": []
+    },
+    {
+      "preferred": "Waterloo",
+      "aliases": []
+    },
+    {
+      "preferred": "Waukegan",
+      "aliases": []
+    },
+    {
+      "preferred": "Weirton",
+      "aliases": []
+    },
+    {
+      "preferred": "West Germany",
+      "aliases": []
+    },
+    {
+      "preferred": "West Indies",
+      "aliases": []
+    },
+    {
+      "preferred": "West Nusa Tenggara",
+      "aliases": []
+    },
+    {
+      "preferred": "West Palm Beach",
+      "aliases": []
+    },
+    {
+      "preferred": "West Virginia",
+      "aliases": []
+    },
+    {
+      "preferred": "Western Province",
+      "aliases": []
+    },
+    {
+      "preferred": "Western Samoa",
+      "aliases": []
+    },
+    {
+      "preferred": "Wheeling",
+      "aliases": []
+    },
+    {
+      "preferred": "Wichita",
+      "aliases": []
+    },
+    {
+      "preferred": "Wichita Falls",
+      "aliases": []
+    },
+    {
+      "preferred": "Wilkes-Barre",
+      "aliases": []
+    },
+    {
+      "preferred": "Wilmington (Delaware)",
+      "aliases": []
+    },
+    {
+      "preferred": "Wilmington (North Carolina)",
+      "aliases": []
+    },
+    {
+      "preferred": "Winston-Salem",
+      "aliases": []
+    },
+    {
+      "preferred": "Wisconsin",
+      "aliases": []
+    },
+    {
+      "preferred": "Woodbury",
+      "aliases": []
+    },
+    {
+      "preferred": "Worchester",
+      "aliases": []
+    },
+    {
+      "preferred": "Wuhan",
+      "aliases": []
+    },
+    {
+      "preferred": "Wyoming",
+      "aliases": []
+    },
+    {
+      "preferred": "Xenon",
+      "aliases": []
+    },
+    {
+      "preferred": "Xi'an",
+      "aliases": []
+    },
+    {
+      "preferred": "Yemen",
+      "aliases": []
+    },
+    {
+      "preferred": "Yonkers",
+      "aliases": []
+    },
+    {
+      "preferred": "York",
+      "aliases": []
+    },
+    {
+      "preferred": "Yoshikawa",
+      "aliases": []
+    },
+    {
+      "preferred": "Youngstown",
+      "aliases": []
+    },
+    {
+      "preferred": "Ypsilanti",
+      "aliases": []
+    },
+    {
+      "preferred": "Yugoslavia",
+      "aliases": []
+    },
+    {
+      "preferred": "Yukon Territory",
+      "aliases": []
+    },
+    {
+      "preferred": "Yuma",
+      "aliases": []
+    },
+    {
+      "preferred": "Zaire",
+      "aliases": []
+    },
+    {
+      "preferred": "Zambia",
+      "aliases": []
+    },
+    {
+      "preferred": "Zimbabwe",
+      "aliases": []
+    }
+  ]
+}

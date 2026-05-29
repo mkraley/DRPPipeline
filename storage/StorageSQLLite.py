@@ -48,6 +48,7 @@ class StorageSQLLite:
         time_start TEXT,
         time_end TEXT,
         data_types TEXT,
+        geographic_coverage TEXT,
         extensions TEXT,
         download_date TEXT,
         collection_notes TEXT,
@@ -181,6 +182,15 @@ class StorageSQLLite:
             try:
                 self._connection.execute(
                     "ALTER TABLE projects ADD COLUMN downloads INTEGER"
+                )
+                self._connection.commit()
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+
+            try:
+                self._connection.execute(
+                    "ALTER TABLE projects ADD COLUMN geographic_coverage TEXT"
                 )
                 self._connection.commit()
             except sqlite3.OperationalError as e:

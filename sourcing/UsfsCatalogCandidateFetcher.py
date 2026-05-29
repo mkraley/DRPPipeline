@@ -6,6 +6,7 @@ Catalog listing: https://www.fs.usda.gov/rds/archive/catalog
 
 from __future__ import annotations
 
+import time
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
@@ -55,6 +56,41 @@ def extract_catalog_entries(html: str, base_url: str = CATALOG_BASE) -> list[dic
     return rows
 
 
+def _entry_dict(url: str, title: str) -> dict[str, str]:
+    return {"url": url, "title": title, "agency": AGENCY, "office": OFFICE}
+
+
+def fetch_catalog_page(
+    page_index: int,
+    *,
+    timeout: int = 60,
+    max_retries: int = 3,
+) -> tuple[list[dict[str, str]], int]:
+    """
+    Fetch one catalog listing page with retries.
+
+    Returns:
+        Tuple of (candidate rows for the page, final HTTP status).
+        On success, status is 200 and rows may be empty when the catalog ends.
+    """
+    url = catalog_listing_url(page_index)
+    last_status = -1
+
+    for attempt in range(max_retries):
+        status, body, _content_type, _logical_404 = fetch_page_body(url, timeout=timeout)
+        last_status = status
+        if status == 200 and body:
+            page_rows = extract_catalog_entries(body, url)
+            return (
+                [_entry_dict(e["url"], e["title"]) for e in page_rows],
+                status,
+            )
+        if attempt < max_retries - 1:
+            time.sleep(2**attempt)
+
+    return [], last_status
+
+
 class UsfsCatalogCandidateFetcher:
     """Enumerate USFS Research Data Archive catalog entries."""
 
@@ -62,13 +98,16 @@ class UsfsCatalogCandidateFetcher:
         """
         Walk catalog listing pages and return entry metadata.
 
-        Each dict has keys: url, title, agency.
+        Each dict has keys: url, title, agency, office.
 
         Args:
             limit: Max entries to return. None = all catalog entries.
 
         Returns:
             Tuple of (candidate rows, skipped_count). skipped_count is always 0 here.
+
+        Raises:
+            RuntimeError: If a catalog page cannot be fetched after retries.
         """
         rows: list[dict[str, str]] = []
         page_index = 1
@@ -77,28 +116,18 @@ class UsfsCatalogCandidateFetcher:
             if limit is not None and len(rows) >= limit:
                 break
 
-            url = catalog_listing_url(page_index)
-            status, body, _content_type, _logical_404 = fetch_page_body(url)
-            if status != 200 or not body:
+            page_rows, status = fetch_catalog_page(page_index)
+            if status != 200:
                 raise RuntimeError(
                     f"Failed to fetch USFS catalog page {page_index}: status={status}"
                 )
-
-            page_rows = extract_catalog_entries(body, url)
             if not page_rows:
                 break
 
             for entry in page_rows:
                 if limit is not None and len(rows) >= limit:
                     break
-                rows.append(
-                    {
-                        "url": entry["url"],
-                        "title": entry["title"],
-                        "agency": AGENCY,
-                        "office": OFFICE,
-                    }
-                )
+                rows.append(entry)
 
             if len(page_rows) < DEFAULT_PAGE_SIZE:
                 break

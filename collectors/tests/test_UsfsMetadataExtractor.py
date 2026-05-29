@@ -2,12 +2,34 @@
 
 from collectors.UsfsMetadataExtractor import (
     merge_usfs_metadata,
+    normalize_keywords,
+    normalize_temporal_date,
     parse_data_access_links,
     parse_detail_page,
     parse_download_count,
+    parse_human_size,
     parse_metadata_page,
     rds_id_from_source_url,
 )
+
+DATA_ACCESS_BOX_ZIPS_HTML = """
+<dl>
+<dt>Data Access:</dt>
+<dd class="product">
+<ul>
+<li>View <a href="/rds/archive/products/RDS-2026-0016/_metadata_RDS-2026-0016.html">metadata</a> (HTML)</li>
+<li>View <a href="/rds/archive/products/RDS-2026-0016/_fileindex_RDS-2026-0016.html">file index</a> (HTML)</li>
+<li>Download all files below for the complete publication:
+<ul>
+<li><a href="/rds/archive/products/RDS-2026-0016/RDS-2026-0016_Metadata_Fileindex.zip">RDS-2026-0016_Metadata_Fileindex.zip</a><em>(26.25 KB;</em></li>
+<li><a href="https://usfs-public.box.com/shared/static/abc.zip">RDS-2026-0016_Data_FuelMap2020.zip</a><em>(30.8 GB;</em></li>
+<li><a href="https://usfs-public.box.com/shared/static/def.zip">RDS-2026-0016_Data_FuelMap2022.zip</a><em>(30.9 GB;</em></li>
+</ul>
+</li>
+</ul>
+</dd>
+</dl>
+"""
 
 DETAIL_HTML = """
 <html><head>
@@ -27,7 +49,7 @@ DETAIL_HTML = """
 <li>View <a href="/rds/archive/products/RDS-2026-0018/_fileindex_RDS-2026-0018.html">file index</a> (HTML)</li>
 <li>Download all files below for the complete publication:
 <ul>
-<li><a href="/rds/archive/products/RDS-2026-0018/RDS-2026-0018.zip">RDS-2026-0018.zip</a></li>
+<li><a href="/rds/archive/products/RDS-2026-0018/RDS-2026-0018.zip">RDS-2026-0018.zip</a><em>(264.95 MB;</em></li>
 </ul>
 </li>
 </ul>
@@ -44,6 +66,25 @@ METADATA_HTML = """
 <dt>Ending_Date:2020</dt>
 """
 
+METADATA_HTML_YMD = """
+<dt>Geospatial_Data_Presentation_Form:tabular digital data</dt>
+<dt>Beginning_Date:201606</dt>
+<dt>Ending_Date:201707</dt>
+<dt>Beginning_Date:19990803</dt>
+<dt>Ending_Date:20010915</dt>
+"""
+
+METADATA_HTML_GEO = """
+<dt>Description_of_Geographic_Extent:</dt>
+<dd>Study area near Fraser, Colorado.</dd>
+<dt><i>West_Bounding_Coordinate: </i>-105.5</dt>
+<dt><i>East_Bounding_Coordinate: </i>-105.0</dt>
+<dt><i>North_Bounding_Coordinate: </i>39.9</dt>
+<dt><i>South_Bounding_Coordinate: </i>39.5</dt>
+<dt><i>Place_Keyword: </i>Puerto Rico</dt>
+<dt><i>Place_Keyword: </i>Luquillo Experimental Forest</dt>
+"""
+
 
 class TestUsfsMetadataExtractor:
     def test_rds_id_from_source_url(self) -> None:
@@ -51,6 +92,31 @@ class TestUsfsMetadataExtractor:
             rds_id_from_source_url("https://www.fs.usda.gov/rds/archive/catalog/RDS-2026-0018")
             == "RDS-2026-0018"
         )
+        assert (
+            rds_id_from_source_url("https://www.fs.usda.gov/rds/archive/catalog/EFR-2026-001")
+            == "EFR-2026-001"
+        )
+
+    def test_normalize_keywords_splits_and_strips_ampersands(self) -> None:
+        raw = (
+            "inlandWaters; Ecology, Ecosystems, & Environment; "
+            "Hydrology, watersheds, sedimentation; organic matter"
+        )
+        assert normalize_keywords(raw) == (
+            "inlandWaters, Ecology, Ecosystems, Environment, "
+            "Hydrology, watersheds, sedimentation, organic matter"
+        )
+        assert normalize_keywords("environment; Fire; Ecology") == "environment, Fire, Ecology"
+
+    def test_parse_human_size(self) -> None:
+        assert parse_human_size("26.25 KB") == int(26.25 * 1024)
+        assert parse_human_size("30.8 GB") == int(30.8 * 1024**3)
+
+    def test_normalize_temporal_date(self) -> None:
+        assert normalize_temporal_date("1987") == "1987"
+        assert normalize_temporal_date("201606") == "2016-06-01"
+        assert normalize_temporal_date("19990803") == "1999-08-03"
+        assert normalize_temporal_date("  2025  ") == "2025"
 
     def test_parse_download_count(self) -> None:
         assert parse_download_count("Visit count : 14 0 Download count: 1 More details") == 1
@@ -79,19 +145,47 @@ class TestUsfsMetadataExtractor:
         )
         assert links["metadata_url"].endswith("_metadata_RDS-2026-0018.html")
         assert links["fileindex_url"].endswith("_fileindex_RDS-2026-0018.html")
-        assert links["publication_files"] == [
-            (
-                "RDS-2026-0018.zip",
-                "https://www.fs.usda.gov/rds/archive/products/RDS-2026-0018/RDS-2026-0018.zip",
-            )
+        name, url, size_bytes = links["publication_files"][0]
+        assert name == "RDS-2026-0018.zip"
+        assert url.endswith("/RDS-2026-0018.zip")
+        assert size_bytes == parse_human_size("264.95 MB")
+
+    def test_parse_data_access_links_includes_box_com_zips(self) -> None:
+        links = parse_data_access_links(
+            DATA_ACCESS_BOX_ZIPS_HTML,
+            "https://www.fs.usda.gov/rds/archive/catalog/RDS-2026-0016",
+        )
+        names = [name for name, _url, _size in links["publication_files"]]
+        assert names == [
+            "RDS-2026-0016_Metadata_Fileindex.zip",
+            "RDS-2026-0016_Data_FuelMap2020.zip",
+            "RDS-2026-0016_Data_FuelMap2022.zip",
         ]
+        assert links["publication_files"][1][1].startswith("https://usfs-public.box.com/")
+        assert links["publication_files"][1][2] == parse_human_size("30.8 GB")
 
     def test_parse_metadata_page(self) -> None:
         result = parse_metadata_page(METADATA_HTML)
         assert "office" not in result  # FGDC page does not set office
         assert result["time_start"] == "1987"
         assert result["time_end"] == "2018"
-        assert result["data_types"] == "tabular"
+        assert "data_types" not in result
+
+    def test_parse_metadata_page_normalizes_ymd(self) -> None:
+        result = parse_metadata_page(METADATA_HTML_YMD)
+        assert result["time_start"] == "2016-06-01"
+        assert result["time_end"] == "2017-07-01"
+
+    def test_parse_metadata_page_geographic_fields(self) -> None:
+        result = parse_metadata_page(METADATA_HTML_GEO)
+        assert result["geographic_extent_description"] == "Study area near Fraser, Colorado."
+        assert result["place_keywords"] == ["Puerto Rico", "Luquillo Experimental Forest"]
+        assert result["bounding_box"] == {
+            "west": -105.5,
+            "east": -105.0,
+            "north": 39.9,
+            "south": 39.5,
+        }
 
     def test_merge_usfs_metadata_prefers_metadata_dates(self) -> None:
         detail = {"title": "T", "time_end": "2026", "summary": "S"}
@@ -99,5 +193,5 @@ class TestUsfsMetadataExtractor:
         merged = merge_usfs_metadata(detail, metadata)
         assert merged["time_start"] == "1987"
         assert merged["time_end"] == "2018"
-        assert merged["data_types"] == "tabular"
+        assert "data_types" not in merged
         assert merged["summary"] == "S"

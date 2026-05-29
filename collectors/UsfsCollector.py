@@ -3,13 +3,14 @@ USFS Research Data Archive collector for DRP Pipeline.
 
 Harvests metadata and saves catalog pages (detail, metadata, file index) as PDF,
 then downloads publication files listed under "Download all files below".
+Files larger than 1 GB are not downloaded; catalog-listed sizes are still counted.
 """
 
 from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Tuple
 
 from collectors.UsfsMetadataExtractor import (
     AGENCY,
@@ -27,16 +28,21 @@ from utils.Args import Args
 from utils.Errors import record_error, record_warning
 from utils.Logger import Logger
 from utils.download_with_progress import download_via_url
-from utils.file_utils import (
-    create_output_folder,
-    folder_extensions_and_size,
-    format_file_size,
-    sanitize_filename,
+from utils.file_utils import create_output_folder, format_file_size, sanitize_filename
+from utils.IcpsrGeographicNormalizer import (
+    log_geographic_normalization,
+    normalize_geographic_metadata,
 )
 from utils.url_utils import fetch_page_body, is_valid_url
 
+PublicationFile = Tuple[str, str, Optional[int]]
+
 _HTML_EXTENSIONS = {".html", ".htm"}
 _KEEP_EXTENSIONS = {".zip", ".csv", ".xlsx", ".xls"}
+MAX_DOWNLOAD_BYTES = 1 * 1024**3  # 1 GB
+TOTAL_SIZE_WARN_BYTES = 50 * 1024**3  # 50 GB
+_DOWNLOAD_TIMEOUT_SEC = 3600  # 1 hour read timeout for large-but-allowed files
+_PDF_NAMES = ("catalog_detail.pdf", "metadata.pdf", "file_index.pdf")
 
 
 class UsfsCollector:
@@ -110,6 +116,8 @@ class UsfsCollector:
             record_warning(drpid, f"Could not extract RDS id from URL: {url}")
 
         result = merge_usfs_metadata(detail, metadata)
+        result.pop("data_types", None)
+        self._apply_geographic_coverage(drpid, result, metadata)
         result["agency"] = AGENCY
         result["office"] = OFFICE
 
@@ -121,19 +129,37 @@ class UsfsCollector:
         links = parse_data_access_links(body, url)
         self._save_page_pdfs(drpid, page_downloader, folder_path, url, links)
 
-        for filename, file_url in links.get("publication_files", []):
-            self._download_publication_file(drpid, page_downloader, folder_path, filename, file_url)
+        status_notes, inventory_bytes, inventory_exts = self._process_publication_files(
+            drpid,
+            page_downloader,
+            folder_path,
+            links.get("publication_files", []),
+        )
 
-        exts, total_bytes, num_files = folder_extensions_and_size(folder_path)
+        pdf_bytes = self._pdf_folder_bytes(folder_path)
+        total_bytes = inventory_bytes + pdf_bytes
+        all_exts = sorted(inventory_exts | {"pdf"})
+        num_files = len(links.get("publication_files", [])) + len(_PDF_NAMES)
+
+        notes_parts = list(status_notes)
+        if total_bytes > TOTAL_SIZE_WARN_BYTES:
+            notes_parts.insert(
+                0,
+                f"TOTAL SIZE EXCEEDS 50 GB: {format_file_size(total_bytes)} "
+                f"({num_files} files including items not downloaded; manual download may be required).",
+            )
+
         result.update(
             {
                 "folder_path": str(folder_path),
-                "extensions": ", ".join(exts),
+                "extensions": ", ".join(all_exts),
                 "file_size": format_file_size(total_bytes),
                 "num_files": num_files,
                 "download_date": date.today().isoformat(),
             }
         )
+        if notes_parts:
+            result["status_notes"] = "\n".join(notes_parts)
 
         Logger.info(
             "USFS collection complete for DRPID %s: %s files, %s",
@@ -142,6 +168,30 @@ class UsfsCollector:
             result.get("file_size"),
         )
         return result
+
+    def _apply_geographic_coverage(
+        self,
+        drpid: int,
+        result: Dict[str, Any],
+        metadata: Dict[str, Any],
+    ) -> None:
+        """Map FGDC geographic fields to ICPSR thesaurus terms on ``result``."""
+        geo = normalize_geographic_metadata(
+            geographic_extent_description=metadata.get("geographic_extent_description", ""),
+            place_keywords=metadata.get("place_keywords"),
+            bounding_box=metadata.get("bounding_box"),
+        )
+        log_geographic_normalization(
+            geo,
+            geographic_extent_description=metadata.get("geographic_extent_description", ""),
+            place_keywords=metadata.get("place_keywords"),
+            bounding_box=metadata.get("bounding_box"),
+            context=f"DRPID {drpid}",
+        )
+        if geo.geographic_coverage:
+            result["geographic_coverage"] = geo.geographic_coverage
+        for warning in geo.warnings:
+            record_warning(drpid, warning)
 
     def _save_page_pdfs(
         self,
@@ -164,33 +214,101 @@ class UsfsCollector:
             if not page_downloader.url_to_pdf(page_url, dest):
                 record_warning(drpid, f"Failed to save PDF: {pdf_name}")
 
-    def _download_publication_file(
+    def _process_publication_files(
         self,
         drpid: int,
-        page_downloader: UsfsPageDownloader,
+        page_downloader: UsfsPageDownloader | None,
         folder_path: Path,
-        filename: str,
-        file_url: str,
-    ) -> None:
-        dest = folder_path / sanitize_filename(filename)
-        if dest.exists():
-            Logger.info("Skipping already-downloaded: %s", dest.name)
-            return
+        publication_files: List[PublicationFile],
+        *,
+        download: bool = True,
+    ) -> Tuple[List[str], int, set[str]]:
+        """
+        Inventory publication files using catalog sizes; optionally download.
 
-        _bytes_written, success = download_via_url(file_url, dest)
-        if not success:
-            record_warning(drpid, f"Download failed: {file_url}")
-            return
+        Returns:
+            (status_note_lines, total_bytes_for_inventory, extensions_set)
+        """
+        notes: List[str] = []
+        total_bytes = 0
+        exts: set[str] = set()
 
-        suffix = dest.suffix.lower()
-        if suffix in _HTML_EXTENSIONS:
-            pdf_dest = dest.with_suffix(".pdf")
-            if page_downloader.html_file_to_pdf(dest, pdf_dest):
-                dest.unlink(missing_ok=True)
-            else:
-                record_warning(drpid, f"Failed to convert HTML to PDF: {dest.name}")
-        elif suffix and suffix not in _KEEP_EXTENSIONS and suffix != ".pdf":
-            Logger.info("Downloaded file kept as-is: %s", dest.name)
+        for filename, file_url, catalog_bytes in publication_files:
+            dest = folder_path / sanitize_filename(filename)
+            if dest.suffix:
+                exts.add(dest.suffix.lstrip(".").lower())
+
+            inventory_bytes = catalog_bytes
+            if inventory_bytes is None and dest.exists():
+                inventory_bytes = dest.stat().st_size
+
+            if dest.exists():
+                disk_bytes = dest.stat().st_size
+                total_bytes += inventory_bytes if inventory_bytes is not None else disk_bytes
+                limit = inventory_bytes if inventory_bytes is not None else disk_bytes
+                if limit > MAX_DOWNLOAD_BYTES:
+                    notes.append(
+                        f"On disk (>1GB): {dest.name} ({format_file_size(limit)})"
+                    )
+                continue
+
+            if inventory_bytes is not None and inventory_bytes > MAX_DOWNLOAD_BYTES:
+                total_bytes += inventory_bytes
+                notes.append(
+                    f"Skipped download (>1GB): {filename} ({format_file_size(inventory_bytes)}) - "
+                    f"download manually: {file_url}"
+                )
+                continue
+
+            if not download:
+                if inventory_bytes is not None:
+                    total_bytes += inventory_bytes
+                continue
+
+            counted_catalog = False
+            if inventory_bytes is not None:
+                total_bytes += inventory_bytes
+                counted_catalog = True
+
+            _bytes_written, success = download_via_url(
+                file_url, dest, timeout_sec=_DOWNLOAD_TIMEOUT_SEC
+            )
+            if not success:
+                if counted_catalog and inventory_bytes is not None:
+                    total_bytes -= inventory_bytes
+                record_warning(drpid, f"Download failed: {file_url}")
+                notes.append(f"Download failed: {filename} - {file_url}")
+                continue
+
+            suffix = dest.suffix.lower()
+            if suffix in _HTML_EXTENSIONS:
+                pdf_dest = dest.with_suffix(".pdf")
+                if page_downloader and page_downloader.html_file_to_pdf(dest, pdf_dest):
+                    dest.unlink(missing_ok=True)
+                    dest = pdf_dest
+                    if dest.suffix:
+                        exts.add(dest.suffix.lstrip(".").lower())
+                else:
+                    record_warning(drpid, f"Failed to convert HTML to PDF: {dest.name}")
+            elif suffix and suffix not in _KEEP_EXTENSIONS and suffix != ".pdf":
+                Logger.info("Downloaded file kept as-is: %s", dest.name)
+
+            if dest.exists():
+                actual = dest.stat().st_size
+                if counted_catalog and inventory_bytes is not None:
+                    total_bytes += actual - inventory_bytes
+                elif not counted_catalog:
+                    total_bytes += actual
+
+        return notes, total_bytes, exts
+
+    def _pdf_folder_bytes(self, folder_path: Path) -> int:
+        total = 0
+        for name in _PDF_NAMES:
+            path = folder_path / name
+            if path.is_file():
+                total += path.stat().st_size
+        return total
 
     def _update_storage(self, drpid: int, result: Dict[str, Any]) -> None:
         current = Storage.get(drpid)
