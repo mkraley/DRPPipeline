@@ -67,5 +67,6 @@ config.json
 google-credentials.json
 *.csv
 *.xlsx
+aria2_inputs/*.cmd
 aria2_inputs/*.aria2.txt
 tmp*.jsonl

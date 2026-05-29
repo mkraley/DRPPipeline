@@ -1,18 +1,16 @@
 """
-Export aria2 input files for USFS publication downloads missing on disk.
+Export Windows aria2c command lines for USFS publication downloads missing on disk.
 
-Fetches catalog pages for the given DRPIDs and writes ``.aria2.txt`` files with
-``url``, ``out``, and ``dir`` lines (default: files larger than 1 GB not yet
-present in the project folder).
+Fetches catalog pages for the given DRPIDs and writes ``.cmd`` batch files with
+one complete ``aria2c`` command per large file (default: catalog size >= 1 GB
+and not yet present in the project folder).
 
 Run from repo root:
     python scripts/export_usfs_aria2_input.py --drpids 9,17,19,20
     python scripts/export_usfs_aria2_input.py --db-path usfs.db
 
-Then download (example):
-    aria2c -c -j 1 --file-allocation=none --max-tries=0 --retry-wait=10 ^
-      --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" ^
-      -i aria2_inputs\\DRP000017.aria2.txt
+Then download (run the whole batch, or copy one line at a time):
+    aria2_inputs\\DRP000017.cmd
 """
 from __future__ import annotations
 
@@ -41,12 +39,17 @@ SKIP_NOTE_MARKER = "Skipped download (>1GB)"
 
 @dataclass(frozen=True)
 class Aria2Entry:
-    """One aria2 input-file item."""
+    """One publication file to download with aria2c."""
 
     url: str
     out_name: str
     dir_path: Path
     max_connections: int
+
+
+def _cmd_quote(value: str) -> str:
+    """Quote a value for Windows cmd.exe (double quotes, escape embedded quotes)."""
+    return '"' + value.replace('"', '""') + '"'
 
 
 def max_connections_for_url(url: str) -> int:
@@ -90,22 +93,44 @@ def entries_for_publication_files(
     return entries
 
 
-def format_aria2_input(entries: Iterable[Aria2Entry]) -> str:
-    """Format entries as an aria2 input file (UTF-8 text)."""
-    blocks: List[str] = []
-    for entry in entries:
-        blocks.append(
-            "\n".join(
-                [
-                    entry.url,
-                    f"  out={entry.out_name}",
-                    f"  dir={entry.dir_path}",
-                    f"  max-connection-per-server={entry.max_connections}",
-                    f"  split={entry.max_connections}",
-                ]
-            )
-        )
-    return "\n\n".join(blocks) + ("\n" if blocks else "")
+def format_windows_command(entry: Aria2Entry, user_agent: str) -> str:
+    """One complete aria2c command line for cmd.exe (copy-paste or .cmd batch)."""
+    conn = entry.max_connections
+    ua = _cmd_quote(user_agent)
+    dest_dir = _cmd_quote(str(entry.dir_path))
+    out_name = _cmd_quote(entry.out_name)
+    url = _cmd_quote(entry.url)
+    return (
+        f"aria2c -c -x {conn} -s {conn} -j 1 --file-allocation=none "
+        f"--max-tries=0 --retry-wait=10 --user-agent={ua} "
+        f"-d {dest_dir} -o {out_name} {url}"
+    )
+
+
+def format_windows_commands(
+    entries: Iterable[Aria2Entry],
+    user_agent: str,
+    *,
+    drpid: int | None = None,
+) -> str:
+    """Format entries as a runnable Windows .cmd batch file."""
+    entry_list = list(entries)
+    if not entry_list:
+        return ""
+
+    lines = ["@echo off", "setlocal"]
+    if drpid is not None:
+        lines.append(f"REM DRPID {drpid} — large USFS publication downloads")
+    lines.append("")
+
+    for entry in entry_list:
+        lines.append(f"echo Downloading {entry.out_name} ...")
+        lines.append(format_windows_command(entry, user_agent))
+        lines.append("if errorlevel 1 exit /b 1")
+        lines.append("")
+
+    lines.append("echo Done.")
+    return "\n".join(lines) + "\n"
 
 
 def resolve_output_folder(
@@ -127,20 +152,12 @@ def load_base_output_dir(config_path: Path) -> Path:
     return Path(r"C:\Documents\DataRescue\USFSData")
 
 
-def suggested_aria2_command(input_path: Path, user_agent: str) -> str:
-    """Single-line aria2c invocation for PowerShell/cmd."""
-    ua = user_agent.replace('"', '\\"')
-    return (
-        f'aria2c -c -j 1 --file-allocation=none --max-tries=0 --retry-wait=10 '
-        f'--user-agent="{ua}" -i "{input_path}"'
-    )
-
-
 def export_drpid(
     conn: sqlite3.Connection,
     drpid: int,
     output_dir: Path,
     base_output_dir: Path,
+    user_agent: str,
     *,
     min_bytes: int,
     missing_only: bool,
@@ -180,8 +197,11 @@ def export_drpid(
 
     combined_entries.extend(entries)
     output_dir.mkdir(parents=True, exist_ok=True)
-    out_path = output_dir / f"DRP{drpid:06d}.aria2.txt"
-    out_path.write_text(format_aria2_input(entries), encoding="utf-8")
+    out_path = output_dir / f"DRP{drpid:06d}.cmd"
+    out_path.write_text(
+        format_windows_commands(entries, user_agent, drpid=drpid),
+        encoding="utf-8",
+    )
 
     export_bytes = sum(
         sz
@@ -214,7 +234,7 @@ def select_drpids(conn: sqlite3.Connection, drpids_arg: str, auto_skip_notes: bo
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Export aria2 input files for missing large USFS publication downloads"
+        description="Export Windows aria2c commands for missing large USFS publication downloads"
     )
     parser.add_argument(
         "--db-path",
@@ -232,7 +252,7 @@ def main() -> None:
         "--output-dir",
         type=Path,
         default=DEFAULT_OUTPUT_DIR,
-        help=f"Directory for .aria2.txt files (default: {DEFAULT_OUTPUT_DIR.name}/)",
+        help=f"Directory for .cmd files (default: {DEFAULT_OUTPUT_DIR.name}/)",
     )
     parser.add_argument(
         "--config",
@@ -254,7 +274,7 @@ def main() -> None:
     parser.add_argument(
         "--combined",
         action="store_true",
-        help="Also write usfs_large_downloads.aria2.txt with all DRPIDs combined",
+        help="Also write usfs_large_downloads.cmd with all DRPIDs combined",
     )
     parser.add_argument(
         "--no-auto-drpids",
@@ -274,6 +294,7 @@ def main() -> None:
         parser.error("No DRPIDs to export; pass --drpids or ensure status_notes contain skip lines")
 
     base_output_dir = load_base_output_dir(args.config)
+    user_agent = BROWSER_HEADERS["User-Agent"]
     combined: List[Aria2Entry] = []
     total_items = 0
 
@@ -283,6 +304,7 @@ def main() -> None:
             drpid,
             args.output_dir,
             base_output_dir,
+            user_agent,
             min_bytes=min_bytes,
             missing_only=missing_only,
             combined_entries=combined,
@@ -291,17 +313,20 @@ def main() -> None:
     conn.close()
 
     if args.combined and combined:
-        combined_path = args.output_dir / "usfs_large_downloads.aria2.txt"
-        combined_path.write_text(format_aria2_input(combined), encoding="utf-8")
+        combined_path = args.output_dir / "usfs_large_downloads.cmd"
+        combined_path.write_text(
+            format_windows_commands(combined, user_agent),
+            encoding="utf-8",
+        )
         print(f"Combined: {combined_path} ({len(combined)} item(s))", file=sys.stderr)
 
     if total_items:
-        ua = BROWSER_HEADERS["User-Agent"]
-        example = args.output_dir / f"DRP{drpids[0]:06d}.aria2.txt"
-        print("\nExample download command:", file=sys.stderr)
-        print(suggested_aria2_command(example, ua), file=sys.stderr)
+        example = args.output_dir / f"DRP{drpids[0]:06d}.cmd"
+        print("\nRun all downloads for one DRPID:", file=sys.stderr)
+        print(f"  {example}", file=sys.stderr)
+        print("Or open the .cmd file and copy individual aria2c lines.", file=sys.stderr)
     else:
-        print("No aria2 input files written.", file=sys.stderr)
+        print("No download command files written.", file=sys.stderr)
 
 
 if __name__ == "__main__":
