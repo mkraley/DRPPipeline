@@ -40,7 +40,20 @@ _EXTRA_ALIASES: dict[str, str] = {
     "czech republic": "Czechoslovakia",
     "russia": "Russia",
     "ussr": "USSR",
+    "conus": "United States",
+    "conterminous united states": "United States",
+    "conterminus united states": "United States",
+    "coterminous united states": "United States",
+    "coterminus united states": "United States",
+    "united states of america": "United States",
 }
+
+# ICPSR country-level US terms treated as aliases; emit one canonical label.
+_US_COUNTRY_CANONICAL = "United States"
+_US_COUNTRY_TERMS = frozenset({"United States", "United States of America"})
+
+# Bbox spans larger than this (degrees) are treated as national/regional, not site-level.
+_LOCAL_BBOX_MAX_SPAN_DEG = 4.0
 
 # US states and DC: approximate bounding boxes (decimal degrees).
 _US_STATE_BBOX: dict[str, tuple[float, float, float, float]] = {
@@ -102,7 +115,9 @@ _US_STATE_BBOX: dict[str, tuple[float, float, float, float]] = {
 _BRITISH_VIRGIN_ISLANDS_RE = re.compile(r"\bbritish\s+virgin\s+islands\b", re.IGNORECASE)
 _VIRGIN_ISLANDS_RE = re.compile(r"(?<!british\s)virgin\s+islands\b", re.IGNORECASE)
 _CONUS_RE = re.compile(
-    r"\bconus\b|coterminus\s+united\s+states|coterminous\s+united\s+states",
+    r"\bconus\b|"
+    r"contermin(?:ous|inus|us)\s+united\s+states|"
+    r"cotermin(?:ous|inus|us)\s+united\s+states",
     re.IGNORECASE,
 )
 
@@ -219,6 +234,58 @@ def _bbox_center(bbox: dict[str, float]) -> tuple[float, float] | None:
     return ((south + north) / 2.0, (west + east) / 2.0)
 
 
+def _bbox_spans(bbox: dict[str, float]) -> tuple[float, float]:
+    """Return (lat_span, lon_span) in decimal degrees."""
+    try:
+        west = float(bbox["west"])
+        east = float(bbox["east"])
+        south = float(bbox["south"])
+        north = float(bbox["north"])
+    except (KeyError, TypeError, ValueError):
+        return 0.0, 0.0
+    return abs(north - south), abs(east - west)
+
+
+def _is_local_scale_bbox(bbox: dict[str, float]) -> bool:
+    lat_span, lon_span = _bbox_spans(bbox)
+    return (
+        lat_span <= _LOCAL_BBOX_MAX_SPAN_DEG
+        and lon_span <= _LOCAL_BBOX_MAX_SPAN_DEG
+    )
+
+
+def _canonicalize_us_country_term(term: str) -> str:
+    if term in _US_COUNTRY_TERMS:
+        return _US_COUNTRY_CANONICAL
+    return term
+
+
+def _is_us_country_term(term: str) -> bool:
+    return term in _US_COUNTRY_TERMS
+
+
+def _has_us_country_match(matches: list[GeographicMatch]) -> bool:
+    return any(_is_us_country_term(m.term) for m in matches)
+
+
+def _indicates_national_us_coverage(
+    extent: str,
+    place_keywords: list[str] | None,
+    matches: list[GeographicMatch],
+    thesaurus: IcpsrGeographicThesaurus,
+) -> bool:
+    if _has_us_country_match(matches):
+        return True
+    if extent and _CONUS_RE.search(extent):
+        return True
+    for kw in place_keywords or []:
+        if _CONUS_RE.search(kw):
+            return True
+        if _resolve_place_keyword(kw, thesaurus) in _US_COUNTRY_TERMS:
+            return True
+    return False
+
+
 def _state_from_bbox(lat: float, lon: float) -> str | None:
     for state, (lat_min, lat_max, lon_min, lon_max) in _US_STATE_BBOX.items():
         if lat_min <= lat <= lat_max and lon_min <= lon <= lon_max:
@@ -267,7 +334,7 @@ def _has_sufficient_geographic_match(matches: list[GeographicMatch]) -> bool:
         return False
     if _has_us_state_match(matches):
         return True
-    return any(m.term == "United States" for m in matches)
+    return _has_us_country_match(matches)
 
 
 def _should_warn_unmatched_place_keyword(
@@ -298,6 +365,9 @@ def _add_match(
         if not resolved:
             return
         term = resolved
+    term = _canonicalize_us_country_term(term)
+    if term in seen:
+        return
     seen.add(term)
     matches.append(GeographicMatch(term, confidence, source))
 
@@ -354,14 +424,42 @@ def normalize_geographic_metadata(
                     continue
             _add_match(matches, seen, match.term, match.confidence, match.source)
 
-    center = _bbox_center(bounding_box or {})
-    if center:
-        lat, lon = center
-        state = _state_from_bbox(lat, lon)
-        if state:
-            _add_match(matches, seen, state, "medium", "bounding_box")
-        elif 18.0 <= lat <= 72.0 and -180.0 <= lon <= -66.0 and not _has_us_state_match(matches):
-            _add_match(matches, seen, "United States", "medium", "bounding_box")
+    bbox_dict = bounding_box or {}
+    if bbox_dict:
+        national_us = _indicates_national_us_coverage(
+            extent, place_keywords, matches, thesaurus
+        )
+        local_bbox = _is_local_scale_bbox(bbox_dict)
+
+        if national_us or not local_bbox:
+            if not _has_us_country_match(matches):
+                _add_match(
+                    matches,
+                    seen,
+                    _US_COUNTRY_CANONICAL,
+                    "high" if national_us else "medium",
+                    "national_coverage" if national_us else "bounding_box",
+                )
+        else:
+            center = _bbox_center(bbox_dict)
+            if center:
+                lat, lon = center
+                state = _state_from_bbox(lat, lon)
+                if state and not _has_us_country_match(matches):
+                    _add_match(matches, seen, state, "medium", "bounding_box")
+                elif (
+                    18.0 <= lat <= 72.0
+                    and -180.0 <= lon <= -66.0
+                    and not _has_us_state_match(matches)
+                    and not _has_us_country_match(matches)
+                ):
+                    _add_match(
+                        matches,
+                        seen,
+                        _US_COUNTRY_CANONICAL,
+                        "medium",
+                        "bounding_box",
+                    )
 
     for match in matches:
         if match.confidence == "low":
@@ -369,14 +467,12 @@ def normalize_geographic_metadata(
                 f"Low-confidence geographic match ({match.source}): {match.term}"
             )
 
-    if matches and not _has_us_state_match(matches) and not any(
-        m.term == "United States" for m in matches
-    ):
+    if matches and not _has_us_state_match(matches) and not _has_us_country_match(matches):
         # Single foreign country — no warning. Multiple unmatched fragments only warned above.
         pass
 
     if _has_us_state_match(matches):
-        matches = [m for m in matches if m.term != "United States"]
+        matches = [m for m in matches if not _is_us_country_term(m.term)]
 
     for kw in unresolved_keywords:
         if _should_warn_unmatched_place_keyword(kw, matches, thesaurus):

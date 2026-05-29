@@ -136,6 +136,42 @@ class TestIcpsrGeographicNormalizer:
         )
         assert result.geographic_coverage == "United States"
 
+    def test_conus_keywords_not_kansas_from_national_bbox(
+        self, thesaurus: IcpsrGeographicThesaurus
+    ) -> None:
+        result = normalize_geographic_metadata(
+            place_keywords=["conterminous United States", "CONUS"],
+            bounding_box={
+                "west": -124.7,
+                "east": -66.9,
+                "north": 49.0,
+                "south": 24.5,
+            },
+            thesaurus=thesaurus,
+        )
+        assert result.geographic_coverage == "United States"
+        assert "Kansas" not in result.geographic_coverage
+
+    def test_us_country_aliases_dedupe(self, thesaurus: IcpsrGeographicThesaurus) -> None:
+        result = normalize_geographic_metadata(
+            place_keywords=["CONUS"],
+            geographic_extent_description="Coverage of the United States of America.",
+            thesaurus=thesaurus,
+        )
+        assert result.geographic_coverage == "United States"
+
+    def test_small_bbox_infers_state(self, thesaurus: IcpsrGeographicThesaurus) -> None:
+        result = normalize_geographic_metadata(
+            bounding_box={
+                "west": -105.5,
+                "east": -105.0,
+                "north": 39.9,
+                "south": 39.5,
+            },
+            thesaurus=thesaurus,
+        )
+        assert result.geographic_coverage == "Colorado"
+
     def test_us_state_match_skips_city_ner(self, thesaurus: IcpsrGeographicThesaurus) -> None:
         result = normalize_geographic_metadata(
             geographic_extent_description=(
