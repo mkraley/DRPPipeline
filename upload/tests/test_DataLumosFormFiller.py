@@ -127,6 +127,35 @@ class TestDataLumosFormFiller(unittest.TestCase):
         
         self.mock_page.locator.assert_not_called()
 
+    def test_fill_data_types_selects_multiple(self) -> None:
+        """Test fill_data_types selects each semicolon-delimited checklist option."""
+        mock_edit = MagicMock()
+        mock_save = MagicMock()
+        mock_labels = [MagicMock(), MagicMock()]
+
+        def locator_side_effect(selector: str) -> MagicMock:
+            if "#disco_kindOfData_0" in selector:
+                return mock_edit
+            if "editable-submit" in selector:
+                return mock_save
+            if "Observational data" in selector:
+                return mock_labels[0]
+            if "Geographic information system (GIS) data" in selector:
+                return mock_labels[1]
+            return MagicMock()
+
+        self.mock_page.locator.side_effect = locator_side_effect
+
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
+            self.form_filler.fill_data_types(
+                "Observational data; Geographic information system (GIS) data"
+            )
+
+        mock_edit.click.assert_called_once()
+        mock_labels[0].click.assert_called_once()
+        mock_labels[1].click.assert_called_once()
+        mock_save.click.assert_called_once()
+
     def test_fill_collection_notes_skips_empty(self) -> None:
         """Test fill_collection_notes returns early when both empty."""
         self.form_filler.fill_collection_notes("", None)

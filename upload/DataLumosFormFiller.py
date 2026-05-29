@@ -5,6 +5,7 @@ Handles filling all form fields on the DataLumos project page
 including text inputs, WYSIWYG editors, dropdowns, and autocomplete fields.
 """
 
+import re
 from typing import List, Optional
 
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
@@ -290,28 +291,34 @@ class DataLumosFormFiller:
 
     def fill_data_types(self, data_type: str) -> None:
         """
-        Fill the data types field by selecting the checklist option.
-        
+        Fill the data types field by selecting one or more checklist options.
+
+        ``data_type`` may be a single label or several labels separated by semicolons.
         After clicking edit, an editable-checklist appears with label+span options.
-        Clicks the label (not span) scoped to the checklist for robustness.
+        Clicks each label (not span) scoped to the checklist, then saves once.
         """
         if _is_empty(data_type):
             return
 
-        _debug_form_field("data_types (kindOfData)", data_type)
+        data_types = [part.strip() for part in re.split(r"\s*;\s*", data_type) if part.strip()]
+        if not data_types:
+            return
+
+        _debug_form_field("data_types (kindOfData)", "; ".join(data_types))
 
         edit_btn = self._page.locator("#disco_kindOfData_0 > span:nth-child(2)")
         self.wait_for_obscuring_elements()
         edit_btn.click()
         self.wait_for_obscuring_elements()
-        
-        # Double-quote wrapper handles apostrophes; escape any internal double quotes
-        safe = data_type.replace('"', '\\"')
-        datatype_label = self._page.locator(
-            f'.editable-checklist label:has(span:has-text("{safe}"))'
-        )
-        datatype_label.click()
-        
+
+        for label in data_types:
+            # Double-quote wrapper handles apostrophes; escape any internal double quotes
+            safe = label.replace('"', '\\"')
+            datatype_label = self._page.locator(
+                f'.editable-checklist label:has(span:has-text("{safe}"))'
+            )
+            datatype_label.click()
+
         save_btn = self._page.locator(".editable-submit")
         save_btn.click()
     

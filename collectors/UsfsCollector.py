@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from collectors.UsfsMetadataExtractor import (
     AGENCY,
     OFFICE,
+    infer_data_types,
     merge_usfs_metadata,
     metadata_url_for_rds_id,
     parse_data_access_links,
@@ -102,6 +103,7 @@ class UsfsCollector:
 
         rds_id = rds_id_from_source_url(url)
         metadata: Dict[str, Any] = {}
+        meta_body = ""
         if rds_id:
             meta_url = metadata_url_for_rds_id(rds_id)
             meta_status, meta_body, _, _ = fetch_page_body(meta_url)
@@ -116,7 +118,13 @@ class UsfsCollector:
             record_warning(drpid, f"Could not extract RDS id from URL: {url}")
 
         result = merge_usfs_metadata(detail, metadata)
-        result.pop("data_types", None)
+        data_types = infer_data_types(
+            result.get("title", ""),
+            result.get("summary", ""),
+            meta_body,
+        )
+        if data_types:
+            result["data_types"] = data_types
         self._apply_geographic_coverage(drpid, result, metadata)
         result["agency"] = AGENCY
         result["office"] = OFFICE

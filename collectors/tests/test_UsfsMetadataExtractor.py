@@ -1,10 +1,18 @@
 """Tests for UsfsMetadataExtractor parsing helpers."""
 
 from collectors.UsfsMetadataExtractor import (
+    DATA_TYPE_AGGREGATE,
+    DATA_TYPE_EXPERIMENTAL,
+    DATA_TYPE_GIS,
+    DATA_TYPE_OBSERVATIONAL,
+    DATA_TYPE_PROGRAM_SOURCE,
+    DATA_TYPE_SURVEY,
+    infer_data_types,
     merge_usfs_metadata,
     normalize_keywords,
     normalize_temporal_date,
     parse_data_access_links,
+    parse_data_type_signals,
     parse_detail_page,
     parse_download_count,
     parse_human_size,
@@ -195,3 +203,89 @@ class TestUsfsMetadataExtractor:
         assert merged["time_end"] == "2018"
         assert "data_types" not in merged
         assert merged["summary"] == "S"
+
+    def test_infer_data_types_litterflow_observational(self) -> None:
+        title = (
+            "30 years of litterflow biomass from the Bisley Experimental Watersheds "
+            "in the Luquillo Experimental Forest"
+        )
+        summary = (
+            "Leaf litter was collected every 2 weeks for over 30 years and weighed. "
+            "The data file includes the biweekly weights of each compartment."
+        )
+        assert infer_data_types(title, summary) == DATA_TYPE_OBSERVATIONAL
+
+    def test_infer_data_types_fire_severity_gis_and_code(self) -> None:
+        title = "California fire severity prediction maps by region"
+        summary = (
+            "This data publication contains a spatial database of potential fire severity "
+            "raster datasets for California. The package includes R scripts and Google Earth "
+            "Engine scripts used to produce the fire severity rasters."
+        )
+        metadata_html = """
+        <dt>Direct_Spatial_Reference_Method:Raster</dt>
+        <dt>Format_Name:GDB</dt>
+        <dt>Format_Name:R</dt>
+        """
+        result = infer_data_types(title, summary, metadata_html)
+        assert result == f"{DATA_TYPE_PROGRAM_SOURCE}; {DATA_TYPE_GIS}"
+
+    def test_infer_data_types_ghg_aggregate(self) -> None:
+        summary = (
+            "Included in this data publication are 33 tables of estimates and 4 tables of "
+            "quantitative uncertainties."
+        )
+        assert infer_data_types("GHG emissions and removals", summary) == DATA_TYPE_AGGREGATE
+
+    def test_infer_data_types_visitor_survey(self) -> None:
+        title = "Stephen Mather Wilderness: Visitor survey data collected in 2024"
+        summary = (
+            "These data (n = 766) include both overnight and day users, with insights into "
+            "visitor characteristics including demographics and use patterns."
+        )
+        assert infer_data_types(title, summary) == DATA_TYPE_SURVEY
+
+    def test_infer_data_types_historical_documents_blank(self) -> None:
+        summary = (
+            "This package includes historical documents such as letters, reports, notes, "
+            "memorandums of understanding, and research plans."
+        )
+        assert infer_data_types("Historical background information", summary) == ""
+
+    def test_infer_data_types_suppression_spending_code_and_admin(self) -> None:
+        summary = (
+            "This data publication contains the Stata code as well as the historical data "
+            "input and multiple modeling output files. Historical suppression spending data "
+            "span 2005-2020 for the Forest Service."
+        )
+        metadata_html = "<dt>Format_Name:DO</dt>"
+        result = infer_data_types("Wildfire suppression spending projections", summary, metadata_html)
+        assert DATA_TYPE_PROGRAM_SOURCE in result.split("; ")
+        assert "Administrative records data" in result.split("; ")
+
+    def test_infer_data_types_ponderosa_observational_and_experimental(self) -> None:
+        title = (
+            "Ponderosa pine growth and yield measurements on Black Hills Experimental Forest "
+            "growing stock level plots"
+        )
+        summary = (
+            "Plots were measured approximately every five years and field measurements included "
+            "tree diameter, height, and crown length."
+        )
+        result = infer_data_types(title, summary)
+        assert DATA_TYPE_OBSERVATIONAL in result.split("; ")
+        assert DATA_TYPE_EXPERIMENTAL in result.split("; ")
+
+    def test_parse_data_type_signals(self) -> None:
+        metadata_html = """
+        <dt>Direct_Spatial_Reference_Method:Raster</dt>
+        <dt>Geospatial_Data_Presentation_Form:raster digital data</dt>
+        <dt>Format_Name:TIFF</dt>
+        <dt>Entity_and_Attribute_Overview:</dt>
+        <dd>GeoTIFF raster layers for each region.</dd>
+        """
+        signals = parse_data_type_signals(metadata_html)
+        assert signals["direct_spatial_raster"] is True
+        assert "raster digital data" in signals["presentation_forms"]
+        assert "TIFF" in signals["format_names"]
+        assert "geotiff" in signals["entity_overview"]
