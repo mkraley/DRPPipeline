@@ -2,12 +2,19 @@
 Unit tests for DataLumosFormFiller.
 """
 
+import re
 import unittest
 from unittest.mock import MagicMock
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
 from utils.Args import Args
 from utils.Logger import Logger
-from upload.DataLumosFormFiller import DataLumosFormFiller, _is_empty
+from upload.DataLumosFormFiller import (
+    DataLumosFormFiller,
+    _is_empty,
+    truncate_title_for_datalumos,
+)
 
 
 class TestDataLumosFormFiller(unittest.TestCase):
@@ -36,6 +43,57 @@ class TestDataLumosFormFiller(unittest.TestCase):
         self.assertFalse(_is_empty("x"))
         self.assertFalse(_is_empty("  x  "))
 
+    def test_truncate_title_for_datalumos_unchanged_when_short(self) -> None:
+        title = "Short USFS dataset title"
+        self.assertEqual(truncate_title_for_datalumos(title), title)
+
+    def test_truncate_title_for_datalumos_normalizes_whitespace(self) -> None:
+        title = "  Fuel   map   2020  "
+        self.assertEqual(truncate_title_for_datalumos(title), "Fuel map 2020")
+
+    def test_truncate_title_for_datalumos_breaks_at_word_boundary(self) -> None:
+        words = ["word"] * 60
+        title = " ".join(words)
+        truncated = truncate_title_for_datalumos(title)
+        self.assertLessEqual(len(truncated), 250)
+        self.assertTrue(truncated.endswith("…"))
+        self.assertNotIn("wordword", truncated)
+
+    def test_truncate_title_for_datalumos_hard_cut_for_long_token(self) -> None:
+        title = "x" * 300
+        truncated = truncate_title_for_datalumos(title)
+        self.assertEqual(len(truncated), 250)
+        self.assertTrue(truncated.endswith("…"))
+
+    def test_fill_title_truncates_long_title(self) -> None:
+        """Test fill_title truncates titles over the DataLumos limit."""
+        long_title = "dataset " * 80
+        mock_title = MagicMock()
+        mock_save_apply = MagicMock()
+        mock_continue = MagicMock()
+
+        def locator_side_effect(selector):
+            if "#title" in selector:
+                return mock_title
+            return MagicMock()
+
+        def get_by_role_side_effect(role, name=None):
+            if role == "button" and isinstance(name, re.Pattern):
+                return mock_save_apply
+            if role == "button":
+                return mock_continue
+            return MagicMock()
+
+        self.mock_page.locator.side_effect = locator_side_effect
+        self.mock_page.get_by_role.side_effect = get_by_role_side_effect
+
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
+            self.form_filler.fill_title(long_title)
+
+        filled = mock_title.fill.call_args[0][0]
+        self.assertLessEqual(len(filled), 250)
+        self.assertNotEqual(filled, long_title)
+
     def test_wait_for_obscuring_elements_no_busy(self) -> None:
         """Test wait_for_obscuring_elements when no busy overlay present."""
         mock_busy = MagicMock()
@@ -60,26 +118,31 @@ class TestDataLumosFormFiller(unittest.TestCase):
         self.mock_page.wait_for_timeout.assert_called_with(500)
 
     def test_fill_title(self) -> None:
-        """Test fill_title fills and saves title."""
+        """Test fill_title fills title, Save & Apply, then Continue To Project Workspace."""
         mock_title = MagicMock()
-        mock_save = MagicMock()
+        mock_save_apply = MagicMock()
         mock_continue = MagicMock()
-        
+
         def locator_side_effect(selector):
-            if "#title" in selector or "title" in selector:
+            if "#title" in selector:
                 return mock_title
-            if "save-project" in selector:
-                return mock_save
             return MagicMock()
-        
+
+        def get_by_role_side_effect(role, name=None):
+            if role == "button" and isinstance(name, re.Pattern):
+                return mock_save_apply
+            if role == "button":
+                return mock_continue
+            return MagicMock()
+
         self.mock_page.locator.side_effect = locator_side_effect
-        self.mock_page.get_by_role.return_value = mock_continue
-        
-        with unittest.mock.patch.object(self.form_filler, 'wait_for_obscuring_elements'):
+        self.mock_page.get_by_role.side_effect = get_by_role_side_effect
+
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
             self.form_filler.fill_title("Test Project")
-        
+
         mock_title.fill.assert_called_once_with("Test Project")
-        mock_save.click.assert_called_once()
+        mock_save_apply.click.assert_called_once()
         mock_continue.click.assert_called_once()
 
     def test_fill_agency_skips_empty(self) -> None:
@@ -111,8 +174,46 @@ class TestDataLumosFormFiller(unittest.TestCase):
     def test_fill_geographic_coverage_skips_empty(self) -> None:
         """Test fill_geographic_coverage returns early for empty input."""
         self.form_filler.fill_geographic_coverage("")
-        
+
         self.mock_page.locator.assert_not_called()
+
+    def test_expand_all_sections_skips_missing_toggle(self) -> None:
+        """Test expand_all_sections is non-fatal when #expand-init is absent."""
+        mock_btn = MagicMock()
+        mock_btn.click.side_effect = PlaywrightTimeoutError("missing")
+        self.mock_page.locator.return_value = mock_btn
+
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
+            self.form_filler.expand_all_sections()
+
+    def test_geographic_coverage_block_uses_label_and_add_value(self) -> None:
+        """Geographic add-value is found from the label span and title attribute."""
+        mock_label = MagicMock()
+        mock_block = MagicMock()
+        mock_add = MagicMock()
+
+        mock_label.locator.return_value = mock_block
+        mock_block.get_by_title.return_value = mock_add
+
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
+            self.mock_page.locator.return_value.filter.return_value.first = mock_label
+            self.form_filler._click_geographic_add_value()
+
+        mock_label.locator.assert_called_once_with("xpath=./parent::*/parent::*")
+        mock_block.get_by_title.assert_called_once()
+        mock_add.click.assert_called_once()
+
+    def test_fill_geographic_coverage_uses_add_value_for_terms(self) -> None:
+        """Test fill_geographic_coverage adds each term via add-value flow."""
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"), \
+             unittest.mock.patch.object(
+                 self.form_filler, "_add_geographic_term"
+             ) as mock_add:
+            self.form_filler.fill_geographic_coverage("Oregon; United States")
+
+        self.assertEqual(mock_add.call_count, 2)
+        mock_add.assert_any_call("Oregon")
+        mock_add.assert_any_call("United States")
 
     def test_fill_time_period_skips_empty(self) -> None:
         """Test fill_time_period returns early when both empty."""

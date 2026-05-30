@@ -18,119 +18,31 @@ import argparse
 import json
 import sqlite3
 import sys
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Sequence
-from urllib.parse import urlparse
+from typing import List
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from collectors.UsfsCollector import MAX_DOWNLOAD_BYTES, PublicationFile  # noqa: E402
+from collectors.UsfsAria2Export import (  # noqa: E402
+    Aria2Entry,
+    DEFAULT_ARIA2_OUTPUT_DIR,
+    MAX_DOWNLOAD_BYTES,
+    entries_for_publication_files,
+    format_windows_command,
+    format_windows_commands,
+    max_connections_for_url,
+    write_drpid_aria2_cmd,
+)
 from collectors.UsfsMetadataExtractor import parse_data_access_links  # noqa: E402
+from collectors.UsfsCollector import STATUS_COLLECTED_LARGE_FILE  # noqa: E402
 from utils.file_utils import format_file_size, sanitize_filename  # noqa: E402
 from utils.url_utils import BROWSER_HEADERS, fetch_page_body  # noqa: E402
 
 DEFAULT_DB_PATH = REPO_ROOT / "usfs.db"
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config.json"
-DEFAULT_OUTPUT_DIR = REPO_ROOT / "aria2_inputs"
+DEFAULT_OUTPUT_DIR = DEFAULT_ARIA2_OUTPUT_DIR
 SKIP_NOTE_MARKER = "Skipped download (>1GB)"
-
-
-@dataclass(frozen=True)
-class Aria2Entry:
-    """One publication file to download with aria2c."""
-
-    url: str
-    out_name: str
-    dir_path: Path
-    max_connections: int
-
-
-def _cmd_quote(value: str) -> str:
-    """Quote a value for Windows cmd.exe (double quotes, escape embedded quotes)."""
-    return '"' + value.replace('"', '""') + '"'
-
-
-def max_connections_for_url(url: str) -> int:
-    """Box shared links tolerate more connections than USDA product URLs."""
-    host = (urlparse(url).hostname or "").lower()
-    if "box.com" in host:
-        return 16
-    if host.endswith("fs.usda.gov"):
-        return 4
-    return 8
-
-
-def entries_for_publication_files(
-    publication_files: Sequence[PublicationFile],
-    folder_path: Path,
-    *,
-    min_bytes: int = MAX_DOWNLOAD_BYTES,
-    missing_only: bool = True,
-) -> List[Aria2Entry]:
-    """
-    Build aria2 entries for publication files at or above ``min_bytes``.
-
-    Skips files already on disk when ``missing_only`` is True.
-    """
-    entries: List[Aria2Entry] = []
-    for filename, file_url, catalog_bytes in publication_files:
-        if catalog_bytes is None or catalog_bytes < min_bytes:
-            continue
-        out_name = sanitize_filename(filename)
-        dest = folder_path / out_name
-        if missing_only and dest.is_file():
-            continue
-        entries.append(
-            Aria2Entry(
-                url=file_url,
-                out_name=out_name,
-                dir_path=folder_path.resolve(),
-                max_connections=max_connections_for_url(file_url),
-            )
-        )
-    return entries
-
-
-def format_windows_command(entry: Aria2Entry, user_agent: str) -> str:
-    """One complete aria2c command line for cmd.exe (copy-paste or .cmd batch)."""
-    conn = entry.max_connections
-    ua = _cmd_quote(user_agent)
-    dest_dir = _cmd_quote(str(entry.dir_path))
-    out_name = _cmd_quote(entry.out_name)
-    url = _cmd_quote(entry.url)
-    return (
-        f"aria2c -c -x {conn} -s {conn} -j 1 --file-allocation=none "
-        f"--max-tries=0 --retry-wait=10 --user-agent={ua} "
-        f"-d {dest_dir} -o {out_name} {url}"
-    )
-
-
-def format_windows_commands(
-    entries: Iterable[Aria2Entry],
-    user_agent: str,
-    *,
-    drpid: int | None = None,
-) -> str:
-    """Format entries as a runnable Windows .cmd batch file."""
-    entry_list = list(entries)
-    if not entry_list:
-        return ""
-
-    lines = ["@echo off", "setlocal"]
-    if drpid is not None:
-        lines.append(f"REM DRPID {drpid} — large USFS publication downloads")
-    lines.append("")
-
-    for entry in entry_list:
-        lines.append(f"echo Downloading {entry.out_name} ...")
-        lines.append(format_windows_command(entry, user_agent))
-        lines.append("if errorlevel 1 exit /b 1")
-        lines.append("")
-
-    lines.append("echo Done.")
-    return "\n".join(lines) + "\n"
 
 
 def resolve_output_folder(
@@ -196,12 +108,16 @@ def export_drpid(
         return 0
 
     combined_entries.extend(entries)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    out_path = output_dir / f"DRP{drpid:06d}.cmd"
-    out_path.write_text(
-        format_windows_commands(entries, user_agent, drpid=drpid),
-        encoding="utf-8",
+    out_path = write_drpid_aria2_cmd(
+        drpid,
+        folder,
+        links.get("publication_files", []),
+        output_dir=output_dir,
+        min_bytes=min_bytes,
+        missing_only=missing_only,
+        user_agent=user_agent,
     )
+    assert out_path is not None
 
     export_bytes = sum(
         sz
@@ -225,8 +141,13 @@ def select_drpids(conn: sqlite3.Connection, drpids_arg: str, auto_skip_notes: bo
         return [int(x.strip()) for x in drpids_arg.split(",") if x.strip()]
     if auto_skip_notes:
         rows = conn.execute(
-            "SELECT DRPID FROM projects WHERE status_notes LIKE ? ORDER BY DRPID",
-            (f"%{SKIP_NOTE_MARKER}%",),
+            """
+            SELECT DRPID FROM projects
+            WHERE status = ?
+               OR status_notes LIKE ?
+            ORDER BY DRPID
+            """,
+            (STATUS_COLLECTED_LARGE_FILE, f"%{SKIP_NOTE_MARKER}%"),
         ).fetchall()
         return [row["DRPID"] for row in rows]
     return []

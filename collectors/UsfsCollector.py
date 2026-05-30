@@ -44,6 +44,8 @@ MAX_DOWNLOAD_BYTES = 1 * 1024**3  # 1 GB
 TOTAL_SIZE_WARN_BYTES = 50 * 1024**3  # 50 GB
 _DOWNLOAD_TIMEOUT_SEC = 3600  # 1 hour read timeout for large-but-allowed files
 _PDF_NAMES = ("catalog_detail.pdf", "metadata.pdf", "file_index.pdf")
+STATUS_COLLECTED_LARGE_FILE = "collected - large file"
+STATUS_UPLOADED_LARGE_FILE = "uploaded - large file"
 
 
 class UsfsCollector:
@@ -137,7 +139,7 @@ class UsfsCollector:
         links = parse_data_access_links(body, url)
         self._save_page_pdfs(drpid, page_downloader, folder_path, url, links)
 
-        status_notes, inventory_bytes, inventory_exts = self._process_publication_files(
+        status_notes, inventory_bytes, inventory_exts, skipped_large = self._process_publication_files(
             drpid,
             page_downloader,
             folder_path,
@@ -168,6 +170,22 @@ class UsfsCollector:
         )
         if notes_parts:
             result["status_notes"] = "\n".join(notes_parts)
+
+        result["_skipped_large_file"] = skipped_large
+        if skipped_large:
+            from collectors.UsfsAria2Export import write_drpid_aria2_cmd
+
+            cmd_path = write_drpid_aria2_cmd(
+                drpid,
+                folder_path,
+                links.get("publication_files", []),
+            )
+            if cmd_path:
+                Logger.info(
+                    "Wrote aria2 download commands for DRPID %s: %s",
+                    drpid,
+                    cmd_path,
+                )
 
         Logger.info(
             "USFS collection complete for DRPID %s: %s files, %s",
@@ -230,16 +248,17 @@ class UsfsCollector:
         publication_files: List[PublicationFile],
         *,
         download: bool = True,
-    ) -> Tuple[List[str], int, set[str]]:
+    ) -> Tuple[List[str], int, set[str], bool]:
         """
         Inventory publication files using catalog sizes; optionally download.
 
         Returns:
-            (status_note_lines, total_bytes_for_inventory, extensions_set)
+            (status_note_lines, total_bytes_for_inventory, extensions_set, skipped_large)
         """
         notes: List[str] = []
         total_bytes = 0
         exts: set[str] = set()
+        skipped_large = False
 
         for filename, file_url, catalog_bytes in publication_files:
             dest = folder_path / sanitize_filename(filename)
@@ -262,6 +281,7 @@ class UsfsCollector:
 
             if inventory_bytes is not None and inventory_bytes > MAX_DOWNLOAD_BYTES:
                 total_bytes += inventory_bytes
+                skipped_large = True
                 notes.append(
                     f"Skipped download (>1GB): {filename} ({format_file_size(inventory_bytes)}) - "
                     f"download manually: {file_url}"
@@ -284,7 +304,7 @@ class UsfsCollector:
             if not success:
                 if counted_catalog and inventory_bytes is not None:
                     total_bytes -= inventory_bytes
-                record_warning(drpid, f"Download failed: {file_url}")
+                record_error(drpid, f"Download failed: {filename} - {file_url}")
                 notes.append(f"Download failed: {filename} - {file_url}")
                 continue
 
@@ -308,7 +328,7 @@ class UsfsCollector:
                 elif not counted_catalog:
                     total_bytes += actual
 
-        return notes, total_bytes, exts
+        return notes, total_bytes, exts, skipped_large
 
     def _pdf_folder_bytes(self, folder_path: Path) -> int:
         total = 0
@@ -319,11 +339,16 @@ class UsfsCollector:
         return total
 
     def _update_storage(self, drpid: int, result: Dict[str, Any]) -> None:
-        current = Storage.get(drpid)
-        if current and current.get("status") == "error":
-            result["status"] = "error"
-        elif result.get("folder_path") and not result.get("status"):
-            result["status"] = "collected"
+        current = Storage.get(drpid) or {}
+        skipped_large = bool(result.pop("_skipped_large_file", False))
+
+        if current.get("errors"):
+            result.pop("status", None)
+        elif result.get("folder_path"):
+            if skipped_large:
+                result["status"] = STATUS_COLLECTED_LARGE_FILE
+            else:
+                result["status"] = "collected"
 
         update_fields: Dict[str, Any] = {}
         for key, value in result.items():

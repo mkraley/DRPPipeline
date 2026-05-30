@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from storage import Storage
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
+from collectors.UsfsCollector import STATUS_COLLECTED_LARGE_FILE, STATUS_UPLOADED_LARGE_FILE
 from utils.Args import Args
 from utils.project_utils import get_field
 from utils.Errors import record_error
@@ -90,11 +91,19 @@ class DataLumosUploader:
 
             try:
                 datalumos_id = self._upload_project(project, drpid)
+                upload_status = (
+                    STATUS_UPLOADED_LARGE_FILE
+                    if project.get("status") == STATUS_COLLECTED_LARGE_FILE
+                    else "uploaded"
+                )
                 Storage.update_record(drpid, {
                     "datalumos_id": datalumos_id,
-                    "status": "uploaded",
+                    "status": upload_status,
                 })
-                Logger.info(f"Upload completed for DRPID={drpid}, datalumos_id={datalumos_id}")
+                Logger.info(
+                    f"Upload completed for DRPID={drpid}, datalumos_id={datalumos_id}, "
+                    f"status={upload_status}"
+                )
             except Exception as e:
                 record_error(drpid, f"Upload failed: {e}")
                 raise

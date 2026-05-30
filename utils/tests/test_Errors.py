@@ -5,7 +5,7 @@ Unit tests for utils.Errors helpers.
 import unittest
 from unittest.mock import Mock, patch
 
-from utils.Errors import record_crash, record_error, record_warning
+from utils.Errors import derive_error_status, record_crash, record_error, record_warning
 
 # Module-level mocks for patch decorators (must be defined before use in decorators)
 _mock_storage = Mock()
@@ -23,17 +23,35 @@ class TestRecordCrash(unittest.TestCase):
         self.assertEqual(str(ctx.exception), "fatal")
 
 
+class TestDeriveErrorStatus(unittest.TestCase):
+    """Test derive_error_status."""
+
+    def test_from_sourced(self) -> None:
+        self.assertEqual(derive_error_status("sourced"), "sourced-error")
+
+    def test_empty_becomes_error(self) -> None:
+        self.assertEqual(derive_error_status(None), "error")
+        self.assertEqual(derive_error_status(""), "error")
+
+    def test_already_error_unchanged(self) -> None:
+        self.assertEqual(derive_error_status("error"), "error")
+        self.assertEqual(derive_error_status("sourced-error"), "sourced-error")
+
+
 class TestRecordError(unittest.TestCase):
     """Test record_error."""
 
     @patch("utils.Errors.Storage", _mock_storage)
     @patch("utils.Errors.Logger", _mock_logger)
     def test_record_error_updates_storage(self) -> None:
-        """record_error(update_storage=True) sets status and appends error."""
+        """record_error(update_storage=True) sets status from previous status and appends error."""
+        _mock_storage.reset_mock()
+        _mock_storage.get.return_value = {"status": "sourced"}
         record_error(123, "boom", update_storage=True)
 
         _mock_logger.error.assert_called_once_with("boom")
-        _mock_storage.update_record.assert_called_once_with(123, {"status": "error"})
+        _mock_storage.get.assert_called_once_with(123)
+        _mock_storage.update_record.assert_called_once_with(123, {"status": "sourced-error"})
         _mock_storage.append_to_field.assert_called_once_with(123, "errors", "boom")
 
     @patch("utils.Errors.Logger")

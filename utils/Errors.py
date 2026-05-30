@@ -15,6 +15,20 @@ from storage import Storage
 from utils.Logger import Logger
 
 
+def derive_error_status(previous_status: str | None) -> str:
+    """
+    Build status after an error from the status the project had when work started.
+
+    Example: ``sourced`` -> ``sourced-error``. Already-error statuses are unchanged.
+    """
+    if not previous_status or not str(previous_status).strip():
+        return "error"
+    prev = str(previous_status).strip()
+    if prev == "error" or prev.endswith("-error"):
+        return prev
+    return f"{prev}-error"
+
+
 def record_crash(msg: str) -> NoReturn:
     """
     Record a crash: log at exception level and raise so the run stops.
@@ -36,7 +50,7 @@ def record_error(
     error_msg: str,
     *,
     update_storage: bool = True,
-    status_value: str = "error",
+    status_value: str | None = None,
 ) -> None:
     """
     Record an error for the current project: abort this project, continue with the next.
@@ -50,12 +64,17 @@ def record_error(
         drpid: Project DRPID.
         error_msg: Error message to log and persist.
         update_storage: If True, update Storage status and append to errors field.
-        status_value: Value to set for the ``status`` column when updating Storage.
+        status_value: Value for ``status``; default is ``{previous_status}-error``.
     """
     Logger.error(error_msg)
 
     if not update_storage:
         return
+
+    if status_value is None:
+        record = Storage.get(drpid)
+        previous = record.get("status") if record else None
+        status_value = derive_error_status(previous)
 
     try:
         Storage.update_record(drpid, {"status": status_value})

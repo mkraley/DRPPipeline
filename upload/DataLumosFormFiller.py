@@ -12,6 +12,34 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from utils.Logger import Logger
 
+DATALUMOS_TITLE_MAX_LENGTH = 250
+
+
+def truncate_title_for_datalumos(title: str, max_len: int = DATALUMOS_TITLE_MAX_LENGTH) -> str:
+    """
+    Truncate a project title to DataLumos's length limit without breaking mid-word when possible.
+
+    Normalizes whitespace, then if still over ``max_len`` cuts at the last space in the
+    allowed span (when that keeps most of the title). Otherwise hard-truncates.
+    Appends an ellipsis when text was removed.
+    """
+    normalized = " ".join(title.split())
+    if len(normalized) <= max_len:
+        return normalized
+
+    suffix = "…"
+    if max_len <= len(suffix):
+        return normalized[:max_len]
+
+    cut_at = max_len - len(suffix)
+    candidate = normalized[:cut_at]
+    last_space = candidate.rfind(" ")
+    min_word_break = int(cut_at * 0.6)
+    if last_space >= min_word_break:
+        candidate = candidate[:last_space]
+
+    return candidate.rstrip(" ,;:-") + suffix
+
 
 def _is_empty(value: Optional[str]) -> bool:
     """Return True if value is None, empty, or whitespace-only."""
@@ -71,19 +99,22 @@ class DataLumosFormFiller:
     def expand_all_sections(self) -> None:
         """
         Expand all collapsible sections on the form.
-        
-        Clicks "Collapse All" then "Expand All" to ensure
-        all sections are visible.
+
+        Clicks "Collapse All" then "Expand All" to ensure all sections are visible.
+        Non-fatal if the toggle is missing (DataLumos UI changes).
         """
-        collapse_btn = self._page.locator("#expand-init > span:nth-child(2)")
-        self.wait_for_obscuring_elements()
-        collapse_btn.click()
-        self._page.wait_for_timeout(2000)
-        
-        expand_btn = self._page.locator("#expand-init > span:nth-child(2)")
-        self.wait_for_obscuring_elements()
-        expand_btn.click()
-        self._page.wait_for_timeout(2000)
+        try:
+            collapse_btn = self._page.locator("#expand-init > span:nth-child(2)")
+            self.wait_for_obscuring_elements()
+            collapse_btn.click(timeout=5000)
+            self._page.wait_for_timeout(2000)
+
+            expand_btn = self._page.locator("#expand-init > span:nth-child(2)")
+            self.wait_for_obscuring_elements()
+            expand_btn.click(timeout=5000)
+            self._page.wait_for_timeout(2000)
+        except PlaywrightTimeoutError:
+            Logger.warning("expand_all_sections: #expand-init not found, skipping")
     
     def fill_title(self, title: str) -> None:
         """
@@ -92,15 +123,25 @@ class DataLumosFormFiller:
         Args:
             title: Project title text
         """
-        _debug_form_field("title", title)
+        truncated = truncate_title_for_datalumos(title)
+        if len(truncated) < len(" ".join(title.split())):
+            Logger.warning(
+                "Title truncated from %s to %s characters for DataLumos limit",
+                len(" ".join(title.split())),
+                len(truncated),
+            )
+        _debug_form_field("title", truncated)
         title_input = self._page.locator("#title")
-        title_input.fill(title)
-        
-        save_btn = self._page.locator(".save-project")
-        save_btn.click()
-        
-        # Element has role="button" (not link) per DataLumos markup
+        title_input.fill(truncated)
+
+        save_apply_btn = self._page.get_by_role(
+            "button", name=re.compile(r"Save\s*&\s*Apply", re.I)
+        )
+        self.wait_for_obscuring_elements()
+        save_apply_btn.click()
+
         continue_btn = self._page.get_by_role("button", name="Continue To Project Workspace")
+        self.wait_for_obscuring_elements()
         continue_btn.click()
         
         self.wait_for_obscuring_elements()
@@ -222,12 +263,50 @@ class DataLumosFormFiller:
             except PlaywrightTimeoutError as e:
                 Logger.warning(f"Could not add keyword '{keyword}': {e}")
     
+    def _geographic_coverage_block(self):
+        """Geographic coverage field container: label span, up two parent levels."""
+        label = self._page.locator("span").filter(
+            has_text=re.compile(r"Geographic coverage", re.I)
+        ).first
+        label.wait_for(state="visible", timeout=50000)
+        return label.locator("xpath=./parent::*/parent::*")
+
+    def _click_geographic_add_value(self) -> None:
+        self.wait_for_obscuring_elements()
+        block = self._geographic_coverage_block()
+        block.scroll_into_view_if_needed()
+        add_btn = block.get_by_title(re.compile(r"^add value$", re.I))
+        add_btn.wait_for(state="visible", timeout=50000)
+        add_btn.click()
+
+    def _add_geographic_term(self, term: str) -> None:
+        """Add one ICPSR geographic term via add-value, then modal or inline input."""
+        self._click_geographic_add_value()
+
+        geo_field = self._page.locator("#geoName")
+        if geo_field.count() > 0:
+            geo_field.first.wait_for(state="visible", timeout=50000)
+            geo_field.first.fill(term)
+            self._page.wait_for_timeout(500)
+            save = self._page.locator(".save-geo")
+            save.first.wait_for(state="visible", timeout=50000)
+            save.first.click()
+            self.wait_for_obscuring_elements()
+            return
+
+        url_input = self._page.locator(".editable-input > input:nth-child(1)").first
+        url_input.wait_for(state="visible", timeout=50000)
+        self.wait_for_obscuring_elements()
+        url_input.fill(term)
+        url_input.press("Enter")
+        self.wait_for_obscuring_elements()
+
     def fill_geographic_coverage(self, coverage: str) -> None:
         """
         Fill the geographic coverage field with one or more ICPSR thesaurus terms.
 
-        ``coverage`` is semicolon-delimited. The first term uses the inline editor;
-        additional terms use "add value" in the same section.
+        ``coverage`` is semicolon-delimited. Each term uses the section's
+        ``add value`` link (title="add value") beside the Geographic coverage label.
         """
         from utils.IcpsrGeographicNormalizer import parse_geographic_coverage_field
 
@@ -235,18 +314,12 @@ class DataLumosFormFiller:
         if not terms:
             return
 
-        edit_selector = "#edit-dcterms_location_0 > span:nth-child(1) > span:nth-child(2)"
-        add_value_selector = "#groupAttr0 a"
-
-        for index, term in enumerate(terms):
+        for term in terms:
             _debug_form_field("geographic_coverage (dcterms_location)", term)
-            if index == 0:
-                self._fill_editable_inline(edit_selector, term)
-            else:
-                add_btn = self._page.locator(add_value_selector).filter(has_text="add value").last
-                self.wait_for_obscuring_elements()
-                add_btn.click()
-                self._fill_editable_inline(edit_selector, term)
+            try:
+                self._add_geographic_term(term)
+            except PlaywrightTimeoutError as exc:
+                Logger.warning(f"Could not add geographic term '{term}': {exc}")
     
     def fill_time_period(self, start: Optional[str], end: Optional[str]) -> None:
         """Fill the time period fields."""
@@ -342,19 +415,36 @@ class DataLumosFormFiller:
             ".editable-submit",
         )
     
-    def _fill_editable_inline(self, edit_selector: str, value: str) -> None:
+    def _fill_editable_inline(
+        self,
+        edit_selector: str,
+        value: str,
+        *,
+        fallback_selectors: List[str] | None = None,
+    ) -> None:
         """
         Fill an inline-editable field (click edit, type in input, submit).
-        
+
         Args:
             edit_selector: Selector for the edit button
             value: Value to fill
+            fallback_selectors: Additional edit-button selectors to try
         """
-        edit_btn = self._page.locator(edit_selector)
-        edit_btn.wait_for(state="visible", timeout=50000)
+        edit_btn = None
+        for sel in [edit_selector, *(fallback_selectors or [])]:
+            candidate = self._page.locator(sel).first
+            try:
+                candidate.wait_for(state="visible", timeout=5000)
+                edit_btn = candidate
+                break
+            except PlaywrightTimeoutError:
+                continue
+        if edit_btn is None:
+            raise PlaywrightTimeoutError(f"Edit control not found: {edit_selector}")
+
         self.wait_for_obscuring_elements()
         edit_btn.click()
-        
+
         url_input = self._page.locator(".editable-input > input:nth-child(1)").first
         url_input.wait_for(state="visible", timeout=50000)
         self.wait_for_obscuring_elements()
