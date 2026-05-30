@@ -6,11 +6,16 @@ from MODULES registry, dynamically imports module classes by name, and calls run
 """
 
 import importlib
+import logging
 import pkgutil
 import sys
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, Optional
 
 from storage import Storage
 from utils.Args import Args
@@ -131,6 +136,71 @@ def _stop_requested() -> bool:
     return path.exists()
 
 
+class _BatchLevelCounter(logging.Filter):
+    """Count WARNING and ERROR log records during an orchestration batch."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.errors = 0
+        self.warnings = 0
+        self._lock = threading.Lock()
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        with self._lock:
+            if record.levelno >= logging.ERROR:
+                self.errors += 1
+            elif record.levelno >= logging.WARNING:
+                self.warnings += 1
+        return True
+
+
+@dataclass
+class _BatchStats:
+    module: str
+    counter: _BatchLevelCounter
+    projects_completed: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def note_project_finished(self) -> None:
+        with self._lock:
+            self.projects_completed += 1
+
+
+def _format_duration(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes, secs = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{int(minutes)}m {secs:.1f}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{int(hours)}h {int(minutes)}m {secs:.1f}s"
+
+
+def _log_batch_summary(stats: _BatchStats, elapsed: float) -> None:
+    completed = stats.projects_completed
+    errors = stats.counter.errors
+    warnings = stats.counter.warnings
+    avg_str = _format_duration(elapsed / completed) if completed else "n/a"
+    Logger.info(
+        f"Orchestrator batch summary module={stats.module!r} "
+        f"completed={completed} errors={errors} warnings={warnings} "
+        f"elapsed={_format_duration(elapsed)} avg_per_project={avg_str}"
+    )
+
+
+@contextmanager
+def _orchestration_batch(module: str) -> Iterator[_BatchStats]:
+    counter = _BatchLevelCounter()
+    Logger.get_logger().addFilter(counter)
+    stats = _BatchStats(module=module, counter=counter)
+    start = time.perf_counter()
+    try:
+        yield stats
+    finally:
+        Logger.get_logger().removeFilter(counter)
+        _log_batch_summary(stats, time.perf_counter() - start)
+
+
 class Orchestrator:
     """
     Runs a single module (sourcing, collectors, etc.) on projects.
@@ -195,8 +265,9 @@ class Orchestrator:
         Logger.debug(f"Orchestrator loaded module class={class_name!r}")
 
         if prereq is None:
-            # Modules with no prereq: call run(-1) once
-            module_instance.run(-1)
+            with _orchestration_batch(module) as batch:
+                module_instance.run(-1)
+                batch.note_project_finished()
         else:
             # Modules with prereq: call run(drpid) for each eligible project
             if module == "publisher":
@@ -221,77 +292,80 @@ class Orchestrator:
             max_workers = Args.max_workers or 1
             max_workers = max(1, int(max_workers))
 
-            def run_one(proj: Dict[str, Any]) -> None:
-                drpid = proj["DRPID"]
-                source_url = proj.get("source_url", "")
-                Logger.set_current_drpid(drpid)
-                # Each thread gets its own module instance (and thus its own Playwright/browser)
-                instance = module_class()
-                try:
-                    Logger.info(
-                        f"Orchestrator starting project module={module!r} "
-                        f"DRPID={drpid} source_url={source_url!r}"
-                    )
-                    instance.run(drpid)
-                except Exception as exc:
-                    record_error(
-                        drpid,
-                        f"Orchestrator module={module!r} DRPID={drpid} exception: {exc}",
-                    )
-                finally:
-                    Logger.info(
-                        f"Orchestrator finished project module={module!r} DRPID={drpid}"
-                    )
-                    Logger.clear_current_drpid()
-
-            n_projects = len(projects)
-            if max_workers <= 1:
-                # Single-threaded: reuse one instance
-                for idx, proj in enumerate(projects, 1):
-                    if _stop_requested():
-                        Logger.info("Orchestrator stopped by user (stop file)")
-                        return
-                    Logger.info(f"Orchestrator progress: {idx}/{n_projects} projects")
+            with _orchestration_batch(module) as batch:
+                def run_one(proj: Dict[str, Any]) -> None:
                     drpid = proj["DRPID"]
                     source_url = proj.get("source_url", "")
                     Logger.set_current_drpid(drpid)
+                    # Each thread gets its own module instance (and thus its own Playwright/browser)
+                    instance = module_class()
                     try:
                         Logger.info(
                             f"Orchestrator starting project module={module!r} "
-                            f"DRPID={drpid} ({idx}/{n_projects}) source_url={source_url!r}"
+                            f"DRPID={drpid} source_url={source_url!r}"
                         )
-                        module_instance.run(drpid)
+                        instance.run(drpid)
                     except Exception as exc:
                         record_error(
                             drpid,
                             f"Orchestrator module={module!r} DRPID={drpid} exception: {exc}",
                         )
                     finally:
+                        batch.note_project_finished()
                         Logger.info(
-                            f"Orchestrator finished project module={module!r} "
-                            f"DRPID={drpid} ({idx}/{n_projects})"
+                            f"Orchestrator finished project module={module!r} DRPID={drpid}"
                         )
                         Logger.clear_current_drpid()
-            else:
-                Logger.info(f"Orchestrator running with max_workers={max_workers}")
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    futures = {executor.submit(run_one, proj): proj for proj in projects}
-                    done = 0
-                    for future in as_completed(futures):
+
+                n_projects = len(projects)
+                if max_workers <= 1:
+                    # Single-threaded: reuse one instance
+                    for idx, proj in enumerate(projects, 1):
                         if _stop_requested():
                             Logger.info("Orchestrator stopped by user (stop file)")
-                            # Shutdown cancels remaining futures
-                            executor.shutdown(wait=False, cancel_futures=True)
                             return
-                        done += 1
-                        if n_projects <= 20 or done % 10 == 0 or done == n_projects:
-                            Logger.info(f"Orchestrator progress: {done}/{n_projects} projects")
-                        proj = futures[future]
+                        Logger.info(f"Orchestrator progress: {idx}/{n_projects} projects")
+                        drpid = proj["DRPID"]
+                        source_url = proj.get("source_url", "")
+                        Logger.set_current_drpid(drpid)
                         try:
-                            future.result()
+                            Logger.info(
+                                f"Orchestrator starting project module={module!r} "
+                                f"DRPID={drpid} ({idx}/{n_projects}) source_url={source_url!r}"
+                            )
+                            module_instance.run(drpid)
                         except Exception as exc:
                             record_error(
-                                proj["DRPID"],
-                                f"Orchestrator module={module!r} worker exception: {exc}",
+                                drpid,
+                                f"Orchestrator module={module!r} DRPID={drpid} exception: {exc}",
                             )
-        Logger.info(f"Orchestrator finished module={module!r}")
+                        finally:
+                            batch.note_project_finished()
+                            Logger.info(
+                                f"Orchestrator finished project module={module!r} "
+                                f"DRPID={drpid} ({idx}/{n_projects})"
+                            )
+                            Logger.clear_current_drpid()
+                else:
+                    Logger.info(f"Orchestrator running with max_workers={max_workers}")
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        futures = {executor.submit(run_one, proj): proj for proj in projects}
+                        done = 0
+                        for future in as_completed(futures):
+                            if _stop_requested():
+                                Logger.info("Orchestrator stopped by user (stop file)")
+                                # Shutdown cancels remaining futures
+                                executor.shutdown(wait=False, cancel_futures=True)
+                                return
+                            done += 1
+                            if n_projects <= 20 or done % 10 == 0 or done == n_projects:
+                                Logger.info(f"Orchestrator progress: {done}/{n_projects} projects")
+                            proj = futures[future]
+                            try:
+                                future.result()
+                            except Exception as exc:
+                                record_error(
+                                    proj["DRPID"],
+                                    f"Orchestrator module={module!r} worker exception: {exc}",
+                                )
+            return

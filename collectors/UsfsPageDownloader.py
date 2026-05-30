@@ -52,7 +52,7 @@ class UsfsPageDownloader:
 
         Falls back when ``requests``/curl cannot verify fs.usda.gov certificates.
         """
-        if not self._ensure_browser():
+        if not self._restart_browser():
             return 0, False
         assert self._browser is not None
         page = self._browser.new_page()
@@ -130,6 +130,11 @@ class UsfsPageDownloader:
             with suppress(Exception):
                 self._playwright.stop()
             self._playwright = None
+
+    def _restart_browser(self) -> bool:
+        """Close and relaunch Chromium (fresh session before each file download)."""
+        self.close()
+        return self._ensure_browser()
 
     def _ensure_browser(self) -> bool:
         if self._browser:

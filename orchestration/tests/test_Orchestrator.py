@@ -11,7 +11,14 @@ from unittest.mock import MagicMock, patch
 from utils.Args import Args
 from utils.Logger import Logger
 
-from orchestration.Orchestrator import Orchestrator, _stop_requested
+from orchestration.Orchestrator import (
+    Orchestrator,
+    _BatchLevelCounter,
+    _format_duration,
+    _log_batch_summary,
+    _stop_requested,
+    _BatchStats,
+)
 
 
 class TestOrchestrator(unittest.TestCase):
@@ -303,3 +310,97 @@ class TestOrchestrator(unittest.TestCase):
         from orchestration.Orchestrator import _find_module_class
         cls = _find_module_class("Sourcing")
         self.assertEqual(cls.__name__, "Sourcing")
+
+    def test_format_duration(self) -> None:
+        """Test human-readable duration formatting."""
+        self.assertEqual(_format_duration(12.34), "12.3s")
+        self.assertEqual(_format_duration(90.0), "1m 30.0s")
+        self.assertEqual(_format_duration(3661.0), "1h 1m 1.0s")
+
+    def test_batch_level_counter(self) -> None:
+        """Test WARNING and ERROR records are counted."""
+        import logging
+
+        counter = _BatchLevelCounter()
+        counter.filter(logging.LogRecord("x", logging.WARNING, "", 0, "w", (), None))
+        counter.filter(logging.LogRecord("x", logging.ERROR, "", 0, "e", (), None))
+        self.assertEqual(counter.warnings, 1)
+        self.assertEqual(counter.errors, 1)
+
+    @patch("orchestration.Orchestrator.Logger")
+    def test_log_batch_summary(self, mock_logger: MagicMock) -> None:
+        """Test batch summary log line includes counts and timing."""
+        counter = _BatchLevelCounter()
+        counter.errors = 2
+        counter.warnings = 1
+        stats = _BatchStats(module="upload", counter=counter, projects_completed=4)
+        _log_batch_summary(stats, 40.0)
+        msg = mock_logger.info.call_args[0][0]
+        self.assertIn("module='upload'", msg)
+        self.assertIn("completed=4", msg)
+        self.assertIn("errors=2", msg)
+        self.assertIn("warnings=1", msg)
+        self.assertIn("elapsed=40.0s", msg)
+        self.assertIn("avg_per_project=10.0s", msg)
+
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
+    def test_run_logs_batch_summary(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
+    ) -> None:
+        """Test run() logs batch summary when project batch completes."""
+        mock_storage = MagicMock()
+        mock_storage.list_eligible_projects.return_value = [
+            {"DRPID": 1, "source_url": "https://example.com/1"},
+            {"DRPID": 2, "source_url": "https://example.com/2"},
+        ]
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.list_eligible_projects = mock_storage.list_eligible_projects
+        mock_instance = MagicMock()
+        mock_find_class.return_value = MagicMock(return_value=mock_instance)
+
+        info_messages: list[str] = []
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls), patch(
+            "orchestration.Orchestrator.Logger.info",
+            side_effect=lambda msg, *a, **k: info_messages.append(msg),
+        ):
+            Orchestrator.run("catalog_collector")
+
+        summary = [m for m in info_messages if "Orchestrator batch summary" in m]
+        self.assertEqual(len(summary), 1)
+        self.assertIn("completed=2", summary[0])
+        self.assertIn("avg_per_project=", summary[0])
+
+    @patch("orchestration.Orchestrator._stop_requested")
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
+    def test_run_stop_early_logs_partial_batch_summary(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock, mock_stop: MagicMock
+    ) -> None:
+        """Test batch summary reflects projects completed before stop."""
+        mock_storage = MagicMock()
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.list_eligible_projects.return_value = [
+            {"DRPID": 1, "source_url": "https://one.com"},
+            {"DRPID": 2, "source_url": "https://two.com"},
+        ]
+        run_count = 0
+
+        def stop_after_first(*args, **kwargs):
+            nonlocal run_count
+            run_count += 1
+            return run_count > 1
+
+        mock_stop.side_effect = stop_after_first
+        mock_instance = MagicMock()
+        mock_find_class.return_value = MagicMock(return_value=mock_instance)
+
+        info_messages: list[str] = []
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls), patch(
+            "orchestration.Orchestrator.Logger.info",
+            side_effect=lambda msg, *a, **k: info_messages.append(msg),
+        ):
+            Orchestrator.run("catalog_collector")
+
+        summary = [m for m in info_messages if "Orchestrator batch summary" in m][0]
+        self.assertIn("completed=1", summary)

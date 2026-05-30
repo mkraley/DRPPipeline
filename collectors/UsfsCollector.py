@@ -331,12 +331,22 @@ class UsfsCollector:
 
             success = False
             _bytes_written = 0
+            Logger.info("Downloading publication file: %s", filename)
             if page_downloader is not None and _USFS_HOST in file_url:
                 _bytes_written, success = page_downloader.download_file(file_url, dest)
             if not success:
+                Logger.info("HTTP download starting: %s", filename)
                 _bytes_written, success = download_via_url(
                     file_url, dest, timeout_sec=_DOWNLOAD_TIMEOUT_SEC
                 )
+            if success and dest.is_file():
+                Logger.info(
+                    "Downloaded publication file: %s (%s)",
+                    filename,
+                    format_file_size(dest.stat().st_size),
+                )
+            if not success:
+                Logger.info("Publication file download failed: %s", filename)
             if not success:
                 if counted_catalog and inventory_bytes is not None:
                     total_bytes -= inventory_bytes

@@ -3,6 +3,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 from unittest.mock import MagicMock, patch
 
 from utils.Args import Args
@@ -82,6 +83,43 @@ class TestUsfsCollector(unittest.TestCase):
             self.assertEqual(total_bytes, 0)
         finally:
             for f in folder.iterdir():
+                f.unlink(missing_ok=True)
+            folder.rmdir()
+
+    @patch("collectors.UsfsCollector.Logger")
+    @patch("collectors.UsfsCollector.download_via_url")
+    def test_download_usfs_logs_begin_and_end(
+        self, mock_http_download: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        collector = UsfsCollector()
+        folder = Path(__file__).parent / "_tmp_usfs_dl_log"
+        folder.mkdir(exist_ok=True)
+        page_downloader = MagicMock()
+
+        def _write_download(_url: str, dest_path: Path) -> tuple[int, bool]:
+            dest_path.write_bytes(b"x" * 128)
+            return 128, True
+
+        page_downloader.download_file.side_effect = _write_download
+        try:
+            collector._process_publication_files(
+                1,
+                page_downloader,
+                folder,
+                [(
+                    "meta.zip",
+                    "https://www.fs.usda.gov/rds/archive/products/RDS/meta.zip",
+                    128,
+                )],
+            )
+            mock_logger.info.assert_any_call("Downloading publication file: %s", "meta.zip")
+            mock_logger.info.assert_any_call(
+                "Downloaded publication file: %s (%s)",
+                "meta.zip",
+                mock.ANY,
+            )
+        finally:
+            for f in folder.glob("*"):
                 f.unlink(missing_ok=True)
             folder.rmdir()
 
