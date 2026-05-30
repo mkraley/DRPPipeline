@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import requests
 
 from utils.file_utils import format_file_size
-from utils.url_utils import BROWSER_HEADERS
+from utils.url_utils import BROWSER_HEADERS, requests_verify
 from utils.Logger import Logger
 
 
@@ -81,6 +81,7 @@ def download_via_url(
             cookies=cookie_dict,
             headers=request_headers,
             timeout=timeout_val,
+            verify=requests_verify(),
         )
         resp.raise_for_status()
     except requests.HTTPError:

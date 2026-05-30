@@ -4,16 +4,19 @@ from __future__ import annotations
 
 from contextlib import suppress
 from pathlib import Path
+from typing import Optional, Tuple
 
 from playwright.sync_api import Browser, Playwright, sync_playwright
 
 from utils.Logger import Logger
+from utils.url_utils import _fetch_html_with_playwright_page
 
 _NAVIGATION_WAIT = "commit"
 _NAVIGATION_TIMEOUT_MS = 30000
 _SETTLE_MS = 3000
 _LOAD_TIMEOUT_MS = 35000
 _PRINT_TIMEOUT_MS = 90000
+_FILE_DOWNLOAD_TIMEOUT_MS = 3600 * 1000
 
 
 class UsfsPageDownloader:
@@ -23,6 +26,58 @@ class UsfsPageDownloader:
         self._headless = headless
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
+
+    def fetch_page_html(
+        self, url: str, timeout: int = 60
+    ) -> Tuple[int, str, Optional[str], bool]:
+        """
+        Fetch page HTML via Playwright (same return shape as ``fetch_page_body``).
+
+        Reuses the collector's Chromium session when HTTP/curl fetch fails.
+        """
+        if not self._ensure_browser():
+            return -1, "", None, False
+        assert self._browser is not None
+        page = self._browser.new_page()
+        try:
+            page.set_default_timeout(timeout * 1000)
+            return _fetch_html_with_playwright_page(page, url, timeout)
+        finally:
+            with suppress(Exception):
+                page.close()
+
+    def download_file(self, url: str, destination_path: Path) -> Tuple[int, bool]:
+        """
+        Download a file via Playwright (uses the browser TLS stack).
+
+        Falls back when ``requests``/curl cannot verify fs.usda.gov certificates.
+        """
+        if not self._ensure_browser():
+            return 0, False
+        assert self._browser is not None
+        page = self._browser.new_page()
+        try:
+            page.set_default_timeout(_FILE_DOWNLOAD_TIMEOUT_MS)
+            with page.expect_download(timeout=_FILE_DOWNLOAD_TIMEOUT_MS) as download_info:
+                try:
+                    page.goto(url, wait_until="commit", timeout=_FILE_DOWNLOAD_TIMEOUT_MS)
+                except Exception as exc:
+                    # Direct file URLs trigger a download instead of a document load.
+                    if "Download is starting" not in str(exc):
+                        raise
+            download = download_info.value
+            destination_path.parent.mkdir(parents=True, exist_ok=True)
+            download.save_as(str(destination_path))
+            if destination_path.is_file():
+                size = destination_path.stat().st_size
+                return size, size > 0
+            return 0, False
+        except Exception as exc:
+            Logger.error("Playwright download failed: %s - %s", url, exc)
+            return 0, False
+        finally:
+            with suppress(Exception):
+                page.close()
 
     def url_to_pdf(self, url: str, pdf_path: Path) -> bool:
         """Navigate to ``url`` and write a PDF to ``pdf_path``."""

@@ -104,6 +104,12 @@ class TestUsfsMetadataExtractor:
             rds_id_from_source_url("https://www.fs.usda.gov/rds/archive/catalog/EFR-2026-001")
             == "EFR-2026-001"
         )
+        assert (
+            rds_id_from_source_url(
+                "https://www.fs.usda.gov/rds/archive/catalog/NWRC-RDS-2025-002"
+            )
+            == "NWRC-RDS-2025-002"
+        )
 
     def test_normalize_keywords_splits_and_strips_ampersands(self) -> None:
         raw = (

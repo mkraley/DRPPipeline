@@ -55,18 +55,26 @@ class TestUsfsCollector(unittest.TestCase):
     @patch("collectors.UsfsCollector.record_error")
     @patch("collectors.UsfsCollector.download_via_url", return_value=(0, False))
     def test_download_failure_records_error(
-        self, _mock_download: MagicMock, mock_record_error: MagicMock
+        self, mock_http_download: MagicMock, mock_record_error: MagicMock
     ) -> None:
         collector = UsfsCollector()
         folder = Path(__file__).parent / "_tmp_usfs_dl_fail"
         folder.mkdir(exist_ok=True)
+        page_downloader = MagicMock()
+        page_downloader.download_file.return_value = (0, False)
         try:
             notes, total_bytes, _exts, skipped_large = collector._process_publication_files(
                 1,
-                MagicMock(),
+                page_downloader,
                 folder,
-                [("meta.zip", "https://example.com/meta.zip", 1024)],
+                [(
+                    "meta.zip",
+                    "https://www.fs.usda.gov/rds/archive/products/RDS/meta.zip",
+                    1024,
+                )],
             )
+            page_downloader.download_file.assert_called_once()
+            mock_http_download.assert_called_once()
             mock_record_error.assert_called_once()
             self.assertIn("Download failed", mock_record_error.call_args[0][1])
             self.assertFalse(skipped_large)
@@ -76,6 +84,52 @@ class TestUsfsCollector(unittest.TestCase):
             for f in folder.iterdir():
                 f.unlink(missing_ok=True)
             folder.rmdir()
+
+    @patch("collectors.UsfsCollector.download_via_url")
+    def test_download_usfs_uses_playwright_first(self, mock_http_download: MagicMock) -> None:
+        collector = UsfsCollector()
+        folder = Path(__file__).parent / "_tmp_usfs_dl_pw"
+        folder.mkdir(exist_ok=True)
+        page_downloader = MagicMock()
+        page_downloader.download_file.return_value = (128, True)
+        try:
+            notes, total_bytes, _exts, skipped_large = collector._process_publication_files(
+                1,
+                page_downloader,
+                folder,
+                [(
+                    "meta.zip",
+                    "https://www.fs.usda.gov/rds/archive/products/RDS/meta.zip",
+                    128,
+                )],
+            )
+            page_downloader.download_file.assert_called_once()
+            mock_http_download.assert_not_called()
+            self.assertFalse(skipped_large)
+            self.assertEqual(total_bytes, 128)
+            self.assertFalse(any("Download failed" in n for n in notes))
+        finally:
+            for f in folder.glob("*"):
+                f.unlink(missing_ok=True)
+            folder.rmdir()
+
+    @patch("collectors.UsfsCollector.Storage")
+    def test_update_storage_excludes_metadata_parse_fields(self, mock_storage: MagicMock) -> None:
+        mock_storage.get.return_value = {"status": "sourced", "errors": None}
+        collector = UsfsCollector()
+        result = {
+            "folder_path": "C:\\data\\DRP000001",
+            "geographic_coverage": "Oregon",
+            "geographic_extent_description": "NW Oregon",
+            "place_keywords": ["Oregon"],
+            "bounding_box": {"west": -125.0, "east": -124.0, "north": 46.0, "south": 45.0},
+        }
+        collector._update_storage(1, result)
+        update = mock_storage.update_record.call_args[0][1]
+        self.assertEqual(update["geographic_coverage"], "Oregon")
+        self.assertNotIn("geographic_extent_description", update)
+        self.assertNotIn("place_keywords", update)
+        self.assertNotIn("bounding_box", update)
 
     @patch("collectors.UsfsCollector.Storage")
     def test_update_storage_large_file_status(self, mock_storage: MagicMock) -> None:
@@ -92,14 +146,15 @@ class TestUsfsCollector(unittest.TestCase):
     def test_update_storage_preserves_error_status(self, mock_storage: MagicMock) -> None:
         mock_storage.get.return_value = {"status": "sourced-error", "errors": "Download failed"}
         collector = UsfsCollector()
-        result = {"folder_path": "C:\\data\\DRP000001", "_skipped_large_file": False}
+        result = {"folder_path": "C:\\data\\DRP000001", "_skipped_large_file": True}
         collector._update_storage(1, result)
         update = mock_storage.update_record.call_args[0][1]
         self.assertNotIn("status", update)
+        self.assertNotIn("_skipped_large_file", update)
 
     @patch("collectors.UsfsAria2Export.write_drpid_aria2_cmd")
     @patch("collectors.UsfsCollector.create_output_folder")
-    @patch("collectors.UsfsCollector.fetch_page_body")
+    @patch("collectors.UsfsCollector._fetch_usfs_page_body")
     @patch("collectors.UsfsCollector.Storage")
     def test_collect_writes_aria2_cmd_when_large_file_skipped(
         self,

@@ -405,14 +405,35 @@ def _playwright_headless() -> bool:
     return headed not in ("1", "true", "yes", "on")
 
 
+def requests_verify() -> bool | str:
+    """CA bundle for ``requests`` when the system store is incomplete (common on Windows)."""
+    try:
+        import certifi
+
+        return certifi.where()
+    except ImportError:
+        return True
+
+
 def _is_ssl_error(exc: BaseException) -> bool:
     """True when *exc* is an SSL certificate verification failure."""
     if isinstance(exc, requests.exceptions.SSLError):
         return True
+    exc_name = type(exc).__name__
+    if exc_name in ("CertificateVerifyError", "CurlError"):
+        msg = str(exc).lower()
+        if "ssl" in msg or "certificate" in msg or "curl: (60)" in str(exc):
+            return True
     cause = exc.__cause__
     if isinstance(cause, BaseException) and cause is not exc:
         return _is_ssl_error(cause)
-    return "CERTIFICATE_VERIFY_FAILED" in str(exc) or "SSLError" in type(exc).__name__
+    msg = str(exc).lower()
+    return (
+        "CERTIFICATE_VERIFY_FAILED" in str(exc)
+        or "SSLError" in exc_name
+        or "certificate verify" in msg
+        or "ssl certificate problem" in msg
+    )
 
 
 def _fetch_html_with_playwright_page(
@@ -515,19 +536,12 @@ def _http_get(url: str, headers: Dict[str, str], timeout: int) -> "requests.Resp
         )
     except ImportError:
         pass
-    verify: bool | str = True
-    try:
-        import certifi
-
-        verify = certifi.where()
-    except ImportError:
-        pass
     return requests.get(
         url,
         headers=headers,
         timeout=timeout,
         allow_redirects=True,
-        verify=verify,
+        verify=requests_verify(),
     )
 
 

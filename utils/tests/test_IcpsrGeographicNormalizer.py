@@ -183,6 +183,22 @@ class TestIcpsrGeographicNormalizer:
         assert result.geographic_coverage == "Colorado"
         assert "Denver" not in result.geographic_coverage
 
+    def test_new_york_place_keyword_maps_to_state(self, thesaurus: IcpsrGeographicThesaurus) -> None:
+        result = normalize_geographic_metadata(
+            place_keywords=["New York"],
+            thesaurus=thesaurus,
+        )
+        assert result.geographic_coverage == "New York (state)"
+        assert result.warnings == []
+
+    def test_new_york_city_not_mapped_to_state(self, thesaurus: IcpsrGeographicThesaurus) -> None:
+        result = normalize_geographic_metadata(
+            place_keywords=["New York City"],
+            thesaurus=thesaurus,
+        )
+        assert result.geographic_coverage == "New York City"
+        assert "New York (state)" not in result.geographic_coverage
+
     def test_parse_geographic_coverage_field(self) -> None:
         assert parse_geographic_coverage_field("Oregon; United States") == [
             "Oregon",

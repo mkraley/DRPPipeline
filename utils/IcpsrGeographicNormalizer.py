@@ -46,6 +46,7 @@ _EXTRA_ALIASES: dict[str, str] = {
     "coterminous united states": "United States",
     "coterminus united states": "United States",
     "united states of america": "United States",
+    "new york": "New York (state)",
 }
 
 # ICPSR country-level US terms treated as aliases; emit one canonical label.
@@ -130,6 +131,9 @@ _EXTENT_PHRASE_RULES: tuple[tuple[re.Pattern[str], str, str, str], ...] = (
 # US territories in ICPSR treated like states for match-priority (stop city/park NER).
 _US_TERRITORY_TERMS = frozenset({"Virgin Islands of the United States", "American Samoa", "Guam"})
 
+# ICPSR preferred names that differ from _US_STATE_BBOX keys.
+_US_STATE_ICPSR_TERMS = frozenset({"New York (state)"})
+
 
 @dataclass(frozen=True)
 class GeographicMatch:
@@ -210,6 +214,8 @@ class IcpsrGeographicThesaurus:
                     r"\b" + re.escape(alias) + r"(?!\s*virgin\s+islands)\b",
                     re.IGNORECASE,
                 )
+            elif alias == "new york":
+                pattern = re.compile(r"\bnew york\b(?!\s+city\b)", re.IGNORECASE)
             else:
                 pattern = re.compile(r"\b" + re.escape(alias) + r"\b", re.IGNORECASE)
             if pattern.search(lowered) and preferred not in seen:
@@ -298,7 +304,7 @@ def _should_skip_extent(description: str) -> bool:
 
 
 def _is_us_state_or_territory(term: str) -> bool:
-    return term in _US_STATE_BBOX or term in _US_TERRITORY_TERMS
+    return term in _US_STATE_BBOX or term in _US_TERRITORY_TERMS or term in _US_STATE_ICPSR_TERMS
 
 
 def _has_us_state_match(matches: list[GeographicMatch]) -> bool:

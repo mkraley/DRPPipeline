@@ -387,6 +387,38 @@ class TestUrlUtils(unittest.TestCase):
         self.assertEqual(body, "<html>ok</html>")
         mock_pw.assert_called_once()
 
+    @patch("utils.url_utils._fetch_page_body_with_playwright")
+    @patch("utils.url_utils._http_get")
+    def test_fetch_page_body_curl_cffi_ssl_error_uses_playwright(
+        self, mock_http_get: Mock, mock_pw: Mock
+    ) -> None:
+        """curl_cffi CertificateVerifyError falls back to Playwright."""
+
+        class CertificateVerifyError(Exception):
+            pass
+
+        mock_http_get.side_effect = CertificateVerifyError(
+            "Failed to perform, curl: (60) SSL certificate problem: unable to get local issuer certificate."
+        )
+        mock_pw.return_value = (200, "<html>ok</html>", "text/html", False)
+
+        status, body, ct, is_logical = url_utils.fetch_page_body(
+            "https://www.fs.usda.gov/rds/archive/catalog/RDS-2022-0015-4"
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body, "<html>ok</html>")
+        mock_pw.assert_called_once()
+
+    def test_is_ssl_error_curl_cffi_certificate_verify(self) -> None:
+        class CertificateVerifyError(Exception):
+            pass
+
+        exc = CertificateVerifyError(
+            "Failed to perform, curl: (60) SSL certificate problem: unable to get local issuer certificate."
+        )
+        self.assertTrue(url_utils._is_ssl_error(exc))
+
     @patch("utils.url_utils.requests.get")
     def test_fetch_page_body_binary_content_returns_empty_body(self, mock_get: Mock) -> None:
         """Test binary Content-Type returns empty body to avoid decoded garbage."""

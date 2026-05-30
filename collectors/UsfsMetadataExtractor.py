@@ -81,7 +81,10 @@ def _is_publication_download_link(label: str, href: str) -> bool:
 
 
 def rds_id_from_source_url(source_url: str) -> str | None:
-    """Extract publication id (e.g. RDS-2026-0018 or EFR-2026-001) from a catalog URL."""
+    """Extract publication id (e.g. RDS-2026-0018, NWRC-RDS-2025-002) from a catalog URL."""
+    path_match = re.search(r"/rds/archive/catalog/([^/?#]+)", source_url, re.IGNORECASE)
+    if path_match:
+        return path_match.group(1)
     match = CATALOG_ID_RE.search(source_url)
     return match.group(1) if match else None
 

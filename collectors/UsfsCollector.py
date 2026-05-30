@@ -46,6 +46,36 @@ _DOWNLOAD_TIMEOUT_SEC = 3600  # 1 hour read timeout for large-but-allowed files
 _PDF_NAMES = ("catalog_detail.pdf", "metadata.pdf", "file_index.pdf")
 STATUS_COLLECTED_LARGE_FILE = "collected - large file"
 STATUS_UPLOADED_LARGE_FILE = "uploaded - large file"
+# FGDC parse fields kept in memory only; Storage has geographic_coverage instead.
+_METADATA_KEYS_NOT_IN_STORAGE = frozenset({
+    "geographic_extent_description",
+    "place_keywords",
+    "bounding_box",
+})
+_USFS_HOST = "fs.usda.gov"
+
+
+def _fetch_usfs_page_body(
+    url: str,
+    page_downloader: UsfsPageDownloader,
+    *,
+    timeout: int = 60,
+) -> Tuple[int, str, Optional[str], bool]:
+    """
+    Fetch USFS catalog HTML; fall back to Playwright when HTTP/curl fails.
+
+    fs.usda.gov often fails certificate verification under curl_cffi/requests on
+    Windows even though a real browser works fine.
+    """
+    status, body, content_type, logical_404 = fetch_page_body(url, timeout=timeout)
+    if status == 200 and body:
+        return status, body, content_type, logical_404
+    Logger.warning(
+        "HTTP fetch failed (status=%s) for %s; using Playwright browser",
+        status,
+        url,
+    )
+    return page_downloader.fetch_page_html(url, timeout=timeout)
 
 
 class UsfsCollector:
@@ -94,7 +124,7 @@ class UsfsCollector:
             record_error(drpid, f"Not a USFS RDS catalog URL: {url}")
             return {}
 
-        status, body, _content_type, _logical_404 = fetch_page_body(url)
+        status, body, _content_type, _logical_404 = _fetch_usfs_page_body(url, page_downloader)
         if status != 200 or not body:
             record_error(drpid, f"Failed to fetch USFS detail page (status={status}): {url}")
             return {}
@@ -108,7 +138,7 @@ class UsfsCollector:
         meta_body = ""
         if rds_id:
             meta_url = metadata_url_for_rds_id(rds_id)
-            meta_status, meta_body, _, _ = fetch_page_body(meta_url)
+            meta_status, meta_body, _, _ = _fetch_usfs_page_body(meta_url, page_downloader)
             if meta_status == 200 and meta_body:
                 metadata = parse_metadata_page(meta_body)
             else:
@@ -119,6 +149,7 @@ class UsfsCollector:
         else:
             record_warning(drpid, f"Could not extract RDS id from URL: {url}")
 
+        # Geographic coverage uses FGDC metadata HTML (above), before publication downloads.
         result = merge_usfs_metadata(detail, metadata)
         data_types = infer_data_types(
             result.get("title", ""),
@@ -298,9 +329,14 @@ class UsfsCollector:
                 total_bytes += inventory_bytes
                 counted_catalog = True
 
-            _bytes_written, success = download_via_url(
-                file_url, dest, timeout_sec=_DOWNLOAD_TIMEOUT_SEC
-            )
+            success = False
+            _bytes_written = 0
+            if page_downloader is not None and _USFS_HOST in file_url:
+                _bytes_written, success = page_downloader.download_file(file_url, dest)
+            if not success:
+                _bytes_written, success = download_via_url(
+                    file_url, dest, timeout_sec=_DOWNLOAD_TIMEOUT_SEC
+                )
             if not success:
                 if counted_catalog and inventory_bytes is not None:
                     total_bytes -= inventory_bytes
@@ -341,8 +377,9 @@ class UsfsCollector:
     def _update_storage(self, drpid: int, result: Dict[str, Any]) -> None:
         current = Storage.get(drpid) or {}
         skipped_large = bool(result.pop("_skipped_large_file", False))
+        has_errors = bool((current.get("errors") or "").strip())
 
-        if current.get("errors"):
+        if has_errors:
             result.pop("status", None)
         elif result.get("folder_path"):
             if skipped_large:
@@ -352,6 +389,8 @@ class UsfsCollector:
 
         update_fields: Dict[str, Any] = {}
         for key, value in result.items():
+            if key in _METADATA_KEYS_NOT_IN_STORAGE:
+                continue
             if value is None:
                 continue
             if value == "":
