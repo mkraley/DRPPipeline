@@ -164,6 +164,36 @@ class TestDataLumosPublisher(unittest.TestCase):
     @patch("publisher.DataLumosPublisher.DataLumosPublisher._update_google_sheet_if_configured")
     @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
     @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
+    def test_run_keeps_published_when_sheet_update_raises(
+        self,
+        mock_publish_workspace: MagicMock,
+        mock_wait_for_human: MagicMock,
+        mock_update_sheet: MagicMock,
+    ) -> None:
+        """Google Sheet failures after publish must not mark the project as publish failed."""
+        drpid = Storage.create_record("https://example.com/test")
+        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "uploaded"})
+        mock_page = MagicMock()
+        self.publisher._session.ensure_browser = MagicMock(return_value=mock_page)
+        self.publisher._session.ensure_authenticated = MagicMock(return_value=None)
+        self.publisher._session.close = MagicMock(return_value=None)
+        mock_publish_workspace.return_value = (True, None)
+        mock_update_sheet.side_effect = Exception(
+            "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed"
+        )
+
+        with patch("publisher.DataLumosPublisher.record_error") as mock_record_error:
+            self.publisher.run(drpid)
+
+        mock_record_error.assert_not_called()
+        record = Storage.get(drpid)
+        self.assertIsNotNone(record)
+        self.assertEqual(record.get("status"), "published")
+        self.assertIn("Google Sheet update failed", record.get("warnings") or "")
+
+    @patch("publisher.DataLumosPublisher.DataLumosPublisher._update_google_sheet_if_configured")
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
     def test_run_calls_google_sheet_update_when_configured(
         self,
         mock_publish_workspace: MagicMock,

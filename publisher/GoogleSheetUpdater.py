@@ -203,8 +203,8 @@ class GoogleSheetUpdater:
             )
             return True, None
 
-        except ValueError:
-            raise
+        except ValueError as e:
+            return False, str(e)
         except FileNotFoundError:
             return False, f"Credentials file not found: {credentials_path}"
         except HttpError as e:

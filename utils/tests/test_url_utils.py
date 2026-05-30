@@ -290,7 +290,7 @@ class TestUrlUtils(unittest.TestCase):
         large_body = "x" * 20000 + "page not found" + "y" * 1000
         self.assertFalse(url_utils.body_looks_like_not_found(large_body))
 
-    @patch("utils.url_utils.requests.get")
+    @patch("utils.url_utils._http_get")
     def test_fetch_page_body_success(self, mock_get: Mock) -> None:
         """Test fetch_page_body returns 200, body, content-type, and False for logical 404."""
         mock_resp = Mock()
@@ -308,13 +308,11 @@ class TestUrlUtils(unittest.TestCase):
         expected_headers = {**url_utils.BROWSER_HEADERS, "Accept-Encoding": "gzip, deflate"}
         mock_get.assert_called_once_with(
             "https://example.com/page",
-            timeout=30,
-            allow_redirects=True,
-            headers=expected_headers,
-            verify=ANY,
+            expected_headers,
+            30,
         )
 
-    @patch("utils.url_utils.requests.get")
+    @patch("utils.url_utils._http_get")
     def test_fetch_page_body_http_404(self, mock_get: Mock) -> None:
         """Test fetch_page_body returns 404, body, and is_logical_404 False for HTTP 404."""
         mock_resp = Mock()
@@ -329,7 +327,7 @@ class TestUrlUtils(unittest.TestCase):
         self.assertIn("Not found", body)
         self.assertFalse(is_logical)
 
-    @patch("utils.url_utils.requests.get")
+    @patch("utils.url_utils._http_get")
     def test_fetch_page_body_logical_404(self, mock_get: Mock) -> None:
         """Test fetch_page_body returns 404 and is_logical_404 True for 200 HTML with not-found body."""
         mock_resp = Mock()
@@ -346,7 +344,7 @@ class TestUrlUtils(unittest.TestCase):
         self.assertTrue(is_logical)
         self.assertEqual(ct, "text/html")
 
-    @patch("utils.url_utils.requests.get")
+    @patch("utils.url_utils._http_get")
     def test_fetch_page_body_connection_error_as_404(self, mock_get: Mock) -> None:
         """Test connection error returns 404, empty body, is_logical_404 False."""
         mock_get.side_effect = ConnectionError(
@@ -360,7 +358,7 @@ class TestUrlUtils(unittest.TestCase):
         self.assertIsNone(ct)
         self.assertFalse(is_logical)
 
-    @patch("utils.url_utils.requests.get")
+    @patch("utils.url_utils._http_get")
     def test_fetch_page_body_other_exception(self, mock_get: Mock) -> None:
         """Test other exception returns -1, empty body."""
         mock_get.side_effect = Exception("Timeout")
@@ -373,7 +371,7 @@ class TestUrlUtils(unittest.TestCase):
         self.assertFalse(is_logical)
 
     @patch("utils.url_utils._fetch_page_body_with_playwright")
-    @patch("utils.url_utils.requests.get")
+    @patch("utils.url_utils._http_get")
     def test_fetch_page_body_ssl_error_uses_playwright(
         self, mock_get: Mock, mock_pw: Mock
     ) -> None:
@@ -419,7 +417,7 @@ class TestUrlUtils(unittest.TestCase):
         )
         self.assertTrue(url_utils._is_ssl_error(exc))
 
-    @patch("utils.url_utils.requests.get")
+    @patch("utils.url_utils._http_get")
     def test_fetch_page_body_binary_content_returns_empty_body(self, mock_get: Mock) -> None:
         """Test binary Content-Type returns empty body to avoid decoded garbage."""
         mock_resp = Mock()
@@ -435,7 +433,7 @@ class TestUrlUtils(unittest.TestCase):
         self.assertEqual(ct, "application/pdf")
         self.assertFalse(is_logical)
 
-    @patch("utils.url_utils.requests.get")
+    @patch("utils.url_utils._http_get")
     def test_fetch_page_body_gzip_magic_returns_empty_body(self, mock_get: Mock) -> None:
         """Test gzip magic bytes (mis-labeled as text) returns empty body."""
         mock_resp = Mock()
@@ -450,7 +448,7 @@ class TestUrlUtils(unittest.TestCase):
         self.assertEqual(body, "")
         self.assertEqual(ct, "text/html")
 
-    @patch("utils.url_utils.requests.get")
+    @patch("utils.url_utils._http_get")
     def test_fetch_page_body_decoded_garbage_returns_empty_body(self, mock_get: Mock) -> None:
         """Test decoded body with few printable chars is treated as garbage and cleared."""
         mock_resp = Mock()

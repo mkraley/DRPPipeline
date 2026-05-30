@@ -13,6 +13,22 @@ from typing import Any, Optional, Union
 
 Credentials = Any
 
+_truststore_injected = False
+
+
+def _ensure_system_trust_store() -> None:
+    """Use the OS certificate store when no custom CA bundle is configured."""
+    global _truststore_injected
+    if _truststore_injected:
+        return
+    try:
+        import truststore
+
+        truststore.inject_into_ssl()
+        _truststore_injected = True
+    except ImportError:
+        pass
+
 
 def build_sheets_v4_service(
     credentials: Credentials,
@@ -26,7 +42,8 @@ def build_sheets_v4_service(
     When ``ssl_ca_bundle`` is a path to an existing PEM file, requests use
     httplib2 with that CA bundle (via :class:`google_auth_httplib2.AuthorizedHttp`).
     When None, uses :func:`Args.ssl_ca_bundle` if Args is initialized; otherwise
-    the default Google client (system/certificate store behavior).
+    injects ``truststore`` (OS certificate store) when available, then uses the
+    default Google client.
 
     Args:
         credentials: ``google.auth.credentials.Credentials`` (e.g. service account).
@@ -47,6 +64,7 @@ def build_sheets_v4_service(
         authorized = AuthorizedHttp(credentials, http=http)
         return build("sheets", "v4", http=authorized, cache_discovery=cache_discovery)
 
+    _ensure_system_trust_store()
     return build(
         "sheets",
         "v4",

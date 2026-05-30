@@ -93,13 +93,26 @@ class DataLumosPublisher:
                 "status": "published",
             })
             Logger.info(f"Publish completed for DRPID={drpid}, published_url={published_url}")
-
-            self._update_google_sheet_if_configured(drpid, project, workspace_id)
         except Exception as e:
             record_error(drpid, f"Publish failed: {e}")
             raise
         finally:
             self._session.close()
+
+        # Sheet update is separate: publish already succeeded; TLS/API failures are warnings only.
+        try:
+            self._update_google_sheet_if_configured(drpid, project, workspace_id)
+        except RuntimeError:
+            raise
+        except Exception as e:
+            Logger.warning(
+                "Google Sheet update failed for DRPID=%s after successful publish: %s",
+                drpid,
+                e,
+            )
+            Storage.append_to_field(
+                drpid, "warnings", f"Google Sheet update failed: {e}"
+            )
 
     def _update_sheet_if_configured(
         self,
@@ -130,7 +143,12 @@ class DataLumosPublisher:
             Logger.warning("Google Sheet update skipped: no source_url")
             return
 
-        success, error_message = update_fn()
+        try:
+            success, error_message = update_fn()
+        except Exception as exc:
+            success = False
+            error_message = str(exc)
+
         if success:
             Storage.update_record(drpid, {"status": success_status})
             Logger.info(f"Sheet updated for DRPID={drpid}")
