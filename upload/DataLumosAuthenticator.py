@@ -5,12 +5,21 @@ Handles login flow using Playwright including email/password authentication
 and "Verifying you are human" checks.
 """
 
+from typing import Optional, TYPE_CHECKING
+
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from utils.Logger import Logger
 
+if TYPE_CHECKING:
+    from upload.UploadIssueReporter import UploadIssueReporter
 
-def wait_for_human_verification(page: Page, timeout: int = 60000) -> None:
+
+def wait_for_human_verification(
+    page: Page,
+    timeout: int = 60000,
+    reporter: Optional["UploadIssueReporter"] = None,
+) -> None:
     """
     Wait for "Verifying you are human" message to complete.
     
@@ -48,7 +57,11 @@ def wait_for_human_verification(page: Page, timeout: int = 60000) -> None:
         
         page.wait_for_timeout(2000)  # Additional wait for page stability (matches chiara)
     except Exception as e:
-        Logger.warning(f"Verification check completed (or not needed): {e}")
+        msg = f"Verification check completed (or not needed): {e}"
+        if reporter is not None:
+            reporter.warn(msg)
+        else:
+            Logger.warning(msg)
         page.wait_for_timeout(2000)
 
 
@@ -66,16 +79,18 @@ class DataLumosAuthenticator:
     
     HOME_URL = "https://www.icpsr.umich.edu/sites/datalumos/home"
     
-    def __init__(self, page: Page, timeout: int = 30000) -> None:
+    def __init__(self, page: Page, timeout: int = 30000, reporter: Optional["UploadIssueReporter"] = None) -> None:
         """
         Initialize the authenticator.
         
         Args:
             page: Playwright Page object
             timeout: Default timeout in milliseconds
+            reporter: When set, verification warnings are persisted to the project record
         """
         self._page = page
         self._timeout = timeout
+        self._reporter = reporter
     
     def authenticate(self, username: str, password: str) -> bool:
         """
@@ -219,7 +234,7 @@ class DataLumosAuthenticator:
         
         Delegates to wait_for_human_verification().
         """
-        wait_for_human_verification(self._page, timeout=timeout)
+        wait_for_human_verification(self._page, timeout=timeout, reporter=self._reporter)
         return True
     
     def is_authenticated(self) -> bool:

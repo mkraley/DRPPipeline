@@ -14,11 +14,14 @@ import shutil
 import tempfile
 import time
 from pathlib import Path
-from typing import List
+from typing import List, Optional, TYPE_CHECKING
 
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from utils.Logger import Logger
+
+if TYPE_CHECKING:
+    from upload.UploadIssueReporter import UploadIssueReporter
 
 
 # Selectors from DataLumos import file modal (aligned with chiara_upload.py)
@@ -29,9 +32,21 @@ DROP_ZONE_SELECTOR_FROM_ZIP = ".importZipModal .col-md-offset-2 > span:nth-child
 FILE_QUEUED_TEXT = "File added to queue for upload."
 # Substring for counting matches inside a single legend / status block (text may omit trailing ".")
 FILE_QUEUED_PHRASE = "File added to queue for upload"
+# DataLumos copy varies; accept any of these as upload acceptance for a file/batch.
+FILE_UPLOAD_ACCEPTANCE_PHRASES = (
+    FILE_QUEUED_PHRASE,
+    "uploaded files are being processed",
+    "uploaded file is being processed",
+    "files are being processed",
+)
 FILE_QUEUED_TEXT_FROM_ZIP = "The contents of your ZIP file are being extracted"
 # Zip UI may shorten the message; this substring should stay stable.
 ZIP_STATUS_SUBSTRING = "being extracted"
+ZIP_UPLOAD_ACCEPTANCE_PHRASES = (
+    FILE_QUEUED_TEXT_FROM_ZIP,
+    ZIP_STATUS_SUBSTRING,
+    "being processed",
+)
 CLOSE_MODAL_SELECTOR = ".importFileModal .modal-footer button"
 CLOSE_MODAL_SELECTOR_FROM_ZIP = ".importZipModal .modal-footer button"
 INJECTED_INPUT_ID = "pw-datalumos-file-input"
@@ -72,7 +87,13 @@ class DataLumosFileUploader:
     dispatches drag/drop events to the modal drop zone.
     """
 
-    def __init__(self, page: Page, timeout: int = 120000, upload_wait_timeout: int = 600000) -> None:
+    def __init__(
+        self,
+        page: Page,
+        timeout: int = 120000,
+        upload_wait_timeout: int = 600000,
+        reporter: Optional["UploadIssueReporter"] = None,
+    ) -> None:
         """
         Initialize the file uploader.
 
@@ -80,10 +101,18 @@ class DataLumosFileUploader:
             page: Playwright Page object
             timeout: Default timeout in milliseconds for UI actions
             upload_wait_timeout: Timeout in ms to wait for all files to be queued (default 10 min)
+            reporter: When set, warnings are persisted to the project record
         """
         self._page = page
         self._timeout = timeout
         self._upload_wait_timeout = upload_wait_timeout
+        self._reporter = reporter
+
+    def _warn(self, msg: str) -> None:
+        if self._reporter is not None:
+            self._reporter.warn(msg)
+        else:
+            Logger.warning(msg)
 
     def upload_files(self, folder_path: str) -> None:
         """
@@ -215,7 +244,7 @@ class DataLumosFileUploader:
                 busy.first.wait_for(state="hidden", timeout=360000)
                 self._page.wait_for_timeout(500)
         except PlaywrightTimeoutError:
-            Logger.warning("Timeout waiting for busy overlay to disappear")
+            self._warn("Timeout waiting for busy overlay to disappear")
 
     def count_upload_batches(self, folder_path: str) -> int:
         """
@@ -257,6 +286,63 @@ class DataLumosFileUploader:
     def _upload_modal_selector(self, use_zip: bool) -> str:
         return ".importZipModal" if use_zip else ".importFileModal"
 
+    def _upload_acceptance_phrases(self, use_zip: bool) -> tuple[str, ...]:
+        return ZIP_UPLOAD_ACCEPTANCE_PHRASES if use_zip else FILE_UPLOAD_ACCEPTANCE_PHRASES
+
+    def _modal_status_text(self, use_zip: bool) -> str:
+        """Return visible status text from the import modal (and legend, if present)."""
+        modal_sel = self._upload_modal_selector(use_zip)
+        parts: list[str] = []
+        modal = self._page.locator(modal_sel)
+        try:
+            if modal.count() > 0:
+                parts.append(modal.first.inner_text(timeout=5000))
+        except PlaywrightTimeoutError:
+            pass
+        except Exception:
+            pass
+        try:
+            legend = self._page.locator(f"{modal_sel} legend")
+            if legend.count() > 0:
+                parts.append(legend.first.inner_text(timeout=2000))
+        except PlaywrightTimeoutError:
+            pass
+        except Exception:
+            pass
+        return "\n".join(parts)
+
+    def _phrase_occurrence_count(self, text: str, phrases: tuple[str, ...]) -> int:
+        lower = text.lower()
+        if not lower:
+            return 0
+        return max(lower.count(phrase.lower()) for phrase in phrases)
+
+    def _element_phrase_count(self, modal, phrases: tuple[str, ...]) -> int:
+        total = 0
+        for phrase in phrases:
+            try:
+                total = max(total, modal.get_by_text(phrase, exact=False).count())
+            except Exception:
+                continue
+        return total
+
+    def _has_batch_upload_status(self, use_zip: bool) -> bool:
+        """
+        Return True when DataLumos shows a global processing message.
+
+        Some builds show one batch status (e.g. "uploaded files are being processed")
+        instead of one line per file.
+        """
+        if use_zip:
+            return False
+        text = self._modal_status_text(use_zip=False).lower()
+        batch_markers = (
+            "uploaded files are being processed",
+            "uploaded file is being processed",
+            "files are being processed",
+        )
+        return any(marker in text for marker in batch_markers)
+
     def _queued_completion_signal_count(self, use_zip: bool) -> int:
         """
         Count how many per-file completion signals appear in the modal.
@@ -264,46 +350,50 @@ class DataLumosFileUploader:
         DataLumos may render status in a <legend>, <span>, or other nodes — not only span.
         Sometimes one status region repeats the phrase; use max(element matches, substring count).
         """
+        phrases = self._upload_acceptance_phrases(use_zip)
         modal = self._page.locator(self._upload_modal_selector(use_zip))
-        if use_zip:
-            phrase = FILE_QUEUED_TEXT_FROM_ZIP
-            substr = ZIP_STATUS_SUBSTRING
-        else:
-            phrase = FILE_QUEUED_PHRASE
-            substr = FILE_QUEUED_PHRASE
         n_elem = 0
         try:
-            n_elem = modal.get_by_text(phrase, exact=False).count()
+            n_elem = self._element_phrase_count(modal, phrases)
         except Exception:
             pass
-        n_text = 0
-        try:
-            txt = modal.inner_text(timeout=5000)
-            n_text = txt.count(substr)
-        except PlaywrightTimeoutError:
-            pass
-        except Exception:
-            pass
+        n_text = self._phrase_occurrence_count(self._modal_status_text(use_zip), phrases)
         return max(n_elem, n_text)
 
     def _wait_until_queued_count(self, use_zip: bool, expected: int) -> None:
         if expected <= 0:
             return
         modal_sel = self._upload_modal_selector(use_zip)
-        label = FILE_QUEUED_TEXT_FROM_ZIP if use_zip else FILE_QUEUED_PHRASE
+        phrases = self._upload_acceptance_phrases(use_zip)
+        Logger.info(
+            "Waiting for upload acceptance after file %s (looking for one of: %s)",
+            expected,
+            ", ".join(repr(p) for p in phrases[:2]) + ("..." if len(phrases) > 2 else ""),
+        )
         deadline = time.monotonic() + self._upload_wait_timeout / 1000.0
         while time.monotonic() < deadline:
             self._wait_for_obscuring_elements()
             n = self._queued_completion_signal_count(use_zip)
             if n >= expected:
-                Logger.debug(
-                    f"Upload modal {modal_sel}: {n} completion signal(s) (target {expected})"
+                Logger.info(
+                    "Upload acceptance detected for file %s (%s signal(s) in %s)",
+                    expected,
+                    n,
+                    modal_sel,
+                )
+                return
+            if self._has_batch_upload_status(use_zip):
+                Logger.info(
+                    "Upload acceptance detected for file %s (batch processing message in %s)",
+                    expected,
+                    modal_sel,
                 )
                 return
             self._page.wait_for_timeout(400)
+        status_preview = self._modal_status_text(use_zip).strip().replace("\n", " ")[:200]
         raise TimeoutError(
             f"Upload did not reach {expected} completion signal(s) within {self._upload_wait_timeout} ms "
-            f"({label!r} in {modal_sel})"
+            f"(phrases={phrases!r} in {modal_sel}; visible status={status_preview!r})"
         )
 
     def wait_for_upload_completion(self, file_count: int) -> None:

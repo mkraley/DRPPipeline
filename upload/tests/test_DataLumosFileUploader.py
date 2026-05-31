@@ -10,7 +10,10 @@ from unittest.mock import MagicMock
 
 from utils.Logger import Logger
 
-from upload.DataLumosFileUploader import DataLumosFileUploader
+from upload.DataLumosFileUploader import (
+    FILE_UPLOAD_ACCEPTANCE_PHRASES,
+    DataLumosFileUploader,
+)
 
 
 class TestDataLumosFileUploader(unittest.TestCase):
@@ -167,3 +170,30 @@ class TestDataLumosFileUploader(unittest.TestCase):
             upload_calls = [c for c in calls if "btn-primary" in str(c)]
             self.assertGreater(len(import_zip_calls), 0, "Should use Import From Zip")
             self.assertEqual(len(upload_calls), 0, "Should not use Upload Files")
+
+    def test_phrase_occurrence_count_matches_processing_message(self) -> None:
+        uploader = DataLumosFileUploader(MagicMock())
+        text = "Uploaded files are being processed..."
+        n = uploader._phrase_occurrence_count(text, FILE_UPLOAD_ACCEPTANCE_PHRASES)
+        self.assertGreaterEqual(n, 1)
+
+    def test_has_batch_upload_status(self) -> None:
+        uploader = DataLumosFileUploader(MagicMock())
+        with unittest.mock.patch.object(
+            uploader,
+            "_modal_status_text",
+            return_value="Uploaded files are being processed...",
+        ):
+            self.assertTrue(uploader._has_batch_upload_status(use_zip=False))
+
+    def test_wait_until_queued_count_accepts_batch_processing_message(self) -> None:
+        uploader = DataLumosFileUploader(MagicMock(), upload_wait_timeout=2000)
+        with unittest.mock.patch.object(uploader, "_wait_for_obscuring_elements"), \
+             unittest.mock.patch.object(
+                 uploader, "_queued_completion_signal_count", return_value=0
+             ), \
+             unittest.mock.patch.object(
+                 uploader, "_has_batch_upload_status", return_value=True
+             ), \
+             unittest.mock.patch.object(uploader._page, "wait_for_timeout"):
+            uploader._wait_until_queued_count(use_zip=False, expected=1)

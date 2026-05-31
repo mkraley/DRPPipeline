@@ -5,12 +5,15 @@ Provides ensure_browser(), ensure_authenticated(), and close() using Args for co
 """
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 
 from utils.Args import Args
 from utils.Logger import Logger
+
+if TYPE_CHECKING:
+    from upload.UploadIssueReporter import UploadIssueReporter
 
 
 class DataLumosBrowserSession:
@@ -77,7 +80,7 @@ class DataLumosBrowserSession:
         self._page = self._context.new_page()
         return self._page
 
-    def ensure_authenticated(self) -> None:
+    def ensure_authenticated(self, reporter: Optional["UploadIssueReporter"] = None) -> None:
         """Ensure user is authenticated to DataLumos. Reads Args for credentials."""
         if self._authenticated:
             return
@@ -85,7 +88,9 @@ class DataLumosBrowserSession:
         from upload.DataLumosAuthenticator import DataLumosAuthenticator
 
         page = self.ensure_browser()
-        authenticator = DataLumosAuthenticator(page, timeout=Args.upload_timeout)
+        authenticator = DataLumosAuthenticator(
+            page, timeout=Args.upload_timeout, reporter=reporter
+        )
 
         if not Args.datalumos_username or not Args.datalumos_password:
             raise RuntimeError(

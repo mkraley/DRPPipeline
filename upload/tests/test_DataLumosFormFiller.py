@@ -264,6 +264,19 @@ class TestDataLumosFormFiller(unittest.TestCase):
         
         self.mock_page.locator.assert_not_called()
 
+    def test_fill_keywords_persists_warning_via_reporter(self) -> None:
+        reporter = MagicMock()
+        form_filler = DataLumosFormFiller(self.mock_page, timeout=5000, reporter=reporter)
+        mock_search = MagicMock()
+        mock_search.click.side_effect = PlaywrightTimeoutError("timeout")
+        self.mock_page.locator.return_value = mock_search
+
+        with unittest.mock.patch.object(form_filler, "wait_for_obscuring_elements"):
+            form_filler.fill_keywords(["Oregon"])
+
+        reporter.warn.assert_called_once()
+        self.assertIn("Oregon", reporter.warn.call_args[0][0])
+
 
 class TestDataLumosUploaderHelpers(unittest.TestCase):
     """Test DataLumosUploader helper methods."""

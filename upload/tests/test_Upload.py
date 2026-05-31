@@ -13,6 +13,7 @@ from utils.Args import Args
 from utils.Logger import Logger
 
 from upload.DataLumosUploader import DataLumosUploader, _warn_if_num_files_mismatch
+from upload.UploadIssueReporter import UploadIssueReporter
 
 
 class TestDataLumosUploader(unittest.TestCase):
@@ -86,7 +87,7 @@ class TestDataLumosUploader(unittest.TestCase):
 
     def test_run_project_not_found(self) -> None:
         """Test run records error when project not found."""
-        with patch("upload.DataLumosUploader.record_error") as mock_record_error:
+        with patch("upload.UploadIssueReporter.record_error") as mock_record_error:
             self.uploader.run(9999)
             mock_record_error.assert_called_once()
             args = mock_record_error.call_args[0]
@@ -97,7 +98,7 @@ class TestDataLumosUploader(unittest.TestCase):
         """Test run records errors when validation fails."""
         drpid = Storage.create_record("https://example.com/test")
 
-        with patch("upload.DataLumosUploader.record_error") as mock_record_error:
+        with patch("upload.UploadIssueReporter.record_error") as mock_record_error:
             self.uploader.run(drpid)
             self.assertTrue(mock_record_error.called)
 
@@ -109,24 +110,43 @@ class TestDataLumosUploader(unittest.TestCase):
         self.assertEqual(get_field(project, "title"), "x")
         self.assertEqual(get_field(project, "missing"), "")
 
-    @patch("upload.DataLumosUploader.Logger")
-    def test_warn_if_num_files_mismatch_logs_when_differs(self, mock_logger: MagicMock) -> None:
-        _warn_if_num_files_mismatch(42, {"num_files": 3}, 2)
-        mock_logger.warning.assert_called_once()
-        msg = mock_logger.warning.call_args[0][0]
-        self.assertIn("DRPID=42", msg)
-        self.assertIn("3", msg)
-        self.assertIn("2", msg)
+    @patch("upload.UploadIssueReporter.record_warning")
+    def test_warn_if_num_files_mismatch_records_when_differs(
+        self, mock_record_warning: MagicMock
+    ) -> None:
+        reporter = UploadIssueReporter(42)
+        _warn_if_num_files_mismatch(reporter, {"num_files": 3}, 2)
+        mock_record_warning.assert_called_once()
+        self.assertEqual(mock_record_warning.call_args[0][0], 42)
+        msg = mock_record_warning.call_args[0][1]
+        self.assertIn("Upload batch count (2)", msg)
+        self.assertIn("num_files from collection (3)", msg)
 
-    @patch("upload.DataLumosUploader.Logger")
-    def test_warn_if_num_files_mismatch_skips_when_match(self, mock_logger: MagicMock) -> None:
-        _warn_if_num_files_mismatch(1, {"num_files": 2}, 2)
-        mock_logger.warning.assert_not_called()
+    @patch("upload.UploadIssueReporter.record_warning")
+    def test_warn_if_num_files_mismatch_skips_when_match(
+        self, mock_record_warning: MagicMock
+    ) -> None:
+        reporter = UploadIssueReporter(1)
+        _warn_if_num_files_mismatch(reporter, {"num_files": 2}, 2)
+        mock_record_warning.assert_not_called()
 
-    @patch("upload.DataLumosUploader.Logger")
-    def test_warn_if_num_files_skips_when_num_files_null(self, mock_logger: MagicMock) -> None:
-        _warn_if_num_files_mismatch(1, {}, 2)
-        mock_logger.warning.assert_not_called()
+    @patch("upload.UploadIssueReporter.record_warning")
+    def test_warn_if_num_files_skips_when_num_files_null(
+        self, mock_record_warning: MagicMock
+    ) -> None:
+        reporter = UploadIssueReporter(1)
+        _warn_if_num_files_mismatch(reporter, {}, 2)
+        mock_record_warning.assert_not_called()
+
+    def test_warn_if_num_files_mismatch_persists_to_storage(self) -> None:
+        drpid = Storage.create_record("https://example.com/test")
+        Storage.update_record(drpid, {"num_files": 5})
+        reporter = UploadIssueReporter(drpid)
+        _warn_if_num_files_mismatch(reporter, Storage.get(drpid), 3)
+        record = Storage.get(drpid)
+        self.assertIsNotNone(record)
+        assert record is not None
+        self.assertIn("Upload batch count (3)", record.get("warnings") or "")
 
     @patch("upload.DataLumosUploader.Storage")
     @patch.object(DataLumosUploader, "_upload_project", return_value="12345")
@@ -144,6 +164,10 @@ class TestDataLumosUploader(unittest.TestCase):
         uploader = DataLumosUploader()
         uploader._session = MagicMock()
         uploader.run(7)
+        mock_upload_project.assert_called_once()
+        call_args = mock_upload_project.call_args[0]
+        self.assertEqual(call_args[1], 7)
+        self.assertIsInstance(call_args[2], UploadIssueReporter)
         mock_storage.update_record.assert_called_with(
             7,
             {"datalumos_id": "12345", "status": "uploaded - large file"},

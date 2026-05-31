@@ -6,11 +6,14 @@ including text inputs, WYSIWYG editors, dropdowns, and autocomplete fields.
 """
 
 import re
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from utils.Logger import Logger
+
+if TYPE_CHECKING:
+    from upload.UploadIssueReporter import UploadIssueReporter
 
 DATALUMOS_TITLE_MAX_LENGTH = 250
 
@@ -71,16 +74,29 @@ class DataLumosFormFiller:
     - Autocomplete/tag inputs (select2)
     """
     
-    def __init__(self, page: Page, timeout: int = 2000) -> None:
+    def __init__(
+        self,
+        page: Page,
+        timeout: int = 2000,
+        reporter: Optional["UploadIssueReporter"] = None,
+    ) -> None:
         """
         Initialize the form filler.
         
         Args:
             page: Playwright Page object
             timeout: Default timeout in milliseconds
+            reporter: When set, warnings are persisted to the project record
         """
         self._page = page
         self._timeout = timeout
+        self._reporter = reporter
+
+    def _warn(self, msg: str) -> None:
+        if self._reporter is not None:
+            self._reporter.warn(msg)
+        else:
+            Logger.warning(msg)
     
     def wait_for_obscuring_elements(self) -> None:
         """
@@ -94,7 +110,7 @@ class DataLumosFormFiller:
                 busy_locator.first.wait_for(state="hidden", timeout=360000)  # 6 min
                 self._page.wait_for_timeout(500)
         except PlaywrightTimeoutError:
-            Logger.warning("Timeout waiting for busy overlay to disappear")
+            self._warn("Timeout waiting for busy overlay to disappear")
     
     def expand_all_sections(self) -> None:
         """
@@ -114,7 +130,7 @@ class DataLumosFormFiller:
             expand_btn.click(timeout=5000)
             self._page.wait_for_timeout(2000)
         except PlaywrightTimeoutError:
-            Logger.warning("expand_all_sections: #expand-init not found, skipping")
+            self._warn("expand_all_sections: #expand-init not found, skipping")
     
     def fill_title(self, title: str) -> None:
         """
@@ -125,10 +141,9 @@ class DataLumosFormFiller:
         """
         truncated = truncate_title_for_datalumos(title)
         if len(truncated) < len(" ".join(title.split())):
-            Logger.warning(
-                "Title truncated from %s to %s characters for DataLumos limit",
-                len(" ".join(title.split())),
-                len(truncated),
+            self._warn(
+                f"Title truncated from {len(' '.join(title.split()))} to "
+                f"{len(truncated)} characters for DataLumos limit"
             )
         _debug_form_field("title", truncated)
         title_input = self._page.locator("#title")
@@ -261,7 +276,7 @@ class DataLumosFormFiller:
                 self.wait_for_obscuring_elements()
                 option.click()
             except PlaywrightTimeoutError as e:
-                Logger.warning(f"Could not add keyword '{keyword}': {e}")
+                self._warn(f"Could not add keyword '{keyword}': {e}")
     
     def _geographic_coverage_block(self):
         """Geographic coverage field container: label span, up two parent levels."""
@@ -319,7 +334,7 @@ class DataLumosFormFiller:
             try:
                 self._add_geographic_term(term)
             except PlaywrightTimeoutError as exc:
-                Logger.warning(f"Could not add geographic term '{term}': {exc}")
+                self._warn(f"Could not add geographic term '{term}': {exc}")
     
     def fill_time_period(self, start: Optional[str], end: Optional[str]) -> None:
         """Fill the time period fields."""
@@ -359,7 +374,7 @@ class DataLumosFormFiller:
         try:
             self._page.locator(".modal.fade.in").wait_for(state="hidden", timeout=10000)
         except PlaywrightTimeoutError:
-            Logger.warning("Time period modal still visible after Escape; continuing anyway")
+            self._warn("Time period modal still visible after Escape; continuing anyway")
             self._page.wait_for_timeout(1000)
 
     def fill_data_types(self, data_type: str) -> None:

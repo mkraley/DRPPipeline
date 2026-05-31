@@ -84,11 +84,9 @@ class GWDANominator:
 
         except PlaywrightTimeoutError as e:
             error_msg = f"GWDA nomination timeout: {e}"
-            Logger.error(error_msg)
             return False, error_msg
         except Exception as e:
             error_msg = f"Error nominating URL to GWDA: {e}"
-            Logger.error(error_msg)
             return False, error_msg
 
     def _fill_field(self, selector: str, value: str) -> None:

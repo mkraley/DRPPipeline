@@ -11,15 +11,19 @@ from typing import Any, Dict, List, Optional
 
 from storage import Storage
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
+from upload.UploadIssueReporter import UploadIssueReporter
 from collectors.UsfsCollector import STATUS_COLLECTED_LARGE_FILE, STATUS_UPLOADED_LARGE_FILE
 from utils.Args import Args
 from utils.project_utils import get_field
-from utils.Errors import record_error
 from utils.Logger import Logger
 
 
-def _warn_if_num_files_mismatch(drpid: int, project: Dict[str, Any], upload_batches: int) -> None:
-    """Log a warning when collected ``num_files`` does not match upload batch count."""
+def _warn_if_num_files_mismatch(
+    reporter: UploadIssueReporter,
+    project: Dict[str, Any],
+    upload_batches: int,
+) -> None:
+    """Record a warning when collected ``num_files`` does not match upload batch count."""
     nf_raw = project.get("num_files")
     if nf_raw is None:
         return
@@ -29,8 +33,8 @@ def _warn_if_num_files_mismatch(drpid: int, project: Dict[str, Any], upload_batc
         return
     if expected_files == upload_batches:
         return
-    Logger.warning(
-        f"DRPID={drpid}: upload batch count ({upload_batches}) does not match "
+    reporter.warn(
+        f"Upload batch count ({upload_batches}) does not match "
         f"num_files from collection ({expected_files}). "
         "(Zip import counts as 1; num_files is top-level file count.)"
     )
@@ -65,16 +69,17 @@ class DataLumosUploader:
             drpid: The DRPID of the project to upload.
         """
         Logger.info(f"Starting upload for DRPID={drpid}")
+        reporter = UploadIssueReporter(drpid)
         
         project = Storage.get(drpid)
         if project is None:
-            record_error(drpid, f"Project with DRPID={drpid} not found in Storage")
+            reporter.error(f"Project with DRPID={drpid} not found in Storage")
             return
         
         errors = self._validate_project(project)
         if errors:
             for error in errors:
-                record_error(drpid, error)
+                reporter.error(error)
             return
 
         try:
@@ -86,11 +91,11 @@ class DataLumosUploader:
                 nominator = GWDANominator(page, timeout=Args.upload_timeout)
                 success, error = nominator.nominate(source_url)
                 if not success:
-                    record_error(drpid, error or "GWDA nomination failed")
+                    reporter.error(error or "GWDA nomination failed")
                     return
 
             try:
-                datalumos_id = self._upload_project(project, drpid)
+                datalumos_id = self._upload_project(project, drpid, reporter)
                 upload_status = (
                     STATUS_UPLOADED_LARGE_FILE
                     if project.get("status") == STATUS_COLLECTED_LARGE_FILE
@@ -105,7 +110,7 @@ class DataLumosUploader:
                     f"status={upload_status}"
                 )
             except Exception as e:
-                record_error(drpid, f"Upload failed: {e}")
+                reporter.error(f"Upload failed: {e}")
                 raise
         finally:
             self._session.close()
@@ -132,7 +137,12 @@ class DataLumosUploader:
         """Build URL for a DataLumos project page."""
         return f"{self.WORKSPACE_URL}?goToLevel=project&goToPath=/datalumos/{workspace_id}#"
 
-    def _upload_project(self, project: Dict[str, Any], drpid: int) -> str:
+    def _upload_project(
+        self,
+        project: Dict[str, Any],
+        drpid: int,
+        reporter: UploadIssueReporter,
+    ) -> str:
         """
         Upload a project to DataLumos.
 
@@ -143,18 +153,20 @@ class DataLumosUploader:
             The DataLumos workspace ID.
         """
         page = self._session.ensure_browser()
-        self._session.ensure_authenticated()
+        self._session.ensure_authenticated(reporter=reporter)
 
         from upload.DataLumosFormFiller import DataLumosFormFiller
 
-        form_filler = DataLumosFormFiller(page, timeout=Args.upload_timeout)
+        form_filler = DataLumosFormFiller(
+            page, timeout=Args.upload_timeout, reporter=reporter
+        )
 
         Logger.info("Navigating to DataLumos workspace")
         page.goto(self.WORKSPACE_URL, wait_until="domcontentloaded")
         page.wait_for_load_state("networkidle", timeout=120000)
 
         from upload.DataLumosAuthenticator import wait_for_human_verification
-        wait_for_human_verification(page, timeout=60000)
+        wait_for_human_verification(page, timeout=60000, reporter=reporter)
 
         new_project_btn = page.locator(".btn > span:nth-child(3)")
         form_filler.wait_for_obscuring_elements()
@@ -162,7 +174,7 @@ class DataLumosUploader:
 
         form_filler.fill_title(get_field(project, "title"))
 
-        wait_for_human_verification(page, timeout=60000)
+        wait_for_human_verification(page, timeout=60000, reporter=reporter)
 
         workspace_id = self._extract_workspace_id(page.url)
         if not workspace_id:
@@ -205,10 +217,12 @@ class DataLumosUploader:
         folder_path = get_field(project, "folder_path")
         if folder_path:
             from upload.DataLumosFileUploader import DataLumosFileUploader
-            file_uploader = DataLumosFileUploader(page, timeout=Args.upload_timeout)
+            file_uploader = DataLumosFileUploader(
+                page, timeout=Args.upload_timeout, reporter=reporter
+            )
             upload_batches = file_uploader.count_upload_batches(folder_path)
             file_uploader.upload_files(folder_path)
-            _warn_if_num_files_mismatch(drpid, project, upload_batches)
+            _warn_if_num_files_mismatch(reporter, project, upload_batches)
 
         return workspace_id
     
