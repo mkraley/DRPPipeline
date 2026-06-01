@@ -243,6 +243,30 @@ class TestOrchestrator(unittest.TestCase):
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")
+    def test_run_upload_lists_collected_and_large_file(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
+    ) -> None:
+        """Test run('upload') includes both collected and collected - large file."""
+        mock_storage = MagicMock()
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.get_instance.return_value = mock_storage
+        mock_storage_cls.list_eligible_projects.side_effect = [
+            [{"DRPID": 1, "source_url": "https://a.com"}],
+            [{"DRPID": 2, "source_url": "https://b.com"}],
+        ]
+        mock_upload_instance = MagicMock()
+        mock_find_class.return_value = MagicMock(return_value=mock_upload_instance)
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
+            Orchestrator.run("upload")
+        self.assertEqual(mock_storage_cls.list_eligible_projects.call_count, 2)
+        mock_storage_cls.list_eligible_projects.assert_any_call("collected", None, None, None)
+        mock_storage_cls.list_eligible_projects.assert_any_call(
+            "collected - large file", None, None, None
+        )
+        self.assertEqual(mock_upload_instance.run.call_count, 2)
+
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
     def test_run_publisher_respects_num_rows(
         self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
     ) -> None:

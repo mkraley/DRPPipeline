@@ -16,13 +16,6 @@ from utils.Logger import Logger
 if TYPE_CHECKING:
     from storage.StorageProtocol import StorageProtocol
 
-# Upload (and similar) treat these as satisfying a "collected" prerequisite.
-COLLECTED_ELIGIBLE_STATUSES = (
-    "collected",
-    "collected - large file",
-    "collected - file pending",
-)
-
 
 class StorageSQLLite:
     """
@@ -440,13 +433,8 @@ class StorageSQLLite:
         """
         if prereq_status is None:
             return []
-        if prereq_status == "collected":
-            status_placeholders = ",".join("?" * len(COLLECTED_ELIGIBLE_STATUSES))
-            status_clause = f"status IN ({status_placeholders})"
-            params: list[Any] = list(COLLECTED_ELIGIBLE_STATUSES)
-        else:
-            status_clause = "status = ?"
-            params = [prereq_status]
+        status_clause = "status = ?"
+        params: list[Any] = [prereq_status]
         min_drpid_clause = ""
         if min_drpid is not None:
             min_drpid_clause = " AND DRPID >= ?"

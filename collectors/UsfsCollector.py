@@ -4,6 +4,7 @@ USFS Research Data Archive collector for DRP Pipeline.
 Harvests metadata and saves catalog pages (detail, metadata, file index) as PDF,
 then downloads publication files listed under "Download all files below".
 Files larger than 1 GB are not downloaded; catalog-listed sizes are still counted.
+Catalog entries with only an external-archive data link are noted and skipped similarly.
 """
 
 from __future__ import annotations
@@ -45,6 +46,7 @@ TOTAL_SIZE_WARN_BYTES = 50 * 1024**3  # 50 GB
 _DOWNLOAD_TIMEOUT_SEC = 3600  # 1 hour read timeout for large-but-allowed files
 _PDF_NAMES = ("catalog_detail.pdf", "metadata.pdf", "file_index.pdf")
 STATUS_COLLECTED_LARGE_FILE = "collected - large file"
+STATUS_COLLECTED_EXTERNAL_ARCHIVE = "collected - external archive"
 STATUS_UPLOADED_LARGE_FILE = "uploaded - large file"
 # FGDC parse fields kept in memory only; Storage has geographic_coverage instead.
 _METADATA_KEYS_NOT_IN_STORAGE = frozenset({
@@ -170,17 +172,34 @@ class UsfsCollector:
         links = parse_data_access_links(body, url)
         self._save_page_pdfs(drpid, page_downloader, folder_path, url, links)
 
+        external_archive_url = links.get("external_archive_url", "")
+        publication_files = links.get("publication_files", [])
+        external_archive_only = bool(
+            external_archive_url and not publication_files
+        )
+
+        if external_archive_only:
+            record_warning(
+                drpid,
+                f"Data available via external archive (not downloaded): {external_archive_url}",
+            )
+
         status_notes, inventory_bytes, inventory_exts, skipped_large = self._process_publication_files(
             drpid,
             page_downloader,
             folder_path,
-            links.get("publication_files", []),
+            publication_files,
         )
+
+        if external_archive_only:
+            status_notes.append(
+                f"External archive (not downloaded): {external_archive_url}"
+            )
 
         pdf_bytes = self._pdf_folder_bytes(folder_path)
         total_bytes = inventory_bytes + pdf_bytes
         all_exts = sorted(inventory_exts | {"pdf"})
-        num_files = len(links.get("publication_files", [])) + len(_PDF_NAMES)
+        num_files = len(publication_files) + len(_PDF_NAMES)
 
         notes_parts = list(status_notes)
         if total_bytes > TOTAL_SIZE_WARN_BYTES:
@@ -203,6 +222,7 @@ class UsfsCollector:
             result["status_notes"] = "\n".join(notes_parts)
 
         result["_skipped_large_file"] = skipped_large
+        result["_external_archive"] = external_archive_only
         if skipped_large:
             from collectors.UsfsAria2Export import write_drpid_aria2_cmd
 
@@ -331,20 +351,30 @@ class UsfsCollector:
 
             success = False
             _bytes_written = 0
-            Logger.info("Downloading publication file: %s", filename)
+            if inventory_bytes is not None:
+                Logger.info(
+                    "Downloading publication file: %s (%s)",
+                    filename,
+                    format_file_size(inventory_bytes),
+                )
+            else:
+                Logger.info("Downloading publication file: %s", filename)
             if page_downloader is not None and _USFS_HOST in file_url:
                 _bytes_written, success = page_downloader.download_file(file_url, dest)
             if not success:
-                Logger.info("HTTP download starting: %s", filename)
+                if inventory_bytes is not None:
+                    Logger.info(
+                        "HTTP download starting: %s (%s)",
+                        filename,
+                        format_file_size(inventory_bytes),
+                    )
+                else:
+                    Logger.info("HTTP download starting: %s", filename)
                 _bytes_written, success = download_via_url(
                     file_url, dest, timeout_sec=_DOWNLOAD_TIMEOUT_SEC
                 )
             if success and dest.is_file():
-                Logger.info(
-                    "Downloaded publication file: %s (%s)",
-                    filename,
-                    format_file_size(dest.stat().st_size),
-                )
+                Logger.info("Downloaded publication file: %s", filename)
             if not success:
                 Logger.info("Publication file download failed: %s", filename)
             if not success:
@@ -387,6 +417,7 @@ class UsfsCollector:
     def _update_storage(self, drpid: int, result: Dict[str, Any]) -> None:
         current = Storage.get(drpid) or {}
         skipped_large = bool(result.pop("_skipped_large_file", False))
+        external_archive = bool(result.pop("_external_archive", False))
         has_errors = bool((current.get("errors") or "").strip())
 
         if has_errors:
@@ -394,6 +425,8 @@ class UsfsCollector:
         elif result.get("folder_path"):
             if skipped_large:
                 result["status"] = STATUS_COLLECTED_LARGE_FILE
+            elif external_archive:
+                result["status"] = STATUS_COLLECTED_EXTERNAL_ARCHIVE
             else:
                 result["status"] = "collected"
 

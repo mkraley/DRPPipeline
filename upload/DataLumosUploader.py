@@ -12,10 +12,19 @@ from typing import Any, Dict, List, Optional
 from storage import Storage
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from upload.UploadIssueReporter import UploadIssueReporter
-from collectors.UsfsCollector import STATUS_COLLECTED_LARGE_FILE, STATUS_UPLOADED_LARGE_FILE
 from utils.Args import Args
 from utils.project_utils import get_field
 from utils.Logger import Logger
+
+STATUS_COLLECTED_LARGE_FILE = "collected - large file"
+STATUS_UPLOADED_LARGE_FILE = "uploaded - large file"
+
+
+def _success_status_after_upload(prior_status: str) -> str:
+    """Map pre-upload status to post-upload status."""
+    if prior_status == STATUS_COLLECTED_LARGE_FILE:
+        return STATUS_UPLOADED_LARGE_FILE
+    return "uploaded"
 
 
 def _warn_if_num_files_mismatch(
@@ -44,12 +53,16 @@ class DataLumosUploader:
     """
     Upload module that uploads collected project data to DataLumos.
     
-    Implements ModuleProtocol. For each eligible project (status="collected"),
-    this module: authenticates, creates project, fills form fields,
-    and updates Storage with datalumos_id.
-    
-    Prerequisites: status="collected" and no errors
-    Success status: status="upload"
+    Implements ModuleProtocol. For each eligible project (``collected`` or
+    ``collected - large file``), this module: authenticates, creates project,
+    fills form fields, and updates Storage with datalumos_id.
+
+    Not eligible: ``collected - external archive``, ``collected - file pending``,
+    or other collected variants.
+
+    Prerequisites: status in (``collected``, ``collected - large file``) and no errors
+    Success status: ``uploaded``, or ``uploaded - large file`` when the large-file
+    variant was collected (publisher excludes that status).
     """
     
     WORKSPACE_URL = "https://www.datalumos.org/datalumos/workspace"
@@ -75,7 +88,9 @@ class DataLumosUploader:
         if project is None:
             reporter.error(f"Project with DRPID={drpid} not found in Storage")
             return
-        
+
+        prior_status = (project.get("status") or "").strip()
+
         errors = self._validate_project(project)
         if errors:
             for error in errors:
@@ -96,18 +111,14 @@ class DataLumosUploader:
 
             try:
                 datalumos_id = self._upload_project(project, drpid, reporter)
-                upload_status = (
-                    STATUS_UPLOADED_LARGE_FILE
-                    if project.get("status") == STATUS_COLLECTED_LARGE_FILE
-                    else "uploaded"
-                )
+                success_status = _success_status_after_upload(prior_status)
                 Storage.update_record(drpid, {
                     "datalumos_id": datalumos_id,
-                    "status": upload_status,
+                    "status": success_status,
                 })
                 Logger.info(
                     f"Upload completed for DRPID={drpid}, datalumos_id={datalumos_id}, "
-                    f"status={upload_status}"
+                    f"status={success_status}"
                 )
             except Exception as e:
                 reporter.error(f"Upload failed: {e}")

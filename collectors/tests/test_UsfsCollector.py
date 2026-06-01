@@ -11,6 +11,7 @@ from utils.Logger import Logger
 
 from collectors.UsfsCollector import (
     MAX_DOWNLOAD_BYTES,
+    STATUS_COLLECTED_EXTERNAL_ARCHIVE,
     STATUS_COLLECTED_LARGE_FILE,
     UsfsCollector,
     _PDF_NAMES,
@@ -112,12 +113,12 @@ class TestUsfsCollector(unittest.TestCase):
                     128,
                 )],
             )
-            mock_logger.info.assert_any_call("Downloading publication file: %s", "meta.zip")
             mock_logger.info.assert_any_call(
-                "Downloaded publication file: %s (%s)",
+                "Downloading publication file: %s (%s)",
                 "meta.zip",
                 mock.ANY,
             )
+            mock_logger.info.assert_any_call("Downloaded publication file: %s", "meta.zip")
         finally:
             for f in folder.glob("*"):
                 f.unlink(missing_ok=True)
@@ -181,6 +182,17 @@ class TestUsfsCollector(unittest.TestCase):
         self.assertNotIn("_skipped_large_file", update)
 
     @patch("collectors.UsfsCollector.Storage")
+    def test_update_storage_external_archive_status(self, mock_storage: MagicMock) -> None:
+        mock_storage.get.return_value = {"status": "sourced", "errors": None}
+        collector = UsfsCollector()
+        result = {"folder_path": "C:\\data\\DRP000001", "_external_archive": True}
+        collector._update_storage(1, result)
+        mock_storage.update_record.assert_called_once()
+        update = mock_storage.update_record.call_args[0][1]
+        self.assertEqual(update["status"], STATUS_COLLECTED_EXTERNAL_ARCHIVE)
+        self.assertNotIn("_external_archive", update)
+
+    @patch("collectors.UsfsCollector.Storage")
     def test_update_storage_preserves_error_status(self, mock_storage: MagicMock) -> None:
         mock_storage.get.return_value = {"status": "sourced-error", "errors": "Download failed"}
         collector = UsfsCollector()
@@ -189,6 +201,78 @@ class TestUsfsCollector(unittest.TestCase):
         update = mock_storage.update_record.call_args[0][1]
         self.assertNotIn("status", update)
         self.assertNotIn("_skipped_large_file", update)
+
+    @patch("collectors.UsfsCollector.record_warning")
+    @patch("collectors.UsfsAria2Export.write_drpid_aria2_cmd")
+    @patch("collectors.UsfsCollector.create_output_folder")
+    @patch("collectors.UsfsCollector._fetch_usfs_page_body")
+    @patch("collectors.UsfsCollector.Storage")
+    def test_collect_external_archive_sets_status_and_warning(
+        self,
+        mock_storage: MagicMock,
+        mock_fetch: MagicMock,
+        mock_create_folder: MagicMock,
+        mock_write_cmd: MagicMock,
+        mock_record_warning: MagicMock,
+    ) -> None:
+        mock_storage.get.return_value = {
+            "source_url": "https://www.fs.usda.gov/rds/archive/catalog/RDS-ext-2024-0001",
+        }
+        folder = Path(__file__).parent / "_tmp_usfs_ext_archive"
+        folder.mkdir(exist_ok=True)
+        mock_create_folder.return_value = folder
+        detail_html = "<html><head><title>T</title></head><body><h1>T</h1></body></html>"
+        mock_fetch.return_value = (200, detail_html, "text/html", False)
+        external_url = "https://doi.org/10.60594/W4WC78"
+
+        collector = UsfsCollector()
+        page_downloader = MagicMock()
+        with patch.object(collector, "_save_page_pdfs"), patch(
+            "collectors.UsfsCollector.parse_data_access_links",
+            return_value={
+                "publication_files": [],
+                "metadata_url": "https://www.fs.usda.gov/rds/meta.html",
+                "fileindex_url": "",
+                "external_archive_url": external_url,
+            },
+        ), patch(
+            "collectors.UsfsCollector.parse_detail_page",
+            return_value={"title": "T"},
+        ), patch(
+            "collectors.UsfsCollector.rds_id_from_source_url",
+            return_value="RDS-ext-2024-0001",
+        ), patch(
+            "collectors.UsfsCollector.merge_usfs_metadata",
+            return_value={"title": "T"},
+        ), patch(
+            "collectors.UsfsCollector.infer_data_types",
+            return_value="",
+        ), patch(
+            "collectors.UsfsCollector.normalize_geographic_metadata",
+        ) as mock_geo:
+            mock_geo.return_value.geographic_coverage = ""
+            mock_geo.return_value.warnings = []
+            result = collector._collect(
+                "https://www.fs.usda.gov/rds/archive/catalog/RDS-ext-2024-0001",
+                177,
+                page_downloader,
+            )
+
+        mock_write_cmd.assert_not_called()
+        mock_record_warning.assert_any_call(
+            177,
+            f"Data available via external archive (not downloaded): {external_url}",
+        )
+        self.assertTrue(result["_external_archive"])
+        self.assertIn("External archive (not downloaded)", result["status_notes"])
+        self.assertIn(external_url, result["status_notes"])
+        self.assertEqual(result["num_files"], 3)
+        try:
+            for f in folder.iterdir():
+                f.unlink(missing_ok=True)
+            folder.rmdir()
+        except OSError:
+            pass
 
     @patch("collectors.UsfsAria2Export.write_drpid_aria2_cmd")
     @patch("collectors.UsfsCollector.create_output_folder")

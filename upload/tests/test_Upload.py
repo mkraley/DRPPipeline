@@ -150,6 +150,31 @@ class TestDataLumosUploader(unittest.TestCase):
 
     @patch("upload.DataLumosUploader.Storage")
     @patch.object(DataLumosUploader, "_upload_project", return_value="12345")
+    def test_run_sets_uploaded_status(
+        self,
+        mock_upload_project: MagicMock,
+        mock_storage: MagicMock,
+    ) -> None:
+        mock_storage.get.return_value = {
+            "title": "T",
+            "summary": "S",
+            "status": "collected",
+            "source_url": "",
+        }
+        uploader = DataLumosUploader()
+        uploader._session = MagicMock()
+        uploader.run(7)
+        mock_upload_project.assert_called_once()
+        call_args = mock_upload_project.call_args[0]
+        self.assertEqual(call_args[1], 7)
+        self.assertIsInstance(call_args[2], UploadIssueReporter)
+        mock_storage.update_record.assert_called_with(
+            7,
+            {"datalumos_id": "12345", "status": "uploaded"},
+        )
+
+    @patch("upload.DataLumosUploader.Storage")
+    @patch.object(DataLumosUploader, "_upload_project", return_value="12345")
     def test_run_sets_uploaded_large_file_status(
         self,
         mock_upload_project: MagicMock,
@@ -164,10 +189,6 @@ class TestDataLumosUploader(unittest.TestCase):
         uploader = DataLumosUploader()
         uploader._session = MagicMock()
         uploader.run(7)
-        mock_upload_project.assert_called_once()
-        call_args = mock_upload_project.call_args[0]
-        self.assertEqual(call_args[1], 7)
-        self.assertIsInstance(call_args[2], UploadIssueReporter)
         mock_storage.update_record.assert_called_with(
             7,
             {"datalumos_id": "12345", "status": "uploaded - large file"},

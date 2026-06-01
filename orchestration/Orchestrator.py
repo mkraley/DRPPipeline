@@ -285,6 +285,23 @@ class Orchestrator:
                 projects.sort(key=lambda p: p["DRPID"])
                 if num_rows is not None:
                     projects = projects[:num_rows]
+            elif module == "upload":
+                projects_collected = Storage.list_eligible_projects(
+                    "collected", num_rows, start_row, start_drpid
+                )
+                projects_large = Storage.list_eligible_projects(
+                    "collected - large file", num_rows, start_row, start_drpid
+                )
+                seen_upload: set[int] = set()
+                projects = []
+                for proj in projects_collected + projects_large:
+                    drpid = proj["DRPID"]
+                    if drpid not in seen_upload:
+                        seen_upload.add(drpid)
+                        projects.append(proj)
+                projects.sort(key=lambda p: p["DRPID"])
+                if num_rows is not None:
+                    projects = projects[:num_rows]
             else:
                 Logger.info(f"Orchestrator listing eligible projects prereq={prereq!r}")
                 projects = Storage.list_eligible_projects(prereq, num_rows, start_row, start_drpid)

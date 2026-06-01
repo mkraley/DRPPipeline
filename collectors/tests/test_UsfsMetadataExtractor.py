@@ -20,6 +20,18 @@ from collectors.UsfsMetadataExtractor import (
     rds_id_from_source_url,
 )
 
+DATA_ACCESS_EXTERNAL_ARCHIVE_HTML = """
+<dl>
+<dt>Data Access:</dt>
+<dd class="product">
+<ul>
+<li>View <a href="/rds/archive/products/RDS-ext-2024-0001/_metadata_RDS-ext-2024-0001.html">metadata</a> (HTML)</li>
+<li>Access <a href="https://doi.org/10.60594/W4WC78">data</a> (available via external archive)</li>
+</ul>
+</dd>
+</dl>
+"""
+
 DATA_ACCESS_BOX_ZIPS_HTML = """
 <dl>
 <dt>Data Access:</dt>
@@ -177,6 +189,16 @@ class TestUsfsMetadataExtractor:
         ]
         assert links["publication_files"][1][1].startswith("https://usfs-public.box.com/")
         assert links["publication_files"][1][2] == parse_human_size("30.8 GB")
+
+    def test_parse_data_access_links_external_archive(self) -> None:
+        links = parse_data_access_links(
+            DATA_ACCESS_EXTERNAL_ARCHIVE_HTML,
+            "https://www.fs.usda.gov/rds/archive/catalog/RDS-ext-2024-0001",
+        )
+        assert links["metadata_url"].endswith("_metadata_RDS-ext-2024-0001.html")
+        assert links["fileindex_url"] == ""
+        assert links["external_archive_url"] == "https://doi.org/10.60594/W4WC78"
+        assert links["publication_files"] == []
 
     def test_parse_metadata_page(self) -> None:
         result = parse_metadata_page(METADATA_HTML)

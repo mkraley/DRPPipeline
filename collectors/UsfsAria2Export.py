@@ -7,6 +7,8 @@ scripts/export_usfs_aria2_input.py for batch export.
 
 from __future__ import annotations
 
+import re
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
@@ -76,6 +78,71 @@ def entries_for_publication_files(
             )
         )
     return entries
+
+
+def parse_aria2c_lines_from_cmd_text(text: str) -> List[str]:
+    """Return bare ``aria2c ...`` command lines from a Windows ``.cmd`` batch file."""
+    lines: List[str] = []
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if stripped.lower().startswith("aria2c "):
+            lines.append(stripped)
+    return lines
+
+
+def parse_aria2c_lines_from_cmd_file(cmd_path: Path) -> List[str]:
+    """Load ``aria2c`` command lines from ``DRP######.cmd``."""
+    return parse_aria2c_lines_from_cmd_text(cmd_path.read_text(encoding="utf-8"))
+
+
+def _strip_cmd_quotes(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        return value[1:-1]
+    return value
+
+
+def out_name_from_aria2_argv(argv: Sequence[str]) -> Optional[str]:
+    """Extract ``-o`` / ``--out`` value from a parsed aria2 argv list."""
+    for i, arg in enumerate(argv):
+        if arg in ("-o", "--out") and i + 1 < len(argv):
+            return _strip_cmd_quotes(argv[i + 1])
+        if arg.startswith("-o") and arg != "-o" and len(arg) > 2:
+            return _strip_cmd_quotes(arg[2:])
+        if arg.startswith("--out="):
+            return _strip_cmd_quotes(arg.split("=", 1)[1])
+    return None
+
+
+def aria2_argv_with_quiet_console(
+    cmd_line: str,
+    *,
+    log_path: Path,
+    summary_interval: int = 60,
+) -> List[str]:
+    """
+    Parse a Windows ``aria2c`` command line and add flags for a quiet console.
+
+    Console shows periodic summaries (``--summary-interval``) and errors only;
+    detailed output goes to ``log_path``.
+    """
+    argv = shlex.split(cmd_line, posix=False)
+    if not argv or argv[0].lower() != "aria2c":
+        raise ValueError(f"Not an aria2c command: {cmd_line[:80]!r}")
+
+    extra = [
+        "--console-log-level=error",
+        f"--summary-interval={summary_interval}",
+        f"--log={log_path}",
+        "--log-level=notice",
+        "--show-console-readout=false",
+    ]
+    return [argv[0], *extra, *argv[1:]]
+
+
+def drpid_cmd_path(drpid: int, output_dir: Path | None = None) -> Path:
+    """Path to ``aria2_inputs/DRP######.cmd`` for a DRPID."""
+    out_dir = output_dir or DEFAULT_ARIA2_OUTPUT_DIR
+    return out_dir / f"DRP{drpid:06d}.cmd"
 
 
 def format_windows_command(entry: Aria2Entry, user_agent: str) -> str:

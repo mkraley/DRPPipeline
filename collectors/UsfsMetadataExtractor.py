@@ -66,6 +66,22 @@ def _catalog_size_bytes_for_anchor(anchor) -> int | None:
     return parse_human_size(match.group(1))
 
 
+_EXTERNAL_ARCHIVE_PHRASE = "available via external archive"
+
+
+def _external_archive_url_from_dd(dd, base_url: str) -> str:
+    """Return the external data URL from a Data Access ``<dd>``, if present."""
+    for li in dd.find_all("li"):
+        li_text = li.get_text(" ", strip=True).lower()
+        if _EXTERNAL_ARCHIVE_PHRASE not in li_text:
+            continue
+        for anchor in li.find_all("a", href=True):
+            href = anchor["href"].strip()
+            if href and href != "#":
+                return urljoin(base_url, href)
+    return ""
+
+
 def _is_publication_download_link(label: str, href: str) -> bool:
     """True if anchor is a downloadable publication file (not metadata/index/checksum)."""
     if not href or href == "#":
@@ -126,13 +142,14 @@ def parse_data_access_links(html: str, base_url: str) -> dict[str, Any]:
     Parse Data Access links from a catalog detail page.
 
     Returns:
-        Dict with metadata_url, fileindex_url, and publication_files
+        Dict with metadata_url, fileindex_url, external_archive_url, and publication_files
         (list of ``(filename, absolute_url, size_bytes)`` tuples; size from catalog HTML).
     """
     soup = BeautifulSoup(html, "html.parser")
     result: dict[str, Any] = {
         "metadata_url": "",
         "fileindex_url": "",
+        "external_archive_url": "",
         "publication_files": [],
     }
 
@@ -158,6 +175,8 @@ def parse_data_access_links(html: str, base_url: str) -> dict[str, Any]:
             elif _is_publication_download_link(label, href):
                 size_bytes = _catalog_size_bytes_for_anchor(anchor)
                 result["publication_files"].append((label, absolute, size_bytes))
+
+        result["external_archive_url"] = _external_archive_url_from_dd(dd, base_url)
         break
 
     return result

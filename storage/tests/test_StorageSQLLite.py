@@ -507,8 +507,8 @@ class TestStorageSQLLite(unittest.TestCase):
         self.assertIn(3, drpids)
         self.assertNotIn(2, drpids)
 
-    def test_list_eligible_projects_collected_includes_variants(self) -> None:
-        """Test list_eligible_projects('collected') includes large-file and file-pending variants."""
+    def test_list_eligible_projects_collected_excludes_variants(self) -> None:
+        """Upload prereq 'collected' matches only exact status, not variants."""
         self.storage.initialize(db_path=self.test_db_path)
         self.storage.create_record("https://plain.com")
         self.storage.update_record(1, {"status": "collected"})
@@ -516,11 +516,13 @@ class TestStorageSQLLite(unittest.TestCase):
         self.storage.update_record(2, {"status": "collected - large file"})
         self.storage.create_record("https://pending.com")
         self.storage.update_record(3, {"status": "collected - file pending"})
+        self.storage.create_record("https://external.com")
+        self.storage.update_record(4, {"status": "collected - external archive"})
         self.storage.create_record("https://sourced.com")
-        self.storage.update_record(4, {"status": "sourced"})
+        self.storage.update_record(5, {"status": "sourced"})
         out = self.storage.list_eligible_projects("collected", None)
         drpids = [r["DRPID"] for r in out]
-        self.assertEqual(sorted(drpids), [1, 2, 3])
+        self.assertEqual(drpids, [1])
 
     def test_list_eligible_projects_uploaded_excludes_large_file_variant(self) -> None:
         """Publisher prereq 'uploaded' must not include uploaded - large file."""

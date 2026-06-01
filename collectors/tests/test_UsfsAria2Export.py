@@ -6,10 +6,13 @@ from pathlib import Path
 from collectors.UsfsAria2Export import (
     Aria2Entry,
     MAX_DOWNLOAD_BYTES,
+    aria2_argv_with_quiet_console,
     entries_for_publication_files,
     format_windows_command,
     format_windows_commands,
     max_connections_for_url,
+    out_name_from_aria2_argv,
+    parse_aria2c_lines_from_cmd_text,
     write_drpid_aria2_cmd,
 )
 
@@ -77,6 +80,31 @@ class TestUsfsAria2Export(unittest.TestCase):
         self.assertIn("REM DRPID 1", text)
         self.assertIn("echo Downloading need.zip", text)
         self.assertIn("if errorlevel 1 exit /b 1", text)
+
+    def test_parse_aria2c_lines_from_cmd_text(self) -> None:
+        text = (
+            "@echo off\n"
+            "echo Downloading big.zip ...\n"
+            'aria2c -c -d "C:\\data" -o "big.zip" "https://example.com/x.zip"\n'
+            "if errorlevel 1 exit /b 1\n"
+        )
+        lines = parse_aria2c_lines_from_cmd_text(text)
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith("aria2c "))
+
+    def test_aria2_argv_with_quiet_console(self) -> None:
+        cmd = (
+            'aria2c -c -d "C:\\data\\DRP000029" -o "file.zip" '
+            '"https://example.com/file.zip"'
+        )
+        log_path = Path(r"C:\logs\DRP000029\file.zip.log")
+        argv = aria2_argv_with_quiet_console(cmd, log_path=log_path, summary_interval=60)
+        self.assertEqual(argv[0], "aria2c")
+        self.assertIn("--console-log-level=error", argv)
+        self.assertIn("--show-console-readout=false", argv)
+        log_arg = next(a for a in argv if a.startswith("--log="))
+        self.assertEqual(log_arg, f"--log={log_path}")
+        self.assertEqual(out_name_from_aria2_argv(argv), "file.zip")
 
     def test_write_drpid_aria2_cmd(self) -> None:
         folder = Path(__file__).parent / "_tmp_aria2_write"
