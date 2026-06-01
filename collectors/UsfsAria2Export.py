@@ -8,7 +8,6 @@ scripts/export_usfs_aria2_input.py for batch export.
 from __future__ import annotations
 
 import re
-import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
@@ -95,48 +94,87 @@ def parse_aria2c_lines_from_cmd_file(cmd_path: Path) -> List[str]:
     return parse_aria2c_lines_from_cmd_text(cmd_path.read_text(encoding="utf-8"))
 
 
-def _strip_cmd_quotes(value: str) -> str:
-    if len(value) >= 2 and value[0] == value[-1] == '"':
-        return value[1:-1]
-    return value
+_ARIA2_OUT_NAME_RE = re.compile(r'-o\s+"([^"]+)"', re.IGNORECASE)
+_CMD_QUOTED_VALUE = r'"((?:[^"]|"")*)"'
 
 
-def out_name_from_aria2_argv(argv: Sequence[str]) -> Optional[str]:
-    """Extract ``-o`` / ``--out`` value from a parsed aria2 argv list."""
-    for i, arg in enumerate(argv):
-        if arg in ("-o", "--out") and i + 1 < len(argv):
-            return _strip_cmd_quotes(argv[i + 1])
-        if arg.startswith("-o") and arg != "-o" and len(arg) > 2:
-            return _strip_cmd_quotes(arg[2:])
-        if arg.startswith("--out="):
-            return _strip_cmd_quotes(arg.split("=", 1)[1])
+def _unquote_cmd_value(value: str) -> str:
+    return value.replace('""', '"')
+
+
+def out_name_from_aria2_cmd_line(cmd_line: str) -> Optional[str]:
+    """Extract ``-o`` output filename from a Windows ``aria2c`` command line."""
+    match = _ARIA2_OUT_NAME_RE.search(cmd_line)
+    if match:
+        return match.group(1)
     return None
 
 
-def aria2_argv_with_quiet_console(
+def parse_aria2_windows_cmd_line(cmd_line: str) -> List[str]:
+    """
+    Parse a Windows ``aria2c`` command line from our ``.cmd`` export format.
+
+    Handles quoted values and parentheses in ``--user-agent`` without using
+    ``shlex`` (which breaks on Windows for User-Agent strings).
+    """
+    stripped = cmd_line.strip()
+    if not stripped.lower().startswith("aria2c"):
+        raise ValueError(f"Not an aria2c command: {cmd_line[:80]!r}")
+
+    rest = stripped[6:].lstrip()
+    argv: List[str] = ["aria2c"]
+
+    ua_match = re.search(r"--user-agent=" + _CMD_QUOTED_VALUE, rest)
+    if not ua_match:
+        raise ValueError(f"Missing --user-agent in aria2 command: {cmd_line[:80]!r}")
+
+    prefix = rest[: ua_match.start()].strip()
+    if prefix:
+        argv.extend(prefix.split())
+
+    argv.append("--user-agent=" + _unquote_cmd_value(ua_match.group(1)))
+    tail = rest[ua_match.end() :].strip()
+
+    for flag in ("-d", "-o"):
+        match = re.match(rf"{re.escape(flag)}\s+" + _CMD_QUOTED_VALUE, tail)
+        if not match:
+            raise ValueError(f"Missing {flag} in aria2 command: {cmd_line[:80]!r}")
+        argv.extend([flag, _unquote_cmd_value(match.group(1))])
+        tail = tail[match.end() :].strip()
+
+    url_match = re.match(_CMD_QUOTED_VALUE, tail)
+    if not url_match:
+        raise ValueError(f"Missing download URL in aria2 command: {cmd_line[:80]!r}")
+    argv.append(_unquote_cmd_value(url_match.group(1)))
+
+    return argv
+
+
+def aria2_argv_for_download(
     cmd_line: str,
     *,
     log_path: Path,
-    summary_interval: int = 60,
+    summary_interval: int = 0,
 ) -> List[str]:
     """
-    Parse a Windows ``aria2c`` command line and add flags for a quiet console.
+    Build argv for ``subprocess`` to run an exported ``aria2c`` download.
 
-    Console shows periodic summaries (``--summary-interval``) and errors only;
-    detailed output goes to ``log_path``.
+    Console: in-place progress readout (like native aria2), final download-result
+    line on completion, errors/warnings only besides that. Full detail goes to
+    ``log_path``.
+
+    ``summary_interval`` > 0 also prints separate progress-summary lines every N
+    seconds (usually redundant with the readout); default 0 disables those.
     """
-    argv = shlex.split(cmd_line, posix=False)
-    if not argv or argv[0].lower() != "aria2c":
-        raise ValueError(f"Not an aria2c command: {cmd_line[:80]!r}")
-
-    extra = [
-        "--console-log-level=error",
+    argv = parse_aria2_windows_cmd_line(cmd_line)
+    extras = [
+        "--console-log-level=warn",
         f"--summary-interval={summary_interval}",
         f"--log={log_path}",
         "--log-level=notice",
-        "--show-console-readout=false",
+        "--show-console-readout=true",
     ]
-    return [argv[0], *extra, *argv[1:]]
+    return [argv[0], *extras, *argv[1:]]
 
 
 def drpid_cmd_path(drpid: int, output_dir: Path | None = None) -> Path:

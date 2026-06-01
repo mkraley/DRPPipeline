@@ -1,9 +1,9 @@
 """
-Run aria2 large-file downloads for one or more DRPIDs with a quiet console.
+Run aria2 large-file downloads for one or more DRPIDs with minimal console output.
 
 Reads ``aria2_inputs/DRP######.cmd`` (from export_usfs_aria2_input.py), runs each
-``aria2c`` line with console limited to periodic progress summaries and errors;
-full detail is written under ``<base_output_dir>/logs/DRP######/``.
+``aria2c`` line with in-place progress on one line (like native aria2), a final
+status line on completion, and full detail in ``<base_output_dir>/logs/DRP######/``.
 
 From repo root:
 
@@ -20,7 +20,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -30,14 +29,14 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from collectors.UsfsAria2Export import (  # noqa: E402
     DEFAULT_ARIA2_OUTPUT_DIR,
-    aria2_argv_with_quiet_console,
+    aria2_argv_for_download,
     drpid_cmd_path,
-    out_name_from_aria2_argv,
+    out_name_from_aria2_cmd_line,
     parse_aria2c_lines_from_cmd_file,
 )
 
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config.json"
-DEFAULT_SUMMARY_INTERVAL = 60
+DEFAULT_SUMMARY_INTERVAL = 0
 
 
 def load_base_output_dir(config_path: Path) -> Path:
@@ -80,19 +79,17 @@ def run_drpid(
     log_dir = log_root / f"DRP{drpid:06d}"
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"DRP {drpid}: {len(aria2_lines)} file(s) — logs in {log_dir}")
-    print()
-
     ok_count = 0
     fail_count = 0
 
     for index, cmd_line in enumerate(aria2_lines, start=1):
-        argv_base = shlex.split(cmd_line, posix=False)
-        out_name = out_name_from_aria2_argv(argv_base) or f"download_{index}"
+        out_name = out_name_from_aria2_cmd_line(cmd_line) or f"download_{index}"
         log_path = log_path_for_download(log_root, drpid, out_name)
 
-        print(f"[{index}/{len(aria2_lines)}] {out_name}")
-        argv = aria2_argv_with_quiet_console(
+        if len(aria2_lines) > 1:
+            print(f"[{index}/{len(aria2_lines)}] {out_name}", flush=True)
+
+        argv = aria2_argv_for_download(
             cmd_line,
             log_path=log_path,
             summary_interval=summary_interval,
@@ -101,15 +98,14 @@ def run_drpid(
         result = subprocess.run(argv, check=False)
         if result.returncode == 0:
             ok_count += 1
-            print(f"  OK — {out_name}")
         else:
             fail_count += 1
-            print(f"  FAILED (exit {result.returncode}) — see {log_path}")
+            print(f"FAILED {out_name} (exit {result.returncode}) — {log_path}", flush=True)
             if stop_on_error:
                 break
-        print()
 
-    print(f"DRP {drpid} finished: {ok_count} succeeded, {fail_count} failed")
+    if fail_count:
+        print(f"DRP {drpid}: {ok_count} ok, {fail_count} failed — logs in {log_dir}", flush=True)
     return 1 if fail_count else 0
 
 
@@ -141,7 +137,10 @@ def main() -> int:
         type=int,
         default=DEFAULT_SUMMARY_INTERVAL,
         metavar="SEC",
-        help=f"Seconds between aria2 progress summaries on console (default: {DEFAULT_SUMMARY_INTERVAL})",
+        help=(
+            "If > 0, also print separate progress-summary lines every N seconds "
+            f"(default: {DEFAULT_SUMMARY_INTERVAL}, in-place readout only)"
+        ),
     )
     parser.add_argument(
         "--stop-on-error",

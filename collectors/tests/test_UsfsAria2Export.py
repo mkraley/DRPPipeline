@@ -6,15 +6,17 @@ from pathlib import Path
 from collectors.UsfsAria2Export import (
     Aria2Entry,
     MAX_DOWNLOAD_BYTES,
-    aria2_argv_with_quiet_console,
+    aria2_argv_for_download,
     entries_for_publication_files,
     format_windows_command,
     format_windows_commands,
     max_connections_for_url,
-    out_name_from_aria2_argv,
+    out_name_from_aria2_cmd_line,
+    parse_aria2_windows_cmd_line,
     parse_aria2c_lines_from_cmd_text,
     write_drpid_aria2_cmd,
 )
+from utils.url_utils import BROWSER_HEADERS
 
 
 class TestUsfsAria2Export(unittest.TestCase):
@@ -92,19 +94,42 @@ class TestUsfsAria2Export(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertTrue(lines[0].startswith("aria2c "))
 
-    def test_aria2_argv_with_quiet_console(self) -> None:
-        cmd = (
-            'aria2c -c -d "C:\\data\\DRP000029" -o "file.zip" '
-            '"https://example.com/file.zip"'
+    def test_parse_aria2_windows_cmd_line_user_agent_parens(self) -> None:
+        ua = BROWSER_HEADERS["User-Agent"]
+        cmd = format_windows_command(
+            Aria2Entry(
+                url="https://usfs-public.box.com/shared/static/x.zip",
+                out_name="RDS-2025-0031.zip",
+                dir_path=Path(r"C:\Documents\DataRescue\USFSData\DRP000030"),
+                max_connections=16,
+            ),
+            ua,
+        )
+        argv = parse_aria2_windows_cmd_line(cmd)
+        self.assertEqual(argv[0], "aria2c")
+        ua_arg = next(a for a in argv if a.startswith("--user-agent="))
+        self.assertIn("(Windows NT", ua_arg)
+        self.assertEqual(argv[argv.index("-o") + 1], "RDS-2025-0031.zip")
+        self.assertTrue(argv[-1].startswith("https://"))
+
+    def test_aria2_argv_for_download(self) -> None:
+        ua = BROWSER_HEADERS["User-Agent"]
+        cmd = format_windows_command(
+            Aria2Entry(
+                url="https://example.com/file.zip",
+                out_name="file.zip",
+                dir_path=Path(r"C:\data\DRP000029"),
+                max_connections=16,
+            ),
+            ua,
         )
         log_path = Path(r"C:\logs\DRP000029\file.zip.log")
-        argv = aria2_argv_with_quiet_console(cmd, log_path=log_path, summary_interval=60)
-        self.assertEqual(argv[0], "aria2c")
-        self.assertIn("--console-log-level=error", argv)
-        self.assertIn("--show-console-readout=false", argv)
-        log_arg = next(a for a in argv if a.startswith("--log="))
-        self.assertEqual(log_arg, f"--log={log_path}")
-        self.assertEqual(out_name_from_aria2_argv(argv), "file.zip")
+        argv = aria2_argv_for_download(cmd, log_path=log_path, summary_interval=0)
+        self.assertIn("--console-log-level=warn", argv)
+        self.assertIn("--show-console-readout=true", argv)
+        self.assertIn("--summary-interval=0", argv)
+        self.assertIn(f"--log={log_path}", argv)
+        self.assertEqual(out_name_from_aria2_cmd_line(cmd), "file.zip")
 
     def test_write_drpid_aria2_cmd(self) -> None:
         folder = Path(__file__).parent / "_tmp_aria2_write"
