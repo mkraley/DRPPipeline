@@ -70,3 +70,4 @@ google-credentials.json
 aria2_inputs/*.cmd
 aria2_inputs/*.aria2.txt
 tmp*.jsonl
+DRPID,file_size,num_files.txt
