@@ -28,6 +28,7 @@ MODULES
   usfs_collector        Harvest metadata from USFS Research Data Archive pages
   interactive_collector Browser-assisted collector for sites that block automation
   upload                Upload collected datasets to DataLumos
+  upload_large_files    Download and upload large files for uploaded - large file projects
   publisher             Update the Google Sheet with DataLumos links
   cleanup_inprogress    Reset stuck in-progress records
   noop                  No-op (useful for testing config)

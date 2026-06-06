@@ -86,6 +86,16 @@ class TestFileUtils(unittest.TestCase):
         self.assertEqual(file_utils.format_file_size(1024 * 1024), "1.0 MB")
         self.assertEqual(file_utils.format_file_size(1_500_000), "1.4 MB")
         self.assertEqual(file_utils.format_file_size(1024**3), "1.0 GB")
+
+    def test_parse_file_size_to_bytes(self) -> None:
+        """Test parse_file_size_to_bytes for formatted and raw values."""
+        self.assertEqual(file_utils.parse_file_size_to_bytes("10485760"), 10485760)
+        self.assertEqual(file_utils.parse_file_size_to_bytes("1.0 GB"), 1024**3)
+        self.assertEqual(file_utils.parse_file_size_to_bytes("1.5 KB"), 1536)
+        self.assertEqual(file_utils.parse_file_size_to_bytes("500 B"), 500)
+        self.assertEqual(file_utils.parse_file_size_to_bytes(2048), 2048)
+        self.assertIsNone(file_utils.parse_file_size_to_bytes(""))
+        self.assertIsNone(file_utils.parse_file_size_to_bytes(None))
     
     def test_create_output_folder(self) -> None:
         """Test create_output_folder creates folder."""

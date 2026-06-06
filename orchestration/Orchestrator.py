@@ -57,6 +57,10 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": "collected",
         "class_name": "DataLumosUploader",
     },
+    "upload_large_files": {
+        "prereq": "uploaded - large file",
+        "class_name": "UploadLargeFiles",
+    },
     "publisher": {
         "prereq": "uploaded",
         "class_name": "DataLumosPublisher",
@@ -300,6 +304,15 @@ class Orchestrator:
                         seen_upload.add(drpid)
                         projects.append(proj)
                 projects.sort(key=lambda p: p["DRPID"])
+                if num_rows is not None:
+                    projects = projects[:num_rows]
+            elif module == "upload_large_files":
+                from upload.UploadLargeFiles import project_under_size_limit
+
+                candidates = Storage.list_eligible_projects(
+                    "uploaded - large file", None, start_row, start_drpid
+                )
+                projects = [p for p in candidates if project_under_size_limit(p)]
                 if num_rows is not None:
                     projects = projects[:num_rows]
             else:

@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 from utils.Logger import Logger
 
 from upload.DataLumosFileUploader import (
+    FILE_PER_FILE_QUEUE_PHRASES,
     FILE_UPLOAD_ACCEPTANCE_PHRASES,
     DataLumosFileUploader,
 )
@@ -190,10 +191,86 @@ class TestDataLumosFileUploader(unittest.TestCase):
         uploader = DataLumosFileUploader(MagicMock(), upload_wait_timeout=2000)
         with unittest.mock.patch.object(uploader, "_wait_for_obscuring_elements"), \
              unittest.mock.patch.object(
-                 uploader, "_queued_completion_signal_count", return_value=0
+                 uploader, "_per_file_queue_signal_count", return_value=0
              ), \
              unittest.mock.patch.object(
                  uploader, "_has_batch_upload_status", return_value=True
              ), \
              unittest.mock.patch.object(uploader._page, "wait_for_timeout"):
             uploader._wait_until_queued_count(use_zip=False, expected=1)
+
+    def test_wait_until_queued_count_ignores_batch_message_for_file_two(self) -> None:
+        uploader = DataLumosFileUploader(MagicMock(), upload_wait_timeout=500)
+        call_count = {"n": 0}
+
+        def queue_count(_use_zip: bool) -> int:
+            call_count["n"] += 1
+            return 1
+
+        with unittest.mock.patch.object(uploader, "_wait_for_obscuring_elements"), \
+             unittest.mock.patch.object(
+                 uploader, "_per_file_queue_signal_count", side_effect=queue_count
+             ), \
+             unittest.mock.patch.object(
+                 uploader, "_has_batch_upload_status", return_value=True
+             ), \
+             unittest.mock.patch.object(uploader._page, "wait_for_timeout"):
+            with self.assertRaises(TimeoutError):
+                uploader._wait_until_queued_count(use_zip=False, expected=2)
+        self.assertGreater(call_count["n"], 1)
+
+    def test_per_file_queue_count_ignores_batch_processing_phrase(self) -> None:
+        uploader = DataLumosFileUploader(MagicMock())
+        with unittest.mock.patch.object(
+            uploader,
+            "_modal_status_text",
+            return_value="Uploaded files are being processed...",
+        ), unittest.mock.patch.object(uploader, "_element_phrase_count", return_value=0):
+            self.assertEqual(uploader._per_file_queue_signal_count(use_zip=False), 0)
+
+    def test_per_file_queue_count_matches_queue_phrase(self) -> None:
+        uploader = DataLumosFileUploader(MagicMock())
+        text = FILE_PER_FILE_QUEUE_PHRASES[0] + "\n" + FILE_PER_FILE_QUEUE_PHRASES[0]
+        with unittest.mock.patch.object(
+            uploader, "_modal_status_text", return_value=text
+        ), unittest.mock.patch.object(uploader, "_element_phrase_count", return_value=0):
+            self.assertEqual(uploader._per_file_queue_signal_count(use_zip=False), 2)
+
+    def test_close_modal_skips_busy_wait_when_configured(self) -> None:
+        mock_page = MagicMock()
+        modal = MagicMock()
+        modal.count.return_value = 1
+        modal.first.is_visible.return_value = True
+        busy = MagicMock()
+        busy.count.return_value = 0
+        close_btn = MagicMock()
+
+        def locator_side_effect(selector: str) -> MagicMock:
+            if selector == ".importFileModal":
+                return modal
+            if selector == "#busy":
+                return busy
+            return close_btn
+
+        mock_page.locator.side_effect = locator_side_effect
+        uploader = DataLumosFileUploader(mock_page, skip_busy_wait_on_close=True)
+        uploader._close_modal(use_zip=False)
+        close_btn.click.assert_called_once()
+        busy.first.wait_for.assert_not_called()
+        mock_page.wait_for_timeout.assert_called_with(500)
+
+    def test_close_modal_skips_when_modal_already_closed(self) -> None:
+        mock_page = MagicMock()
+        modal = MagicMock()
+        modal.count.return_value = 0
+        close_btn = MagicMock()
+
+        def locator_side_effect(selector: str) -> MagicMock:
+            if selector == ".importFileModal":
+                return modal
+            return close_btn
+
+        mock_page.locator.side_effect = locator_side_effect
+        uploader = DataLumosFileUploader(mock_page)
+        uploader._close_modal(use_zip=False)
+        close_btn.click.assert_not_called()

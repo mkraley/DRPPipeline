@@ -267,6 +267,52 @@ class TestOrchestrator(unittest.TestCase):
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")
+    def test_run_upload_large_files_filters_by_file_size(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
+    ) -> None:
+        """Test run('upload_large_files') skips projects at or above 25 GB."""
+        mock_storage = MagicMock()
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.get_instance.return_value = mock_storage
+        mock_storage_cls.list_eligible_projects.return_value = [
+            {"DRPID": 1, "file_size": "10.0 GB"},
+            {"DRPID": 2, "file_size": "25.0 GB"},
+            {"DRPID": 3, "file_size": "30.0 GB"},
+        ]
+        mock_instance = MagicMock()
+        mock_find_class.return_value = MagicMock(return_value=mock_instance)
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
+            Orchestrator.run("upload_large_files")
+        mock_storage_cls.list_eligible_projects.assert_called_once_with(
+            "uploaded - large file", None, None, None
+        )
+        self.assertEqual(mock_instance.run.call_count, 1)
+        mock_instance.run.assert_called_with(1)
+
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
+    def test_run_upload_large_files_num_rows_after_size_filter(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
+    ) -> None:
+        """num_rows applies after the 25 GB filter, not to the raw DB list."""
+        mock_storage = MagicMock()
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.get_instance.return_value = mock_storage
+        mock_storage_cls.list_eligible_projects.return_value = [
+            {"DRPID": 17, "file_size": "69.4 GB"},
+            {"DRPID": 156, "file_size": "7.1 GB"},
+            {"DRPID": 195, "file_size": "1.3 GB"},
+        ]
+        mock_instance = MagicMock()
+        mock_find_class.return_value = MagicMock(return_value=mock_instance)
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls), patch.object(
+            Args, "num_rows", 1
+        ):
+            Orchestrator.run("upload_large_files")
+        mock_instance.run.assert_called_once_with(156)
+
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
     def test_run_publisher_respects_num_rows(
         self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
     ) -> None:

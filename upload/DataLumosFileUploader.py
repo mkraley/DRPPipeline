@@ -32,6 +32,8 @@ DROP_ZONE_SELECTOR_FROM_ZIP = ".importZipModal .col-md-offset-2 > span:nth-child
 FILE_QUEUED_TEXT = "File added to queue for upload."
 # Substring for counting matches inside a single legend / status block (text may omit trailing ".")
 FILE_QUEUED_PHRASE = "File added to queue for upload"
+# Per-file queue confirmation only (exclude global "being processed" batch messages).
+FILE_PER_FILE_QUEUE_PHRASES = (FILE_QUEUED_PHRASE,)
 # DataLumos copy varies; accept any of these as upload acceptance for a file/batch.
 FILE_UPLOAD_ACCEPTANCE_PHRASES = (
     FILE_QUEUED_PHRASE,
@@ -93,6 +95,8 @@ class DataLumosFileUploader:
         timeout: int = 120000,
         upload_wait_timeout: int = 600000,
         reporter: Optional["UploadIssueReporter"] = None,
+        *,
+        skip_busy_wait_on_close: bool = False,
     ) -> None:
         """
         Initialize the file uploader.
@@ -102,17 +106,36 @@ class DataLumosFileUploader:
             timeout: Default timeout in milliseconds for UI actions
             upload_wait_timeout: Timeout in ms to wait for all files to be queued (default 10 min)
             reporter: When set, warnings are persisted to the project record
+            skip_busy_wait_on_close: When True, close the modal after queue acceptance without
+                waiting for the busy overlay (large files may keep #busy visible while uploading)
         """
         self._page = page
         self._timeout = timeout
         self._upload_wait_timeout = upload_wait_timeout
         self._reporter = reporter
+        self._skip_busy_wait_on_close = skip_busy_wait_on_close
 
     def _warn(self, msg: str) -> None:
         if self._reporter is not None:
             self._reporter.warn(msg)
         else:
             Logger.warning(msg)
+
+    def upload_file_paths(self, files: List[Path]) -> None:
+        """
+        Upload specific files to the current DataLumos project.
+
+        Uses the Upload Files modal (not zip import). Each path must be a
+        regular file.
+        """
+        if not files:
+            Logger.info("No files to upload")
+            return
+        for path in files:
+            if not path.is_file():
+                raise FileNotFoundError(f"File not found: {path}")
+        self._upload_via_upload_files(files)
+        Logger.info("File upload completed and modal closed")
 
     def upload_files(self, folder_path: str) -> None:
         """
@@ -221,10 +244,39 @@ class DataLumosFileUploader:
             raise RuntimeError(f"Error uploading '{paths[0].name if paths else '?'}': {e}") from e
         self._remove_injected_input()
 
+    def _import_modal_visible(self, use_zip: bool) -> bool:
+        """Return True when the import/upload modal is open on the page."""
+        modal = self._page.locator(self._upload_modal_selector(use_zip))
+        try:
+            if modal.count() == 0:
+                return False
+            return modal.first.is_visible()
+        except Exception:
+            return False
+
     def _close_modal(self, use_zip: bool) -> None:
-        """Close the import/upload modal."""
+        """Close the import/upload modal if it is still open."""
+        if not self._import_modal_visible(use_zip):
+            Logger.info("Upload modal already closed; skipping close button")
+            return
+
+        Logger.info("Closing upload modal")
         close_btn = self._page.locator(CLOSE_MODAL_SELECTOR_FROM_ZIP if use_zip else CLOSE_MODAL_SELECTOR)
-        close_btn.click()
+        try:
+            close_btn.click(timeout=10000)
+        except PlaywrightTimeoutError:
+            if not self._import_modal_visible(use_zip):
+                Logger.info("Upload modal closed before close button was clicked")
+                return
+            self._warn("Upload modal close button was not clickable within 10s")
+            return
+
+        if self._skip_busy_wait_on_close:
+            Logger.info(
+                "Upload queued; closing modal without waiting for busy overlay to clear"
+            )
+            self._page.wait_for_timeout(500)
+            return
         self._wait_for_obscuring_elements()
 
     def _remove_injected_input(self) -> None:
@@ -236,15 +288,18 @@ class DataLumosFileUploader:
         except Exception:
             pass
 
-    def _wait_for_obscuring_elements(self) -> None:
+    def _wait_for_obscuring_elements(self, max_wait_ms: int = 360000) -> None:
         """Wait for busy overlay to disappear."""
         busy = self._page.locator("#busy")
         try:
             if busy.count() > 0:
-                busy.first.wait_for(state="hidden", timeout=360000)
+                busy.first.wait_for(state="hidden", timeout=max_wait_ms)
                 self._page.wait_for_timeout(500)
         except PlaywrightTimeoutError:
-            self._warn("Timeout waiting for busy overlay to disappear")
+            if max_wait_ms >= 60000:
+                self._warn("Timeout waiting for busy overlay to disappear")
+            else:
+                Logger.debug("Busy overlay still visible after %sms", max_wait_ms)
 
     def count_upload_batches(self, folder_path: str) -> int:
         """
@@ -343,14 +398,8 @@ class DataLumosFileUploader:
         )
         return any(marker in text for marker in batch_markers)
 
-    def _queued_completion_signal_count(self, use_zip: bool) -> int:
-        """
-        Count how many per-file completion signals appear in the modal.
-
-        DataLumos may render status in a <legend>, <span>, or other nodes — not only span.
-        Sometimes one status region repeats the phrase; use max(element matches, substring count).
-        """
-        phrases = self._upload_acceptance_phrases(use_zip)
+    def _signal_count(self, use_zip: bool, phrases: tuple[str, ...]) -> int:
+        """Count phrase matches in the import modal (element text and modal inner text)."""
         modal = self._page.locator(self._upload_modal_selector(use_zip))
         n_elem = 0
         try:
@@ -360,29 +409,55 @@ class DataLumosFileUploader:
         n_text = self._phrase_occurrence_count(self._modal_status_text(use_zip), phrases)
         return max(n_elem, n_text)
 
+    def _per_file_queue_signal_count(self, use_zip: bool) -> int:
+        """
+        Count per-file ``File added to queue for upload`` signals only.
+
+        Excludes global batch messages like ``uploaded files are being processed``,
+        which appear after the first file and must not satisfy later files.
+        """
+        if use_zip:
+            return self._signal_count(use_zip=True, phrases=ZIP_UPLOAD_ACCEPTANCE_PHRASES)
+        return self._signal_count(use_zip=False, phrases=FILE_PER_FILE_QUEUE_PHRASES)
+
+    def _queued_completion_signal_count(self, use_zip: bool) -> int:
+        """
+        Count how many completion signals appear in the modal.
+
+        Includes batch processing phrases; prefer ``_per_file_queue_signal_count`` for
+        multi-file Upload Files flows.
+        """
+        phrases = self._upload_acceptance_phrases(use_zip)
+        return self._signal_count(use_zip, phrases)
+
     def _wait_until_queued_count(self, use_zip: bool, expected: int) -> None:
         if expected <= 0:
             return
         modal_sel = self._upload_modal_selector(use_zip)
-        phrases = self._upload_acceptance_phrases(use_zip)
+        if use_zip:
+            wait_phrases: tuple[str, ...] = ZIP_UPLOAD_ACCEPTANCE_PHRASES
+        else:
+            wait_phrases = FILE_PER_FILE_QUEUE_PHRASES
         Logger.info(
-            "Waiting for upload acceptance after file %s (looking for one of: %s)",
+            "Waiting for upload acceptance after file %s (looking for: %s)",
             expected,
-            ", ".join(repr(p) for p in phrases[:2]) + ("..." if len(phrases) > 2 else ""),
+            ", ".join(repr(p) for p in wait_phrases),
         )
         deadline = time.monotonic() + self._upload_wait_timeout / 1000.0
         while time.monotonic() < deadline:
-            self._wait_for_obscuring_elements()
-            n = self._queued_completion_signal_count(use_zip)
+            # Short busy poll only; large uploads keep #busy visible for a long time.
+            self._wait_for_obscuring_elements(max_wait_ms=2000)
+            n = self._per_file_queue_signal_count(use_zip)
             if n >= expected:
                 Logger.info(
-                    "Upload acceptance detected for file %s (%s signal(s) in %s)",
+                    "Upload acceptance detected for file %s (%s queue signal(s) in %s)",
                     expected,
                     n,
                     modal_sel,
                 )
                 return
-            if self._has_batch_upload_status(use_zip):
+            # Single-file only: some DataLumos builds show a batch message instead of queue text.
+            if expected == 1 and not use_zip and self._has_batch_upload_status(use_zip):
                 Logger.info(
                     "Upload acceptance detected for file %s (batch processing message in %s)",
                     expected,
@@ -392,8 +467,8 @@ class DataLumosFileUploader:
             self._page.wait_for_timeout(400)
         status_preview = self._modal_status_text(use_zip).strip().replace("\n", " ")[:200]
         raise TimeoutError(
-            f"Upload did not reach {expected} completion signal(s) within {self._upload_wait_timeout} ms "
-            f"(phrases={phrases!r} in {modal_sel}; visible status={status_preview!r})"
+            f"Upload did not reach {expected} queue signal(s) within {self._upload_wait_timeout} ms "
+            f"(phrases={wait_phrases!r} in {modal_sel}; visible status={status_preview!r})"
         )
 
     def wait_for_upload_completion(self, file_count: int) -> None:

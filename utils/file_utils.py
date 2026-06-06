@@ -87,6 +87,53 @@ def sanitize_filename(name: str, max_length: int = 100) -> str:
     return sanitized
 
 
+_SIZE_UNIT_BYTES = {
+    "B": 1,
+    "KB": 1024,
+    "MB": 1024**2,
+    "GB": 1024**3,
+}
+
+_SIZE_WITH_UNIT_RE = re.compile(
+    r"^\s*([\d.]+)\s*(B|KB|MB|GB)\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_file_size_to_bytes(value: str | int | float | None) -> int | None:
+    """
+    Parse a ``file_size`` field value to bytes.
+
+    Accepts raw byte counts (``10485760``), formatted sizes from
+    ``format_file_size`` (``"1.5 GB"``), or numeric strings.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+
+    s = str(value).strip()
+    if not s:
+        return None
+    if s.isdigit():
+        return int(s)
+
+    match = _SIZE_WITH_UNIT_RE.match(s)
+    if match:
+        num = float(match.group(1))
+        unit = match.group(2).upper()
+        return int(num * _SIZE_UNIT_BYTES[unit])
+
+    try:
+        return int(float(s))
+    except ValueError:
+        return None
+
+
 def format_file_size(size_bytes: int) -> str:
     """
     Format a byte count in human-readable form (KB, MB, GB).
