@@ -6,9 +6,11 @@ import unittest
 from pathlib import Path
 
 from scripts.cleanup_updated_inventory_folders import (
-    evaluate_folder,
     fetch_candidates,
     plan_cleanups,
+)
+from utils.project_folder_cleanup import (
+    evaluate_project_folder,
     row_has_no_errors,
 )
 
@@ -61,14 +63,24 @@ class TestCleanupUpdatedInventoryFolders(unittest.TestCase):
         )
         self.assertEqual(planned[0].note, "skip — path does not exist")
 
-    def test_evaluate_folder_ready_to_delete(self) -> None:
+    def test_plan_cleanups_ready_to_delete(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp) / "DRP000099"
             folder.mkdir()
             (folder / "a.txt").write_text("x", encoding="utf-8")
-            row = evaluate_folder(99, str(folder), compute_size=True)
-            self.assertEqual(row.note, "delete")
-            self.assertEqual(row.size_bytes, 1)
+            planned = plan_cleanups(
+                [{"DRPID": 99, "folder_path": str(folder), "errors": None}],
+                compute_size=True,
+            )
+            self.assertEqual(planned[0].note, "delete")
+            self.assertEqual(planned[0].size_bytes, 1)
+
+    def test_evaluate_project_folder_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "DRP000099"
+            folder.mkdir()
+            result = evaluate_project_folder(99, str(folder), compute_size=True)
+            self.assertTrue(result.deleted)
 
 
 if __name__ == "__main__":

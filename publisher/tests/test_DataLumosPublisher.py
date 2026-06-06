@@ -132,12 +132,64 @@ class TestDataLumosPublisher(unittest.TestCase):
         record = Storage.get(drpid)
         self.assertEqual(record.get("status"), "updated_no_links")
 
+    def test_uploads_incomplete_on_project_page_file_not_available(self) -> None:
+        mock_page = MagicMock()
+        mock_page.evaluate.return_value = "file_not_available"
+        result = self.publisher._uploads_incomplete_on_project_page(mock_page)
+        self.assertIn("File not available for download", result or "")
+
+    def test_uploads_incomplete_on_project_page_empty_third_td(self) -> None:
+        mock_page = MagicMock()
+        mock_page.evaluate.return_value = "empty_third_td"
+        result = self.publisher._uploads_incomplete_on_project_page(mock_page)
+        self.assertIn("empty third column", result or "")
+
+    def test_uploads_incomplete_on_project_page_ok(self) -> None:
+        mock_page = MagicMock()
+        mock_page.evaluate.return_value = None
+        self.assertIsNone(self.publisher._uploads_incomplete_on_project_page(mock_page))
+
+    @patch.object(
+        DataLumosPublisher,
+        "_uploads_incomplete_on_project_page",
+        return_value="span contains 'File not available for download'",
+    )
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
+    def test_run_skips_publish_when_uploads_incomplete(
+        self,
+        mock_publish_workspace: MagicMock,
+        mock_wait_for_human: MagicMock,
+        mock_upload_check: MagicMock,
+    ) -> None:
+        """Incomplete uploads log a warning, leave status unchanged, skip publish."""
+        drpid = Storage.create_record("https://example.com/test")
+        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "uploaded"})
+        mock_page = MagicMock()
+        self.publisher._session.ensure_browser = MagicMock(return_value=mock_page)
+        self.publisher._session.ensure_authenticated = MagicMock(return_value=None)
+        self.publisher._session.close = MagicMock(return_value=None)
+
+        with patch("publisher.DataLumosPublisher.record_error") as mock_record_error:
+            self.publisher.run(drpid)
+
+        mock_upload_check.assert_called_once_with(mock_page)
+        mock_publish_workspace.assert_not_called()
+        mock_record_error.assert_not_called()
+        record = Storage.get(drpid)
+        self.assertEqual(record.get("status"), "uploaded")
+        self.assertIsNone(record.get("published_url"))
+
+    @patch.object(
+        DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None
+    )
     @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
     @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
     def test_run_success_updates_storage(
         self,
         mock_publish_workspace: MagicMock,
         mock_wait_for_human: MagicMock,
+        mock_upload_check: MagicMock,
     ) -> None:
         """Test run updates Storage with published_url and status on success."""
         drpid = Storage.create_record("https://example.com/test")
@@ -161,6 +213,9 @@ class TestDataLumosPublisher(unittest.TestCase):
         self.assertEqual(record.get("status"), "published")
         self.assertEqual(record.get("published_url"), expected_url)
 
+    @patch.object(
+        DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None
+    )
     @patch("publisher.DataLumosPublisher.DataLumosPublisher._update_google_sheet_if_configured")
     @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
     @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
@@ -169,6 +224,7 @@ class TestDataLumosPublisher(unittest.TestCase):
         mock_publish_workspace: MagicMock,
         mock_wait_for_human: MagicMock,
         mock_update_sheet: MagicMock,
+        mock_upload_check: MagicMock,
     ) -> None:
         """Google Sheet failures after publish must not mark the project as publish failed."""
         drpid = Storage.create_record("https://example.com/test")
@@ -191,6 +247,9 @@ class TestDataLumosPublisher(unittest.TestCase):
         self.assertEqual(record.get("status"), "published")
         self.assertIn("Google Sheet update failed", record.get("warnings") or "")
 
+    @patch.object(
+        DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None
+    )
     @patch("publisher.DataLumosPublisher.DataLumosPublisher._update_google_sheet_if_configured")
     @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
     @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
@@ -199,6 +258,7 @@ class TestDataLumosPublisher(unittest.TestCase):
         mock_publish_workspace: MagicMock,
         mock_wait_for_human: MagicMock,
         mock_update_sheet: MagicMock,
+        mock_upload_check: MagicMock,
     ) -> None:
         """Test run calls _update_google_sheet_if_configured after successful publish."""
         drpid = Storage.create_record("https://example.com/test")
@@ -218,6 +278,9 @@ class TestDataLumosPublisher(unittest.TestCase):
         self.assertEqual(call_args[1].get("datalumos_id"), "239181")
         self.assertEqual(call_args[2], "239181")
 
+    @patch.object(
+        DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None
+    )
     @patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater")
     @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
     @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
@@ -226,6 +289,7 @@ class TestDataLumosPublisher(unittest.TestCase):
         mock_publish_workspace: MagicMock,
         mock_wait_for_human: MagicMock,
         mock_gsu_class: MagicMock,
+        mock_upload_check: MagicMock,
     ) -> None:
         """Test run sets status to updated_inventory after successful Google Sheet update."""
         drpid = Storage.create_record("https://example.com/test")
@@ -249,6 +313,56 @@ class TestDataLumosPublisher(unittest.TestCase):
         self.assertIsNotNone(record)
         self.assertEqual(record.get("status"), "updated_inventory")
 
+    @patch.object(
+        DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None
+    )
+    @patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater")
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
+    def test_run_deletes_folder_after_updated_inventory(
+        self,
+        mock_publish_workspace: MagicMock,
+        mock_wait_for_human: MagicMock,
+        mock_gsu_class: MagicMock,
+        mock_upload_check: MagicMock,
+    ) -> None:
+        """After sheet update to updated_inventory, delete folder_path when no errors."""
+        project_dir = self.temp_dir / "DRP000042"
+        project_dir.mkdir()
+        (project_dir / "data.zip").write_text("x", encoding="utf-8")
+
+        drpid = Storage.create_record("https://example.com/test")
+        Storage.update_record(
+            drpid,
+            {
+                "datalumos_id": "239181",
+                "status": "uploaded",
+                "folder_path": str(project_dir),
+            },
+        )
+
+        mock_page = MagicMock()
+        self.publisher._session.ensure_browser = MagicMock(return_value=mock_page)
+        self.publisher._session.ensure_authenticated = MagicMock(return_value=None)
+        self.publisher._session.close = MagicMock(return_value=None)
+        mock_publish_workspace.return_value = (True, None)
+        mock_gsu_class.return_value.update.return_value = (True, None)
+
+        cred_file = self.temp_dir / "creds.json"
+        cred_file.write_text("{}")
+
+        with patch.object(Args, "google_sheet_id", "sheet123"), patch.object(
+            Args, "google_credentials", str(cred_file)
+        ), patch("publisher.DataLumosPublisher.record_error"):
+            self.publisher.run(drpid)
+
+        record = Storage.get(drpid)
+        self.assertEqual(record.get("status"), "updated_inventory")
+        self.assertFalse(project_dir.exists())
+
+    @patch.object(
+        DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None
+    )
     @patch("publisher.DataLumosPublisher.record_crash")
     @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
     @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
@@ -257,6 +371,7 @@ class TestDataLumosPublisher(unittest.TestCase):
         mock_publish_workspace: MagicMock,
         mock_wait_for_human: MagicMock,
         mock_record_crash: MagicMock,
+        mock_upload_check: MagicMock,
     ) -> None:
         """Test run calls record_crash when Google Sheet is configured but credentials file missing."""
         drpid = Storage.create_record("https://example.com/test")

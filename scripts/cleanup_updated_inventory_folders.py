@@ -8,12 +8,14 @@ From repo root:
     python scripts/cleanup_updated_inventory_folders.py
     python scripts/cleanup_updated_inventory_folders.py --db-path usfs.db
     python scripts/cleanup_updated_inventory_folders.py --execute
+
+Note: the publisher also deletes folders automatically after a successful sheet
+update to ``updated_inventory``. This script is for batch cleanup of existing rows.
 """
 
 from __future__ import annotations
 
 import argparse
-import shutil
 import sqlite3
 import sys
 from dataclasses import dataclass
@@ -24,6 +26,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from utils.file_utils import format_file_size  # noqa: E402
+from utils.project_folder_cleanup import (  # noqa: E402
+    evaluate_project_folder,
+    folder_size_bytes,
+    row_has_no_errors,
+    try_delete_project_folder,
+)
 
 DEFAULT_DB_PATH = REPO_ROOT / "usfs.db"
 STATUS_UPDATED_INVENTORY = "updated_inventory"
@@ -41,66 +49,8 @@ ORDER BY DRPID
 class FolderCleanupRow:
     drpid: int
     folder_path: Path
-    status: str
     size_bytes: Optional[int]
     note: str
-
-
-def row_has_no_errors(errors: object) -> bool:
-    if errors is None:
-        return True
-    return not str(errors).strip()
-
-
-def is_deletable_folder(path: Path) -> bool:
-    """Reject empty, relative, or dangerously shallow paths."""
-    if not path.is_absolute():
-        return False
-    if len(path.parts) < 3:
-        return False
-    return True
-
-
-def folder_size_bytes(path: Path) -> int:
-    total = 0
-    for entry in path.rglob("*"):
-        if entry.is_file():
-            total += entry.stat().st_size
-    return total
-
-
-def evaluate_folder(
-    drpid: int,
-    folder_path_raw: object,
-    *,
-    compute_size: bool,
-) -> FolderCleanupRow:
-    status = STATUS_UPDATED_INVENTORY
-    if not folder_path_raw or not str(folder_path_raw).strip():
-        return FolderCleanupRow(
-            drpid, Path(), status, None, "skip — empty folder_path"
-        )
-
-    path = Path(str(folder_path_raw))
-    if not is_deletable_folder(path):
-        return FolderCleanupRow(drpid, path, status, None, "skip — unsafe or relative path")
-
-    if not path.exists():
-        return FolderCleanupRow(drpid, path, status, None, "skip — path does not exist")
-
-    if path.is_file():
-        return FolderCleanupRow(drpid, path, status, None, "skip — not a directory")
-
-    size: Optional[int] = None
-    if compute_size:
-        try:
-            size = folder_size_bytes(path)
-        except OSError as exc:
-            return FolderCleanupRow(
-                drpid, path, status, None, f"skip — cannot size folder ({exc})"
-            )
-
-    return FolderCleanupRow(drpid, path, status, size, "delete")
 
 
 def fetch_candidates(conn: sqlite3.Connection) -> List[sqlite3.Row]:
@@ -118,18 +68,24 @@ def plan_cleanups(
     for row in rows:
         if not row_has_no_errors(row["errors"]):
             continue
-        planned.append(
-            evaluate_folder(
-                int(row["DRPID"]),
-                row["folder_path"],
-                compute_size=compute_size,
-            )
+        drpid = int(row["DRPID"])
+        decision = evaluate_project_folder(
+            drpid,
+            row["folder_path"],
+            compute_size=compute_size,
         )
+        path = decision.folder_path or Path()
+        if decision.deleted:
+            size: Optional[int] = None
+            if compute_size and decision.folder_path is not None:
+                try:
+                    size = folder_size_bytes(decision.folder_path)
+                except OSError:
+                    size = None
+            planned.append(FolderCleanupRow(drpid, path, size, "delete"))
+        else:
+            planned.append(FolderCleanupRow(drpid, path, None, f"skip — {decision.message}"))
     return planned
-
-
-def delete_folder(path: Path) -> None:
-    shutil.rmtree(path)
 
 
 def print_plan(planned: Iterable[FolderCleanupRow], *, execute: bool) -> None:
@@ -187,13 +143,13 @@ def run_cleanup(
 
     failed = 0
     for item in to_delete:
-        try:
-            delete_folder(item.folder_path)
+        result = try_delete_project_folder(item.drpid, str(item.folder_path))
+        if result.deleted:
             print(f"  deleted DRPID {item.drpid}: {item.folder_path}")
-        except OSError as exc:
+        else:
             failed += 1
             print(
-                f"  FAILED DRPID {item.drpid}: {item.folder_path} — {exc}",
+                f"  FAILED DRPID {item.drpid}: {item.folder_path} — {result.message}",
                 file=sys.stderr,
             )
 

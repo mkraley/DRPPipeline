@@ -16,10 +16,34 @@ from utils.Args import Args
 from utils.project_utils import get_field
 from utils.Errors import record_crash, record_error
 from utils.Logger import Logger
+from utils.project_folder_cleanup import row_has_no_errors, try_delete_project_folder
 
 
 # Published project URL template (same as Download Location in chiara_upload update_google_sheet)
 PUBLISHED_URL_TEMPLATE = "https://www.datalumos.org/datalumos/project/{workspace_id}/version/V1/view"
+
+FILE_NOT_AVAILABLE_TEXT = "File not available for download"
+
+# DataLumos file table: checkbox | name | type | size | ... (third td = type)
+_UPLOAD_READINESS_JS = """
+() => {
+  const spans = Array.from(document.querySelectorAll('span'));
+  if (spans.some(s => (s.innerText || '').includes(%(file_not_available)r))) {
+    return 'file_not_available';
+  }
+  const rows = Array.from(document.querySelectorAll('table.table-hover tbody tr'));
+  for (const tr of rows) {
+    const tds = tr.querySelectorAll('td');
+    if (tds.length >= 3) {
+      const third = (tds[2].innerText || '').trim();
+      if (!third) {
+        return 'empty_third_td';
+      }
+    }
+  }
+  return null;
+}
+""" % {"file_not_available": FILE_NOT_AVAILABLE_TEXT}
 
 
 class DataLumosPublisher:
@@ -81,6 +105,15 @@ class DataLumosPublisher:
 
             from upload.DataLumosAuthenticator import wait_for_human_verification
             wait_for_human_verification(page, timeout=60000)
+
+            upload_issue = self._uploads_incomplete_on_project_page(page)
+            if upload_issue:
+                Logger.warning(
+                    "Skipping publish for DRPID=%s: uploads incomplete — %s",
+                    drpid,
+                    upload_issue,
+                )
+                return
 
             success, error_message = self._publish_workspace(page, drpid)
             if not success:
@@ -152,6 +185,8 @@ class DataLumosPublisher:
         if success:
             Storage.update_record(drpid, {"status": success_status})
             Logger.info(f"Sheet updated for DRPID={drpid}")
+            if success_status == "updated_inventory":
+                self._delete_project_folder_after_inventory_update(drpid)
         elif error_message:
             msg_lower = error_message.lower()
             if "not installed" in msg_lower:
@@ -207,6 +242,45 @@ class DataLumosPublisher:
 
         self._update_sheet_if_configured(drpid, project, _do_update, "updated_inventory")
 
+    def _delete_project_folder_after_inventory_update(self, drpid: int) -> None:
+        """
+        After a successful sheet update to ``updated_inventory``, delete the
+        on-disk project folder when the row has no errors.
+        """
+        project = Storage.get(drpid)
+        if project is None:
+            return
+
+        status = (project.get("status") or "").strip().lower()
+        if status != "updated_inventory":
+            Logger.warning(
+                "Skipping folder delete for DRPID=%s: status=%r",
+                drpid,
+                status,
+            )
+            return
+
+        if not row_has_no_errors(project.get("errors")):
+            Logger.info(
+                "Skipping folder delete for DRPID=%s: errors present",
+                drpid,
+            )
+            return
+
+        result = try_delete_project_folder(drpid, get_field(project, "folder_path"))
+        if result.deleted:
+            Logger.info(
+                "Deleted project folder for DRPID=%s: %s",
+                drpid,
+                result.folder_path,
+            )
+        else:
+            Logger.warning(
+                "Folder not deleted for DRPID=%s: %s",
+                drpid,
+                result.message,
+            )
+
     def _project_url(self, workspace_id: str) -> str:
         """Build URL for a DataLumos project page."""
         return f"{self.WORKSPACE_URL}?goToLevel=project&goToPath=/datalumos/{workspace_id}#"
@@ -220,6 +294,29 @@ class DataLumosPublisher:
                 page.wait_for_timeout(500)
         except PlaywrightTimeoutError:
             Logger.warning("Timeout waiting for busy overlay to disappear")
+
+    def _uploads_incomplete_on_project_page(self, page: Page) -> Optional[str]:
+        """
+        Return a warning message when DataLumos shows incomplete uploads.
+
+        Checks (either triggers skip):
+        - a span containing "File not available for download"
+        - table.table-hover row with empty third <td>
+        """
+        try:
+            result = page.evaluate(_UPLOAD_READINESS_JS)
+        except Exception as exc:
+            Logger.warning(
+                "Could not check upload readiness on project page: %s",
+                exc,
+            )
+            return None
+
+        if result == "file_not_available":
+            return f"span contains '{FILE_NOT_AVAILABLE_TEXT}'"
+        if result == "empty_third_td":
+            return "table.table-hover has a row with empty third column"
+        return None
 
     def _check_errormsg(self, page: Page) -> Optional[str]:
         """If #errormsg is visible and has text, return that text; else None."""
