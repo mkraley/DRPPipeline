@@ -10,9 +10,11 @@ from storage import Storage
 from upload.UploadLargeFiles import (
     MAX_PROJECT_FILE_SIZE_BYTES,
     STATUS_FINISH_WAIT,
+    STATUS_UPLOADED_EXPANDED,
     STATUS_UPLOADED_LARGE_FILE,
     UPLOAD_LARGE_FILES_TIMEOUT_MS,
     UploadLargeFiles,
+    is_eligible_for_upload_large_files,
     planned_out_names,
     project_under_size_limit,
 )
@@ -34,6 +36,31 @@ class TestUploadLargeFilesHelpers(unittest.TestCase):
         self.assertFalse(project_under_size_limit(at_limit))
         self.assertFalse(project_under_size_limit(over))
         self.assertFalse(project_under_size_limit(missing))
+
+    def test_is_eligible_for_upload_large_files(self) -> None:
+        self.assertTrue(
+            is_eligible_for_upload_large_files(
+                {"status": STATUS_UPLOADED_LARGE_FILE, "file_size": "10.0 GB"}
+            )
+        )
+        self.assertFalse(
+            is_eligible_for_upload_large_files(
+                {
+                    "status": STATUS_UPLOADED_LARGE_FILE,
+                    "file_size": format_bytes(MAX_PROJECT_FILE_SIZE_BYTES),
+                }
+            )
+        )
+        self.assertTrue(
+            is_eligible_for_upload_large_files(
+                {"status": STATUS_UPLOADED_EXPANDED, "file_size": "500.0 GB"}
+            )
+        )
+        self.assertTrue(
+            is_eligible_for_upload_large_files(
+                {"status": STATUS_UPLOADED_EXPANDED, "file_size": None}
+            )
+        )
 
     def test_planned_out_names(self) -> None:
         lines = [

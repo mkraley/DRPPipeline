@@ -307,12 +307,25 @@ class Orchestrator:
                 if num_rows is not None:
                     projects = projects[:num_rows]
             elif module == "upload_large_files":
-                from upload.UploadLargeFiles import project_under_size_limit
+                from upload.UploadLargeFiles import is_eligible_for_upload_large_files
 
-                candidates = Storage.list_eligible_projects(
+                candidates_large = Storage.list_eligible_projects(
                     "uploaded - large file", None, start_row, start_drpid
                 )
-                projects = [p for p in candidates if project_under_size_limit(p)]
+                candidates_expanded = Storage.list_eligible_projects(
+                    "uploaded - expanded", None, start_row, start_drpid
+                )
+                seen_large: set[int] = set()
+                projects = []
+                for proj in candidates_large + candidates_expanded:
+                    drpid = proj["DRPID"]
+                    if drpid in seen_large:
+                        continue
+                    if not is_eligible_for_upload_large_files(proj):
+                        continue
+                    seen_large.add(drpid)
+                    projects.append(proj)
+                projects.sort(key=lambda p: p["DRPID"])
                 if num_rows is not None:
                     projects = projects[:num_rows]
             else:

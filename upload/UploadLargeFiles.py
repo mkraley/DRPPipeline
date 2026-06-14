@@ -1,9 +1,9 @@
 """
 Upload large files module.
 
-For projects at ``uploaded - large file`` with total size under 25 GB: download
-missing large publication files via aria2, then upload them to the existing
-DataLumos project.
+For projects at ``uploaded - large file`` (under 25 GB) or ``uploaded - expanded``
+(any size): download missing large publication files via aria2, then upload them
+to the existing DataLumos project.
 """
 
 from __future__ import annotations
@@ -34,7 +34,9 @@ from utils.project_utils import get_field
 from utils.url_utils import BROWSER_HEADERS, fetch_page_body
 
 STATUS_UPLOADED_LARGE_FILE = "uploaded - large file"
+STATUS_UPLOADED_EXPANDED = "uploaded - expanded"
 STATUS_FINISH_WAIT = "finish wait"
+UPLOAD_LARGE_FILES_STATUSES = (STATUS_UPLOADED_LARGE_FILE, STATUS_UPLOADED_EXPANDED)
 MAX_PROJECT_FILE_SIZE_BYTES = 25 * 1024**3
 DEFAULT_SUMMARY_INTERVAL = 0
 UPLOAD_LARGE_FILES_TIMEOUT_MS = 2 * 60 * 60 * 1000  # 2 hours per file / UI action
@@ -46,6 +48,21 @@ def project_under_size_limit(project: Dict[str, Any]) -> bool:
     if size_bytes is None:
         return False
     return size_bytes < MAX_PROJECT_FILE_SIZE_BYTES
+
+
+def is_eligible_for_upload_large_files(project: Dict[str, Any]) -> bool:
+    """
+    Return True when a project may run ``upload_large_files``.
+
+    ``uploaded - expanded``: any ``file_size``.
+    ``uploaded - large file``: ``file_size`` must be present and < 25 GB.
+    """
+    status = (project.get("status") or "").strip()
+    if status == STATUS_UPLOADED_EXPANDED:
+        return True
+    if status == STATUS_UPLOADED_LARGE_FILE:
+        return project_under_size_limit(project)
+    return False
 
 
 def resolve_output_folder(drpid: int, folder_path: str | None) -> Path:
@@ -199,7 +216,8 @@ class UploadLargeFiles:
     """
     Download missing large USFS files and upload them to an existing DataLumos project.
 
-    Prerequisites: status ``uploaded - large file``, ``file_size`` < 25 GB, no errors
+    Prerequisites: ``uploaded - large file`` with ``file_size`` < 25 GB, or
+    ``uploaded - expanded`` at any size; no errors
     Success status: ``finish wait``
     """
 
@@ -218,13 +236,13 @@ class UploadLargeFiles:
             return
 
         status = (project.get("status") or "").strip()
-        if status != STATUS_UPLOADED_LARGE_FILE:
+        if status not in UPLOAD_LARGE_FILES_STATUSES:
             reporter.error(
-                f"Expected status {STATUS_UPLOADED_LARGE_FILE!r}, got {status!r}"
+                f"Expected status in {UPLOAD_LARGE_FILES_STATUSES!r}, got {status!r}"
             )
             return
 
-        if not project_under_size_limit(project):
+        if status == STATUS_UPLOADED_LARGE_FILE and not project_under_size_limit(project):
             reporter.error(
                 "Project file_size is missing or >= 25 GB; skipping large-file upload"
             )

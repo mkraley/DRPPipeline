@@ -270,24 +270,50 @@ class TestOrchestrator(unittest.TestCase):
     def test_run_upload_large_files_filters_by_file_size(
         self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
     ) -> None:
-        """Test run('upload_large_files') skips projects at or above 25 GB."""
+        """Test run('upload_large_files') skips large-file projects at or above 25 GB."""
         mock_storage = MagicMock()
         mock_storage_cls.initialize.return_value = mock_storage
         mock_storage_cls.get_instance.return_value = mock_storage
-        mock_storage_cls.list_eligible_projects.return_value = [
-            {"DRPID": 1, "file_size": "10.0 GB"},
-            {"DRPID": 2, "file_size": "25.0 GB"},
-            {"DRPID": 3, "file_size": "30.0 GB"},
+        mock_storage_cls.list_eligible_projects.side_effect = [
+            [
+                {"DRPID": 1, "file_size": "10.0 GB", "status": "uploaded - large file"},
+                {"DRPID": 2, "file_size": "25.0 GB", "status": "uploaded - large file"},
+                {"DRPID": 3, "file_size": "30.0 GB", "status": "uploaded - large file"},
+            ],
+            [],
         ]
         mock_instance = MagicMock()
         mock_find_class.return_value = MagicMock(return_value=mock_instance)
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
             Orchestrator.run("upload_large_files")
-        mock_storage_cls.list_eligible_projects.assert_called_once_with(
+        self.assertEqual(mock_storage_cls.list_eligible_projects.call_count, 2)
+        mock_storage_cls.list_eligible_projects.assert_any_call(
             "uploaded - large file", None, None, None
+        )
+        mock_storage_cls.list_eligible_projects.assert_any_call(
+            "uploaded - expanded", None, None, None
         )
         self.assertEqual(mock_instance.run.call_count, 1)
         mock_instance.run.assert_called_with(1)
+
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
+    def test_run_upload_large_files_includes_expanded_any_size(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
+    ) -> None:
+        """uploaded - expanded projects are eligible regardless of file_size."""
+        mock_storage = MagicMock()
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.get_instance.return_value = mock_storage
+        mock_storage_cls.list_eligible_projects.side_effect = [
+            [],
+            [{"DRPID": 17, "file_size": "69.4 GB", "status": "uploaded - expanded"}],
+        ]
+        mock_instance = MagicMock()
+        mock_find_class.return_value = MagicMock(return_value=mock_instance)
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
+            Orchestrator.run("upload_large_files")
+        mock_instance.run.assert_called_once_with(17)
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")
@@ -298,10 +324,13 @@ class TestOrchestrator(unittest.TestCase):
         mock_storage = MagicMock()
         mock_storage_cls.initialize.return_value = mock_storage
         mock_storage_cls.get_instance.return_value = mock_storage
-        mock_storage_cls.list_eligible_projects.return_value = [
-            {"DRPID": 17, "file_size": "69.4 GB"},
-            {"DRPID": 156, "file_size": "7.1 GB"},
-            {"DRPID": 195, "file_size": "1.3 GB"},
+        mock_storage_cls.list_eligible_projects.side_effect = [
+            [
+                {"DRPID": 17, "file_size": "69.4 GB", "status": "uploaded - large file"},
+                {"DRPID": 156, "file_size": "7.1 GB", "status": "uploaded - large file"},
+                {"DRPID": 195, "file_size": "1.3 GB", "status": "uploaded - large file"},
+            ],
+            [],
         ]
         mock_instance = MagicMock()
         mock_find_class.return_value = MagicMock(return_value=mock_instance)
