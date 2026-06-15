@@ -148,7 +148,12 @@ def projects_load() -> Any:
         return {"error": "No project found"}, 404
     drpid = proj["DRPID"]
     source_url = (proj.get("source_url") or "").strip()
-    folder_path = ensure_output_folder(drpid)
+    delete_folder_on_load = data.get("delete_folder_on_load", True)
+    if isinstance(delete_folder_on_load, str):
+        delete_folder_on_load = delete_folder_on_load.lower() not in ("0", "false", "no")
+    else:
+        delete_folder_on_load = bool(delete_folder_on_load)
+    folder_path = ensure_output_folder(drpid, recreate=delete_folder_on_load)
     clear_scoreboard()
 
     metadata = {

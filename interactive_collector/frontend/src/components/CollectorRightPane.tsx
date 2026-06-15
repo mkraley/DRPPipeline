@@ -29,6 +29,8 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
     startDownloadsWatcher,
     downloadsWatcherActive,
     stopDownloadsWatcher,
+    deleteFolderOnLoad,
+    setDeleteFolderOnLoad,
   } = useCollectorStore();
   const [toast, setToast] = useState<string | null>(null);
 
@@ -211,6 +213,14 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
             Load
           </button>
         </form>
+        <label className="collector-load-option" title="When checked, loading a project empties its output folder first">
+          <input
+            type="checkbox"
+            checked={deleteFolderOnLoad}
+            onChange={(e) => setDeleteFolderOnLoad(e.target.checked)}
+          />
+          Delete folder on load
+        </label>
         <button type="button" className="btn-top" onClick={onAddProject} disabled={loading} title="Create a new row in the database, then Copy &amp; Open">
           Add
         </button>

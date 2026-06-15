@@ -185,15 +185,17 @@ def folder_extensions_and_size(folder_path: Path) -> tuple[list[str], int, int]:
     return (sorted(exts), total, n_files)
 
 
-def create_output_folder(base_dir: Path, drpid: int) -> Optional[Path]:
+def create_output_folder(base_dir: Path, drpid: int, *, recreate: bool = True) -> Optional[Path]:
     """
     Create output folder for a DRPID.
 
-    If the folder already exists, it and its contents are removed first.
+    When ``recreate`` is True (default), an existing folder and its contents are
+    removed first. When False, an existing folder is reused unchanged.
 
     Args:
         base_dir: Base directory for creating folders
         drpid: DRPID for the record
+        recreate: When True, remove existing folder before creating
 
     Returns:
         Path to created folder, or None if creation failed
@@ -209,11 +211,14 @@ def create_output_folder(base_dir: Path, drpid: int) -> Optional[Path]:
 
     try:
         if folder_path.exists():
-            try:
-                shutil.rmtree(folder_path)
-            except OSError as e:
-                from utils.Logger import Logger
-                Logger.warning(f"Could not empty output folder (in use?): {e}. Using existing folder.")
+            if recreate:
+                try:
+                    shutil.rmtree(folder_path)
+                except OSError as e:
+                    from utils.Logger import Logger
+                    Logger.warning(f"Could not empty output folder (in use?): {e}. Using existing folder.")
+            else:
+                return folder_path
         folder_path.mkdir(parents=True, exist_ok=True)
         return folder_path
     except Exception as e:

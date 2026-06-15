@@ -113,3 +113,15 @@ class TestFileUtils(unittest.TestCase):
         self.assertNotEqual(folder1, folder2)
         self.assertTrue(folder1.exists())
         self.assertTrue(folder2.exists())
+
+    def test_create_output_folder_recreate_false_preserves_contents(self) -> None:
+        """Test create_output_folder with recreate=False keeps existing files."""
+        folder_path = file_utils.create_output_folder(self.temp_dir, 99)
+        marker = folder_path / "keep.me"
+        marker.write_text("stay", encoding="utf-8")
+
+        same = file_utils.create_output_folder(self.temp_dir, 99, recreate=False)
+        self.assertEqual(same, folder_path)
+        self.assertTrue(marker.exists())
+        self.assertEqual(marker.read_text(encoding="utf-8"), "stay")
+    

@@ -760,6 +760,21 @@ body {
   margin: 0;
 }
 
+.collector-load-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.collector-load-option input {
+  margin: 0;
+}
+
 .collector-rail-toast {
   font-size: 12px;
   color: #555;

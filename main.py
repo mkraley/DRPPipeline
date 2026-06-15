@@ -42,6 +42,9 @@ COMMON OPTIONS
   --log-color             Colorize log severity in terminal
   --delete-all-db-entries  For sourcing only: wipe the SQLite DB before run (or set delete_all_db_entries in config; default off)
 
+USFS COLLECTOR
+  --usfs-metadata-only    Metadata and page PDFs only; skip publication downloads; keep output folder
+
 FIRST TIME?
   Run setup to create your configuration files and verify everything works:
 

@@ -164,7 +164,14 @@ class UsfsCollector:
         result["agency"] = AGENCY
         result["office"] = OFFICE
 
-        folder_path = create_output_folder(Path(Args.base_output_dir), drpid)
+        metadata_only = bool(Args.usfs_metadata_only)
+        if metadata_only:
+            Logger.info(
+                "USFS metadata-only mode for DRPID %s (publication downloads skipped)",
+                drpid,
+            )
+
+        folder_path = self._resolve_collection_folder(drpid, metadata_only)
         if not folder_path:
             record_error(drpid, "Failed to create output folder")
             return result
@@ -189,6 +196,7 @@ class UsfsCollector:
             page_downloader,
             folder_path,
             publication_files,
+            download=not metadata_only,
         )
 
         if external_archive_only:
@@ -245,6 +253,27 @@ class UsfsCollector:
             result.get("file_size"),
         )
         return result
+
+    def _resolve_collection_folder(
+        self,
+        drpid: int,
+        metadata_only: bool,
+    ) -> Optional[Path]:
+        """Return the output folder path, preserving existing contents in metadata-only mode."""
+        if metadata_only:
+            record = Storage.get(drpid) or {}
+            stored = record.get("folder_path")
+            if stored:
+                path = Path(stored)
+                if path.is_dir():
+                    Logger.info("Using existing output folder (metadata-only): %s", path)
+                    return path
+            return create_output_folder(
+                Path(Args.base_output_dir),
+                drpid,
+                recreate=False,
+            )
+        return create_output_folder(Path(Args.base_output_dir), drpid)
 
     def _apply_geographic_coverage(
         self,

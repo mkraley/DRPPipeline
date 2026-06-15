@@ -81,12 +81,17 @@ def get_project_by_drpid(drpid: int) -> Optional[Dict[str, Any]]:
     return Storage.get(drpid)
 
 
-def ensure_output_folder(drpid: int) -> Optional[str]:
+def ensure_output_folder(drpid: int, *, recreate: bool = True) -> Optional[str]:
     """
-    Create or empty the output folder for this DRPID; store in result state.
+    Create or resolve the output folder for this DRPID; store in result state.
+
+    When ``recreate`` is True (default), any existing folder is removed first.
+    When False, uses ``folder_path`` from Storage when present, otherwise creates
+    the folder without deleting existing contents.
 
     Args:
         drpid: Project identifier.
+        recreate: When True, empty the folder before use.
 
     Returns:
         folder_path string or None if creation failed.
@@ -94,10 +99,26 @@ def ensure_output_folder(drpid: int) -> Optional[str]:
     from utils.file_utils import create_output_folder
 
     result = get_result_by_drpid()
-    if drpid in result and result[drpid].get("folder_path"):
+    if recreate:
+        result.pop(drpid, None)
+    elif drpid in result and result[drpid].get("folder_path"):
         return result[drpid]["folder_path"]
+
+    if not recreate:
+        _ensure_storage()
+        from storage import Storage
+
+        record = Storage.get(drpid) or {}
+        stored = (record.get("folder_path") or "").strip()
+        if stored:
+            path = Path(stored)
+            if path.is_dir():
+                path_str = str(path)
+                result[drpid] = {"folder_path": path_str}
+                return path_str
+
     base_path = get_base_output_dir()
-    folder_path = create_output_folder(base_path, drpid)
+    folder_path = create_output_folder(base_path, drpid, recreate=recreate)
     if not folder_path:
         return None
     path_str = str(folder_path)

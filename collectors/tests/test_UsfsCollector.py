@@ -337,6 +337,109 @@ class TestUsfsCollector(unittest.TestCase):
         except OSError:
             pass
 
+    @patch("collectors.UsfsCollector.create_output_folder")
+    @patch("collectors.UsfsCollector.Storage")
+    def test_resolve_collection_folder_metadata_only_uses_stored_path(
+        self,
+        mock_storage: MagicMock,
+        mock_create_folder: MagicMock,
+    ) -> None:
+        folder = Path(__file__).parent / "_tmp_usfs_meta_only_path"
+        folder.mkdir(exist_ok=True)
+        try:
+            mock_storage.get.return_value = {"folder_path": str(folder)}
+            collector = UsfsCollector()
+            path = collector._resolve_collection_folder(1, metadata_only=True)
+            self.assertEqual(path, folder)
+            mock_create_folder.assert_not_called()
+        finally:
+            folder.rmdir()
+
+    @patch("collectors.UsfsCollector.create_output_folder")
+    @patch("collectors.UsfsCollector.Storage")
+    def test_resolve_collection_folder_metadata_only_creates_without_recreate(
+        self,
+        mock_storage: MagicMock,
+        mock_create_folder: MagicMock,
+    ) -> None:
+        folder = Path(__file__).parent / "_tmp_usfs_meta_only_new"
+        mock_create_folder.return_value = folder
+        mock_storage.get.return_value = {}
+        collector = UsfsCollector()
+        path = collector._resolve_collection_folder(5, metadata_only=True)
+        self.assertEqual(path, folder)
+        mock_create_folder.assert_called_once()
+        args, kwargs = mock_create_folder.call_args
+        self.assertEqual(args[1], 5)
+        self.assertFalse(kwargs.get("recreate", True))
+
+    @patch("collectors.UsfsCollector._fetch_usfs_page_body")
+    @patch("collectors.UsfsCollector.Storage")
+    def test_collect_metadata_only_skips_publication_downloads(
+        self,
+        mock_storage: MagicMock,
+        mock_fetch: MagicMock,
+    ) -> None:
+        folder = Path(__file__).parent / "_tmp_usfs_meta_only_collect"
+        folder.mkdir(exist_ok=True)
+        marker = folder / "keep.dat"
+        marker.write_bytes(b"stay")
+        Args._config["usfs_metadata_only"] = True
+        mock_storage.get.return_value = {
+            "source_url": "https://www.fs.usda.gov/rds/archive/catalog/RDS-2020-0001",
+            "folder_path": str(folder),
+        }
+        detail_html = "<html><head><title>T</title></head><body><h1>T</h1></body></html>"
+        mock_fetch.return_value = (200, detail_html, "text/html", False)
+
+        collector = UsfsCollector()
+        page_downloader = MagicMock()
+        with patch.object(collector, "_save_page_pdfs"), patch.object(
+            collector,
+            "_process_publication_files",
+            return_value=([], 0, set(), False),
+        ) as mock_process, patch(
+            "collectors.UsfsCollector.parse_data_access_links",
+            return_value={
+                "publication_files": [("data.zip", "https://example.com/data.zip", 1024)],
+                "metadata_url": "",
+                "fileindex_url": "",
+                "external_archive_url": "",
+            },
+        ), patch(
+            "collectors.UsfsCollector.parse_detail_page",
+            return_value={"title": "T"},
+        ), patch(
+            "collectors.UsfsCollector.rds_id_from_source_url",
+            return_value=None,
+        ), patch(
+            "collectors.UsfsCollector.merge_usfs_metadata",
+            return_value={"title": "T"},
+        ), patch(
+            "collectors.UsfsCollector.infer_data_types",
+            return_value="",
+        ), patch(
+            "collectors.UsfsCollector.normalize_geographic_metadata",
+        ) as mock_geo:
+            mock_geo.return_value.geographic_coverage = ""
+            mock_geo.return_value.warnings = []
+            collector._collect(
+                "https://www.fs.usda.gov/rds/archive/catalog/RDS-2020-0001",
+                1,
+                page_downloader,
+            )
+
+        mock_process.assert_called_once()
+        self.assertFalse(mock_process.call_args.kwargs.get("download", True))
+        page_downloader.download_file.assert_not_called()
+        self.assertTrue(marker.exists())
+        Args._config["usfs_metadata_only"] = False
+        try:
+            marker.unlink(missing_ok=True)
+            folder.rmdir()
+        except OSError:
+            pass
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -74,6 +74,7 @@ class Args(metaclass=ArgsMeta):
         "base_output_dir": r"C:\Documents\DataRescue\DRPData",
         "delete_all_db_entries": False,
         "max_workers": 1,  # Parallel projects when > 1 (e.g. collector); 1 = sequential
+        "usfs_metadata_only": False,  # USFS: harvest metadata/PDFs only; skip publication downloads; keep folder
         "download_timeout_ms": 30 * 60 * 1000,  # 30 min for large datasets; increase for 10GB+
         "use_url_download": True,  # Get URL from Playwright then download with requests (progress/resume)
         "socrata_app_token": None,  # Optional; set in config for direct Socrata API download (avoids 403)
@@ -219,6 +220,11 @@ class Args(metaclass=ArgsMeta):
             no_use_url_download: bool = typer.Option(False, "--no-use-url-download", help="Use Playwright save_as instead of capturing URL and downloading with requests (no progress/resume)."),
             log_color: bool = typer.Option(False, "--log-color", help="Color the log severity in terminal (DEBUG=gray, WARNING=orange, ERROR=red, exception=purple). Only applies when stdout is a TTY."),
             sourcing_mode: Optional[str] = typer.Option(None, "--sourcing-mode", help="Row filter for sourcing: unclaimed (default), completed (Download Location filled), all"),
+            usfs_metadata_only: bool = typer.Option(
+                False,
+                "--usfs-metadata-only",
+                help="USFS collector: update metadata and page PDFs only; skip publication file downloads and preserve the output folder",
+            ),
         ) -> None:
             """Callback to capture Typer parsed values."""
             parsed_values["module"] = module
@@ -248,6 +254,8 @@ class Args(metaclass=ArgsMeta):
                 parsed_values["log_color"] = True
             if sourcing_mode is not None:
                 parsed_values["sourcing_mode"] = sourcing_mode
+            if usfs_metadata_only:
+                parsed_values["usfs_metadata_only"] = True
 
         # Use a single @app.command() so the first positional (module) is not treated as a
         # subcommand. A Group would require the first token to match a subcommand.

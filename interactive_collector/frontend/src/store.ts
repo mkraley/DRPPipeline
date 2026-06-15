@@ -45,6 +45,7 @@ interface CollectorState {
   noLinksModalOpen: boolean;
   skipModalOpen: boolean;
   downloadsWatcherActive: boolean;
+  deleteFolderOnLoad: boolean;
 }
 
 interface CollectorActions {
@@ -63,9 +64,31 @@ interface CollectorActions {
   skip: (reason: string) => Promise<void>;
   startDownloadsWatcher: () => Promise<void>;
   stopDownloadsWatcher: () => Promise<void>;
+  setDeleteFolderOnLoad: (value: boolean) => void;
 }
 
 const API = "/api";
+const DELETE_FOLDER_ON_LOAD_KEY = "ic_delete_folder_on_load";
+
+function readDeleteFolderOnLoad(): boolean {
+  try {
+    const stored = localStorage.getItem(DELETE_FOLDER_ON_LOAD_KEY);
+    if (stored === null) {
+      return true;
+    }
+    return stored !== "0" && stored !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function writeDeleteFolderOnLoad(value: boolean): void {
+  try {
+    localStorage.setItem(DELETE_FOLDER_ON_LOAD_KEY, value ? "1" : "0");
+  } catch {
+    // ignore
+  }
+}
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -132,6 +155,12 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
   noLinksModalOpen: false,
   skipModalOpen: false,
   downloadsWatcherActive: false,
+  deleteFolderOnLoad: readDeleteFolderOnLoad(),
+
+  setDeleteFolderOnLoad: (value) => {
+    writeDeleteFolderOnLoad(value);
+    set({ deleteFolderOnLoad: value });
+  },
 
   setDrpid: (v) => set({ drpid: v }),
 
@@ -304,7 +333,10 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
       }>(`${API}/projects/load`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ drpid }),
+        body: JSON.stringify({
+          drpid,
+          delete_folder_on_load: get().deleteFolderOnLoad,
+        }),
       });
       applyLoadResult(data, set);
     } catch (e) {
@@ -331,7 +363,9 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
       }>(`${API}/projects/load`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          delete_folder_on_load: get().deleteFolderOnLoad,
+        }),
       });
       applyLoadResult(data, set);
     } catch {

@@ -173,15 +173,36 @@ def _get_project_by_drpid(flask_app: Flask, drpid: int) -> Optional[Dict[str, An
     return Storage.get(drpid)
 
 
-def _ensure_output_folder_for_drpid(flask_app: Flask, drpid: int) -> Optional[str]:
+def _ensure_output_folder_for_drpid(
+    flask_app: Flask,
+    drpid: int,
+    *,
+    recreate: bool = True,
+) -> Optional[str]:
     """
-    Create or empty the output folder for this DRPID; store in _result (no DB update yet).
+    Create or resolve the output folder for this DRPID; store in _result (no DB update yet).
     Returns folder_path string or None if creation failed.
     """
-    if drpid in _result_by_drpid and _result_by_drpid[drpid].get("folder_path"):
+    if not recreate and drpid in _result_by_drpid and _result_by_drpid[drpid].get("folder_path"):
         return _result_by_drpid[drpid]["folder_path"]
+
+    if recreate:
+        _result_by_drpid.pop(drpid, None)
+    elif not recreate:
+        _ensure_storage(flask_app)
+        from storage import Storage
+
+        record = Storage.get(drpid) or {}
+        stored = (record.get("folder_path") or "").strip()
+        if stored:
+            path = Path(stored)
+            if path.is_dir():
+                path_str = str(path)
+                _result_by_drpid[drpid] = {"folder_path": path_str}
+                return path_str
+
     base_path = _get_base_output_dir()
-    folder_path = create_output_folder(base_path, drpid)
+    folder_path = create_output_folder(base_path, drpid, recreate=recreate)
     if not folder_path:
         return None
     path_str = str(folder_path)
