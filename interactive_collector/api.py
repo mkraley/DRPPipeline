@@ -205,6 +205,22 @@ def _unique_pdf_basename_for_folder(base: str, folder_path: Path) -> str:
     return _unique_basename_for_folder(base, folder_path, ".pdf")
 
 
+def _basename_for_saved_page(page_title: str, url: str, *, default: str = "page") -> str:
+    """Sanitized basename (no extension) from page title, or URL-derived fallback."""
+    title = (page_title or "").strip()
+    if title:
+        return sanitize_filename(title, max_length=80) or default
+
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    path = (parsed.path or "").rstrip("/")
+    base = path.split("/")[-1] if path else (parsed.netloc or default).split(".")[0]
+    if not base or len(base) > 80:
+        base = (parsed.netloc or default).split(".")[0] or default
+    return sanitize_filename(base, max_length=80) if base else default
+
+
 @api_bp.route("/extension/save-pdf", methods=["POST", "OPTIONS"])
 def extension_save_pdf() -> Any:
     """
@@ -247,16 +263,7 @@ def extension_save_pdf() -> Any:
         return {"error": "output folder not found"}, 400
 
     # Prefer page title from extension for a helpful filename; fallback to URL-derived base
-    from urllib.parse import urlparse
-    if page_title and len(page_title) <= 80:
-        base = sanitize_filename(page_title, max_length=80) or "page"
-    else:
-        parsed = urlparse(url)
-        path = (parsed.path or "").rstrip("/")
-        base = path.split("/")[-1] if path else (parsed.netloc or "page").split(".")[0]
-        if not base or len(base) > 80:
-            base = (parsed.netloc or "page").split(".")[0] or "page"
-        base = sanitize_filename(base, max_length=80) if base else "page"
+    base = _basename_for_saved_page(page_title, url)
     if base.lower().endswith(".pdf"):
         base = base[:-4].rstrip("._")
     if not base:
@@ -351,17 +358,7 @@ def extension_save_markdown() -> Any:
     if not folder_path.is_dir():
         return {"error": "output folder not found"}, 400
 
-    from urllib.parse import urlparse
-
-    if page_title and len(page_title) <= 80:
-        base = sanitize_filename(page_title, max_length=80) or "page"
-    else:
-        parsed = urlparse(url)
-        path = (parsed.path or "").rstrip("/")
-        base = path.split("/")[-1] if path else (parsed.netloc or "page").split(".")[0]
-        if not base or len(base) > 80:
-            base = (parsed.netloc or "page").split(".")[0] or "page"
-        base = sanitize_filename(base, max_length=80) if base else "page"
+    base = _basename_for_saved_page(page_title, url)
     if not base:
         base = "page"
     basename = _unique_basename_for_folder(base, folder_path, ".md")

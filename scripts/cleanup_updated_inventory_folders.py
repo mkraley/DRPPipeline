@@ -1,7 +1,7 @@
 """
-Delete on-disk project folders for rows with status ``updated_inventory`` and no errors.
+Delete on-disk project folders and clear ``folder_path`` for ``updated_inventory`` rows.
 
-Dry-run is the default (lists folders only). Use ``--execute`` to delete.
+Dry-run is the default (lists folders only). Use ``--execute`` to delete and update DB.
 
 From repo root:
 
@@ -28,8 +28,8 @@ sys.path.insert(0, str(REPO_ROOT))
 from utils.file_utils import format_file_size  # noqa: E402
 from utils.project_folder_cleanup import (  # noqa: E402
     evaluate_project_folder,
+    folder_path_can_be_cleared,
     folder_size_bytes,
-    row_has_no_errors,
     try_delete_project_folder,
 )
 
@@ -40,7 +40,8 @@ CANDIDATES_SQL = """
 SELECT DRPID, folder_path, status, errors
 FROM projects
 WHERE status = ?
-  AND (errors IS NULL OR TRIM(errors) = '')
+  AND folder_path IS NOT NULL
+  AND TRIM(folder_path) != ''
 ORDER BY DRPID
 """
 
@@ -50,7 +51,7 @@ class FolderCleanupRow:
     drpid: int
     folder_path: Path
     size_bytes: Optional[int]
-    note: str
+    note: str  # delete | clear_db | skip — ...
 
 
 def fetch_candidates(conn: sqlite3.Connection) -> List[sqlite3.Row]:
@@ -66,8 +67,6 @@ def plan_cleanups(
 ) -> List[FolderCleanupRow]:
     planned: List[FolderCleanupRow] = []
     for row in rows:
-        if not row_has_no_errors(row["errors"]):
-            continue
         drpid = int(row["DRPID"])
         decision = evaluate_project_folder(
             drpid,
@@ -83,38 +82,49 @@ def plan_cleanups(
                 except OSError:
                     size = None
             planned.append(FolderCleanupRow(drpid, path, size, "delete"))
+        elif decision.message == "path does not exist":
+            planned.append(FolderCleanupRow(drpid, path, None, "clear_db"))
         else:
             planned.append(FolderCleanupRow(drpid, path, None, f"skip — {decision.message}"))
     return planned
 
 
+def clear_folder_path(conn: sqlite3.Connection, drpid: int) -> None:
+    conn.execute(
+        "UPDATE projects SET folder_path = NULL WHERE DRPID = ?",
+        (drpid,),
+    )
+
+
 def print_plan(planned: Iterable[FolderCleanupRow], *, execute: bool) -> None:
-    to_delete: List[FolderCleanupRow] = []
-    skipped = 0
-    for item in planned:
-        if item.note == "delete":
-            to_delete.append(item)
-        else:
-            skipped += 1
+    to_delete = [p for p in planned if p.note == "delete"]
+    to_clear = [p for p in planned if p.note == "clear_db"]
+    skipped = len(planned) - len(to_delete) - len(to_clear)
 
     mode = "EXECUTE" if execute else "DRY RUN"
-    print(f"{mode}: {len(to_delete)} folder(s) to delete, {skipped} skipped")
+    print(
+        f"{mode}: {len(to_delete)} folder(s) to delete, "
+        f"{len(to_clear)} row(s) to clear in DB, {skipped} skipped"
+    )
     print()
 
     for item in to_delete:
         size_part = ""
         if item.size_bytes is not None:
             size_part = f" ({format_file_size(item.size_bytes)})"
-        print(f"  DRPID {item.drpid:6d}  {item.folder_path}{size_part}")
+        print(f"  DRPID {item.drpid:6d}  delete  {item.folder_path}{size_part}")
+
+    for item in to_clear:
+        print(f"  DRPID {item.drpid:6d}  clear_db  {item.folder_path}")
 
     for item in planned:
-        if item.note != "delete":
+        if item.note.startswith("skip"):
             path_display = item.folder_path if item.folder_path.parts else "(none)"
             print(f"  DRPID {item.drpid:6d}  {path_display}  — {item.note}")
 
-    if not execute and to_delete:
+    if not execute and (to_delete or to_clear):
         print()
-        print("Re-run with --execute to delete the folders listed above.")
+        print("Re-run with --execute to apply the actions listed above.")
 
 
 def run_cleanup(
@@ -130,40 +140,55 @@ def run_cleanup(
             fetch_candidates(conn),
             compute_size=compute_size,
         )
+        to_delete = [p for p in planned if p.note == "delete"]
+        to_clear = [p for p in planned if p.note == "clear_db"]
+        skipped = len(planned) - len(to_delete) - len(to_clear)
+
+        print_plan(planned, execute=execute)
+
+        if not execute:
+            return 0
+
+        deleted = 0
+        cleared = 0
+        failed = 0
+        for item in to_delete:
+            result = try_delete_project_folder(item.drpid, str(item.folder_path))
+            if folder_path_can_be_cleared(result):
+                clear_folder_path(conn, item.drpid)
+                cleared += 1
+                if result.deleted:
+                    deleted += 1
+                    print(f"  deleted DRPID {item.drpid}: {item.folder_path}")
+                else:
+                    print(f"  cleared DRPID {item.drpid}: {item.folder_path} (already absent)")
+            else:
+                failed += 1
+                print(
+                    f"  FAILED DRPID {item.drpid}: {item.folder_path} — {result.message}",
+                    file=sys.stderr,
+                )
+
+        for item in to_clear:
+            clear_folder_path(conn, item.drpid)
+            cleared += 1
+            print(f"  cleared DRPID {item.drpid}: {item.folder_path}")
+
+        conn.commit()
+
+        print()
+        print(
+            f"Done: {deleted} deleted, {cleared} cleared in DB, {failed} failed, {skipped} skipped"
+        )
+        return 1 if failed else 0
     finally:
         conn.close()
-
-    to_delete = [p for p in planned if p.note == "delete"]
-    skipped = len(planned) - len(to_delete)
-
-    print_plan(planned, execute=execute)
-
-    if not execute:
-        return 0
-
-    failed = 0
-    for item in to_delete:
-        result = try_delete_project_folder(item.drpid, str(item.folder_path))
-        if result.deleted:
-            print(f"  deleted DRPID {item.drpid}: {item.folder_path}")
-        else:
-            failed += 1
-            print(
-                f"  FAILED DRPID {item.drpid}: {item.folder_path} — {result.message}",
-                file=sys.stderr,
-            )
-
-    print()
-    print(
-        f"Done: {len(to_delete) - failed} deleted, {failed} failed, {skipped} skipped"
-    )
-    return 1 if failed else 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Delete project folders for updated_inventory rows with no errors "
+            "Delete project folders and clear folder_path for updated_inventory rows "
             "(dry-run by default)"
         )
     )

@@ -81,13 +81,14 @@ def get_project_by_drpid(drpid: int) -> Optional[Dict[str, Any]]:
     return Storage.get(drpid)
 
 
-def ensure_output_folder(drpid: int, *, recreate: bool = True) -> Optional[str]:
+def ensure_output_folder(drpid: int, *, recreate: bool = False) -> Optional[str]:
     """
     Create or resolve the output folder for this DRPID; store in result state.
 
-    When ``recreate`` is True (default), any existing folder is removed first.
-    When False, uses ``folder_path`` from Storage when present, otherwise creates
-    the folder without deleting existing contents.
+    By default (``recreate=False``), reuses the in-memory path, Storage
+    ``folder_path``, or an existing ``DRP######`` directory without deleting files.
+    Only ``/api/projects/load`` passes ``recreate=True`` when the user opts to
+    delete the folder on load.
 
     Args:
         drpid: Project identifier.

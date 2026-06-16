@@ -96,3 +96,14 @@ def try_delete_project_folder(
         decision.folder_path,
         f"deleted {decision.folder_path}",
     )
+
+
+def folder_path_can_be_cleared(result: FolderDeleteResult) -> bool:
+    """
+    True when ``folder_path`` should be cleared from Storage after inventory update.
+
+    The on-disk folder was deleted successfully, or was already absent for a safe path.
+    """
+    if result.deleted:
+        return True
+    return result.message == "path does not exist" and result.folder_path is not None

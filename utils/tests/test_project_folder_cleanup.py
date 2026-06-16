@@ -6,6 +6,7 @@ from pathlib import Path
 
 from utils.project_folder_cleanup import (
     evaluate_project_folder,
+    folder_path_can_be_cleared,
     row_has_no_errors,
     try_delete_project_folder,
 )
@@ -32,6 +33,14 @@ class TestProjectFolderCleanup(unittest.TestCase):
         result = try_delete_project_folder(1, r"C:\no\such\DRP000001")
         self.assertFalse(result.deleted)
         self.assertIn("does not exist", result.message)
+        self.assertTrue(folder_path_can_be_cleared(result))
+
+    def test_folder_path_can_be_cleared_after_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "DRP000002"
+            folder.mkdir()
+            result = try_delete_project_folder(2, str(folder))
+            self.assertTrue(folder_path_can_be_cleared(result))
 
     def test_evaluate_project_folder_with_size(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

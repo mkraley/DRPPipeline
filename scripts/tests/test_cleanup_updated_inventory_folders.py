@@ -22,7 +22,7 @@ class TestCleanupUpdatedInventoryFolders(unittest.TestCase):
         self.assertTrue(row_has_no_errors("   "))
         self.assertFalse(row_has_no_errors("upload failed"))
 
-    def test_fetch_candidates_filters_status_and_errors(self) -> None:
+    def test_fetch_candidates_filters_status_and_folder_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "test.db"
             conn = sqlite3.connect(db_path)
@@ -43,12 +43,13 @@ class TestCleanupUpdatedInventoryFolders(unittest.TestCase):
                     (1, "updated_inventory", None, r"C:\data\DRP000001"),
                     (2, "updated_inventory", "oops", r"C:\data\DRP000002"),
                     (3, "uploaded", None, r"C:\data\DRP000003"),
+                    (4, "updated_inventory", None, None),
                 ],
             )
             conn.commit()
             rows = fetch_candidates(conn)
             conn.close()
-            self.assertEqual([r["DRPID"] for r in rows], [1])
+            self.assertEqual([r["DRPID"] for r in rows], [1, 2])
 
     def test_plan_cleanups_skips_missing_folder(self) -> None:
         planned = plan_cleanups(
@@ -61,7 +62,7 @@ class TestCleanupUpdatedInventoryFolders(unittest.TestCase):
             ],
             compute_size=False,
         )
-        self.assertEqual(planned[0].note, "skip — path does not exist")
+        self.assertEqual(planned[0].note, "clear_db")
 
     def test_plan_cleanups_ready_to_delete(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

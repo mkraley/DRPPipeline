@@ -16,7 +16,10 @@ from utils.Args import Args
 from utils.project_utils import get_field
 from utils.Errors import record_crash, record_error
 from utils.Logger import Logger
-from utils.project_folder_cleanup import row_has_no_errors, try_delete_project_folder
+from utils.project_folder_cleanup import (
+    folder_path_can_be_cleared,
+    try_delete_project_folder,
+)
 
 
 # Published project URL template (same as Download Location in chiara_upload update_google_sheet)
@@ -245,7 +248,7 @@ class DataLumosPublisher:
     def _delete_project_folder_after_inventory_update(self, drpid: int) -> None:
         """
         After a successful sheet update to ``updated_inventory``, delete the
-        on-disk project folder when the row has no errors.
+        on-disk project folder and clear ``folder_path`` in Storage.
         """
         project = Storage.get(drpid)
         if project is None:
@@ -260,17 +263,20 @@ class DataLumosPublisher:
             )
             return
 
-        if not row_has_no_errors(project.get("errors")):
-            Logger.info(
-                "Skipping folder delete for DRPID=%s: errors present",
-                drpid,
-            )
+        folder_path_raw = get_field(project, "folder_path")
+        if not folder_path_raw or not str(folder_path_raw).strip():
             return
 
-        result = try_delete_project_folder(drpid, get_field(project, "folder_path"))
+        result = try_delete_project_folder(drpid, folder_path_raw)
         if result.deleted:
             Logger.info(
                 "Deleted project folder for DRPID=%s: %s",
+                drpid,
+                result.folder_path,
+            )
+        elif folder_path_can_be_cleared(result):
+            Logger.info(
+                "Project folder already absent for DRPID=%s: %s",
                 drpid,
                 result.folder_path,
             )
@@ -280,6 +286,9 @@ class DataLumosPublisher:
                 drpid,
                 result.message,
             )
+            return
+
+        Storage.update_record(drpid, {"folder_path": None})
 
     def _project_url(self, workspace_id: str) -> str:
         """Build URL for a DataLumos project page."""

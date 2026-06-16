@@ -283,8 +283,8 @@ class TestAppRoutes(unittest.TestCase):
             False,
         )
         project = {"DRPID": 7, "source_url": "https://catalog.data.gov/dataset/foo"}
-        # list_eligible_projects: _ensure_storage, _get_first_eligible, then _get_project_by_drpid -> _ensure_storage
-        mock_storage_cls.list_eligible_projects.side_effect = [[], [project], []]
+        # list_eligible_projects: _ensure_storage (index), first eligible, _ensure_output_folder, metadata
+        mock_storage_cls.list_eligible_projects.side_effect = [[], [project], [], []]
         mock_storage_cls.get.return_value = project
 
         response = self.client.get("/legacy/")

@@ -74,7 +74,8 @@
     return (h && typeof h === "string") ? h.trim() : "";
   }
 
-  function extractMetadataFromPage() {
+  function extractMetadataFromPage(options) {
+    var allowDocumentTitle = !options || options.allowDocumentTitle !== false;
     var meta = {};
     var el;
     var isCms = isCmsDomain();
@@ -127,7 +128,7 @@
       el = doc.querySelector("h2.asset-name");
       if (el) meta.title = getElementText(el);
     }
-    if (!meta.title && doc.title) meta.title = doc.title.trim();
+    if (!meta.title && allowDocumentTitle && doc.title) meta.title = doc.title.trim();
 
     if (!meta.summary) {
       el = doc.querySelector("div.description-section");
@@ -171,6 +172,25 @@
     var today = new Date();
     meta.download_date = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0") + "-" + String(today.getDate()).padStart(2, "0");
     return meta;
+  }
+
+  /** Title from on-page metadata fields (not the HTML document title). */
+  function metadataTitleFromPage() {
+    return (extractMetadataFromPage({ allowDocumentTitle: false }).title || "").trim();
+  }
+
+  function titleForSavedPage(sourcePageUrl) {
+    if (sourcePageUrl) {
+      var currentKey = urlOriginAndPath(window.location.href);
+      var sourceKey = urlOriginAndPath(sourcePageUrl);
+      if (currentKey === sourceKey) {
+        var fieldTitle = metadataTitleFromPage();
+        if (fieldTitle) {
+          return fieldTitle;
+        }
+      }
+    }
+    return (document.title || "").trim() || "";
   }
 
   function urlHost(u) {
@@ -588,7 +608,7 @@
       trustedClicksForPdfExpansion();
       var storedMd;
       try {
-        storedMd = await chrome.storage.local.get(["drpid", "collectorBase"]);
+        storedMd = await chrome.storage.local.get(["drpid", "collectorBase", "sourcePageUrl"]);
       } catch (e) {
         if (e && e.message && String(e.message).indexOf("invalidated") !== -1) {
           showToast("Extension was reloaded. Refresh this page and use Copy & Open again.", true);
@@ -621,7 +641,7 @@
           drpidMd,
           window.location.href,
           (document.referrer || "").trim() || "",
-          (document.title || "").trim() || "",
+          titleForSavedPage(storedMd.sourcePageUrl),
           htmlFrag
         );
         var okT = dataMd.table_expand_ok;
@@ -661,7 +681,7 @@
       trustedClicksForPdfExpansion();
       var stored;
       try {
-        stored = await chrome.storage.local.get(["drpid", "collectorBase"]);
+        stored = await chrome.storage.local.get(["drpid", "collectorBase", "sourcePageUrl"]);
       } catch (e) {
         if (e && e.message && String(e.message).indexOf("invalidated") !== -1) {
           showToast("Extension was reloaded. Refresh this page and use Copy & Open again.", true);
@@ -678,6 +698,7 @@
       btn.disabled = true;
       btn.textContent = "Saving...";
       showToast("Expanding content...", false);
+      var pdfTitle = titleForSavedPage(stored.sourcePageUrl);
       try {
         injectPageScript();
         await runExpandForPdf();
@@ -692,7 +713,7 @@
           drpid,
           url: window.location.href,
           referrer: (document.referrer || "").trim() || "",
-          title: (document.title || "").trim() || "",
+          title: pdfTitle,
         });
         if (res && res.ok) {
           showToast("Saved: " + (res.filename || "OK"), false);
@@ -712,7 +733,7 @@
             url: window.location.href,
             referrer: (document.referrer || "").trim() || "",
             pdfBase64,
-            title: (document.title || "").trim() || "",
+            title: pdfTitle,
           });
           if (r2 && r2.ok) {
             showToast("Saved: " + (r2.filename || "OK"), false);
@@ -739,7 +760,7 @@
                 url: window.location.href,
                 referrer: (document.referrer || "").trim() || "",
                 pdfBase64,
-                title: (document.title || "").trim() || "",
+                title: pdfTitle,
               });
               if (r2 && r2.ok) {
                 showToast("Saved: " + (r2.filename || "OK"), false);

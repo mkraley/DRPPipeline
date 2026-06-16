@@ -177,10 +177,12 @@ def _ensure_output_folder_for_drpid(
     flask_app: Flask,
     drpid: int,
     *,
-    recreate: bool = True,
+    recreate: bool = False,
 ) -> Optional[str]:
     """
     Create or resolve the output folder for this DRPID; store in _result (no DB update yet).
+
+    Defaults to preserving an existing folder; pass ``recreate=True`` to empty first.
     Returns folder_path string or None if creation failed.
     """
     if not recreate and drpid in _result_by_drpid and _result_by_drpid[drpid].get("folder_path"):

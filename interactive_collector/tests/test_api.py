@@ -110,6 +110,20 @@ class TestApiProjectsLoad(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         mock_ensure.assert_called_once_with(1, recreate=False)
 
+    def test_projects_load_delete_folder_on_load_true(self) -> None:
+        """POST /api/projects/load with delete_folder_on_load true empties the folder."""
+        proj = {"DRPID": 1, "source_url": "https://example.com/dataset"}
+        with patch("interactive_collector.api.get_project_by_drpid", return_value=proj):
+            with patch("interactive_collector.api.ensure_output_folder") as mock_ensure:
+                mock_ensure.return_value = "C:\\out\\1"
+                resp = self.client.post(
+                    "/api/projects/load",
+                    json={"drpid": 1, "delete_folder_on_load": True},
+                    content_type="application/json",
+                )
+        self.assertEqual(resp.status_code, 200)
+        mock_ensure.assert_called_once_with(1, recreate=True)
+
     def test_projects_load_invalid_drpid_returns_400(self) -> None:
         """POST /api/projects/load with invalid drpid returns 400."""
         resp = self.client.post(
@@ -401,6 +415,29 @@ class TestApiExtensionSavePdf(unittest.TestCase):
             data = json.loads(resp.data)
             self.assertEqual(data.get("ok"), True)
             self.assertIn("filename", data)
+
+    def test_extension_save_pdf_names_file_from_metadata_title(self) -> None:
+        """Long metadata-style titles are sanitized to 80 chars for the PDF basename."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("interactive_collector.api.get_result_by_drpid", return_value={1: {"folder_path": None}}):
+                with patch("interactive_collector.api.ensure_output_folder", return_value=tmpdir):
+                    with open(Path(__file__).parent / "test_api.py", "rb") as fake_pdf:
+                        resp = self.client.post(
+                            "/api/extension/save-pdf",
+                            data={
+                                "drpid": "1",
+                                "url": "https://example.com/catalog/dataset-123",
+                                "title": "Sample Dataset Title With Many Words " + ("x" * 80),
+                                "pdf": (fake_pdf, "page.pdf"),
+                            },
+                            content_type="multipart/form-data",
+                        )
+            self.assertEqual(resp.status_code, 200)
+            data = json.loads(resp.data)
+            filename = data.get("filename", "")
+            self.assertTrue(filename.endswith(".pdf"))
+            self.assertIn("Sample_Dataset_Title", filename)
+            self.assertNotIn("dataset-123", filename)
 
 
 class TestApiExtensionSaveMarkdown(unittest.TestCase):

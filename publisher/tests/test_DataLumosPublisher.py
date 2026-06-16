@@ -359,6 +359,7 @@ class TestDataLumosPublisher(unittest.TestCase):
         record = Storage.get(drpid)
         self.assertEqual(record.get("status"), "updated_inventory")
         self.assertFalse(project_dir.exists())
+        self.assertNotIn("folder_path", record)
 
     @patch.object(
         DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None

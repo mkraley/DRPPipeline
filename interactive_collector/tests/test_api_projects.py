@@ -45,6 +45,19 @@ class TestEnsureOutputFolder(unittest.TestCase):
         self.assertTrue(marker.exists())
         self.assertEqual(marker.read_text(encoding="utf-8"), "stay")
 
+    @patch("interactive_collector.api_projects.get_base_output_dir")
+    def test_default_resolve_preserves_existing_files(self, mock_base: unittest.mock.Mock) -> None:
+        """Fallback ensure_output_folder() must not wipe when recreate is omitted."""
+        mock_base.return_value = self.tmpdir
+        folder = self.tmpdir / "DRP000010"
+        folder.mkdir(parents=True)
+        marker = folder / "keep.txt"
+        marker.write_text("stay", encoding="utf-8")
+
+        path = ensure_output_folder(10)
+        self.assertEqual(path, str(folder))
+        self.assertTrue(marker.exists())
+
     @patch("interactive_collector.api_projects._ensure_storage")
     def test_recreate_false_uses_storage_folder_path(
         self,

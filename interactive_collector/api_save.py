@@ -120,6 +120,9 @@ def _run_pdf_worker(
     urls: List[str],
     indices: List[str],
     progress_queue: "queue.Queue[Tuple[str, ...]]",
+    *,
+    source_url: str = "",
+    metadata_title: str = "",
 ) -> None:
     """Run Playwright PDF generation and put progress items on the queue."""
     from playwright.sync_api import sync_playwright
@@ -154,7 +157,14 @@ def _run_pdf_worker(
                         except Exception:
                             pass
                         page.wait_for_timeout(2000)  # extra for post-load paint
-                        base = page_title_or_h1(page, url)
+                        if (
+                            source_url
+                            and url.strip() == source_url.strip()
+                            and metadata_title.strip()
+                        ):
+                            base = sanitize_filename(metadata_title.strip(), max_length=80) or "page"
+                        else:
+                            base = page_title_or_h1(page, url)
                         if not base:
                             base = "page"
                         pdf_name = unique_pdf_basename(base, used_basenames, folder_path)
@@ -192,9 +202,20 @@ def generate_save_progress(
     stats) to Storage after PDFs are written, so one save happens after the folder is final.
     """
     progress_queue: queue.Queue[Tuple[str, ...]] = queue.Queue()
+    source_url = ""
+    metadata_title = (metadata or {}).get("title", "") if metadata else ""
+    if drpid is not None:
+        try:
+            from storage import Storage
+
+            record = Storage.get(drpid) or {}
+            source_url = (record.get("source_url") or "").strip()
+        except Exception:
+            source_url = ""
     worker = threading.Thread(
         target=_run_pdf_worker,
         args=(folder_path, urls, indices, progress_queue),
+        kwargs={"source_url": source_url, "metadata_title": metadata_title},
         daemon=True,
     )
     worker.start()
