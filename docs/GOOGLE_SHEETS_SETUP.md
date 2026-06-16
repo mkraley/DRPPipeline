@@ -75,7 +75,7 @@ Use `google_sheet_id` and `google_sheet_name` in config; the same sheet and tab 
 
 ## How It Works
 
-- After successful publishing, the script searches for the row in the Google Sheet by matching the source URL against the **URL** column (case-insensitive, flexible match)
+- After successful publishing, the script searches for the row in the Google Sheet by matching the source URL against the **URL** column (case-insensitive, **exact** match after trimming). Catalog URL variants (e.g. `RDS-2022-0015` vs `RDS-2022-0015-4`) are treated as different rows; if no exact match is found, a new row is appended.
 - If a matching row is found, it updates the following columns (by header name; column letters may vary):
   - **Claimed** — writes `google_username`
   - **Data Added** — writes "Y"

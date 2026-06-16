@@ -70,8 +70,8 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         )
         self.assertEqual(row, 3)
 
-    def test_find_row_by_url_longest_prefix_when_no_exact(self) -> None:
-        """With no exact row, choose the sheet row whose URL is the longest strict prefix of source."""
+    def test_find_row_by_url_no_prefix_match_when_no_exact(self) -> None:
+        """Prefix-only URLs do not match; caller should append a new row."""
         updater = GoogleSheetUpdater()
         mock_service = MagicMock()
         full = "https://data.cms.gov/a/b/c/d"
@@ -81,10 +81,10 @@ class TestGoogleSheetUpdater(unittest.TestCase):
             "values": [[short], [mid]]
         }
         row = updater._find_row_by_url(mock_service, "sheet1", "CDC", "A", full)
-        self.assertEqual(row, 3)
+        self.assertIsNone(row)
 
-    def test_find_row_by_url_shortest_extension_when_source_prefix_of_cell(self) -> None:
-        """When source is a strict prefix of sheet URLs, pick the shortest extending cell."""
+    def test_find_row_by_url_no_extension_match_when_source_prefix_of_cell(self) -> None:
+        """Source URL that is a prefix of a sheet cell does not match."""
         updater = GoogleSheetUpdater()
         mock_service = MagicMock()
         src = "https://data.cms.gov/a/b"
@@ -94,7 +94,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
             "values": [[ext2], [ext1]]
         }
         row = updater._find_row_by_url(mock_service, "sheet1", "CDC", "A", src)
-        self.assertEqual(row, 3)
+        self.assertIsNone(row)
 
     def test_find_row_by_url_no_match(self) -> None:
         """Unrelated URLs do not match via substring."""
