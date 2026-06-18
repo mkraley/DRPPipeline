@@ -451,6 +451,7 @@
    * user's Save click. After `await chrome.storage…` or `await runExpandForPdf()`, user
    * activation is gone and React/DOL may ignore clicks dispatched from injected page.js.
    * DOL: <a class="showMore" id="showMore" tabindex="0">+Show all data fields</a>
+   * EDI: <div class="pasta-more pasta-more-show"></div>
    */
   function trustedClicksForPdfExpansion() {
     function labelLooksLikeShowAllDataFields(el) {
@@ -471,10 +472,73 @@
         el.click();
       } catch (e) {}
     }
+    function tryClickPastaMore(el) {
+      if (!el || typeof el.click !== "function") return;
+      try {
+        el.scrollIntoView({ block: "nearest", behavior: "auto" });
+      } catch (e) {}
+      try {
+        el.click();
+      } catch (e) {}
+    }
     tryClick(document.getElementById("showMore"));
     var links = document.querySelectorAll("a.showMore");
     for (var i = 0; i < links.length; i++) {
       tryClick(links[i]);
+    }
+    var pastaToggles = document.querySelectorAll(".pasta-more.pasta-more-show");
+    for (var p = 0; p < pastaToggles.length; p++) {
+      tryClickPastaMore(pastaToggles[p]);
+    }
+    var moreLinks = document.querySelectorAll("a.morelink, .morelink");
+    for (var m = 0; m < moreLinks.length; m++) {
+      var ml = moreLinks[m];
+      var txt = (ml.textContent || "").replace(/[\s\u00a0]+/g, " ").trim();
+      if (!/show\s+more/i.test(txt) || /show\s+less/i.test(txt)) continue;
+      tryClickPastaMore(ml);
+    }
+  }
+
+  /** Unhide EDI/PASTA truncated blocks when click handlers did not run (see page.js twin). */
+  function revealPastaMoreFallbackInContentScript() {
+    function revealRoot(root) {
+      if (!root || !root.querySelectorAll) return;
+      var spans = root.querySelectorAll(".morecontent span");
+      for (var s = 0; s < spans.length; s++) {
+        try {
+          spans[s].style.display = "inline";
+        } catch (e) {}
+      }
+      var collapsed = root.querySelectorAll(".pasta-more.pasta-more-show");
+      for (var c = 0; c < collapsed.length; c++) {
+        var btn = collapsed[c];
+        try {
+          btn.classList.remove("pasta-more-show");
+          btn.classList.add("pasta-more-hide");
+        } catch (e2) {}
+        try {
+          var prev = btn.previousElementSibling;
+          while (prev) {
+            if (prev.classList) {
+              prev.classList.remove("pasta-truncated", "truncated", "ellipsis", "pasta-collapsed", "collapsed");
+            }
+            try {
+              prev.style.maxHeight = "none";
+              prev.style.overflow = "visible";
+              prev.style.height = "auto";
+            } catch (e3) {}
+            prev = prev.previousElementSibling;
+          }
+        } catch (e4) {}
+      }
+    }
+    revealRoot(document);
+    var iframes = document.getElementsByTagName("iframe");
+    for (var f = 0; f < iframes.length; f++) {
+      try {
+        var idoc = iframes[f].contentDocument;
+        if (idoc) revealRoot(idoc);
+      } catch (e5) {}
     }
   }
 
@@ -628,6 +692,7 @@
         injectPageScript();
         await runExpandForPdf();
         dolRevealDataFieldsNearShowMoreInContentScript();
+        revealPastaMoreFallbackInContentScript();
         await new Promise(function (r) {
           setTimeout(r, 400);
         });
@@ -703,6 +768,7 @@
         injectPageScript();
         await runExpandForPdf();
         dolRevealDataFieldsNearShowMoreInContentScript();
+        revealPastaMoreFallbackInContentScript();
         await new Promise(function (r) {
           setTimeout(r, 400);
         });

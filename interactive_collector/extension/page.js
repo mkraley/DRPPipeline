@@ -3,7 +3,8 @@
  * and listens for drp-generate-pdf; generates PDF (chunked for long pages to avoid
  * canvas size limits), converts to base64, dispatches drp-pdf-ready.
  * Before capture, expands "read more", "Show more", accordions (Socrata + CMS),
- * and dataset toggles such as "+ Show Full Description" / "Show all data fields".
+ * EDI/PASTA ".pasta-more" toggles, and dataset toggles such as "+ Show Full Description"
+ * / "Show all data fields".
  */
 (function () {
   var base = document.currentScript.src.replace(/\/[^/]*$/, "/");
@@ -20,11 +21,12 @@
    * Expand hidden content so it is included in PDF.
    * - Socrata: forge-button.collapse-button ("Read more")
    * - CMS: .ShowMoreContainer button ("Show more (15)") - loop until no more
+   * - EDI: .pasta-more.pasta-more-show and .morelink (jQuery show-more/less)
    * - CMS: accordions - expand one at a time, re-query after each (Bootstrap/React)
    * Returns { readMore, showMore, accordions } counts.
    */
   function expandForPdf() {
-    var readMore = 0, showMore = 0, accordions = 0, fullDescription = 0, dataFields = 0, collapsePanels = 0;
+    var readMore = 0, showMore = 0, accordions = 0, fullDescription = 0, dataFields = 0, collapsePanels = 0, pastaMore = 0;
     /** Skip same DOM node across pulse rounds (was re-clicking #showMore 8× while UI stayed closed). */
     var clickedOnceForPdf = new WeakSet();
     function safeClick(el, scrollIntoView) {
@@ -55,6 +57,76 @@
       } catch (_) {}
       return false;
     }
+
+    /** EDI Data Portal: empty div.pasta-more.pasta-more-show (label via CSS) and jQuery .morelink. */
+    function expandPastaMoreInDocument(root) {
+      var n = 0;
+      if (!root || !root.querySelectorAll) return 0;
+      var toggles = root.querySelectorAll(".pasta-more.pasta-more-show");
+      for (var i = 0; i < toggles.length; i++) {
+        if (safeClickWithDispatch(toggles[i]) || safeClick(toggles[i])) n++;
+      }
+      var links = root.querySelectorAll("a.morelink, .morelink");
+      for (var j = 0; j < links.length; j++) {
+        var el = links[j];
+        var txt = (el.textContent || "").replace(/[\s\u00a0]+/g, " ").trim();
+        if (!/show\s+more/i.test(txt) || /show\s+less/i.test(txt)) continue;
+        if (safeClickWithDispatch(el) || safeClick(el)) n++;
+      }
+      return n;
+    }
+
+    /** When jQuery/PASTA handlers did not run, unhide truncated blocks for PDF capture. */
+    function revealPastaMoreFallback(root) {
+      if (!root || !root.querySelectorAll) return;
+      var spans = root.querySelectorAll(".morecontent span");
+      for (var s = 0; s < spans.length; s++) {
+        try {
+          spans[s].style.display = "inline";
+        } catch (_) {}
+      }
+      var collapsed = root.querySelectorAll(".pasta-more.pasta-more-show");
+      for (var c = 0; c < collapsed.length; c++) {
+        var btn = collapsed[c];
+        try {
+          btn.classList.remove("pasta-more-show");
+          btn.classList.add("pasta-more-hide");
+        } catch (_) {}
+        try {
+          var prev = btn.previousElementSibling;
+          while (prev) {
+            if (prev.classList) {
+              prev.classList.remove("pasta-truncated", "truncated", "ellipsis", "pasta-collapsed", "collapsed");
+            }
+            try {
+              prev.style.maxHeight = "none";
+              prev.style.overflow = "visible";
+              prev.style.height = "auto";
+            } catch (_) {}
+            var inner = prev.querySelectorAll(".morecontent span, .pasta-hidden");
+            for (var k = 0; k < inner.length; k++) {
+              try {
+                inner[k].style.display = "";
+                inner[k].style.maxHeight = "none";
+                inner[k].style.overflow = "visible";
+              } catch (_) {}
+            }
+            prev = prev.previousElementSibling;
+          }
+          var par = btn.parentElement;
+          if (par) {
+            if (par.classList) {
+              par.classList.remove("pasta-collapsed", "collapsed");
+            }
+            try {
+              par.style.maxHeight = "none";
+              par.style.overflow = "visible";
+            } catch (_) {}
+          }
+        } catch (_) {}
+      }
+    }
+
     var sel;
     // Socrata "Read more"
     sel = document.querySelectorAll("forge-button.collapse-button");
@@ -396,6 +468,36 @@
         return doShowMore();
       })
       .then(function () {
+        // EDI / PASTA mapbrowse: .pasta-more.pasta-more-show (label is CSS-only on empty div)
+        var round = 0;
+        var maxRounds = 12;
+        function doPastaMore() {
+          pastaMore += expandPastaMoreInDocument(document);
+          var iframes = document.getElementsByTagName("iframe");
+          for (var f = 0; f < iframes.length; f++) {
+            try {
+              var idoc = iframes[f].contentDocument;
+              if (idoc) pastaMore += expandPastaMoreInDocument(idoc);
+            } catch (e) {}
+          }
+          revealPastaMoreFallback(document);
+          for (var f2 = 0; f2 < iframes.length; f2++) {
+            try {
+              var idoc2 = iframes[f2].contentDocument;
+              if (idoc2) revealPastaMoreFallback(idoc2);
+            } catch (e2) {}
+          }
+          var remaining = document.querySelectorAll(".pasta-more.pasta-more-show").length;
+          round++;
+          if (remaining > 0 && round < maxRounds) {
+            return wait(450).then(doPastaMore);
+          }
+          showMore += pastaMore;
+          return wait(350);
+        }
+        return doPastaMore();
+      })
+      .then(function () {
         // CMS accordions: expand by DOM (clicks often ignored by React/Bootstrap)
         var panels = document.querySelectorAll(".accordion-collapse.collapse:not(.show)");
         for (var p = 0; p < panels.length; p++) {
@@ -423,6 +525,7 @@
           fullDescription: fullDescription,
           dataFields: dataFields,
           collapsePanels: collapsePanels,
+          pastaMore: pastaMore,
         };
       });
   }
