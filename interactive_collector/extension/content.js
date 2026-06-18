@@ -15,7 +15,49 @@
   const DRP_MD_ID = "drp-collector-save-md-btn";
   const WATCHER_POLL_MS = 25000;
   var pageScriptInjected = false;
+  var pageScriptReady = false;
+  var pageScriptReadyPromise = null;
   var watcherPollTimer = null;
+
+  /** Load page.js (~30KB) and wait until expansion handlers are registered. PDF libs load separately on fallback only. */
+  function ensurePageScriptReady() {
+    if (pageScriptReady) return Promise.resolve();
+    if (pageScriptReadyPromise) return pageScriptReadyPromise;
+    pageScriptReadyPromise = new Promise(function (resolve, reject) {
+      function onReady() {
+        document.removeEventListener("drp-expand-ready", onReady);
+        clearTimeout(timeoutId);
+        pageScriptReady = true;
+        resolve();
+      }
+      document.addEventListener("drp-expand-ready", onReady);
+      var timeoutId = setTimeout(function () {
+        document.removeEventListener("drp-expand-ready", onReady);
+        pageScriptReadyPromise = null;
+        reject(new Error("Expansion script timed out"));
+      }, 15000);
+      if (!pageScriptInjected) {
+        pageScriptInjected = true;
+        var s = document.createElement("script");
+        s.src = chrome.runtime.getURL("page.js");
+        s.onerror = function () {
+          clearTimeout(timeoutId);
+          document.removeEventListener("drp-expand-ready", onReady);
+          pageScriptInjected = false;
+          pageScriptReadyPromise = null;
+          reject(new Error("Failed to load expansion script"));
+        };
+        (document.head || document.documentElement).appendChild(s);
+      } else {
+        document.dispatchEvent(new CustomEvent("drp-expand-ping"));
+      }
+    });
+    return pageScriptReadyPromise;
+  }
+
+  function injectPageScript() {
+    return ensurePageScriptReady();
+  }
 
   function isLauncherPage() {
     return LAUNCHER_MATCH.test(window.location.pathname);
@@ -438,14 +480,6 @@
     return data;
   }
 
-  function injectPageScript() {
-    if (pageScriptInjected) return;
-    pageScriptInjected = true;
-    const s = document.createElement("script");
-    s.src = chrome.runtime.getURL("page.js");
-    (document.head || document.documentElement).appendChild(s);
-  }
-
   /**
    * Clicks that must run in the *content-script* world on the same synchronous turn as the
    * user's Save click. After `await chrome.storage…` or `await runExpandForPdf()`, user
@@ -576,30 +610,18 @@
 
   /** Run expansion in the page (read more, show more, accordions), then resolve. Used before print-to-PDF. */
   function runExpandForPdf() {
-    return new Promise((resolve) => {
-      let readyTimeout;
-      let doneTimeout;
-      const done = () => {
-        document.removeEventListener("drp-expand-done", done);
-        document.removeEventListener("drp-expand-ready", onReady);
-        clearTimeout(readyTimeout);
-        clearTimeout(doneTimeout);
-        resolve();
-      };
-      const onReady = () => {
-        document.removeEventListener("drp-expand-ready", onReady);
-        clearTimeout(readyTimeout);
+    return ensurePageScriptReady().then(function () {
+      return new Promise(function (resolve) {
+        var doneTimeout;
+        function done() {
+          document.removeEventListener("drp-expand-done", done);
+          clearTimeout(doneTimeout);
+          resolve();
+        }
         document.addEventListener("drp-expand-done", done);
         document.dispatchEvent(new CustomEvent("drp-expand-for-pdf"));
-        doneTimeout = setTimeout(done, 60000);
-      };
-      document.addEventListener("drp-expand-ready", onReady);
-      readyTimeout = setTimeout(() => {
-        document.removeEventListener("drp-expand-ready", onReady);
-        document.addEventListener("drp-expand-done", done);
-        document.dispatchEvent(new CustomEvent("drp-expand-for-pdf"));
-        doneTimeout = setTimeout(done, 60000);
-      }, 5000);
+        doneTimeout = setTimeout(done, 25000);
+      });
     });
   }
 
@@ -659,7 +681,7 @@
   function addSaveButtons() {
     if (document.getElementById(DRP_ID) || document.getElementById(DRP_MD_ID)) return;
 
-    injectPageScript();
+    ensurePageScriptReady().catch(function () {});
 
     const mdBtn = document.createElement("button");
     mdBtn.id = DRP_MD_ID;

@@ -133,9 +133,9 @@
     for (var i = 0; i < sel.length; i++) {
       if (safeClick(sel[i])) readMore++;
     }
-    return wait(300)
+    return wait(150)
       .then(function () {
-        return wait(1200);
+        return wait(300);
       })
       .then(function () {
         // data.gov / Drupal / Bootstrap toggles: "+ Show Full Description", "Show all data fields".
@@ -173,11 +173,18 @@
           if (tag === "SUMMARY") return true;
           // Anchor toggles often omit href (e.g. DOL <a class="showMore" id="showMore" tabindex="0">).
           if (tag === "A") {
-            if (el.hasAttribute("href")) return true;
-            var ti = el.getAttribute("tabindex");
-            if (ti !== null && ti !== "" && ti !== "-1") return true;
             if (el.classList && el.classList.contains("showMore")) return true;
             if (el.id === "showMore") return true;
+            if (el.classList && el.classList.contains("morelink")) return true;
+            var ti = el.getAttribute("tabindex");
+            if (ti !== null && ti !== "" && ti !== "-1") return true;
+            var aRole = (el.getAttribute("role") || "").toLowerCase();
+            if (aRole === "button" || aRole === "tab") return true;
+            var aDt = (el.getAttribute("data-bs-toggle") || el.getAttribute("data-toggle") || "").toLowerCase();
+            if (aDt) return true;
+            var href = el.getAttribute("href");
+            if (href && href.charAt(0) === "#") return true;
+            return false;
           }
           if (tag === "INPUT" && (el.type === "button" || el.type === "submit")) return true;
           var role = (el.getAttribute("role") || "").toLowerCase();
@@ -515,7 +522,7 @@
         return wait(400);
       })
       .then(function () {
-        return wait(600);
+        return wait(200);
       })
       .then(function () {
         return {
@@ -539,43 +546,60 @@
     });
   }
 
+  var pdfLibsPromise = null;
+  function loadPdfLibs() {
+    if (!pdfLibsPromise) {
+      pdfLibsPromise = loadScript("html2canvas.min.js")
+        .then(function () {
+          return loadScript("jspdf.umd.min.js");
+        })
+        .then(function () {
+          return loadScript("html2pdf.bundle.min.js");
+        });
+    }
+    return pdfLibsPromise;
+  }
+
   function run() {
     document.dispatchEvent(new CustomEvent("drp-page-ready"));
-    var h = window.html2pdf;
-    var fn = typeof h === "function" ? h : h && h.default;
-    var html2canvas = window.html2canvas;
-    var jsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
-    if (!fn) return;
-
     document.addEventListener("drp-generate-pdf", function (evt) {
       var detail = (evt && evt.detail) || {};
       var collectorBase = detail.collectorBase;
-      expandForPdf()
+      loadPdfLibs()
         .then(function () {
-          var totalHeight = Math.max(
-            document.body.scrollHeight,
-            document.documentElement.scrollHeight,
-            document.body.offsetHeight,
-            document.documentElement.offsetHeight
-          );
-          var totalWidth = Math.max(
-            document.body.scrollWidth,
-            document.documentElement.scrollWidth,
-            document.body.offsetWidth,
-            document.documentElement.offsetWidth
-          );
-          if (totalHeight > MAX_HEIGHT_SINGLE && html2canvas && jsPDF) {
-            captureChunked(collectorBase, totalHeight, totalWidth, html2canvas, jsPDF);
-          } else {
-            captureSingle(collectorBase, fn);
+          var h = window.html2pdf;
+          var fn = typeof h === "function" ? h : h && h.default;
+          var html2canvas = window.html2canvas;
+          var jsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+          if (!fn) {
+            throw new Error("PDF library failed to load");
           }
+          return expandForPdf().then(function () {
+            var totalHeight = Math.max(
+              document.body.scrollHeight,
+              document.documentElement.scrollHeight,
+              document.body.offsetHeight,
+              document.documentElement.offsetHeight
+            );
+            var totalWidth = Math.max(
+              document.body.scrollWidth,
+              document.documentElement.scrollWidth,
+              document.body.offsetWidth,
+              document.documentElement.offsetWidth
+            );
+            if (totalHeight > MAX_HEIGHT_SINGLE && html2canvas && jsPDF) {
+              captureChunked(collectorBase, totalHeight, totalWidth, html2canvas, jsPDF);
+            } else {
+              captureSingle(collectorBase, fn);
+            }
+          });
         })
         .catch(function (e) {
           document.dispatchEvent(
             new CustomEvent("drp-pdf-error", { detail: String((e && e.message) || e) })
           );
         });
-        });
+    });
   }
 
   function findMainScrollElement() {
@@ -757,7 +781,11 @@
 
   // Expansion can run as soon as this script loads; PDF libs only needed for in-page PDF path.
   function attachExpandOnly() {
-    document.dispatchEvent(new CustomEvent("drp-expand-ready"));
+    function signalReady() {
+      document.dispatchEvent(new CustomEvent("drp-expand-ready"));
+    }
+    signalReady();
+    document.addEventListener("drp-expand-ping", signalReady);
     document.addEventListener("drp-expand-for-pdf", function () {
       expandForPdf()
         .then(function (counts) {
@@ -769,13 +797,5 @@
     });
   }
   attachExpandOnly();
-
-  loadScript("html2canvas.min.js")
-    .then(function () {
-      return loadScript("jspdf.umd.min.js");
-    })
-    .then(function () {
-      return loadScript("html2pdf.bundle.min.js");
-    })
-    .then(run);
+  run();
 })();
