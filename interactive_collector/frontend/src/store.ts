@@ -74,11 +74,11 @@ function readDeleteFolderOnLoad(): boolean {
   try {
     const stored = localStorage.getItem(DELETE_FOLDER_ON_LOAD_KEY);
     if (stored === null) {
-      return true;
+      return false;
     }
     return stored !== "0" && stored !== "false";
   } catch {
-    return true;
+    return false;
   }
 }
 

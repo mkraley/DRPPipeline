@@ -77,6 +77,26 @@ class TestEnsureOutputFolder(unittest.TestCase):
         self.assertEqual(path, str(folder))
         self.assertTrue(marker.exists())
 
+    @patch("interactive_collector.api_projects._ensure_storage")
+    def test_recreate_true_wipes_storage_folder_path(
+        self,
+        _mock_ensure_storage: unittest.mock.Mock,
+    ) -> None:
+        folder = self.tmpdir / "custom" / "DRP000011"
+        folder.mkdir(parents=True)
+        marker = folder / "data.zip"
+        marker.write_bytes(b"zip")
+
+        with patch("storage.Storage") as mock_storage, patch(
+            "interactive_collector.api_projects.get_base_output_dir"
+        ) as mock_base:
+            mock_storage.get.return_value = {"folder_path": str(folder)}
+            path = ensure_output_folder(11, recreate=True)
+            mock_base.assert_not_called()
+        self.assertEqual(path, str(folder))
+        self.assertTrue(folder.is_dir())
+        self.assertFalse(marker.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

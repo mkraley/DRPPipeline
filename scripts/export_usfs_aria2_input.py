@@ -64,6 +64,54 @@ def load_base_output_dir(config_path: Path) -> Path:
     return Path(r"C:\Documents\DataRescue\USFSData")
 
 
+def load_db_path(config_path: Path) -> Path:
+    if not config_path.is_file():
+        return DEFAULT_DB_PATH
+    raw = json.loads(config_path.read_text(encoding="utf-8")).get("db_path")
+    if not raw:
+        return DEFAULT_DB_PATH
+    path = Path(raw)
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
+def ensure_drpid_aria2_cmd(
+    conn: sqlite3.Connection,
+    drpid: int,
+    *,
+    output_dir: Path,
+    base_output_dir: Path,
+    user_agent: str,
+    min_bytes: int,
+    missing_only: bool,
+) -> tuple[Path | None, int]:
+    """
+    Return ``(cmd_path, line_count)`` for a DRPID, exporting ``.cmd`` when missing or empty.
+    """
+    from collectors.UsfsAria2Export import parse_aria2c_lines_from_cmd_file
+
+    cmd_path = output_dir / f"DRP{drpid:06d}.cmd"
+    if cmd_path.is_file():
+        lines = parse_aria2c_lines_from_cmd_file(cmd_path)
+        if lines:
+            return cmd_path, len(lines)
+
+    print(f"DRP {drpid}: no aria2 batch file — exporting from catalog...", file=sys.stderr)
+    combined: List[Aria2Entry] = []
+    count = export_drpid(
+        conn,
+        drpid,
+        output_dir,
+        base_output_dir,
+        user_agent,
+        min_bytes=min_bytes,
+        missing_only=missing_only,
+        combined_entries=combined,
+    )
+    if count == 0:
+        return (cmd_path if cmd_path.is_file() else None), 0
+    return cmd_path, count
+
+
 def export_drpid(
     conn: sqlite3.Connection,
     drpid: int,

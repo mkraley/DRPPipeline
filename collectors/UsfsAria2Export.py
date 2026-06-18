@@ -8,6 +8,7 @@ scripts/export_usfs_aria2_input.py for batch export.
 from __future__ import annotations
 
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
@@ -175,6 +176,35 @@ def aria2_argv_for_download(
         "--show-console-readout=true",
     ]
     return [argv[0], *extras, *argv[1:]]
+
+
+DEFAULT_ARIA2_MAX_ATTEMPTS = 3
+
+
+def run_aria2_cmd_line_with_retries(
+    cmd_line: str,
+    *,
+    log_path: Path,
+    summary_interval: int = 0,
+    max_attempts: int = DEFAULT_ARIA2_MAX_ATTEMPTS,
+) -> tuple[bool, int]:
+    """
+    Run one exported ``aria2c`` command, retrying on failure.
+
+    Exported commands include ``-c`` (continue), so retries resume partial files.
+    Returns ``(success, attempts_used)``.
+    """
+    attempts = max(1, max_attempts)
+    argv = aria2_argv_for_download(
+        cmd_line,
+        log_path=log_path,
+        summary_interval=summary_interval,
+    )
+    for attempt in range(1, attempts + 1):
+        result = subprocess.run(argv, check=False)
+        if result.returncode == 0:
+            return True, attempt
+    return False, attempts
 
 
 def drpid_cmd_path(drpid: int, output_dir: Path | None = None) -> Path:

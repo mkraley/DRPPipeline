@@ -9,18 +9,18 @@ to the existing DataLumos project.
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple
 
 from collectors.UsfsAria2Export import (
+    DEFAULT_ARIA2_MAX_ATTEMPTS,
     DEFAULT_ARIA2_OUTPUT_DIR,
     MAX_DOWNLOAD_BYTES,
-    aria2_argv_for_download,
     drpid_cmd_path,
     entries_for_publication_files,
     out_name_from_aria2_cmd_line,
     parse_aria2c_lines_from_cmd_file,
+    run_aria2_cmd_line_with_retries,
     write_drpid_aria2_cmd,
 )
 from collectors.UsfsMetadataExtractor import parse_data_access_links
@@ -161,6 +161,7 @@ def run_aria2_downloads(
     log_root: Path,
     summary_interval: int = DEFAULT_SUMMARY_INTERVAL,
     stop_on_error: bool = True,
+    max_attempts: int = DEFAULT_ARIA2_MAX_ATTEMPTS,
 ) -> Tuple[int, int]:
     """
     Run aria2 downloads for one DRPID.
@@ -181,21 +182,28 @@ def run_aria2_downloads(
         if len(aria2_lines) > 1:
             Logger.info("[%s/%s] Downloading %s", index, len(aria2_lines), out_name)
 
-        argv = aria2_argv_for_download(
+        ok, attempts = run_aria2_cmd_line_with_retries(
             cmd_line,
             log_path=log_path,
             summary_interval=summary_interval,
+            max_attempts=max_attempts,
         )
-        result = subprocess.run(argv, check=False)
-        if result.returncode == 0:
+        if ok:
             ok_count += 1
+            if attempts > 1:
+                Logger.info(
+                    "Download succeeded for DRPID=%s file=%s after %s attempt(s)",
+                    drpid,
+                    out_name,
+                    attempts,
+                )
         else:
             fail_count += 1
             Logger.error(
-                "Download failed for DRPID=%s file=%s exit=%s log=%s",
+                "Download failed for DRPID=%s file=%s after %s attempt(s) log=%s",
                 drpid,
                 out_name,
-                result.returncode,
+                attempts,
                 log_path,
             )
             if stop_on_error:

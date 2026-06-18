@@ -14,6 +14,7 @@ from collectors.UsfsAria2Export import (
     out_name_from_aria2_cmd_line,
     parse_aria2_windows_cmd_line,
     parse_aria2c_lines_from_cmd_text,
+    run_aria2_cmd_line_with_retries,
     write_drpid_aria2_cmd,
 )
 from utils.url_utils import BROWSER_HEADERS
@@ -130,6 +131,55 @@ class TestUsfsAria2Export(unittest.TestCase):
         self.assertIn("--summary-interval=0", argv)
         self.assertIn(f"--log={log_path}", argv)
         self.assertEqual(out_name_from_aria2_cmd_line(cmd), "file.zip")
+
+    def test_run_aria2_cmd_line_with_retries_succeeds_first_try(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        ua = BROWSER_HEADERS["User-Agent"]
+        cmd = format_windows_command(
+            Aria2Entry(
+                url="https://example.com/file.zip",
+                out_name="file.zip",
+                dir_path=Path(r"C:\data\DRP000029"),
+                max_connections=8,
+            ),
+            ua,
+        )
+        mock_run = MagicMock(return_value=MagicMock(returncode=0))
+        with patch("collectors.UsfsAria2Export.subprocess.run", mock_run):
+            ok, attempts = run_aria2_cmd_line_with_retries(
+                cmd,
+                log_path=Path(r"C:\logs\file.zip.log"),
+            )
+        self.assertTrue(ok)
+        self.assertEqual(attempts, 1)
+        self.assertEqual(mock_run.call_count, 1)
+
+    def test_run_aria2_cmd_line_with_retries_retries_until_success(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        ua = BROWSER_HEADERS["User-Agent"]
+        cmd = format_windows_command(
+            Aria2Entry(
+                url="https://example.com/file.zip",
+                out_name="file.zip",
+                dir_path=Path(r"C:\data\DRP000029"),
+                max_connections=8,
+            ),
+            ua,
+        )
+        mock_run = MagicMock(
+            side_effect=[MagicMock(returncode=1), MagicMock(returncode=1), MagicMock(returncode=0)]
+        )
+        with patch("collectors.UsfsAria2Export.subprocess.run", mock_run):
+            ok, attempts = run_aria2_cmd_line_with_retries(
+                cmd,
+                log_path=Path(r"C:\logs\file.zip.log"),
+                max_attempts=3,
+            )
+        self.assertTrue(ok)
+        self.assertEqual(attempts, 3)
+        self.assertEqual(mock_run.call_count, 3)
 
     def test_write_drpid_aria2_cmd(self) -> None:
         folder = Path(__file__).parent / "_tmp_aria2_write"

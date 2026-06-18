@@ -185,23 +185,37 @@ def _ensure_output_folder_for_drpid(
     Defaults to preserving an existing folder; pass ``recreate=True`` to empty first.
     Returns folder_path string or None if creation failed.
     """
-    if not recreate and drpid in _result_by_drpid and _result_by_drpid[drpid].get("folder_path"):
-        return _result_by_drpid[drpid]["folder_path"]
+    import shutil
+
+    from utils.file_utils import create_output_folder
 
     if recreate:
         _result_by_drpid.pop(drpid, None)
-    elif not recreate:
-        _ensure_storage(flask_app)
-        from storage import Storage
 
-        record = Storage.get(drpid) or {}
-        stored = (record.get("folder_path") or "").strip()
-        if stored:
-            path = Path(stored)
-            if path.is_dir():
-                path_str = str(path)
-                _result_by_drpid[drpid] = {"folder_path": path_str}
-                return path_str
+    _ensure_storage(flask_app)
+    from storage import Storage
+
+    record = Storage.get(drpid) or {}
+    stored = (record.get("folder_path") or "").strip()
+
+    if stored:
+        folder_path = Path(stored)
+        if not recreate and folder_path.is_dir():
+            path_str = str(folder_path)
+            _result_by_drpid[drpid] = {"folder_path": path_str}
+            return path_str
+        if recreate and folder_path.exists():
+            try:
+                shutil.rmtree(folder_path)
+            except OSError:
+                return None
+        try:
+            folder_path.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return None
+        path_str = str(folder_path)
+        _result_by_drpid[drpid] = {"folder_path": path_str}
+        return path_str
 
     base_path = _get_base_output_dir()
     folder_path = create_output_folder(base_path, drpid, recreate=recreate)

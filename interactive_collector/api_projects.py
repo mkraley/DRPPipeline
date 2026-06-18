@@ -85,8 +85,8 @@ def ensure_output_folder(drpid: int, *, recreate: bool = False) -> Optional[str]
     """
     Create or resolve the output folder for this DRPID; store in result state.
 
-    By default (``recreate=False``), reuses the in-memory path, Storage
-    ``folder_path``, or an existing ``DRP######`` directory without deleting files.
+    By default (``recreate=False``), reuses Storage ``folder_path`` or the
+  default ``DRP######`` directory under ``base_output_dir`` without deleting files.
     Only ``/api/projects/load`` passes ``recreate=True`` when the user opts to
     delete the folder on load.
 
@@ -97,26 +97,38 @@ def ensure_output_folder(drpid: int, *, recreate: bool = False) -> Optional[str]
     Returns:
         folder_path string or None if creation failed.
     """
+    import shutil
+
     from utils.file_utils import create_output_folder
 
     result = get_result_by_drpid()
     if recreate:
         result.pop(drpid, None)
-    elif drpid in result and result[drpid].get("folder_path"):
-        return result[drpid]["folder_path"]
 
-    if not recreate:
-        _ensure_storage()
-        from storage import Storage
+    _ensure_storage()
+    from storage import Storage
 
-        record = Storage.get(drpid) or {}
-        stored = (record.get("folder_path") or "").strip()
-        if stored:
-            path = Path(stored)
-            if path.is_dir():
-                path_str = str(path)
-                result[drpid] = {"folder_path": path_str}
-                return path_str
+    record = Storage.get(drpid) or {}
+    stored = (record.get("folder_path") or "").strip()
+
+    if stored:
+        folder_path = Path(stored)
+        if not recreate and folder_path.is_dir():
+            path_str = str(folder_path)
+            result[drpid] = {"folder_path": path_str}
+            return path_str
+        if recreate and folder_path.exists():
+            try:
+                shutil.rmtree(folder_path)
+            except OSError:
+                return None
+        try:
+            folder_path.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return None
+        path_str = str(folder_path)
+        result[drpid] = {"folder_path": path_str}
+        return path_str
 
     base_path = get_base_output_dir()
     folder_path = create_output_folder(base_path, drpid, recreate=recreate)

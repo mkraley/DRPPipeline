@@ -124,6 +124,20 @@ class TestApiProjectsLoad(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         mock_ensure.assert_called_once_with(1, recreate=True)
 
+    def test_projects_load_omitted_delete_folder_preserves(self) -> None:
+        """POST /api/projects/load without delete_folder_on_load preserves the folder."""
+        proj = {"DRPID": 1, "source_url": "https://example.com/dataset"}
+        with patch("interactive_collector.api.get_project_by_drpid", return_value=proj):
+            with patch("interactive_collector.api.ensure_output_folder") as mock_ensure:
+                mock_ensure.return_value = "C:\\out\\1"
+                resp = self.client.post(
+                    "/api/projects/load",
+                    json={"drpid": 1},
+                    content_type="application/json",
+                )
+        self.assertEqual(resp.status_code, 200)
+        mock_ensure.assert_called_once_with(1, recreate=False)
+
     def test_projects_load_invalid_drpid_returns_400(self) -> None:
         """POST /api/projects/load with invalid drpid returns 400."""
         resp = self.client.post(
