@@ -377,6 +377,68 @@ class TestApiNoLinks(unittest.TestCase):
         self.assertEqual(data.get("ok"), True)
 
 
+class TestApiSkip(unittest.TestCase):
+    """Tests for /api/skip."""
+
+    def setUp(self) -> None:
+        self.tmpdir = tempfile.mkdtemp()
+        self.db_path = Path(self.tmpdir) / "skip_test.db"
+        self._patcher = patch("interactive_collector.api_projects.get_db_path", return_value=self.db_path)
+        self._patcher.start()
+        from utils.Logger import Logger
+        from storage import Storage
+
+        Logger.initialize(log_level="WARNING")
+        Storage.reset()
+        Storage.initialize("StorageSQLLite", db_path=self.db_path)
+        self.client = app.test_client()
+
+    def tearDown(self) -> None:
+        from storage import Storage
+
+        Storage.close()
+        Storage.reset()
+        self._patcher.stop()
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_skip_requires_reason(self) -> None:
+        resp = self.client.post(
+            "/api/skip",
+            json={"drpid": 1, "reason": ""},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_skip_updates_status(self) -> None:
+        from storage import Storage
+
+        drpid = Storage.create_record("https://skip-test.example/a")
+        Storage.update_record(drpid, {"status": "sourced"})
+        folder = Path(self.tmpdir) / "out"
+        folder.mkdir()
+        resp = self.client.post(
+            "/api/skip",
+            json={"drpid": drpid, "reason": "needs script", "folder_path": str(folder)},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json().get("ok"), True)
+        row = Storage.get(drpid)
+        assert row is not None
+        self.assertEqual(row["status"], "collector_hold - needs script")
+
+    def test_skip_missing_drpid_returns_error(self) -> None:
+        folder = Path(self.tmpdir) / "out2"
+        folder.mkdir()
+        resp = self.client.post(
+            "/api/skip",
+            json={"drpid": 99999, "reason": "test", "folder_path": str(folder)},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.get_json().get("ok"), False)
+
+
 class TestApiExtensionSavePdf(unittest.TestCase):
     """Tests for /api/extension/save-pdf."""
 

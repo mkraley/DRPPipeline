@@ -553,6 +553,12 @@ body {
   box-sizing: border-box;
 }
 
+.save-modal-error {
+  margin: 0 0 8px;
+  color: #c44;
+  font-size: 0.9rem;
+}
+
 .save-modal-actions {
   display: flex;
   gap: 8px;

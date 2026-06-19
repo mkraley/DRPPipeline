@@ -258,7 +258,10 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
 
   skip: async (reason) => {
     const { drpid, folderPath, metadata } = get();
-    if (!drpid) return;
+    if (!drpid) {
+      set({ error: "Load a project before skipping." });
+      return;
+    }
     const body = {
       drpid,
       reason: reason.trim(),
@@ -279,13 +282,15 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
         body: JSON.stringify(body),
       });
       if (data.ok) {
-        set({ skipModalOpen: false });
+        set({ skipModalOpen: false, error: null });
         await get().stopDownloadsWatcher();
       } else {
         throw new Error(data.error || "Skip failed");
       }
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : "Skip failed" });
+      const msg = e instanceof Error ? e.message : "Skip failed";
+      set({ error: msg });
+      throw new Error(msg);
     }
   },
 

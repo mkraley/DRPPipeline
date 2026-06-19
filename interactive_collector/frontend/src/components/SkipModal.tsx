@@ -7,19 +7,25 @@ import { useCollectorStore } from "../store";
 export function SkipModal() {
   const { skipModalOpen, closeSkipModal, skip } = useCollectorStore();
   const [reason, setReason] = useState("");
+  const [submitError, setSubmitError] = useState("");
 
   if (!skipModalOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (reason.trim()) {
-      skip(reason.trim());
+    if (!reason.trim()) return;
+    setSubmitError("");
+    try {
+      await skip(reason.trim());
       setReason("");
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Skip failed");
     }
   };
 
   const handleCancel = () => {
     setReason("");
+    setSubmitError("");
     closeSkipModal();
   };
 
@@ -38,6 +44,7 @@ export function SkipModal() {
             className="save-modal-input"
             autoFocus
           />
+          {submitError && <p className="save-modal-error">{submitError}</p>}
           <div className="save-modal-actions">
             <button type="button" className="save-modal-ok" onClick={handleCancel}>
               Cancel

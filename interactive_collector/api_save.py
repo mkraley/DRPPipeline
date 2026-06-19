@@ -45,23 +45,11 @@ def save_metadata(
         download_date: When data was downloaded.
         status_override: If set, use instead of default "collected" (e.g. "collector_hold - reason").
     """
-    from interactive_collector.collector_state import get_db_path
+    from interactive_collector.api_projects import _ensure_storage
 
-    # Ensure Storage is initialized (reuse projects module logic).
-    try:
-        from storage import Storage
-        Storage.list_eligible_projects(None, 0)
-    except RuntimeError:
-        try:
-            from utils.Logger import Logger
-            if not getattr(Logger, "_initialized", False):
-                Logger.initialize(log_level="WARNING")
-        except Exception:
-            pass
-        from storage import Storage
-        Storage.initialize("StorageSQLLite", db_path=get_db_path())
-
+    _ensure_storage()
     from storage import Storage
+
     values: Dict[str, Any] = {
         "status": (status_override or "collected").strip() or "collected",
         "errors": None,
@@ -93,9 +81,8 @@ def save_metadata(
         values["num_files"] = 0
     try:
         Storage.update_record(drpid, values)
-    except ValueError as e:
-        from utils.Logger import Logger
-        Logger.warning(f"save_metadata: record not found or invalid for DRPID={drpid}: {e}")
+    except ValueError:
+        raise
 
 
 # PDF generation: use "commit" so we only wait for the navigation to commit (response received).

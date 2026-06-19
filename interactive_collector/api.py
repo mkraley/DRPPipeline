@@ -647,6 +647,39 @@ def save_route() -> Any:
             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
         )
 
+    try:
+        urls = json.loads(urls_json)
+    except json.JSONDecodeError:
+        return {"error": "Invalid scoreboard_urls_json"}, 400
+
+    folder_path = Path(folder_path_str)
+    if not folder_path.is_dir():
+        return {"error": "Output folder not found"}, 400
+
+    try:
+        drpid_for_stats = int(drpid_str) if drpid_str else None
+    except (ValueError, TypeError):
+        drpid_for_stats = None
+
+    def stream() -> Any:
+        for line in generate_save_progress(
+            folder_path,
+            urls,
+            indices,
+            drpid=drpid_for_stats,
+            folder_path_str=folder_path_str,
+            metadata=metadata if will_generate_pdfs and drpid_for_stats is not None else None,
+        ):
+            sys.stderr.write(line)
+            sys.stderr.flush()
+            yield line
+
+    return Response(
+        stream(),
+        mimetype="text/plain; charset=utf-8",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
 
 @api_bp.route("/skip", methods=["POST"])
 def skip_route() -> Any:
@@ -692,6 +725,9 @@ def skip_route() -> Any:
         drpid = int(drpid_val)
     except (ValueError, TypeError):
         return {"error": "Invalid drpid", "ok": False}, 400
+    from interactive_collector.api_projects import _ensure_storage
+
+    _ensure_storage()
     if not folder_path_str:
         folder_path_str = get_result_by_drpid().get(drpid, {}).get("folder_path") or ""
         if not folder_path_str:
@@ -717,39 +753,6 @@ def skip_route() -> Any:
         return {"ok": True}
     except (ValueError, RuntimeError) as e:
         return {"error": str(e)[:200], "ok": False}, 500
-
-    try:
-        urls = json.loads(urls_json)
-    except json.JSONDecodeError:
-        return {"error": "Invalid scoreboard_urls_json"}, 400
-
-    folder_path = Path(folder_path_str)
-    if not folder_path.is_dir():
-        return {"error": "Output folder not found"}, 400
-
-    try:
-        drpid_for_stats = int(drpid_str) if drpid_str else None
-    except (ValueError, TypeError):
-        drpid_for_stats = None
-
-    def stream() -> Any:
-        for line in generate_save_progress(
-            folder_path,
-            urls,
-            indices,
-            drpid=drpid_for_stats,
-            folder_path_str=folder_path_str,
-            metadata=metadata if will_generate_pdfs and drpid_for_stats is not None else None,
-        ):
-            sys.stderr.write(line)
-            sys.stderr.flush()
-            yield line
-
-    return Response(
-        stream(),
-        mimetype="text/plain; charset=utf-8",
-        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
-    )
 
 
 @api_bp.route("/download-file", methods=["POST"])
