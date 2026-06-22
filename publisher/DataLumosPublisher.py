@@ -25,6 +25,15 @@ from utils.project_folder_cleanup import (
 # Published project URL template (same as Download Location in chiara_upload update_google_sheet)
 PUBLISHED_URL_TEMPLATE = "https://www.datalumos.org/datalumos/project/{workspace_id}/version/V1/view"
 
+# Sheet-only publisher paths: input status -> (notes, success status, download possible)
+_SHEET_ONLY_STATUS_CONFIG: Dict[str, tuple[str, str, str]] = {
+    "not_found": ("Not found", "updated_not_found", "N"),
+    "no_links": ("No live links", "updated_no_links", "N"),
+    "no dataset": ("no dataset", "updated_no_dataset", "?"),
+    "gigantic upload": ("gigantic upload", "updated_gigantic_upload", "?"),
+    "needs scripting": ("needs scripting", "updated_needs_scripting", "?"),
+}
+
 FILE_NOT_AVAILABLE_TEXT = "File not available for download"
 
 # DataLumos file table: checkbox | name | type | size | ... (third td = type)
@@ -89,8 +98,8 @@ class DataLumosPublisher:
             return
 
         status = (project.get("status") or "").strip().lower()
-        if status in ("not_found", "no_links"):
-            self._run_sheet_only_for_not_found_or_no_links(drpid, project, status)
+        if status in _SHEET_ONLY_STATUS_CONFIG:
+            self._run_sheet_only_update(drpid, project, status)
             return
 
         workspace_id = get_field(project, "datalumos_id")
@@ -203,21 +212,24 @@ class DataLumosPublisher:
                 drpid, "warnings", f"Google Sheet update failed: {error_message}"
             )
 
-    def _run_sheet_only_for_not_found_or_no_links(
+    def _run_sheet_only_update(
         self, drpid: int, project: Dict[str, Any], status: str
     ) -> None:
-        """Update Google Sheet only for not_found/no_links; set status to updated_not_found or updated_no_links on success."""
-        notes_value = "Not found" if status == "not_found" else "No live links"
-        status_value = "updated_not_found" if status == "not_found" else "updated_no_links"
+        """Update Google Sheet only for sheet-only statuses (not_found, no_links, skip presets)."""
+        notes_value, status_value, download_possible = _SHEET_ONLY_STATUS_CONFIG[status]
+        include_metadata = download_possible == "?"
 
         from publisher.GoogleSheetUpdater import GoogleSheetUpdater
 
         updater = GoogleSheetUpdater()
 
         def _do_update() -> tuple[bool, Optional[str]]:
-            return updater.update_for_not_found_or_no_links(
+            return updater.update_for_sheet_only(
                 source_url=get_field(project, "source_url"),
                 notes_value=notes_value,
+                dataset_download_possible=download_possible,
+                project=project if include_metadata else None,
+                log_suffix=f" ({status})",
             )
 
         self._update_sheet_if_configured(drpid, project, _do_update, status_value)

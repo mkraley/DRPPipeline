@@ -275,13 +275,23 @@ class Orchestrator:
         else:
             # Modules with prereq: call run(drpid) for each eligible project
             if module == "publisher":
-                # Publisher also processes not_found and no_links (sheet-only update)
+                # Publisher also processes sheet-only statuses (no browser)
                 projects_upload = Storage.list_eligible_projects("uploaded", num_rows, start_row, start_drpid)
                 projects_not_found = Storage.list_eligible_projects("not_found", num_rows, start_row, start_drpid)
                 projects_no_links = Storage.list_eligible_projects("no_links", num_rows, start_row, start_drpid)
+                projects_no_dataset = Storage.list_eligible_projects("no dataset", num_rows, start_row, start_drpid)
+                projects_gigantic = Storage.list_eligible_projects("gigantic upload", num_rows, start_row, start_drpid)
+                projects_needs_scripting = Storage.list_eligible_projects("needs scripting", num_rows, start_row, start_drpid)
                 seen: set[int] = set()
                 projects = []
-                for proj in projects_upload + projects_not_found + projects_no_links:
+                for proj in (
+                    projects_upload
+                    + projects_not_found
+                    + projects_no_links
+                    + projects_no_dataset
+                    + projects_gigantic
+                    + projects_needs_scripting
+                ):
                     drpid = proj["DRPID"]
                     if drpid not in seen:
                         seen.add(drpid)

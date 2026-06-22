@@ -98,16 +98,19 @@ class TestDataLumosPublisher(unittest.TestCase):
         Storage.update_record(drpid, {"status": "not_found"})
 
         mock_updater = MagicMock()
-        mock_updater.update_for_not_found_or_no_links.return_value = (True, None)
+        mock_updater.update_for_sheet_only.return_value = (True, None)
 
         with patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater", return_value=mock_updater), patch.object(
             Args, "google_sheet_id", "sheet1"
         ), patch.object(Args, "google_credentials", __file__):
             self.publisher.run(drpid)
 
-        mock_updater.update_for_not_found_or_no_links.assert_called_once_with(
+        mock_updater.update_for_sheet_only.assert_called_once_with(
             source_url="https://example.com/notfound",
             notes_value="Not found",
+            dataset_download_possible="N",
+            project=None,
+            log_suffix=" (not_found)",
         )
         record = Storage.get(drpid)
         self.assertEqual(record.get("status"), "updated_not_found")
@@ -118,19 +121,102 @@ class TestDataLumosPublisher(unittest.TestCase):
         Storage.update_record(drpid, {"status": "no_links"})
 
         mock_updater = MagicMock()
-        mock_updater.update_for_not_found_or_no_links.return_value = (True, None)
+        mock_updater.update_for_sheet_only.return_value = (True, None)
 
         with patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater", return_value=mock_updater), patch.object(
             Args, "google_sheet_id", "sheet1"
         ), patch.object(Args, "google_credentials", __file__):
             self.publisher.run(drpid)
 
-        mock_updater.update_for_not_found_or_no_links.assert_called_once_with(
+        mock_updater.update_for_sheet_only.assert_called_once_with(
             source_url="https://example.com/nolinks",
             notes_value="No live links",
+            dataset_download_possible="N",
+            project=None,
+            log_suffix=" (no_links)",
         )
         record = Storage.get(drpid)
         self.assertEqual(record.get("status"), "updated_no_links")
+
+    def test_run_no_dataset_updates_sheet_with_metadata(self) -> None:
+        """Test run with status no dataset updates sheet with Notes and download possible ?."""
+        drpid = Storage.create_record("https://example.com/nodataset")
+        Storage.update_record(
+            drpid,
+            {
+                "status": "no dataset",
+                "title": "Forest Data",
+                "agency": "USDA",
+                "office": "USFS",
+            },
+        )
+
+        mock_updater = MagicMock()
+        mock_updater.update_for_sheet_only.return_value = (True, None)
+        project = Storage.get(drpid)
+
+        with patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater", return_value=mock_updater), patch.object(
+            Args, "google_sheet_id", "sheet1"
+        ), patch.object(Args, "google_credentials", __file__):
+            self.publisher.run(drpid)
+
+        mock_updater.update_for_sheet_only.assert_called_once_with(
+            source_url="https://example.com/nodataset",
+            notes_value="no dataset",
+            dataset_download_possible="?",
+            project=project,
+            log_suffix=" (no dataset)",
+        )
+        record = Storage.get(drpid)
+        self.assertEqual(record.get("status"), "updated_no_dataset")
+
+    def test_run_gigantic_upload_updates_sheet_with_metadata(self) -> None:
+        """Test run with status gigantic upload updates sheet with Notes and download possible ?."""
+        drpid = Storage.create_record("https://example.com/gigantic")
+        Storage.update_record(drpid, {"status": "gigantic upload", "title": "Huge Archive"})
+
+        mock_updater = MagicMock()
+        mock_updater.update_for_sheet_only.return_value = (True, None)
+        project = Storage.get(drpid)
+
+        with patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater", return_value=mock_updater), patch.object(
+            Args, "google_sheet_id", "sheet1"
+        ), patch.object(Args, "google_credentials", __file__):
+            self.publisher.run(drpid)
+
+        mock_updater.update_for_sheet_only.assert_called_once_with(
+            source_url="https://example.com/gigantic",
+            notes_value="gigantic upload",
+            dataset_download_possible="?",
+            project=project,
+            log_suffix=" (gigantic upload)",
+        )
+        record = Storage.get(drpid)
+        self.assertEqual(record.get("status"), "updated_gigantic_upload")
+
+    def test_run_needs_scripting_updates_sheet_with_metadata(self) -> None:
+        """Test run with status needs scripting updates sheet like other skip presets."""
+        drpid = Storage.create_record("https://example.com/scripting")
+        Storage.update_record(drpid, {"status": "needs scripting", "title": "Complex Portal"})
+
+        mock_updater = MagicMock()
+        mock_updater.update_for_sheet_only.return_value = (True, None)
+        project = Storage.get(drpid)
+
+        with patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater", return_value=mock_updater), patch.object(
+            Args, "google_sheet_id", "sheet1"
+        ), patch.object(Args, "google_credentials", __file__):
+            self.publisher.run(drpid)
+
+        mock_updater.update_for_sheet_only.assert_called_once_with(
+            source_url="https://example.com/scripting",
+            notes_value="needs scripting",
+            dataset_download_possible="?",
+            project=project,
+            log_suffix=" (needs scripting)",
+        )
+        record = Storage.get(drpid)
+        self.assertEqual(record.get("status"), "updated_needs_scripting")
 
     def test_uploads_incomplete_on_project_page_file_not_available(self) -> None:
         mock_page = MagicMock()

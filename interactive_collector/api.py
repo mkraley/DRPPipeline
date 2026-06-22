@@ -684,14 +684,18 @@ def save_route() -> Any:
 @api_bp.route("/skip", methods=["POST"])
 def skip_route() -> Any:
     """
-    Update the project like Save but set status to "collector hold - {reason}".
+    Update the project like Save but set status from skip_type or collector_hold reason.
 
-    Expects form or JSON: drpid, reason, folder_path (optional), metadata_*.
+    Expects form or JSON: drpid, reason (optional if skip_type set), skip_type
+    (optional: "no dataset", "gigantic upload", or "needs scripting"), folder_path (optional), metadata_*.
     """
+    _SKIP_TYPES = frozenset({"no dataset", "gigantic upload", "needs scripting"})
+
     if request.is_json:
         data = request.get_json() or {}
         drpid_val = data.get("drpid")
         reason = (data.get("reason") or "").strip()
+        skip_type = (data.get("skip_type") or "").strip().lower()
         folder_path_str = (data.get("folder_path") or "").strip()
         metadata = {
             "title": (data.get("metadata_title") or "").strip(),
@@ -706,6 +710,7 @@ def skip_route() -> Any:
     else:
         drpid_val = (request.form.get("drpid") or "").strip()
         reason = (request.form.get("reason") or "").strip()
+        skip_type = (request.form.get("skip_type") or "").strip().lower()
         folder_path_str = (request.form.get("folder_path") or "").strip()
         metadata = {
             "title": (request.form.get("metadata_title") or "").strip(),
@@ -717,8 +722,12 @@ def skip_route() -> Any:
             "time_end": (request.form.get("metadata_time_end") or "").strip(),
             "download_date": (request.form.get("metadata_download_date") or "").strip(),
         }
-    if not reason:
-        return {"error": "reason required", "ok": False}, 400
+    if skip_type and skip_type not in _SKIP_TYPES:
+        return {"error": "invalid skip_type", "ok": False}, 400
+    if not skip_type and not reason:
+        return {"error": "reason or skip_type required", "ok": False}, 400
+    if skip_type and reason:
+        return {"error": "provide either skip_type or reason, not both", "ok": False}, 400
     if not drpid_val:
         return {"error": "drpid required", "ok": False}, 400
     try:
@@ -735,6 +744,7 @@ def skip_route() -> Any:
     board = get_scoreboard()
     notes_lines = [f"  {n.get('url', '')} -> {n.get('status_label', '')}" for n in board if n.get("url")]
     status_notes = "\n".join(notes_lines) if notes_lines else None
+    status_override = skip_type if skip_type else f"collector_hold - {reason}"
     try:
         save_metadata(
             drpid,
@@ -748,7 +758,7 @@ def skip_route() -> Any:
             time_end=metadata["time_end"],
             download_date=metadata["download_date"],
             status_notes=status_notes,
-            status_override=f"collector_hold - {reason}",
+            status_override=status_override,
         )
         return {"ok": True}
     except (ValueError, RuntimeError) as e:

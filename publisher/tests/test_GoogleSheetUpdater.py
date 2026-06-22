@@ -508,3 +508,70 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertEqual(c2[0]["values"], [["Agency X"]])
         d2 = [d for d in body["data"] if "CDC!D2" in d.get("range", "")]
         self.assertEqual(d2[0]["values"], [["Office Y"]])
+
+    @skip_if_no_google
+    @patch("publisher.GoogleSheetUpdater.build_sheets_v4_service")
+    @patch("google.oauth2.service_account.Credentials.from_service_account_file")
+    def test_update_for_sheet_only_writes_question_mark_download_possible(
+        self, mock_from_sa: MagicMock, mock_build: MagicMock
+    ) -> None:
+        """Sheet-only update for no dataset uses ? for Dataset Download Possible?."""
+        mock_creds = MagicMock()
+        mock_creds.universe_domain = "googleapis.com"
+        mock_from_sa.return_value = mock_creds
+        mock_service = MagicMock()
+        header_response = {
+            "values": [
+                [
+                    "URL",
+                    "Title of Site",
+                    "Agency",
+                    "Office",
+                    "Claimed",
+                    "Data Added",
+                    "Dataset Download Possible?",
+                    "Nominated to EOT / USGWDA",
+                    "Notes",
+                ]
+            ]
+        }
+        url_column_response = {"values": []}
+        mock_get = mock_service.spreadsheets.return_value.values.return_value.get.return_value
+        mock_get.execute.side_effect = [header_response, url_column_response, url_column_response]
+        mock_service.spreadsheets.return_value.values.return_value.batchUpdate.return_value.execute.return_value = {}
+        mock_build.return_value = mock_service
+
+        cred_path = Path(tempfile.gettempdir()) / "creds_sheet_only_test.json"
+        cred_path.write_text("{}")
+
+        updater = GoogleSheetUpdater()
+        with patch.object(Args, "google_sheet_id", "sheet123"), patch.object(
+            Args, "google_credentials", cred_path
+        ), patch.object(Args, "google_sheet_name", "CDC"), patch.object(Args, "google_username", "alice"):
+            success, msg = updater.update_for_sheet_only(
+                "https://example.com/new-row",
+                notes_value="no dataset",
+                dataset_download_possible="?",
+                project={
+                    "title": "Site Name",
+                    "agency": "USDA",
+                    "office": "USFS",
+                },
+            )
+        cred_path.unlink(missing_ok=True)
+
+        self.assertTrue(success)
+        self.assertIsNone(msg)
+        body = mock_service.spreadsheets.return_value.values.return_value.batchUpdate.call_args[1][
+            "body"
+        ]["data"]
+        download_possible = [
+            d for d in body if "Dataset Download Possible?" in str(d) or "G" in d.get("range", "")
+        ]
+        g_col = [d for d in body if "CDC!G" in d.get("range", "")]
+        self.assertTrue(g_col)
+        self.assertEqual(g_col[0]["values"], [["?"]])
+        notes_col = [d for d in body if d.get("values") == [["no dataset"]]]
+        self.assertTrue(notes_col)
+        title_col = [d for d in body if d.get("values") == [["Site Name"]]]
+        self.assertTrue(title_col)

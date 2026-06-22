@@ -218,10 +218,10 @@ class TestOrchestrator(unittest.TestCase):
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")
-    def test_run_publisher_lists_uploaded_not_found_no_links(
+    def test_run_publisher_lists_uploaded_and_sheet_only_statuses(
         self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
     ) -> None:
-        """Test run('publisher') calls list_eligible_projects for uploaded, not_found, no_links and dedupes."""
+        """Test run('publisher') lists uploaded plus sheet-only statuses and dedupes."""
         mock_storage = MagicMock()
         mock_storage_cls.initialize.return_value = mock_storage
         mock_storage_cls.get_instance.return_value = mock_storage
@@ -230,15 +230,21 @@ class TestOrchestrator(unittest.TestCase):
             [{"DRPID": 2, "source_url": "https://a.com"}],
             [{"DRPID": 2, "source_url": "https://a.com"}],
             [{"DRPID": 3, "source_url": "https://b.com"}],
+            [],
+            [],
+            [],
         ]
         mock_pub_instance = MagicMock()
         mock_find_class.return_value = MagicMock(return_value=mock_pub_instance)
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
             Orchestrator.run("publisher")
-        self.assertEqual(mock_storage_cls.list_eligible_projects.call_count, 3)
+        self.assertEqual(mock_storage_cls.list_eligible_projects.call_count, 6)
         mock_storage_cls.list_eligible_projects.assert_any_call("uploaded", None, None, None)
         mock_storage_cls.list_eligible_projects.assert_any_call("not_found", None, None, None)
         mock_storage_cls.list_eligible_projects.assert_any_call("no_links", None, None, None)
+        mock_storage_cls.list_eligible_projects.assert_any_call("no dataset", None, None, None)
+        mock_storage_cls.list_eligible_projects.assert_any_call("gigantic upload", None, None, None)
+        mock_storage_cls.list_eligible_projects.assert_any_call("needs scripting", None, None, None)
         self.assertEqual(mock_pub_instance.run.call_count, 2)  # DRPID 2 and 3
 
     @patch("orchestration.Orchestrator._find_module_class")
@@ -351,6 +357,9 @@ class TestOrchestrator(unittest.TestCase):
         mock_storage_cls.get_instance.return_value = mock_storage
         mock_storage_cls.list_eligible_projects.side_effect = [
             [{"DRPID": i, "source_url": f"https://{i}.com"} for i in range(1, 6)],
+            [],
+            [],
+            [],
             [],
             [],
         ]

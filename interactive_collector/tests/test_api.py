@@ -401,10 +401,85 @@ class TestApiSkip(unittest.TestCase):
         self._patcher.stop()
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
-    def test_skip_requires_reason(self) -> None:
+    def test_skip_requires_reason_or_skip_type(self) -> None:
         resp = self.client.post(
             "/api/skip",
             json={"drpid": 1, "reason": ""},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_skip_no_dataset_status(self) -> None:
+        from storage import Storage
+
+        drpid = Storage.create_record("https://skip-test.example/no-dataset")
+        Storage.update_record(drpid, {"status": "sourced"})
+        folder = Path(self.tmpdir) / "out_nd"
+        folder.mkdir()
+        resp = self.client.post(
+            "/api/skip",
+            json={
+                "drpid": drpid,
+                "skip_type": "no dataset",
+                "folder_path": str(folder),
+                "metadata_title": "Site Title",
+                "metadata_agency": "USDA",
+                "metadata_office": "Forest Service",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        row = Storage.get(drpid)
+        assert row is not None
+        self.assertEqual(row["status"], "no dataset")
+        self.assertEqual(row["title"], "Site Title")
+
+    def test_skip_gigantic_upload_status(self) -> None:
+        from storage import Storage
+
+        drpid = Storage.create_record("https://skip-test.example/gigantic")
+        folder = Path(self.tmpdir) / "out_gig"
+        folder.mkdir()
+        resp = self.client.post(
+            "/api/skip",
+            json={"drpid": drpid, "skip_type": "gigantic upload", "folder_path": str(folder)},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        row = Storage.get(drpid)
+        assert row is not None
+        self.assertEqual(row["status"], "gigantic upload")
+
+    def test_skip_needs_scripting_status(self) -> None:
+        from storage import Storage
+
+        drpid = Storage.create_record("https://skip-test.example/scripting")
+        folder = Path(self.tmpdir) / "out_script"
+        folder.mkdir()
+        resp = self.client.post(
+            "/api/skip",
+            json={"drpid": drpid, "skip_type": "needs scripting", "folder_path": str(folder)},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        row = Storage.get(drpid)
+        assert row is not None
+        self.assertEqual(row["status"], "needs scripting")
+
+    def test_skip_rejects_both_reason_and_skip_type(self) -> None:
+        from storage import Storage
+
+        drpid = Storage.create_record("https://skip-test.example/both")
+        folder = Path(self.tmpdir) / "out_both"
+        folder.mkdir()
+        resp = self.client.post(
+            "/api/skip",
+            json={
+                "drpid": drpid,
+                "skip_type": "no dataset",
+                "reason": "hold",
+                "folder_path": str(folder),
+            },
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 400)

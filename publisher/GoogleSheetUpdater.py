@@ -149,9 +149,21 @@ class GoogleSheetUpdater:
                 append_new,
                 column_map,
                 _proj,
-                "Title",
+                "Title of Site",
                 "title",
             )
+            if not title_to_write:
+                title_to_write = self._metadata_value_if_cell_empty(
+                    service,
+                    sheet_id,
+                    sheet_name,
+                    row_number,
+                    append_new,
+                    column_map,
+                    _proj,
+                    "Title",
+                    "title",
+                )
             agency_to_write = self._metadata_value_if_cell_empty(
                 service,
                 sheet_id,
@@ -261,7 +273,7 @@ class GoogleSheetUpdater:
         return self._update_row(
             source_url=source_url,
             required_columns=_REQUIRED_COLUMNS,
-            optional_columns=["Title", "Agency", "Office"],
+            optional_columns=["Title of Site", "Title", "Agency", "Office"],
             build_requests=_build,
             workspace_id=workspace_id,
             project=project,
@@ -289,16 +301,41 @@ class GoogleSheetUpdater:
         Returns:
             (True, None) on success, (False, error_message) on failure.
         """
+        return self.update_for_sheet_only(
+            source_url=source_url,
+            notes_value=notes_value,
+            dataset_download_possible="N",
+            log_suffix=" (not_found/no_links)",
+        )
+
+    def update_for_sheet_only(
+        self,
+        source_url: str,
+        notes_value: str,
+        dataset_download_possible: str = "N",
+        project: Optional[Dict[str, Any]] = None,
+        log_suffix: str = "",
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Update the Google Sheet for sheet-only publisher paths (not_found, no_links,
+        no dataset, gigantic upload, needs scripting).
+
+        Writes Claimed, Data Added=N, Dataset Download Possible?, Nominated=N, Notes,
+        and optional Title of Site/Title, Agency, Office from project metadata.
+        Appends a row with URL when no match exists.
+        """
         return self._update_row(
             source_url=source_url,
             required_columns=_REQUIRED_COLUMNS_NOT_FOUND,
-            optional_columns=["Notes"],
-            build_requests=self._build_not_found_requests,
-            log_suffix=" (not_found/no_links)",
+            optional_columns=["Notes", "Title of Site", "Title", "Agency", "Office"],
+            build_requests=self._build_sheet_only_requests,
+            log_suffix=log_suffix,
             notes_value=notes_value,
+            dataset_download_possible=dataset_download_possible,
+            project=project,
         )
 
-    def _build_not_found_requests(
+    def _build_sheet_only_requests(
         self,
         sheet_name: str,
         row_number: int,
@@ -306,11 +343,15 @@ class GoogleSheetUpdater:
         append_new_row: bool,
         source_url: str,
         notes_value: str,
+        dataset_download_possible: str = "N",
+        title_to_write: str = "",
+        agency_to_write: str = "",
+        office_to_write: str = "",
         service: Any = None,
         sheet_id: str = "",
         **kwargs: Any,
     ) -> List[Dict[str, Any]]:
-        """Build update requests for not_found/no_links sheet update."""
+        """Build update requests for sheet-only inventory updates."""
         username = Args.google_username or ""
         requests: List[Dict[str, Any]] = []
 
@@ -321,8 +362,28 @@ class GoogleSheetUpdater:
                 "values": [[u]],
             })
 
+        def _add_metadata(col_key: str, value: str) -> None:
+            col_letter = column_map.get(col_key)
+            val = (value or "").strip()
+            if col_letter and val:
+                requests.append({
+                    "range": f"{sheet_name}!{col_letter}{row_number}",
+                    "values": [[val]],
+                })
+
+        t_title = (title_to_write or "").strip()
+        if t_title:
+            if column_map.get("Title of Site"):
+                _add_metadata("Title of Site", t_title)
+            elif column_map.get("Title"):
+                _add_metadata("Title", t_title)
+        _add_metadata("Agency", agency_to_write)
+        _add_metadata("Office", office_to_write)
+
+        download_possible = (dataset_download_possible or "N").strip() or "N"
+
         for col_key, col_letter in column_map.items():
-            if col_key == "URL":
+            if col_key in ("URL", "Title of Site", "Title", "Agency", "Office"):
                 continue
             if col_key == "Claimed":
                 requests.append({
@@ -337,7 +398,7 @@ class GoogleSheetUpdater:
             elif col_key == "Dataset Download Possible?":
                 requests.append({
                     "range": f"{sheet_name}!{col_letter}{row_number}",
-                    "values": [["N"]],
+                    "values": [[download_possible]],
                 })
             elif col_key == "Nominated to EOT / USGWDA":
                 requests.append({
@@ -602,7 +663,9 @@ class GoogleSheetUpdater:
                 })
 
         t_title = (title_to_write or "").strip()
-        if t_title and column_map.get("Title"):
+        if t_title and column_map.get("Title of Site"):
+            _add("Title of Site", t_title)
+        elif t_title and column_map.get("Title"):
             _add("Title", t_title)
         t_agency = (agency_to_write or "").strip()
         if t_agency and column_map.get("Agency"):

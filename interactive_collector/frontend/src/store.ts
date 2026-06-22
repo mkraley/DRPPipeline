@@ -61,7 +61,10 @@ interface CollectorActions {
   closeNoLinksModal: () => void;
   openSkipModal: () => void;
   closeSkipModal: () => void;
-  skip: (reason: string) => Promise<void>;
+  skip: (options: {
+    reason?: string;
+    skipType?: "no dataset" | "gigantic upload" | "needs scripting";
+  }) => Promise<void>;
   startDownloadsWatcher: () => Promise<void>;
   stopDownloadsWatcher: () => Promise<void>;
   setDeleteFolderOnLoad: (value: boolean) => void;
@@ -256,15 +259,21 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
   openSkipModal: () => set({ skipModalOpen: true }),
   closeSkipModal: () => set({ skipModalOpen: false }),
 
-  skip: async (reason) => {
+  skip: async ({ reason = "", skipType }) => {
     const { drpid, folderPath, metadata } = get();
     if (!drpid) {
       set({ error: "Load a project before skipping." });
       return;
     }
+    const trimmedReason = reason.trim();
+    if (!skipType && !trimmedReason) {
+      set({ error: "Enter a reason or choose a skip type." });
+      return;
+    }
     const body = {
       drpid,
-      reason: reason.trim(),
+      reason: trimmedReason,
+      skip_type: skipType || "",
       folder_path: folderPath || "",
       metadata_title: metadata.title,
       metadata_summary: metadata.summary,
