@@ -33,6 +33,14 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": None,
         "class_name": "Sourcing",
     },
+    "arc_sourcing": {
+        "prereq": None,
+        "class_name": "ArcSourcing",
+    },
+    "arc_collector": {
+        "prereq": "sourced",
+        "class_name": "ArcCollector",
+    },
     "interactive_collector": {
         "prereq": "sourced",
         "class_name": None,  # Handled directly: start Flask app with first eligible URL
@@ -238,7 +246,7 @@ class Orchestrator:
 
         # Only sourcing may wipe the DB, and only when delete_all_db_entries is true in config and/or CLI
         # (default false — omit both and the database is left intact).
-        if module == "sourcing" and bool(Args.delete_all_db_entries):
+        if module in ("sourcing", "arc_sourcing") and bool(Args.delete_all_db_entries):
             Logger.warning(
                 "Deleting all database entries before sourcing (delete_all_db_entries in config and/or "
                 "--delete-all-db-entries on command line)"

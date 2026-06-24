@@ -201,7 +201,7 @@ class Args(metaclass=ArgsMeta):
         
         def callback(
             ctx: typer.Context,
-            module: Optional[str] = typer.Argument(None, help="Module to run: setup, noop, sourcing, socrata_collector, catalog_collector, cms_collector, interactive_collector, upload, publisher, cleanup_inprogress, help"),
+            module: Optional[str] = typer.Argument(None, help="Module to run: setup, noop, sourcing, arc_sourcing, arc_collector, socrata_collector, catalog_collector, cms_collector, usfs_collector, interactive_collector, upload, publisher, cleanup_inprogress, help"),
             config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to configuration file (JSON format). Default: ./config.json"),
             log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Set the logging level", case_sensitive=False),
             num_rows: Optional[int] = typer.Option(None, "--num-rows", "-n", help="Max projects or candidate URLs per batch; None = unlimited"),
