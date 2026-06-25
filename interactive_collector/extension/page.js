@@ -25,9 +25,48 @@
    * - CMS: accordions - expand one at a time, re-query after each (Bootstrap/React)
    * Returns { readMore, showMore, accordions } counts.
    */
+  /**
+   * Ag Data Commons / Figshare: dismiss cookie banner and expand scroll containers for print.
+   */
+  function expandForAgDataCommons() {
+    var host = (location.hostname || "").toLowerCase();
+    if (host.indexOf("agdatacommons.nal.usda.gov") === -1) return;
+    try {
+      document.querySelectorAll("button").forEach(function (btn) {
+        var text = (btn.textContent || "").replace(/[\s\u00a0]+/g, " ").trim().toLowerCase();
+        if (text === "accept all" || text === "i agree") {
+          try {
+            btn.click();
+          } catch (_) {}
+        }
+      });
+      document
+        .querySelectorAll('[role="dialog"], [aria-labelledby="dialog-cookie-banner-title"]')
+        .forEach(function (node) {
+          var blob = (node.textContent || "").slice(0, 4000).toLowerCase();
+          if (/cookie consent|this website uses cookies/.test(blob)) {
+            node.remove();
+          }
+        });
+      document.querySelectorAll("body *").forEach(function (el) {
+        if (!el || el.nodeType !== 1) return;
+        var style = window.getComputedStyle(el);
+        var oy = style.overflowY;
+        var o = style.overflow;
+        if (oy === "auto" || oy === "scroll" || o === "auto" || o === "scroll") {
+          try {
+            el.style.overflow = "visible";
+            el.style.overflowY = "visible";
+            el.style.maxHeight = "none";
+            el.style.height = "auto";
+          } catch (_) {}
+        }
+      });
+    } catch (_) {}
+  }
+
   function expandForPdf() {
     var readMore = 0, showMore = 0, accordions = 0, fullDescription = 0, dataFields = 0, collapsePanels = 0, pastaMore = 0;
-    /** Skip same DOM node across pulse rounds (was re-clicking #showMore 8× while UI stayed closed). */
     var clickedOnceForPdf = new WeakSet();
     function safeClick(el, scrollIntoView) {
       try {
@@ -525,6 +564,7 @@
         return wait(200);
       })
       .then(function () {
+        expandForAgDataCommons();
         return {
           readMore: readMore,
           showMore: showMore,

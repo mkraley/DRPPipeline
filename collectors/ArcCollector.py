@@ -13,6 +13,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from collectors.ArcCatalogHtmlBuilder import build_catalog_html
 from collectors.ArcMetadataExtractor import extract_metadata
 from sourcing.ArcApiClient import ArcApiClient, article_id_from_source_url
 from sourcing.ArcCandidateFetcher import AGENCY, OFFICE
@@ -22,13 +23,25 @@ from utils.Args import Args
 from utils.Errors import record_error, record_warning
 from utils.Logger import Logger
 from utils.download_with_progress import download_via_url
-from utils.file_utils import create_output_folder, format_file_size, sanitize_filename
+from utils.file_utils import (
+    create_output_folder,
+    folder_extensions_and_size,
+    format_file_size,
+    sanitize_filename,
+)
 from utils.url_utils import is_valid_url
 
 _DOWNLOAD_TIMEOUT_SEC = 3600
+_CATALOG_PDF_NAME = "catalog_detail.pdf"
+_CATALOG_HTML_NAME = "catalog_detail.html"
+_METADATA_JSON_NAME = "arc_metadata.json"
 STATUS_COLLECTED_LARGE_FILE = "collected - large file"
 STATUS_COLLECTED_EXTERNAL_ARCHIVE = "collected - external archive"
 _ARC_URL_FRAGMENT = "agdatacommons.nal.usda.gov"
+_EXTENSION_CATALOG_PDF_HINT = (
+    "Catalog PDF: open this project in the Interactive Collector, use Copy & Open, "
+    f"then click Save as PDF on the ADC item page (writes {_CATALOG_PDF_NAME})."
+)
 
 
 class ArcCollector:
@@ -73,7 +86,11 @@ class ArcCollector:
         except Exception as exc:
             record_error(drpid, f"Exception during ARC collection for DRPID {drpid}: {exc}")
 
-    def _collect(self, url: str, drpid: int) -> dict[str, Any]:
+    def _collect(
+        self,
+        url: str,
+        drpid: int,
+    ) -> dict[str, Any]:
         """Fetch metadata and download files for one ARC dataset."""
         if not is_valid_url(url):
             record_error(drpid, f"Invalid URL: {url}")
@@ -90,6 +107,7 @@ class ArcCollector:
 
         article = self._api.fetch_article(article_id)
         result: dict[str, Any] = extract_metadata(article)
+        self._record_geo_warnings(drpid, result)
         result["agency"] = AGENCY
         result["office"] = OFFICE
 
@@ -99,9 +117,10 @@ class ArcCollector:
             return result
 
         self._save_metadata_json(folder_path, article)
+        self._save_catalog_pdf(drpid, folder_path, article, url)
 
         files = self._inventory.list_files_for_article(article)
-        num_files, file_size, extensions, _has_large, has_unresolved, all_unresolved = (
+        _num_files, _file_size, _extensions, _has_large, has_unresolved, all_unresolved = (
             self._inventory.summarize_inventory(files)
         )
 
@@ -111,34 +130,24 @@ class ArcCollector:
                 drpid,
                 f"Data available via external link (not downloaded): {external_url}",
             )
-            result.update({
-                "folder_path": str(folder_path),
-                "num_files": num_files,
-                "file_size": file_size,
-                "extensions": extensions,
-                "download_date": date.today().isoformat(),
-                "_external_archive": True,
-            })
+            result.update(self._folder_summary(folder_path))
+            result["download_date"] = date.today().isoformat()
+            result["_external_archive"] = True
             return result
 
         if has_unresolved:
             record_warning(drpid, "Some external data links could not be expanded via API.")
 
-        status_notes, total_bytes, exts, skipped_large = self._process_files(
+        status_notes, _total_bytes, _exts, skipped_large = self._process_files(
             drpid,
             folder_path,
             files,
         )
 
-        result.update({
-            "folder_path": str(folder_path),
-            "num_files": num_files,
-            "file_size": format_file_size(total_bytes),
-            "extensions": ", ".join(sorted(exts)),
-            "download_date": date.today().isoformat(),
-            "_skipped_large_file": skipped_large,
-            "_external_archive": False,
-        })
+        result.update(self._folder_summary(folder_path))
+        result["download_date"] = date.today().isoformat()
+        result["_skipped_large_file"] = skipped_large
+        result["_external_archive"] = False
         if status_notes:
             result["status_notes"] = "\n".join(status_notes)
 
@@ -148,15 +157,47 @@ class ArcCollector:
         Logger.info(
             "ARC collection complete for DRPID %s: %s files, %s",
             drpid,
-            num_files,
+            result.get("num_files"),
             result.get("file_size"),
         )
         return result
 
+    def _record_geo_warnings(self, drpid: int, result: dict[str, Any]) -> None:
+        """Surface geographic normalization warnings via Storage."""
+        for warning in result.pop("_geo_warnings", []) or []:
+            record_warning(drpid, warning)
+
+    def _save_catalog_pdf(
+        self,
+        drpid: int,
+        folder_path: Path,
+        article: dict[str, Any],
+        source_url: str,
+    ) -> None:
+        """Save API catalog HTML; portal PDF comes from the browser extension."""
+        html_path = folder_path / _CATALOG_HTML_NAME
+        pdf_path = folder_path / _CATALOG_PDF_NAME
+
+        html_path.write_text(build_catalog_html(article, source_url), encoding="utf-8")
+        if pdf_path.is_file() and pdf_path.stat().st_size > 0:
+            Logger.info("ARC catalog PDF already present for DRPID %s", drpid)
+            return
+        record_warning(drpid, _EXTENSION_CATALOG_PDF_HINT)
+
     def _save_metadata_json(self, folder_path: Path, article: dict[str, Any]) -> None:
         """Persist the Figshare article JSON alongside downloaded files."""
-        dest = folder_path / "figshare_metadata.json"
+        dest = folder_path / _METADATA_JSON_NAME
         dest.write_text(json.dumps(article, indent=2), encoding="utf-8")
+
+    def _folder_summary(self, folder_path: Path) -> dict[str, Any]:
+        """Summarize on-disk files for Storage numeric fields."""
+        extensions, total_bytes, num_files = folder_extensions_and_size(folder_path)
+        return {
+            "folder_path": str(folder_path),
+            "num_files": num_files,
+            "file_size": format_file_size(total_bytes),
+            "extensions": ", ".join(extensions),
+        }
 
     def _process_files(
         self,
@@ -218,8 +259,7 @@ class ArcCollector:
                 continue
 
             if dest.exists():
-                actual = dest.stat().st_size
-                total_bytes += actual
+                total_bytes += dest.stat().st_size
                 Logger.info("Downloaded ARC file: %s", filename)
 
         return notes, total_bytes, exts, skipped_large

@@ -116,3 +116,25 @@ class TestArcCollector(unittest.TestCase):
         )
         fields = mock_storage.update_record.call_args[0][1]
         self.assertEqual(fields["status"], STATUS_COLLECTED_EXTERNAL_ARCHIVE)
+
+    def test_save_catalog_pdf_writes_html_and_requests_extension_pdf(self) -> None:
+        """Catalog HTML is saved; missing PDF triggers extension workflow hint."""
+        collector = ArcCollector()
+        folder = Path(__file__).parent / "_tmp_arc_catalog"
+        folder.mkdir(exist_ok=True)
+        source_url = (
+            "https://agdatacommons.nal.usda.gov/articles/dataset/Example/24667896"
+        )
+        article = {"title": "Example dataset", "description": "<p>Summary</p>"}
+        try:
+            with patch("collectors.ArcCollector.record_warning") as mock_warn:
+                collector._save_catalog_pdf(1, folder, article, source_url)
+            html_path = folder / "catalog_detail.html"
+            self.assertTrue(html_path.is_file())
+            self.assertIn("Example dataset", html_path.read_text(encoding="utf-8"))
+            mock_warn.assert_called_once()
+            self.assertIn("Save as PDF", mock_warn.call_args[0][1])
+        finally:
+            for file_path in folder.iterdir():
+                file_path.unlink(missing_ok=True)
+            folder.rmdir()

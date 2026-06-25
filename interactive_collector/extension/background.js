@@ -1,7 +1,7 @@
 /**
  * Background script: POST PDF to collector; browser print-to-PDF via debugger API.
  */
-function postPdfToCollector(collectorBase, drpid, url, referrer, pdfBase64, pageTitle) {
+function postPdfToCollector(collectorBase, drpid, url, referrer, pdfBase64, pageTitle, filename) {
   const binary = atob(pdfBase64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -11,6 +11,7 @@ function postPdfToCollector(collectorBase, drpid, url, referrer, pdfBase64, page
   fd.append("url", url);
   fd.append("referrer", referrer || "");
   if (pageTitle && String(pageTitle).trim()) fd.append("title", String(pageTitle).trim());
+  if (filename && String(filename).trim()) fd.append("filename", String(filename).trim());
   fd.append("pdf", blob, "page.pdf");
   return fetch(`${collectorBase}/api/extension/save-pdf`, {
     method: "POST",
@@ -155,14 +156,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "drp-save-pdf") {
-    const { collectorBase, drpid, url, referrer, pdfBase64, title } = msg;
+    const { collectorBase, drpid, url, referrer, pdfBase64, title, filename } = msg;
     if (!collectorBase || !drpid || !url || !pdfBase64) {
       sendResponse({ ok: false, error: "Missing data" });
       return true;
     }
     (async () => {
       try {
-        const data = await postPdfToCollector(collectorBase, drpid, url, referrer || "", pdfBase64, title);
+        const data = await postPdfToCollector(
+          collectorBase,
+          drpid,
+          url,
+          referrer || "",
+          pdfBase64,
+          title,
+          filename
+        );
         sendResponse(data);
       } catch (e) {
         sendResponse({ ok: false, error: String(e && e.message || e) });
@@ -208,7 +217,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "drp-print-to-pdf") {
-    const { collectorBase, drpid, url, referrer, title } = msg;
+    const { collectorBase, drpid, url, referrer, title, filename } = msg;
     const tabId = sender.tab && sender.tab.id;
     if (!collectorBase || !drpid || !url || tabId == null) {
       sendResponse({ ok: false, error: "Missing data", fallback: true });
@@ -228,7 +237,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ ok: false, error: "No PDF data", fallback: true });
             return;
           }
-          const data = await postPdfToCollector(collectorBase, drpid, url, referrer || "", pdfBase64, title);
+          const data = await postPdfToCollector(
+            collectorBase,
+            drpid,
+            url,
+            referrer || "",
+            pdfBase64,
+            title,
+            filename
+          );
           sendResponse(data);
         } finally {
           try {

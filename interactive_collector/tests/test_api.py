@@ -590,6 +590,27 @@ class TestApiExtensionSavePdf(unittest.TestCase):
             self.assertIn("Sample_Dataset_Title", filename)
             self.assertNotIn("dataset-123", filename)
 
+    def test_extension_save_pdf_honors_catalog_detail_filename(self) -> None:
+        """Explicit catalog_detail.pdf is written to the project folder."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("interactive_collector.api.get_result_by_drpid", return_value={1: {"folder_path": None}}):
+                with patch("interactive_collector.api.ensure_output_folder", return_value=tmpdir):
+                    with open(Path(__file__).parent / "test_api.py", "rb") as fake_pdf:
+                        resp = self.client.post(
+                            "/api/extension/save-pdf",
+                            data={
+                                "drpid": "1",
+                                "url": "https://agdatacommons.nal.usda.gov/articles/dataset/Example/1",
+                                "filename": "catalog_detail.pdf",
+                                "pdf": (fake_pdf, "page.pdf"),
+                            },
+                            content_type="multipart/form-data",
+                        )
+            self.assertEqual(resp.status_code, 200)
+            data = json.loads(resp.data)
+            self.assertEqual(data.get("filename"), "catalog_detail.pdf")
+            self.assertTrue((Path(tmpdir) / "catalog_detail.pdf").is_file())
+
 
 class TestApiExtensionSaveMarkdown(unittest.TestCase):
     """Tests for /api/extension/save-markdown."""
