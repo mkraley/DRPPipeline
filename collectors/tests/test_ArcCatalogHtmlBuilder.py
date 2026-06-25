@@ -88,3 +88,13 @@ class TestArcCatalogHtmlBuilder:
         assert "References" in html_doc
         assert "ORCID" in html_doc
         assert "Publisher" in html_doc
+
+    def test_build_catalog_html_is_self_contained(self) -> None:
+        """HTML uses embedded CSS only; no external JS or CSS files."""
+        source_url = (
+            "https://agdatacommons.nal.usda.gov/articles/dataset/Example/24667896"
+        )
+        html_doc = build_catalog_html(SAMPLE_ARTICLE, source_url)
+        assert "<style>" in html_doc
+        assert "<script" not in html_doc.lower()
+        assert 'rel="stylesheet"' not in html_doc.lower()

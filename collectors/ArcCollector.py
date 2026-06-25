@@ -32,16 +32,11 @@ from utils.file_utils import (
 from utils.url_utils import is_valid_url
 
 _DOWNLOAD_TIMEOUT_SEC = 3600
-_CATALOG_PDF_NAME = "catalog_detail.pdf"
 _CATALOG_HTML_NAME = "catalog_detail.html"
 _METADATA_JSON_NAME = "arc_metadata.json"
 STATUS_COLLECTED_LARGE_FILE = "collected - large file"
 STATUS_COLLECTED_EXTERNAL_ARCHIVE = "collected - external archive"
 _ARC_URL_FRAGMENT = "agdatacommons.nal.usda.gov"
-_EXTENSION_CATALOG_PDF_HINT = (
-    "Catalog PDF: open this project in the Interactive Collector, use Copy & Open, "
-    f"then click Save as PDF on the ADC item page (writes {_CATALOG_PDF_NAME})."
-)
 
 
 class ArcCollector:
@@ -117,7 +112,7 @@ class ArcCollector:
             return result
 
         self._save_metadata_json(folder_path, article)
-        self._save_catalog_pdf(drpid, folder_path, article, url)
+        self._save_catalog_html(folder_path, article, url)
 
         files = self._inventory.list_files_for_article(article)
         _num_files, _file_size, _extensions, _has_large, has_unresolved, all_unresolved = (
@@ -167,22 +162,16 @@ class ArcCollector:
         for warning in result.pop("_geo_warnings", []) or []:
             record_warning(drpid, warning)
 
-    def _save_catalog_pdf(
+    def _save_catalog_html(
         self,
-        drpid: int,
         folder_path: Path,
         article: dict[str, Any],
         source_url: str,
     ) -> None:
-        """Save API catalog HTML; portal PDF comes from the browser extension."""
+        """Save a plain HTML catalog snapshot built from Figshare API metadata."""
         html_path = folder_path / _CATALOG_HTML_NAME
-        pdf_path = folder_path / _CATALOG_PDF_NAME
-
         html_path.write_text(build_catalog_html(article, source_url), encoding="utf-8")
-        if pdf_path.is_file() and pdf_path.stat().st_size > 0:
-            Logger.info("ARC catalog PDF already present for DRPID %s", drpid)
-            return
-        record_warning(drpid, _EXTENSION_CATALOG_PDF_HINT)
+        Logger.info("Wrote ARC catalog HTML: %s", html_path)
 
     def _save_metadata_json(self, folder_path: Path, article: dict[str, Any]) -> None:
         """Persist the Figshare article JSON alongside downloaded files."""

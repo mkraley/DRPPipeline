@@ -3,8 +3,8 @@ Build an HTML catalog detail page from Figshare API metadata for ARC datasets.
 
 Ag Data Commons portal pages are a JavaScript SPA behind AWS WAF; they do not
 archive well as static HTML or print cleanly to PDF. This module renders a
-standalone catalog snapshot from the public Figshare API JSON instead (same role
-as server-rendered HTML for the USFS collector).
+standalone self-contained HTML catalog snapshot from the public Figshare API JSON
+(embedded CSS only; no external CSS or JavaScript files).
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ def build_catalog_html(article: dict[str, Any], source_url: str) -> str:
 
 
 def _wrap_document(title: str, body_parts: list[str]) -> str:
-    """Wrap body fragments in a styled HTML document."""
+    """Wrap body fragments in a self-contained HTML document with embedded CSS."""
     body = "\n".join(part for part in body_parts if part)
     return f"""<!DOCTYPE html>
 <html lang="en">
