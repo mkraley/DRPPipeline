@@ -207,45 +207,6 @@ def _unique_pdf_basename_for_folder(base: str, folder_path: Path) -> str:
     return _unique_basename_for_folder(base, folder_path, ".pdf")
 
 
-def _safe_extension_pdf_basename(filename: str) -> str | None:
-    """
-    Return a safe PDF basename from an extension-supplied filename.
-
-    Only simple basenames are accepted (no directories). Known catalog PDF names
-    are returned exactly so batch and extension workflows share one file.
-    """
-    raw = (filename or "").strip()
-    if not raw:
-        return None
-    name = Path(raw).name
-    if not name.lower().endswith(".pdf"):
-        name = f"{name}.pdf"
-    safe = sanitize_filename(name, max_length=120)
-    if not safe.lower().endswith(".pdf"):
-        return None
-    if ".." in raw or "/" in raw or "\\" in raw:
-        return None
-    return safe
-
-
-def _resolved_extension_pdf_basename(
-    requested_filename: str | None,
-    page_title: str,
-    url: str,
-    folder_path: Path,
-) -> str:
-    """Resolve the PDF basename for an extension upload."""
-    explicit = _safe_extension_pdf_basename(requested_filename or "")
-    if explicit:
-        return explicit
-    base = _basename_for_saved_page(page_title, url)
-    if base.lower().endswith(".pdf"):
-        base = base[:-4].rstrip("._")
-    if not base:
-        base = "page"
-    return _unique_pdf_basename_for_folder(base, folder_path)
-
-
 def _basename_for_saved_page(page_title: str, url: str, *, default: str = "page") -> str:
     """Sanitized basename (no extension) from page title, or URL-derived fallback."""
     title = (page_title or "").strip()
@@ -280,7 +241,6 @@ def extension_save_pdf() -> Any:
     url = (request.form.get("url") or "").strip()
     referrer = (request.form.get("referrer") or "").strip() or None
     page_title = (request.form.get("title") or request.form.get("page_title") or "").strip()
-    requested_filename = (request.form.get("filename") or "").strip()
     pdf_file = request.files.get("pdf")
 
     if not drpid_str:
@@ -304,12 +264,13 @@ def extension_save_pdf() -> Any:
     if not folder_path.is_dir():
         return {"error": "output folder not found"}, 400
 
-    basename = _resolved_extension_pdf_basename(
-        requested_filename,
-        page_title,
-        url,
-        folder_path,
-    )
+    # Prefer page title from extension for a helpful filename; fallback to URL-derived base
+    base = _basename_for_saved_page(page_title, url)
+    if base.lower().endswith(".pdf"):
+        base = base[:-4].rstrip("._")
+    if not base:
+        base = "page"
+    basename = _unique_pdf_basename_for_folder(base, folder_path)
     dest = folder_path / basename
 
     try:

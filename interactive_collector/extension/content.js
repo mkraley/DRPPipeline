@@ -235,41 +235,6 @@
     return (document.title || "").trim() || "";
   }
 
-  function isAgDataCommonsHost() {
-    return urlHost(window.location.href).indexOf("agdatacommons.nal.usda.gov") !== -1;
-  }
-
-  function isSourceCatalogPage(sourcePageUrl) {
-    if (!sourcePageUrl) return false;
-    return urlOriginAndPath(window.location.href) === urlOriginAndPath(sourcePageUrl);
-  }
-
-  /** When saving the ADC source item page, use the batch collector catalog PDF name. */
-  function filenameForSavedPdf(sourcePageUrl) {
-    if (isAgDataCommonsHost() && isSourceCatalogPage(sourcePageUrl)) {
-      return "catalog_detail.pdf";
-    }
-    return "";
-  }
-
-  function dismissAgDataCommonsCookiesInContentScript() {
-    if (!isAgDataCommonsHost()) return false;
-    var labels = ["Accept all", "Accept All", "I agree"];
-    var buttons = document.querySelectorAll("button");
-    for (var i = 0; i < buttons.length; i++) {
-      var text = (buttons[i].textContent || "").replace(/[\s\u00a0]+/g, " ").trim();
-      for (var j = 0; j < labels.length; j++) {
-        if (text === labels[j]) {
-          try {
-            buttons[i].click();
-            return true;
-          } catch (e) {}
-        }
-      }
-    }
-    return false;
-  }
-
   function urlHost(u) {
     if (!u) return "";
     try {
@@ -821,10 +786,8 @@
       btn.textContent = "Saving...";
       showToast("Expanding content...", false);
       var pdfTitle = titleForSavedPage(stored.sourcePageUrl);
-      var pdfFilename = filenameForSavedPdf(stored.sourcePageUrl);
       try {
         injectPageScript();
-        dismissAgDataCommonsCookiesInContentScript();
         await runExpandForPdf();
         dolRevealDataFieldsNearShowMoreInContentScript();
         revealPastaMoreFallbackInContentScript();
@@ -839,7 +802,6 @@
           url: window.location.href,
           referrer: (document.referrer || "").trim() || "",
           title: pdfTitle,
-          filename: pdfFilename,
         });
         if (res && res.ok) {
           showToast("Saved: " + (res.filename || "OK"), false);
@@ -860,7 +822,6 @@
             referrer: (document.referrer || "").trim() || "",
             pdfBase64,
             title: pdfTitle,
-            filename: pdfFilename,
           });
           if (r2 && r2.ok) {
             showToast("Saved: " + (r2.filename || "OK"), false);
