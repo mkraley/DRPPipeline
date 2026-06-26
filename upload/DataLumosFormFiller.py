@@ -11,6 +11,7 @@ from typing import List, Optional, TYPE_CHECKING
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from utils.Logger import Logger
+from utils.summary_html import prepare_summary_for_datalumos_upload
 
 if TYPE_CHECKING:
     from upload.UploadIssueReporter import UploadIssueReporter
@@ -232,10 +233,13 @@ class DataLumosFormFiller:
         """Fill the summary/description field (WYSIWYG). Preserves HTML markup."""
         if _is_empty(summary):
             return
-        _debug_form_field("summary (dcterms_description)", n_chars=len(summary))
+        html_summary = prepare_summary_for_datalumos_upload(summary)
+        if _is_empty(html_summary):
+            return
+        _debug_form_field("summary (dcterms_description)", n_chars=len(html_summary))
         self._fill_wysiwyg(
             "#edit-dcterms_description_0",
-            summary,
+            html_summary,
             "#groupAttr0 iframe.wysihtml5-sandbox",
             ".glyphicon-ok",
         )
@@ -423,9 +427,10 @@ class DataLumosFormFiller:
 
         _debug_form_field("collection_notes (imeta_collectionNotes)", n_chars=len(combined))
 
+        notes_html = prepare_summary_for_datalumos_upload(combined)
         self._fill_wysiwyg(
             "#edit-imeta_collectionNotes_0",
-            combined,
+            notes_html,
             "#groupAttr1 iframe.wysihtml5-sandbox",
             ".editable-submit",
         )
@@ -472,8 +477,9 @@ class DataLumosFormFiller:
         """
         Fill a WYSIWYG editor field (iframe-based).
 
-        Sets the iframe body's innerHTML so HTML markup (paragraphs, links,
-        bold, etc.) is rendered as rich text rather than literal tags.
+        Uses execCommand insertHTML and the wysihtml5 setValue API so HTML markup
+        (paragraph breaks, links, bold, etc.) is rendered as rich text rather than
+        literal tags.
 
         Args:
             edit_selector: Selector for the edit button
@@ -487,19 +493,59 @@ class DataLumosFormFiller:
 
         frame = self._page.frame_locator(frame_selector)
         body = frame.locator("body")
+        body.wait_for(state="visible", timeout=50000)
         body.click()
         self._page.wait_for_timeout(300)
 
-        body.evaluate(
-            """(el, html) => {
-                el.innerHTML = html;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-            }""",
-            text,
-        )
+        self._insert_html_into_wysiwyg_body(body, text)
+
         self._page.wait_for_timeout(300)
-        
+
         self.wait_for_obscuring_elements()
         save_btn = self._page.locator(save_selector).first
         self.wait_for_obscuring_elements()
         save_btn.click()
+
+    def _set_wysiwyg_via_parent_editor(self, html: str) -> bool:
+        """
+        Set wysihtml5 content through the parent page editor API when available.
+
+        Returns:
+            True when a wysihtml5 ``setValue`` call succeeded.
+        """
+        return bool(
+            self._page.evaluate(
+                """(value) => {
+                    for (const textarea of document.querySelectorAll("textarea")) {
+                        const editor = textarea._wysihtml5 || textarea.wysihtml5;
+                        if (editor && typeof editor.setValue === "function") {
+                            editor.setValue(value, true);
+                            return true;
+                        }
+                    }
+                    return false;
+                }""",
+                html,
+            )
+        )
+
+    def _insert_html_into_wysiwyg_body(self, body, html: str) -> None:
+        """Insert HTML into the iframe editor using execCommand with innerHTML fallback."""
+        body.evaluate(
+            """(el, value) => {
+                el.focus();
+                const doc = el.ownerDocument;
+                const selection = doc.getSelection();
+                selection.removeAllRanges();
+                const range = doc.createRange();
+                range.selectNodeContents(el);
+                selection.addRange(range);
+                if (!doc.execCommand("insertHTML", false, value)) {
+                    el.innerHTML = value;
+                }
+                el.dispatchEvent(new Event("input", { bubbles: true }));
+                el.dispatchEvent(new Event("change", { bubbles: true }));
+            }""",
+            html,
+        )
+        self._set_wysiwyg_via_parent_editor(html)

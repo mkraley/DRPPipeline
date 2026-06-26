@@ -20,6 +20,7 @@ from utils.IcpsrGeographicNormalizer import (
     log_geographic_normalization,
     normalize_geographic_metadata,
 )
+from utils.summary_html import normalize_summary_html_for_datalumos
 
 _GIS_FILE_EXTENSIONS = frozenset({
     "tif", "tiff", "shp", "gdb", "geojson", "gpkg", "geotiff",
@@ -232,7 +233,9 @@ def extract_metadata(article: dict[str, Any]) -> dict[str, Any]:
 
     result: dict[str, Any] = {
         "title": str(article.get("title") or ""),
-        "summary": str(article.get("description") or ""),
+        "summary": normalize_summary_html_for_datalumos(
+            str(article.get("description") or "")
+        ),
         "keywords": keywords,
     }
 

@@ -106,7 +106,9 @@ class TestArcMetadataExtractor:
         """Full metadata extraction populates Storage fields."""
         metadata = extract_metadata(SAMPLE_ARTICLE)
         assert metadata["title"] == "Example dataset"
-        assert metadata["summary"]
+        assert metadata["summary"] == (
+            "<p>Observational field measurements from plot-level sampling.</p>"
+        )
         assert "agriculture" in metadata["keywords"]
         assert metadata["collection_notes"]
         assert metadata["time_start"] == "2014-01-02"
