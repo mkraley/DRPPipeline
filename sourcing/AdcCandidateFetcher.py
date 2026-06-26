@@ -1,5 +1,5 @@
 """
-Fetch candidate source URLs from the USDA Ag Data Commons (ARC) Figshare portal.
+Fetch candidate source URLs from the USDA Ag Data Commons (ADC) Figshare portal.
 
 Enumerates datasets via the public Figshare API (USDA.ADC search plus the ARC
 OAI portal set ``portal_1059``). File inventories use Figshare metadata and,
@@ -10,21 +10,21 @@ from __future__ import annotations
 
 from typing import Any
 
-from sourcing.ArcApiClient import ArcApiClient
-from sourcing.ArcFileInventory import ArcFileInventory
+from sourcing.AdcApiClient import AdcApiClient
+from sourcing.AdcFileInventory import AdcFileInventory
 
 AGENCY = "US Department of Agriculture"
 OFFICE = "National Agricultural Library"
 
 
-class ArcCandidateFetcher:
-    """Enumerate ARC datasets and optional file inventories."""
+class AdcCandidateFetcher:
+    """Enumerate ADC datasets and optional file inventories."""
 
     def __init__(
         self,
         *,
-        api_client: ArcApiClient | None = None,
-        inventory: ArcFileInventory | None = None,
+        api_client: AdcApiClient | None = None,
+        inventory: AdcFileInventory | None = None,
     ) -> None:
         """
         Initialize the fetcher.
@@ -33,12 +33,12 @@ class ArcCandidateFetcher:
             api_client: Figshare API client (created when omitted).
             inventory: File inventory helper (created when omitted).
         """
-        self._api = api_client or ArcApiClient()
-        self._inventory = inventory or ArcFileInventory()
+        self._api = api_client or AdcApiClient()
+        self._inventory = inventory or AdcFileInventory()
 
     def get_candidate_urls(self, limit: int | None = None) -> tuple[list[dict[str, str]], int]:
         """
-        Return ARC dataset portal URLs with agency/office metadata.
+        Return ADC dataset portal URLs with agency/office metadata.
 
         Args:
             limit: Max datasets to return. None = all discovered IDs.
@@ -69,7 +69,7 @@ class ArcCandidateFetcher:
             include_inventory: When True, populate file summary fields (not status_notes).
 
         Returns:
-            Candidate dict or None when the article is not on the ARC portal.
+            Candidate dict or None when the article is not on the ADC portal.
         """
         source_url = str(article.get("url_public_html") or "")
         if "agdatacommons.nal.usda.gov" not in source_url:
@@ -94,7 +94,7 @@ class ArcCandidateFetcher:
 
     def fetch_article(self, article_id: int) -> dict[str, Any]:
         """
-        Fetch full Figshare metadata for one ARC article.
+        Fetch full Figshare metadata for one ADC article.
 
         Args:
             article_id: Figshare article ID.
@@ -106,7 +106,7 @@ class ArcCandidateFetcher:
 
     def list_article_ids(self, *, limit: int | None = None) -> list[int]:
         """
-        Return merged ARC article IDs without fetching full metadata.
+        Return merged ADC article IDs without fetching full metadata.
 
         Args:
             limit: Optional cap on returned IDs.

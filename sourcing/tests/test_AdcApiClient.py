@@ -1,10 +1,10 @@
-"""Tests for ArcApiClient."""
+"""Tests for AdcApiClient."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from sourcing.ArcApiClient import ArcApiClient, article_id_from_source_url
+from sourcing.AdcApiClient import AdcApiClient, article_id_from_source_url
 
 SAMPLE_SEARCH_RESPONSE = [
     {
@@ -20,8 +20,8 @@ SAMPLE_SEARCH_RESPONSE = [
 ]
 
 
-class TestArcApiClient:
-    """Tests for Figshare ARC API helpers."""
+class TestAdcApiClient:
+    """Tests for Figshare ADC API helpers."""
 
     def test_article_id_from_source_url(self) -> None:
         """Numeric article ID is parsed from the portal URL tail."""
@@ -29,16 +29,16 @@ class TestArcApiClient:
         assert article_id_from_source_url(url) == 24667896
         assert article_id_from_source_url("https://example.com/no-id") is None
 
-    def test_arc_article_id_from_summary_filters_non_arc_urls(self) -> None:
+    def test_adc_article_id_from_summary_filters_non_adc_urls(self) -> None:
         """Only Ag Data Commons portal URLs are kept."""
-        client = ArcApiClient(request_delay=0)
-        arc_id = client._arc_article_id_from_summary(SAMPLE_SEARCH_RESPONSE[0])
-        other = client._arc_article_id_from_summary(SAMPLE_SEARCH_RESPONSE[1])
-        assert arc_id == 24667896
+        client = AdcApiClient(request_delay=0)
+        adc_id = client._adc_article_id_from_summary(SAMPLE_SEARCH_RESPONSE[0])
+        other = client._adc_article_id_from_summary(SAMPLE_SEARCH_RESPONSE[1])
+        assert adc_id == 24667896
         assert other is None
 
-    @patch("sourcing.ArcApiClient.requests.post")
-    def test_list_arc_article_ids_paginates(self, mock_post: MagicMock) -> None:
+    @patch("sourcing.AdcApiClient.requests.post")
+    def test_list_adc_article_ids_paginates(self, mock_post: MagicMock) -> None:
         """Search pagination stops on a short final page."""
         full_page = [
             {
@@ -56,14 +56,14 @@ class TestArcApiClient:
         second.raise_for_status.return_value = None
         mock_post.side_effect = [first, second]
 
-        client = ArcApiClient(request_delay=0)
-        ids = client.list_arc_article_ids(max_pages=5)
+        client = AdcApiClient(request_delay=0)
+        ids = client.list_adc_article_ids(max_pages=5)
         assert ids == [24667896]
         assert mock_post.call_count == 2
 
-    @patch("sourcing.ArcApiClient.requests.post")
-    def test_list_arc_article_ids_respects_limit(self, mock_post: MagicMock) -> None:
-        """Limit stops search after enough ARC hits without scanning the full catalog."""
+    @patch("sourcing.AdcApiClient.requests.post")
+    def test_list_adc_article_ids_respects_limit(self, mock_post: MagicMock) -> None:
+        """Limit stops search after enough ADC hits without scanning the full catalog."""
         batch = [
             {
                 "id": index,
@@ -78,12 +78,12 @@ class TestArcApiClient:
         response.raise_for_status.return_value = None
         mock_post.return_value = response
 
-        client = ArcApiClient(request_delay=0)
-        ids = client.list_arc_article_ids(limit=25)
+        client = AdcApiClient(request_delay=0)
+        ids = client.list_adc_article_ids(limit=25)
         assert ids == list(range(1, 26))
         mock_post.assert_called_once()
 
-    @patch("sourcing.ArcApiClient.requests.get")
+    @patch("sourcing.AdcApiClient.requests.get")
     def test_fetch_article(self, mock_get: MagicMock) -> None:
         """fetch_article returns the Figshare JSON body."""
         response = MagicMock()
@@ -91,5 +91,5 @@ class TestArcApiClient:
         response.raise_for_status.return_value = None
         mock_get.return_value = response
 
-        article = ArcApiClient(request_delay=0).fetch_article(1)
+        article = AdcApiClient(request_delay=0).fetch_article(1)
         assert article["title"] == "Example"

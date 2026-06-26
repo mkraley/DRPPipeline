@@ -1,12 +1,12 @@
 """
-Section builders for ARC catalog HTML snapshots from Figshare API metadata.
+Section builders for ADC catalog HTML snapshots from Figshare API metadata.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from collectors.ArcCatalogHtmlFormat import (
+from collectors.AdcCatalogHtmlFormat import (
     data_table,
     doi_url,
     escape_text,
@@ -32,7 +32,7 @@ def page_footer() -> str:
     """Return the generation footer."""
     return (
         '<p class="meta-note">Catalog snapshot generated from Figshare API metadata '
-        "(see arc_metadata.json in the project folder).</p>"
+        "(see adc_metadata.json in the project folder).</p>"
     )
 
 

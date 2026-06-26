@@ -1,13 +1,13 @@
-"""Tests for ArcCatalogHtmlFormat helpers."""
+"""Tests for AdcCatalogHtmlFormat helpers."""
 
 from __future__ import annotations
 
 import unittest
 
-from collectors.ArcCatalogHtmlFormat import humanize_relation
+from collectors.AdcCatalogHtmlFormat import humanize_relation
 
 
-class TestArcCatalogHtmlFormat(unittest.TestCase):
+class TestAdcCatalogHtmlFormat(unittest.TestCase):
     """Tests for catalog HTML formatting helpers."""
 
     def test_humanize_relation_known_code(self) -> None:

@@ -1,5 +1,5 @@
 """
-HTTP client for Ag Data Commons (ARC) metadata via the public Figshare API.
+HTTP client for Ag Data Commons (ADC) metadata via the public Figshare API.
 
 Ag Data Commons runs on Figshare; article metadata and hosted files are available
 without authentication at https://api.figshare.com/v2.
@@ -18,8 +18,8 @@ from utils.Logger import Logger
 
 FIGSHARE_API_BASE = "https://api.figshare.com/v2"
 FIGSHARE_SEARCH_TERM = "USDA.ADC"
-ARC_PORTAL_OAI_SET = "portal_1059"
-ARC_HOST = "agdatacommons.nal.usda.gov"
+ADC_PORTAL_OAI_SET = "portal_1059"
+ADC_HOST = "agdatacommons.nal.usda.gov"
 OAI_NS = {"oai": "http://www.openarchives.org/OAI/2.0/"}
 DEFAULT_PAGE_SIZE = 100
 DEFAULT_HEADERS = {"User-Agent": "DRPPipeline/1.0"}
@@ -41,8 +41,8 @@ def article_id_from_source_url(url: str) -> int | None:
     return None
 
 
-class ArcApiClient:
-    """Fetch ARC dataset listings and article metadata from Figshare."""
+class AdcApiClient:
+    """Fetch ADC dataset listings and article metadata from Figshare."""
 
     def __init__(self, *, request_delay: float = 0.15) -> None:
         """
@@ -53,7 +53,7 @@ class ArcApiClient:
         """
         self._request_delay = request_delay
 
-    def search_arc_article_summaries(
+    def search_adc_article_summaries(
         self,
         *,
         page: int,
@@ -81,31 +81,31 @@ class ArcApiClient:
             return []
         return payload
 
-    def list_arc_article_ids(
+    def list_adc_article_ids(
         self,
         *,
         max_pages: int | None = None,
         limit: int | None = None,
     ) -> list[int]:
         """
-        Enumerate ARC article IDs via USDA.ADC Figshare search.
+        Enumerate ADC article IDs via USDA.ADC Figshare search.
 
         Args:
             max_pages: Optional cap on search pages (for testing).
-            limit: Stop once this many ARC article IDs have been collected.
+            limit: Stop once this many ADC article IDs have been collected.
 
         Returns:
-            Sorted unique Figshare article IDs whose public HTML URL is on ARC.
+            Sorted unique Figshare article IDs whose public HTML URL is on ADC.
         """
         article_ids: list[int] = []
         seen: set[int] = set()
         page = 1
         while max_pages is None or page <= max_pages:
-            batch = self.search_arc_article_summaries(page=page)
+            batch = self.search_adc_article_summaries(page=page)
             if not batch:
                 break
             for item in batch:
-                article_id = self._arc_article_id_from_summary(item)
+                article_id = self._adc_article_id_from_summary(item)
                 if article_id is not None and article_id not in seen:
                     seen.add(article_id)
                     article_ids.append(article_id)
@@ -145,7 +145,7 @@ class ArcApiClient:
                 params = {
                     "verb": "ListIdentifiers",
                     "metadataPrefix": "oai_dc",
-                    "set": ARC_PORTAL_OAI_SET,
+                    "set": ADC_PORTAL_OAI_SET,
                 }
             response = requests.get(
                 f"{FIGSHARE_API_BASE}/oai",
@@ -207,33 +207,33 @@ class ArcApiClient:
         limit: int | None = None,
     ) -> list[int]:
         """
-        Union article IDs from USDA.ADC search and the ARC OAI portal set.
+        Union article IDs from USDA.ADC search and the ADC OAI portal set.
 
         When ``limit`` is set, only the Figshare search is used (fast path for
         ``--num-rows`` sampling). A full run with no limit also harvests OAI
         ``portal_1059`` for externally linked catalog records.
 
         Returns:
-            Sorted unique Figshare article IDs for ARC-hosted public items.
+            Sorted unique Figshare article IDs for ADC-hosted public items.
         """
         if limit is not None:
             Logger.info(
-                "ARC enumeration: Figshare USDA.ADC search (limit=%s, OAI skipped)",
+                "ADC enumeration: Figshare USDA.ADC search (limit=%s, OAI skipped)",
                 limit,
             )
-            return self.list_arc_article_ids(max_pages=search_max_pages, limit=limit)
+            return self.list_adc_article_ids(max_pages=search_max_pages, limit=limit)
 
-        Logger.info("ARC enumeration: Figshare USDA.ADC search (full catalog)")
-        search_ids = self.list_arc_article_ids(max_pages=search_max_pages)
+        Logger.info("ADC enumeration: Figshare USDA.ADC search (full catalog)")
+        search_ids = self.list_adc_article_ids(max_pages=search_max_pages)
         Logger.info(
-            "ARC enumeration: USDA.ADC search found %s IDs; harvesting OAI portal_1059",
+            "ADC enumeration: USDA.ADC search found %s IDs; harvesting OAI portal_1059",
             len(search_ids),
         )
 
         def _log_oai_page(page_number: int, ids_so_far: int) -> None:
             if page_number == 1 or page_number % 25 == 0:
                 Logger.info(
-                    "ARC OAI harvest: page %s, %s article IDs collected so far",
+                    "ADC OAI harvest: page %s, %s article IDs collected so far",
                     page_number,
                     ids_so_far,
                 )
@@ -244,17 +244,17 @@ class ArcApiClient:
         )
         merged = sorted(set(search_ids) | set(oai_ids))
         Logger.info(
-            "ARC enumeration complete: %s from search, %s from OAI, %s unique total",
+            "ADC enumeration complete: %s from search, %s from OAI, %s unique total",
             len(search_ids),
             len(oai_ids),
             len(merged),
         )
         return merged
 
-    def _arc_article_id_from_summary(self, item: dict[str, Any]) -> int | None:
+    def _adc_article_id_from_summary(self, item: dict[str, Any]) -> int | None:
         """Return article ID when the search hit is an Ag Data Commons portal page."""
         public_url = str(item.get("url_public_html") or "")
-        if ARC_HOST not in public_url:
+        if ADC_HOST not in public_url:
             return None
         article_id = item.get("id")
         if article_id is None:

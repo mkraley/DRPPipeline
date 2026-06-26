@@ -1,10 +1,10 @@
-"""Tests for ArcFileInventory."""
+"""Tests for AdcFileInventory."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from sourcing.ArcFileInventory import MAX_DOWNLOAD_BYTES, ArcFileInventory
+from sourcing.AdcFileInventory import MAX_DOWNLOAD_BYTES, AdcFileInventory
 
 FIGSHARE_ARTICLE = {
     "doi": "10.15482/USDA.ADC/1",
@@ -34,18 +34,18 @@ DRYAD_PLACEHOLDER_ARTICLE = {
 }
 
 
-class TestArcFileInventory:
-    """Tests for ARC file inventory building."""
+class TestAdcFileInventory:
+    """Tests for ADC file inventory building."""
 
     def test_list_files_for_figshare_article(self) -> None:
         """Hosted Figshare files are normalized with sizes."""
-        inventory = ArcFileInventory()
+        inventory = AdcFileInventory()
         files = inventory.list_files_for_article(FIGSHARE_ARTICLE)
         assert len(files) == 2
         assert files[0]["source"] == "figshare"
         assert files[1]["size_bytes"] > MAX_DOWNLOAD_BYTES
 
-    @patch.object(ArcFileInventory, "_resolve_external_files")
+    @patch.object(AdcFileInventory, "_resolve_external_files")
     def test_external_placeholder_uses_resolver(
         self,
         mock_resolve: MagicMock,
@@ -54,14 +54,14 @@ class TestArcFileInventory:
         mock_resolve.return_value = [
             {"name": "a.csv", "url": "https://example/a.csv", "size_bytes": 10, "source": "dryad"},
         ]
-        inventory = ArcFileInventory()
+        inventory = AdcFileInventory()
         files = inventory.list_files_for_article(DRYAD_PLACEHOLDER_ARTICLE)
         assert len(files) == 1
         mock_resolve.assert_called_once()
 
     def test_summarize_inventory(self) -> None:
         """Summary returns counts, formatted size, extensions, and flags."""
-        inventory = ArcFileInventory()
+        inventory = AdcFileInventory()
         num, size, extensions, has_large, unresolved, all_unresolved = inventory.summarize_inventory([
             {"name": "a.csv", "url": "u", "size_bytes": 100, "source": "figshare"},
             {"name": "b.zip", "url": "u", "size_bytes": MAX_DOWNLOAD_BYTES + 1, "source": "figshare"},
@@ -76,7 +76,7 @@ class TestArcFileInventory:
 
     def test_summarize_all_external_unresolved(self) -> None:
         """All-unresolved inventories set the all_unresolved flag."""
-        inventory = ArcFileInventory()
+        inventory = AdcFileInventory()
         _num, _size, _ext, _large, unresolved, all_unresolved = inventory.summarize_inventory([
             {
                 "name": "other",

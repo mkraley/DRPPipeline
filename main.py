@@ -22,10 +22,12 @@ USAGE
 MODULES
   setup                 Check/create config.json and google-credentials.json (start here)
   sourcing              Pull candidate URLs from the Google Sheet into the database
+  adc_sourcing          Source Ag Data Commons datasets via the Figshare API
   socrata_collector     Download datasets from Socrata (data.gov) sources
   catalog_collector     Download datasets from catalog.data.gov sources
   cms_collector         Download datasets from data.cms.gov sources
   usfs_collector        Harvest metadata from USFS Research Data Archive pages
+  adc_collector         Collect Ag Data Commons datasets (files + metadata)
   interactive_collector Browser-assisted collector for sites that block automation
   upload                Upload collected datasets to DataLumos
   upload_large_files    Download/upload large files (uploaded - large file <25GB, uploaded - expanded)

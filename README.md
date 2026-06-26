@@ -65,6 +65,8 @@ DRPPipeline/
 | Module | Purpose |
 |--------|--------|
 | **sourcing** | Fetches candidate URLs from a spreadsheet, checks duplicates, creates DB records. |
+| **adc_sourcing** | Sources Ag Data Commons datasets via the Figshare public API (USDA.ADC search + OAI). |
+| **adc_collector** | Collects ADC dataset files and metadata via Figshare (and Dryad/Zenodo when applicable). |
 | **socrata_collector** | Collects data and metadata from Socrata-hosted pages (e.g. data.cdc.gov). |
 | **catalog_collector** | Collects download links from catalog.data.gov dataset pages. |
 | **cms_collector** | Collects data from data.cms.gov API pages. |

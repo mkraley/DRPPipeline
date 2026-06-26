@@ -5,18 +5,18 @@ from __future__ import annotations
 import time
 from collections import Counter
 
-from sourcing.ArcApiClient import ArcApiClient
-from sourcing.ArcFileInventory import ArcFileInventory
+from sourcing.AdcApiClient import AdcApiClient
+from sourcing.AdcFileInventory import AdcFileInventory
 
 
 def main() -> None:
     """Print hosting-type counts for merged ADC article IDs."""
-    api = ArcApiClient(request_delay=0.05)
-    inventory = ArcFileInventory()
+    api = AdcApiClient(request_delay=0.05)
+    inventory = AdcFileInventory()
     article_ids = api.merge_article_ids()
     hosting = Counter()
     doi_prefix = Counter()
-    only_search = set(api.list_arc_article_ids())
+    only_search = set(api.list_adc_article_ids())
     only_oai = set(api.harvest_portal_article_ids()) - only_search
 
     for index, article_id in enumerate(article_ids, 1):

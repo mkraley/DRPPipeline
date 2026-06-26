@@ -1,4 +1,4 @@
-"""Tests for ArcSourcing orchestrator module."""
+"""Tests for AdcSourcing orchestrator module."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from storage import Storage
 from utils.Args import Args
 from utils.Logger import Logger
 
-from sourcing.ArcSourcing import ArcSourcing
+from sourcing.AdcSourcing import AdcSourcing
 
 SAMPLE_ROW = {
     "url": "https://agdatacommons.nal.usda.gov/articles/dataset/Example/1",
@@ -25,13 +25,13 @@ SAMPLE_ROW = {
 }
 
 
-class TestArcSourcing(unittest.TestCase):
-    """Tests for ARC batch sourcing module."""
+class TestAdcSourcing(unittest.TestCase):
+    """Tests for ADC batch sourcing module."""
 
     def setUp(self) -> None:
         """Create isolated Storage and Args for each test."""
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test", "arc_sourcing"]
+        sys.argv = ["test", "adc_sourcing"]
         Args.initialize()
         Logger.initialize(log_level="WARNING")
         self.temp_dir = Path(tempfile.mkdtemp())
@@ -50,7 +50,7 @@ class TestArcSourcing(unittest.TestCase):
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
 
-    @patch("sourcing.ArcSourcing.DuplicateChecker")
+    @patch("sourcing.AdcSourcing.DuplicateChecker")
     def test_run_inserts_sourced_row(self, mock_checker_cls: MagicMock) -> None:
         """run(-1) creates a sourced record with inventory fields."""
         mock_checker_cls.return_value.exists_in_storage.return_value = False
@@ -59,7 +59,7 @@ class TestArcSourcing(unittest.TestCase):
         fetcher.fetch_article.return_value = {"id": 1}
         fetcher.build_candidate_row.return_value = dict(SAMPLE_ROW)
 
-        ArcSourcing(fetcher=fetcher, request_delay=0).run(-1)
+        AdcSourcing(fetcher=fetcher, request_delay=0).run(-1)
 
         projects = self.storage.list_eligible_projects("sourced", None)
         self.assertEqual(len(projects), 1)
@@ -67,7 +67,7 @@ class TestArcSourcing(unittest.TestCase):
         self.assertEqual(projects[0]["num_files"], 1)
         self.assertFalse(projects[0].get("status_notes"))
 
-    @patch("sourcing.ArcSourcing.DuplicateChecker")
+    @patch("sourcing.AdcSourcing.DuplicateChecker")
     def test_run_skips_duplicate_urls(self, mock_checker_cls: MagicMock) -> None:
         """Duplicate URLs do not create a second row."""
         mock_checker_cls.return_value.exists_in_storage.return_value = True
@@ -76,7 +76,7 @@ class TestArcSourcing(unittest.TestCase):
         fetcher.fetch_article.return_value = {"id": 1}
         fetcher.build_candidate_row.return_value = dict(SAMPLE_ROW)
 
-        ArcSourcing(fetcher=fetcher, request_delay=0).run(-1)
+        AdcSourcing(fetcher=fetcher, request_delay=0).run(-1)
 
         projects = self.storage.list_eligible_projects("sourced", None)
         self.assertEqual(len(projects), 0)

@@ -33,13 +33,13 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": None,
         "class_name": "Sourcing",
     },
-    "arc_sourcing": {
+    "adc_sourcing": {
         "prereq": None,
-        "class_name": "ArcSourcing",
+        "class_name": "AdcSourcing",
     },
-    "arc_collector": {
+    "adc_collector": {
         "prereq": "sourced",
-        "class_name": "ArcCollector",
+        "class_name": "AdcCollector",
     },
     "interactive_collector": {
         "prereq": "sourced",
@@ -246,7 +246,7 @@ class Orchestrator:
 
         # Only sourcing may wipe the DB, and only when delete_all_db_entries is true in config and/or CLI
         # (default false — omit both and the database is left intact).
-        if module in ("sourcing", "arc_sourcing") and bool(Args.delete_all_db_entries):
+        if module in ("sourcing", "adc_sourcing") and bool(Args.delete_all_db_entries):
             Logger.warning(
                 "Deleting all database entries before sourcing (delete_all_db_entries in config and/or "
                 "--delete-all-db-entries on command line)"

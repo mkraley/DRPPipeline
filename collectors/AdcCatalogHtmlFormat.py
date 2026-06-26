@@ -1,5 +1,5 @@
 """
-Shared HTML formatting helpers for ARC catalog snapshots.
+Shared HTML formatting helpers for ADC catalog snapshots.
 """
 
 from __future__ import annotations

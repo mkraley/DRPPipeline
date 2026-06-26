@@ -1,14 +1,14 @@
-"""Tests for ArcMetadataExtractor."""
+"""Tests for AdcMetadataExtractor."""
 
 from __future__ import annotations
 
-from collectors.ArcMetadataExtractor import (
+from collectors.AdcMetadataExtractor import (
     bounding_box_from_geojson,
     custom_field_value,
     extract_collection_notes,
     extract_metadata,
     extract_temporal_fields,
-    infer_arc_data_types,
+    infer_adc_data_types,
     normalize_geographic_coverage,
 )
 
@@ -38,7 +38,7 @@ SAMPLE_ARTICLE = {
 }
 
 
-class TestArcMetadataExtractor:
+class TestAdcMetadataExtractor:
     """Tests for Figshare metadata mapping."""
 
     def test_custom_field_value(self) -> None:
@@ -97,9 +97,9 @@ class TestArcMetadataExtractor:
         geo = normalize_geographic_coverage(SAMPLE_ARTICLE)
         assert geo.geographic_coverage
 
-    def test_infer_arc_data_types_from_description(self) -> None:
+    def test_infer_adc_data_types_from_description(self) -> None:
         """Observational language in the description yields a data type."""
-        data_types = infer_arc_data_types(SAMPLE_ARTICLE)
+        data_types = infer_adc_data_types(SAMPLE_ARTICLE)
         assert data_types
 
     def test_extract_metadata(self) -> None:

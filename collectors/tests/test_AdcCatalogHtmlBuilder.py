@@ -1,8 +1,8 @@
-"""Tests for ArcCatalogHtmlBuilder."""
+"""Tests for AdcCatalogHtmlBuilder."""
 
 from __future__ import annotations
 
-from collectors.ArcCatalogHtmlBuilder import build_catalog_html
+from collectors.AdcCatalogHtmlBuilder import build_catalog_html
 
 SAMPLE_ARTICLE = {
     "title": "Example dataset",
@@ -55,7 +55,7 @@ SAMPLE_ARTICLE = {
 }
 
 
-class TestArcCatalogHtmlBuilder:
+class TestAdcCatalogHtmlBuilder:
     """Tests for API-derived catalog HTML."""
 
     def test_build_catalog_html_includes_core_fields(self) -> None:

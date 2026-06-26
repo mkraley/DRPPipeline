@@ -1,13 +1,13 @@
 """Sourcing package for DRP Pipeline."""
 
-from .ArcCandidateFetcher import ArcCandidateFetcher
-from .ArcSourcing import ArcSourcing
+from .AdcCandidateFetcher import AdcCandidateFetcher
+from .AdcSourcing import AdcSourcing
 from .Sourcing import Sourcing
 from .SpreadsheetCandidateFetcher import SpreadsheetCandidateFetcher
 
 __all__ = [
-    "ArcCandidateFetcher",
-    "ArcSourcing",
+    "AdcCandidateFetcher",
+    "AdcSourcing",
     "Sourcing",
     "SpreadsheetCandidateFetcher",
 ]

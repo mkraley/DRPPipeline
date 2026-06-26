@@ -1,7 +1,7 @@
 """
-Build Windows aria2c command files for large ARC publication downloads.
+Build Windows aria2c command files for large ADC publication downloads.
 
-Used by ArcCollector when files are skipped (>1 GB).
+Used by AdcCollector when files are skipped (>1 GB).
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from collectors.UsfsAria2Export import (
     format_windows_commands,
     max_connections_for_url,
 )
-from sourcing.ArcFileInventory import MAX_DOWNLOAD_BYTES
+from sourcing.AdcFileInventory import MAX_DOWNLOAD_BYTES
 from utils.file_utils import sanitize_filename
 from utils.url_utils import BROWSER_HEADERS
 
@@ -71,7 +71,7 @@ def write_drpid_aria2_cmd(
     user_agent: str | None = None,
 ) -> Path | None:
     """
-    Write ``DRP######.cmd`` for missing large ARC files.
+    Write ``DRP######.cmd`` for missing large ADC files.
 
     Returns:
         Path written, or None when there was nothing to export.

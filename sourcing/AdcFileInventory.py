@@ -1,5 +1,5 @@
 """
-Build downloadable-file inventories for Ag Data Commons (ARC) datasets.
+Build downloadable-file inventories for Ag Data Commons (ADC) datasets.
 
 Combines Figshare-hosted files with external repository files (Dryad, Zenodo)
 resolved via public APIs. Used during sourcing and collection.
@@ -17,8 +17,8 @@ MAX_DOWNLOAD_BYTES = 1 * 1024**3  # 1 GB — collection skips larger files (USFS
 _KNOWN_SOURCES = frozenset({"figshare", "dryad", "zenodo"})
 
 
-class ArcFileInventory:
-    """Resolve ARC/Figshare articles to a normalized file inventory."""
+class AdcFileInventory:
+    """Resolve ADC/Figshare articles to a normalized file inventory."""
 
     def __init__(self) -> None:
         """Initialize external repository clients."""
@@ -68,7 +68,7 @@ class ArcFileInventory:
 
     def classify_hosting(self, article: dict[str, Any]) -> str:
         """
-        Classify where an ARC record's downloadable data is hosted.
+        Classify where an ADC record's downloadable data is hosted.
 
         Returns:
             One of ``figshare``, ``dryad``, ``zenodo``, ``external-unresolved``,
@@ -137,7 +137,7 @@ class ArcFileInventory:
         article: dict[str, Any],
         files: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        """Expand external repository files for catalog/harvest ARC records."""
+        """Expand external repository files for catalog/harvest ADC records."""
         doi = str(article.get("doi") or "")
         if doi.startswith("10.5061/dryad."):
             return self._dryad.list_files_for_doi(doi)

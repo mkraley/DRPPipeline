@@ -1,10 +1,10 @@
-"""Tests for ArcCandidateFetcher."""
+"""Tests for AdcCandidateFetcher."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from sourcing.ArcCandidateFetcher import AGENCY, OFFICE, ArcCandidateFetcher
+from sourcing.AdcCandidateFetcher import AGENCY, OFFICE, AdcCandidateFetcher
 
 SAMPLE_ARTICLE = {
     "id": 24667896,
@@ -14,12 +14,12 @@ SAMPLE_ARTICLE = {
 }
 
 
-class TestArcCandidateFetcher:
-    """Tests for ARC candidate fetcher."""
+class TestAdcCandidateFetcher:
+    """Tests for ADC candidate fetcher."""
 
     def test_build_candidate_row_basic(self) -> None:
-        """ARC articles map to url/title/agency/office."""
-        fetcher = ArcCandidateFetcher()
+        """ADC articles map to url/title/agency/office."""
+        fetcher = AdcCandidateFetcher()
         row = fetcher.build_candidate_row(SAMPLE_ARTICLE)
         assert row is not None
         assert row["url"].endswith("/24667896")
@@ -27,9 +27,9 @@ class TestArcCandidateFetcher:
         assert row["agency"] == AGENCY
         assert row["office"] == OFFICE
 
-    def test_build_candidate_row_rejects_non_arc_url(self) -> None:
-        """Non-ARC Figshare URLs are filtered out."""
-        fetcher = ArcCandidateFetcher()
+    def test_build_candidate_row_rejects_non_adc_url(self) -> None:
+        """non-ADC Figshare URLs are filtered out."""
+        fetcher = AdcCandidateFetcher()
         row = fetcher.build_candidate_row({
             **SAMPLE_ARTICLE,
             "url_public_html": "https://figshare.com/articles/dataset/X/1",
@@ -38,7 +38,7 @@ class TestArcCandidateFetcher:
 
     def test_build_candidate_row_with_inventory(self) -> None:
         """Inventory mode populates file summary fields but not status_notes."""
-        fetcher = ArcCandidateFetcher()
+        fetcher = AdcCandidateFetcher()
         row = fetcher.build_candidate_row(SAMPLE_ARTICLE, include_inventory=True)
         assert row is not None
         assert row["num_files"] == "1"
@@ -50,7 +50,7 @@ class TestArcCandidateFetcher:
         api = MagicMock()
         api.merge_article_ids.return_value = [24667896]
         api.fetch_article.return_value = SAMPLE_ARTICLE
-        fetcher = ArcCandidateFetcher(api_client=api)
+        fetcher = AdcCandidateFetcher(api_client=api)
         rows, skipped = fetcher.get_candidate_urls(limit=None)
         assert skipped == 0
         assert len(rows) == 1

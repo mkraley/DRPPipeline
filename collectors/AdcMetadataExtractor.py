@@ -1,5 +1,5 @@
 """
-Extract Storage metadata fields from Figshare article JSON for ARC datasets.
+Extract Storage metadata fields from Figshare article JSON for ADC datasets.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def extract_collection_notes(article: dict[str, Any]) -> str:
 
 def extract_temporal_fields(article: dict[str, Any]) -> dict[str, str]:
     """
-    Map ARC temporal custom fields to Storage ``time_start`` / ``time_end``.
+    Map ADC temporal custom fields to Storage ``time_start`` / ``time_end``.
 
     When the end date is missing, infers it from embedded dates in file names,
     then pairs partial ranges for DataLumos (both bounds or neither).
@@ -148,7 +148,7 @@ def bounding_box_from_geojson(text: str) -> dict[str, float] | None:
 
 def normalize_geographic_coverage(article: dict[str, Any]) -> GeographicNormalizeResult:
     """
-    Infer ICPSR geographic coverage from ARC custom fields.
+    Infer ICPSR geographic coverage from ADC custom fields.
 
     Args:
         article: Full Figshare article JSON.
@@ -169,9 +169,9 @@ def normalize_geographic_coverage(article: dict[str, Any]) -> GeographicNormaliz
     )
 
 
-def infer_arc_data_types(article: dict[str, Any]) -> str:
+def infer_adc_data_types(article: dict[str, Any]) -> str:
     """
-    Infer DataLumos data type(s) from title, description, and ARC-specific hints.
+    Infer DataLumos data type(s) from title, description, and ADC-specific hints.
 
     Args:
         article: Full Figshare article JSON.
@@ -245,7 +245,7 @@ def extract_metadata(article: dict[str, Any]) -> dict[str, Any]:
 
     result.update(extract_temporal_fields(article))
 
-    data_types = infer_arc_data_types(article)
+    data_types = infer_adc_data_types(article)
     if data_types:
         result["data_types"] = data_types
 
@@ -256,7 +256,7 @@ def extract_metadata(article: dict[str, Any]) -> dict[str, Any]:
         bounding_box=bounding_box_from_geojson(custom_field_value(article, "Geographic Coverage"))
         if custom_field_value(article, "Geographic Coverage").startswith("{")
         else None,
-        context=f"ARC article {article.get('id')}",
+        context=f"ADC article {article.get('id')}",
     )
     if geo.geographic_coverage:
         result["geographic_coverage"] = geo.geographic_coverage

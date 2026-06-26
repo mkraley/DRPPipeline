@@ -1,5 +1,5 @@
 """
-Ag Data Commons (ARC) collector for DRP Pipeline.
+Ag Data Commons (ADC) collector for DRP Pipeline.
 
 Downloads dataset files via the public Figshare API (and Dryad/Zenodo when
 applicable). Files larger than 1 GB are not downloaded; their filenames are
@@ -13,11 +13,11 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from collectors.ArcCatalogHtmlBuilder import build_catalog_html
-from collectors.ArcMetadataExtractor import extract_metadata
-from sourcing.ArcApiClient import ArcApiClient, article_id_from_source_url
-from sourcing.ArcCandidateFetcher import AGENCY, OFFICE
-from sourcing.ArcFileInventory import MAX_DOWNLOAD_BYTES, ArcFileInventory
+from collectors.AdcCatalogHtmlBuilder import build_catalog_html
+from collectors.AdcMetadataExtractor import extract_metadata
+from sourcing.AdcApiClient import AdcApiClient, article_id_from_source_url
+from sourcing.AdcCandidateFetcher import AGENCY, OFFICE
+from sourcing.AdcFileInventory import MAX_DOWNLOAD_BYTES, AdcFileInventory
 from storage import Storage
 from utils.Args import Args
 from utils.Errors import record_error, record_warning
@@ -33,20 +33,20 @@ from utils.url_utils import is_valid_url
 
 _DOWNLOAD_TIMEOUT_SEC = 3600
 _CATALOG_HTML_NAME = "catalog_detail.html"
-_METADATA_JSON_NAME = "arc_metadata.json"
+_METADATA_JSON_NAME = "adc_metadata.json"
 STATUS_COLLECTED_LARGE_FILE = "collected - large file"
 STATUS_COLLECTED_EXTERNAL_ARCHIVE = "collected - external archive"
-_ARC_URL_FRAGMENT = "agdatacommons.nal.usda.gov"
+_ADC_URL_FRAGMENT = "agdatacommons.nal.usda.gov"
 
 
-class ArcCollector:
-    """Collect ARC datasets via the Figshare public API."""
+class AdcCollector:
+    """Collect ADC datasets via the Figshare public API."""
 
     def __init__(
         self,
         *,
-        api_client: ArcApiClient | None = None,
-        inventory: ArcFileInventory | None = None,
+        api_client: AdcApiClient | None = None,
+        inventory: AdcFileInventory | None = None,
     ) -> None:
         """
         Initialize the collector.
@@ -55,8 +55,8 @@ class ArcCollector:
             api_client: Figshare API client (created when omitted).
             inventory: File inventory helper (created when omitted).
         """
-        self._api = api_client or ArcApiClient()
-        self._inventory = inventory or ArcFileInventory()
+        self._api = api_client or AdcApiClient()
+        self._inventory = inventory or AdcFileInventory()
 
     def run(self, drpid: int) -> None:
         """
@@ -79,19 +79,19 @@ class ArcCollector:
             result = self._collect(source_url, drpid)
             self._update_storage(drpid, result)
         except Exception as exc:
-            record_error(drpid, f"Exception during ARC collection for DRPID {drpid}: {exc}")
+            record_error(drpid, f"Exception during ADC collection for DRPID {drpid}: {exc}")
 
     def _collect(
         self,
         url: str,
         drpid: int,
     ) -> dict[str, Any]:
-        """Fetch metadata and download files for one ARC dataset."""
+        """Fetch metadata and download files for one ADC dataset."""
         if not is_valid_url(url):
             record_error(drpid, f"Invalid URL: {url}")
             return {}
 
-        if _ARC_URL_FRAGMENT not in url:
+        if _ADC_URL_FRAGMENT not in url:
             record_error(drpid, f"Not an Ag Data Commons URL: {url}")
             return {}
 
@@ -150,7 +150,7 @@ class ArcCollector:
             self._write_aria2_cmd(drpid, folder_path, files)
 
         Logger.info(
-            "ARC collection complete for DRPID %s: %s files, %s",
+            "ADC collection complete for DRPID %s: %s files, %s",
             drpid,
             result.get("num_files"),
             result.get("file_size"),
@@ -171,7 +171,7 @@ class ArcCollector:
         """Save a plain HTML catalog snapshot built from Figshare API metadata."""
         html_path = folder_path / _CATALOG_HTML_NAME
         html_path.write_text(build_catalog_html(article, source_url), encoding="utf-8")
-        Logger.info("Wrote ARC catalog HTML: %s", html_path)
+        Logger.info("Wrote ADC catalog HTML: %s", html_path)
 
     def _save_metadata_json(self, folder_path: Path, article: dict[str, Any]) -> None:
         """Persist the Figshare article JSON alongside downloaded files."""
@@ -237,7 +237,7 @@ class ArcCollector:
                 record_error(drpid, f"Missing download URL for file: {filename}")
                 continue
 
-            Logger.info("Downloading ARC file: %s", filename)
+            Logger.info("Downloading ADC file: %s", filename)
             _bytes_written, success = download_via_url(
                 file_url,
                 dest,
@@ -249,7 +249,7 @@ class ArcCollector:
 
             if dest.exists():
                 total_bytes += dest.stat().st_size
-                Logger.info("Downloaded ARC file: %s", filename)
+                Logger.info("Downloaded ADC file: %s", filename)
 
         return notes, total_bytes, exts, skipped_large
 
@@ -260,7 +260,7 @@ class ArcCollector:
         files: list[dict[str, Any]],
     ) -> None:
         """Export aria2 commands for skipped large files."""
-        from collectors.ArcAria2Export import write_drpid_aria2_cmd
+        from collectors.AdcAria2Export import write_drpid_aria2_cmd
 
         inventory_files = [
             (

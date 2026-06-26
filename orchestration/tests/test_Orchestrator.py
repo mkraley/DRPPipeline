@@ -419,17 +419,17 @@ class TestOrchestrator(unittest.TestCase):
         cls = _find_module_class("Sourcing")
         self.assertEqual(cls.__name__, "Sourcing")
 
-    def test_find_module_class_returns_arc_sourcing(self) -> None:
-        """Test _find_module_class finds ArcSourcing in the project."""
+    def test_find_module_class_returns_adc_sourcing(self) -> None:
+        """Test _find_module_class finds AdcSourcing in the project."""
         from orchestration.Orchestrator import _find_module_class
-        cls = _find_module_class("ArcSourcing")
-        self.assertEqual(cls.__name__, "ArcSourcing")
+        cls = _find_module_class("AdcSourcing")
+        self.assertEqual(cls.__name__, "AdcSourcing")
 
-    def test_find_module_class_returns_arc_collector(self) -> None:
-        """Test _find_module_class finds ArcCollector in the project."""
+    def test_find_module_class_returns_adc_collector(self) -> None:
+        """Test _find_module_class finds AdcCollector in the project."""
         from orchestration.Orchestrator import _find_module_class
-        cls = _find_module_class("ArcCollector")
-        self.assertEqual(cls.__name__, "ArcCollector")
+        cls = _find_module_class("AdcCollector")
+        self.assertEqual(cls.__name__, "AdcCollector")
 
     def test_format_duration(self) -> None:
         """Test human-readable duration formatting."""

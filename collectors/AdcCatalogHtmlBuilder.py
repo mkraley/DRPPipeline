@@ -1,5 +1,5 @@
 """
-Build an HTML catalog detail page from Figshare API metadata for ARC datasets.
+Build an HTML catalog detail page from Figshare API metadata for ADC datasets.
 
 Ag Data Commons portal pages are a JavaScript SPA behind AWS WAF; they do not
 archive well as static HTML or print cleanly to PDF. This module renders a
@@ -12,7 +12,7 @@ from __future__ import annotations
 import html
 from typing import Any
 
-from collectors import ArcCatalogHtmlSections as sections
+from collectors import AdcCatalogHtmlSections as sections
 
 
 def build_catalog_html(article: dict[str, Any], source_url: str) -> str:

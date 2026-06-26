@@ -1,11 +1,11 @@
 """
-Ag Data Commons (ARC) sourcing module for DRP Pipeline.
+Ag Data Commons (ADC) sourcing module for DRP Pipeline.
 
-Enumerates ARC datasets via the public Figshare API (no portal WAF), builds file
+Enumerates ADC datasets via the public Figshare API (no portal WAF), builds file
 summaries (including Dryad/Zenodo expansion when applicable), and creates
 ``sourced`` storage records. Run via orchestrator::
 
-    python main.py arc_sourcing
+    python main.py adc_sourcing
 """
 
 from __future__ import annotations
@@ -14,13 +14,13 @@ import time
 from typing import Any
 
 from duplicate_checking import DuplicateChecker
-from sourcing.ArcCandidateFetcher import ArcCandidateFetcher
+from sourcing.AdcCandidateFetcher import AdcCandidateFetcher
 from storage import Storage
 from utils.Args import Args
 from utils.Logger import Logger
 
 
-class ArcSourcing:
+class AdcSourcing:
     """
     Source Ag Data Commons datasets into Storage using the Figshare public API.
 
@@ -31,7 +31,7 @@ class ArcSourcing:
     def __init__(
         self,
         *,
-        fetcher: ArcCandidateFetcher | None = None,
+        fetcher: AdcCandidateFetcher | None = None,
         request_delay: float | None = None,
     ) -> None:
         """
@@ -40,28 +40,28 @@ class ArcSourcing:
         Args:
             fetcher: Candidate fetcher (created when omitted).
             request_delay: Seconds between per-dataset API calls; defaults to Args
-                ``arc_request_delay`` or 0.1.
+                ``adc_request_delay`` or 0.1.
         """
-        self._fetcher = fetcher or ArcCandidateFetcher()
-        default_delay = float(getattr(Args, "arc_request_delay", 0.1) or 0.1)
+        self._fetcher = fetcher or AdcCandidateFetcher()
+        default_delay = float(getattr(Args, "adc_request_delay", 0.1) or 0.1)
         self._request_delay = request_delay if request_delay is not None else default_delay
 
     def run(self, drpid: int) -> None:
         """
-        Enumerate ARC datasets and insert new rows into Storage.
+        Enumerate ADC datasets and insert new rows into Storage.
 
         Args:
             drpid: Use -1 (orchestrator convention for batch sourcing modules).
         """
         if drpid != -1:
             Logger.warning(
-                "ArcSourcing ignores DRPID %s; batch enumeration uses run(-1).",
+                "AdcSourcing ignores DRPID %s; batch enumeration uses run(-1).",
                 drpid,
             )
 
         limit = Args.num_rows
         Logger.info(
-            "ARC sourcing: starting enumeration (limit=%s)",
+            "ADC sourcing: starting enumeration (limit=%s)",
             limit,
         )
         article_ids = self._fetcher.list_article_ids(limit=limit)
@@ -72,7 +72,7 @@ class ArcSourcing:
         assigned_ids: list[int] = []
 
         Logger.info(
-            "ARC sourcing: processing %s dataset(s) (limit=%s)",
+            "ADC sourcing: processing %s dataset(s) (limit=%s)",
             len(article_ids),
             limit,
         )
@@ -82,7 +82,7 @@ class ArcSourcing:
                 article = self._fetcher.fetch_article(article_id)
                 row = self._fetcher.build_candidate_row(article, include_inventory=True)
             except Exception as exc:
-                Logger.error("ARC article %s failed: %s", article_id, exc)
+                Logger.error("ADC article %s failed: %s", article_id, exc)
                 continue
 
             if row is None:
@@ -105,7 +105,7 @@ class ArcSourcing:
             inserted += 1
 
             if index <= 20 or index % 25 == 0 or index == len(article_ids):
-                Logger.info("ARC sourcing progress: %s/%s", index, len(article_ids))
+                Logger.info("ADC sourcing progress: %s/%s", index, len(article_ids))
 
             if self._request_delay > 0:
                 time.sleep(self._request_delay)
@@ -116,8 +116,8 @@ class ArcSourcing:
             id_range = f" (DRPID: {low})" if low == high else f" (DRPIDs: {low}-{high})"
 
         Logger.info(
-            "ARC sourcing complete: %s inserted%s, %s duplicate(s) skipped, "
-            "%s non-ARC article(s) skipped",
+            "ADC sourcing complete: %s inserted%s, %s duplicate(s) skipped, "
+            "%s non-ADC article(s) skipped",
             inserted,
             id_range,
             skipped_dupes,
