@@ -182,6 +182,18 @@ class TestStorageSQLLite(unittest.TestCase):
         self.storage.create_record("https://example.com")
         
         self.assertTrue(self.storage.exists_by_source_url("https://example.com"))
+
+    def test_list_source_urls_ordered_by_drpid(self) -> None:
+        """list_source_urls returns every URL in DRPID order."""
+        self.storage.initialize(db_path=self.test_db_path)
+        first = self.storage.create_record("https://example.com/a")
+        second = self.storage.create_record("https://example.com/b")
+        self.assertEqual(first, 1)
+        self.assertEqual(second, 2)
+        self.assertEqual(
+            self.storage.list_source_urls(),
+            ["https://example.com/a", "https://example.com/b"],
+        )
     
     def test_get_record_only_non_null_values(self) -> None:
         """Test that get returns only non-null values."""

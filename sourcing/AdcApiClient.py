@@ -205,26 +205,40 @@ class AdcApiClient:
         search_max_pages: int | None = None,
         oai_max_pages: int | None = None,
         limit: int | None = None,
+        include_oai: bool = False,
     ) -> list[int]:
         """
-        Union article IDs from USDA.ADC search and the ADC OAI portal set.
+        Return ADC article IDs from USDA.ADC Figshare search, optionally plus OAI.
 
-        When ``limit`` is set, only the Figshare search is used (fast path for
-        ``--num-rows`` sampling). A full run with no limit also harvests OAI
-        ``portal_1059`` for externally linked catalog records.
+        By default only the Figshare ``USDA.ADC`` search is used (~809 portal
+        datasets). Set ``include_oai=True`` to union OAI ``portal_1059`` harvest
+        records (Dryad/Zenodo links) with the search results.
+
+        Args:
+            search_max_pages: Optional cap on search pages (for testing).
+            oai_max_pages: Optional cap on OAI pages when ``include_oai`` is True.
+            limit: Stop search once this many ADC article IDs have been collected.
+            include_oai: When True, also harvest the ADC Figshare OAI portal set.
 
         Returns:
-            Sorted unique Figshare article IDs for ADC-hosted public items.
+            Sorted unique Figshare article IDs for ADC catalog items.
         """
         if limit is not None:
             Logger.info(
-                "ADC enumeration: Figshare USDA.ADC search (limit=%s, OAI skipped)",
+                "ADC enumeration: Figshare USDA.ADC search (limit=%s)",
                 limit,
             )
             return self.list_adc_article_ids(max_pages=search_max_pages, limit=limit)
 
         Logger.info("ADC enumeration: Figshare USDA.ADC search (full catalog)")
         search_ids = self.list_adc_article_ids(max_pages=search_max_pages)
+        if not include_oai:
+            Logger.info(
+                "ADC enumeration complete: %s IDs from USDA.ADC search",
+                len(search_ids),
+            )
+            return search_ids
+
         Logger.info(
             "ADC enumeration: USDA.ADC search found %s IDs; harvesting OAI portal_1059",
             len(search_ids),

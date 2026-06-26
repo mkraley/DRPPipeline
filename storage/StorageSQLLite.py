@@ -321,6 +321,24 @@ class StorageSQLLite:
         )
         row = cursor.fetchone()
         return bool(row[0]) if row else False
+
+    def list_source_urls(self) -> list[str]:
+        """
+        Return every source_url in Storage ordered by DRPID ascending.
+
+        Returns:
+            Source URLs for all projects.
+
+        Raises:
+            RuntimeError: If Storage is not initialized
+        """
+        cursor = self._execute_query(
+            "SELECT source_url FROM projects ORDER BY DRPID ASC",
+            (),
+            operation_name="list source URLs",
+            commit=False,
+        )
+        return [str(row[0]) for row in cursor.fetchall()]
     
     def delete(self, drpid: int) -> None:
         """

@@ -65,6 +65,15 @@ class StorageProtocol(Protocol):
         """
         ...
 
+    def list_source_urls(self) -> list[str]:
+        """
+        Return every ``source_url`` in Storage ordered by DRPID ascending.
+
+        Returns:
+            Non-empty source URLs for all projects.
+        """
+        ...
+
     def get(self, drpid: int) -> Optional[Dict[str, Any]]:
         """
         Get a record by DRPID.

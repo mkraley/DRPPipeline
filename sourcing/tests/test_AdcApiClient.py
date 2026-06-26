@@ -93,3 +93,42 @@ class TestAdcApiClient:
 
         article = AdcApiClient(request_delay=0).fetch_article(1)
         assert article["title"] == "Example"
+
+    @patch.object(AdcApiClient, "list_adc_article_ids", return_value=[1, 2, 3])
+    @patch.object(AdcApiClient, "harvest_portal_article_ids")
+    def test_merge_article_ids_search_only_by_default(
+        self,
+        mock_oai: MagicMock,
+        mock_search: MagicMock,
+    ) -> None:
+        """Full enumeration uses USDA.ADC search only unless include_oai is set."""
+        client = AdcApiClient(request_delay=0)
+        assert client.merge_article_ids() == [1, 2, 3]
+        mock_search.assert_called_once_with(max_pages=None)
+        mock_oai.assert_not_called()
+
+    @patch.object(AdcApiClient, "list_adc_article_ids", return_value=[1, 2])
+    @patch.object(AdcApiClient, "harvest_portal_article_ids", return_value=[2, 3])
+    def test_merge_article_ids_unions_oai_when_requested(
+        self,
+        mock_oai: MagicMock,
+        mock_search: MagicMock,
+    ) -> None:
+        """include_oai merges search hits with OAI portal_1059 identifiers."""
+        client = AdcApiClient(request_delay=0)
+        assert client.merge_article_ids(include_oai=True) == [1, 2, 3]
+        mock_search.assert_called_once_with(max_pages=None)
+        mock_oai.assert_called_once()
+
+    @patch.object(AdcApiClient, "list_adc_article_ids", return_value=[10, 20])
+    @patch.object(AdcApiClient, "harvest_portal_article_ids")
+    def test_merge_article_ids_limit_uses_search_only(
+        self,
+        mock_oai: MagicMock,
+        mock_search: MagicMock,
+    ) -> None:
+        """--num-rows sampling stops after the search limit without OAI."""
+        client = AdcApiClient(request_delay=0)
+        assert client.merge_article_ids(limit=2) == [10, 20]
+        mock_search.assert_called_once_with(max_pages=None, limit=2)
+        mock_oai.assert_not_called()
