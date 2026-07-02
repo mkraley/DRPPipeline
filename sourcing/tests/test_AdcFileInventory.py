@@ -87,3 +87,50 @@ class TestAdcFileInventory:
         ])
         assert unresolved is True
         assert all_unresolved is True
+
+    def test_is_external_archive_for_link_only(self) -> None:
+        """Link-only zero-byte files are treated as external archive."""
+        inventory = AdcFileInventory()
+        article = {
+            "doi": "10.15482/USDA.ADC/1",
+            "files": [{
+                "name": "portal.html",
+                "size": 0,
+                "is_link_only": True,
+                "download_url": "https://example.ars.usda.gov/data",
+            }],
+        }
+        assert inventory.is_external_archive(article)
+        assert inventory.list_figshare_hosted_files(article) == []
+
+    def test_has_figshare_hosted_files(self) -> None:
+        """Articles with ndownloader files are not external archive."""
+        inventory = AdcFileInventory()
+        assert inventory.has_figshare_hosted_files(FIGSHARE_ARTICLE) is True
+        assert inventory.is_external_archive(FIGSHARE_ARTICLE) is False
+        hosted = inventory.list_figshare_hosted_files(FIGSHARE_ARTICLE)
+        assert len(hosted) == 2
+
+    def test_doi_placeholder_is_external_archive(self) -> None:
+        """DOI placeholders are external archive; collector must not follow the link."""
+        inventory = AdcFileInventory()
+        assert inventory.is_external_archive(DRYAD_PLACEHOLDER_ARTICLE) is True
+
+    def test_list_external_reference_urls(self) -> None:
+        """Link-only and DOI placeholders yield external reference URLs."""
+        inventory = AdcFileInventory()
+        link_only = {
+            "files": [{
+                "name": "portal.html",
+                "size": 0,
+                "is_link_only": True,
+                "download_url": "https://example.ars.usda.gov/data",
+            }],
+        }
+        assert inventory.list_external_reference_urls(link_only) == [
+            "https://example.ars.usda.gov/data",
+        ]
+        assert inventory.external_archive_status_note(link_only) == (
+            "External data URL: https://example.ars.usda.gov/data"
+        )
+        assert inventory.external_archive_status_note({"files": []}) is None

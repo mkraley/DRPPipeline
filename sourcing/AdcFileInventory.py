@@ -14,6 +14,7 @@ from sourcing.ZenodoApiClient import ZenodoApiClient
 from utils.file_utils import format_file_size
 
 MAX_DOWNLOAD_BYTES = 1 * 1024**3  # 1 GB — collection skips larger files (USFS pattern)
+FIGSHARE_DOWNLOAD_HOST = "figshare.com"
 _KNOWN_SOURCES = frozenset({"figshare", "dryad", "zenodo"})
 
 
@@ -46,6 +47,92 @@ class AdcFileInventory:
             if external:
                 return external
         return [self._normalize_figshare_file(raw) for raw in files]
+
+    def has_figshare_hosted_files(self, article: dict[str, Any]) -> bool:
+        """
+        Return True when the article lists at least one downloadable Figshare file.
+
+        Args:
+            article: Full Figshare article JSON.
+
+        Returns:
+            True if any file is hosted on Figshare with size > 0.
+        """
+        return any(
+            self._is_figshare_hosted_raw(raw)
+            for raw in (article.get("files") or [])
+        )
+
+    def is_external_archive(self, article: dict[str, Any]) -> bool:
+        """
+        Return True when dataset files are not hosted on Figshare.
+
+        External-archive records (link-only URLs, DOI placeholders, empty file
+        lists) should not trigger download of outbound links during collection.
+
+        Args:
+            article: Full Figshare article JSON.
+        """
+        return not self.has_figshare_hosted_files(article)
+
+    def list_figshare_hosted_files(self, article: dict[str, Any]) -> list[dict[str, Any]]:
+        """
+        List only Figshare-hosted files suitable for automatic download.
+
+        Does not follow DOI links or other external repositories.
+
+        Args:
+            article: Full Figshare article JSON.
+
+        Returns:
+            Normalized inventory rows with ``source`` ``figshare``.
+        """
+        return [
+            self._normalize_figshare_file(raw)
+            for raw in (article.get("files") or [])
+            if self._is_figshare_hosted_raw(raw)
+        ]
+
+    def list_external_reference_urls(self, article: dict[str, Any]) -> list[str]:
+        """
+        Return outbound URLs listed on an external-archive Figshare article.
+
+        Collects ``download_url`` values from link-only placeholders and other
+        non-Figshare file entries without following them.
+
+        Args:
+            article: Full Figshare article JSON.
+
+        Returns:
+            Unique external URLs in Figshare file order.
+        """
+        urls: list[str] = []
+        seen: set[str] = set()
+        for raw in article.get("files") or []:
+            if self._is_figshare_hosted_raw(raw):
+                continue
+            download_url = str(raw.get("download_url") or "").strip()
+            if download_url and download_url not in seen:
+                seen.add(download_url)
+                urls.append(download_url)
+        return urls
+
+    def external_archive_status_note(self, article: dict[str, Any]) -> str | None:
+        """
+        Build a status_notes line for external-archive datasets when URLs are known.
+
+        Args:
+            article: Full Figshare article JSON.
+
+        Returns:
+            Formatted note text, or None when no external URL is listed.
+        """
+        urls = self.list_external_reference_urls(article)
+        if not urls:
+            return None
+        if len(urls) == 1:
+            return f"External data URL: {urls[0]}"
+        return "External data URLs:\n" + "\n".join(urls)
 
     def summarize_inventory(
         self,
@@ -151,6 +238,18 @@ class AdcFileInventory:
             "size_bytes": 0,
             "source": "external-unresolved",
         }]
+
+    def _is_figshare_hosted_raw(self, raw: dict[str, Any]) -> bool:
+        """Return True when a Figshare file record is a hosted, non-link download."""
+        size = int(raw.get("size") or 0)
+        if size <= 0:
+            return False
+        download_url = str(raw.get("download_url") or "")
+        if FIGSHARE_DOWNLOAD_HOST not in download_url:
+            return False
+        if raw.get("is_link_only"):
+            return False
+        return True
 
     def _normalize_figshare_file(self, raw: dict[str, Any]) -> dict[str, Any]:
         """Convert a Figshare file record to the shared inventory shape."""

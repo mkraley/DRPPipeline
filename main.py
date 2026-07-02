@@ -28,6 +28,8 @@ MODULES
   cms_collector         Download datasets from data.cms.gov sources
   usfs_collector        Harvest metadata from USFS Research Data Archive pages
   adc_collector         Collect Ag Data Commons datasets (files + metadata)
+  adc_globus_collector  Transfer Globus-hosted ADC external-archive datasets (after adc_collector)
+  adc_globus_survey     Inventory remote Globus file sizes (no download; updates status_notes)
   interactive_collector Browser-assisted collector for sites that block automation
   upload                Upload collected datasets to DataLumos
   upload_large_files    Download/upload large files (uploaded - large file <25GB, uploaded - expanded)

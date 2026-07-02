@@ -431,6 +431,18 @@ class TestOrchestrator(unittest.TestCase):
         cls = _find_module_class("AdcCollector")
         self.assertEqual(cls.__name__, "AdcCollector")
 
+    def test_find_module_class_returns_adc_globus_collector(self) -> None:
+        """Test _find_module_class finds AdcGlobusCollector in the project."""
+        from orchestration.Orchestrator import _find_module_class
+        cls = _find_module_class("AdcGlobusCollector")
+        self.assertEqual(cls.__name__, "AdcGlobusCollector")
+
+    def test_find_module_class_returns_adc_globus_survey(self) -> None:
+        """Test _find_module_class finds AdcGlobusSurvey in the project."""
+        from orchestration.Orchestrator import _find_module_class
+        cls = _find_module_class("AdcGlobusSurvey")
+        self.assertEqual(cls.__name__, "AdcGlobusSurvey")
+
     def test_format_duration(self) -> None:
         """Test human-readable duration formatting."""
         self.assertEqual(_format_duration(12.34), "12.3s")

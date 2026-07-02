@@ -67,6 +67,13 @@ class Args(metaclass=ArgsMeta):
         "sourcing_fetch_timeout": 15,  # Seconds per URL when checking availability in sourcing; reduces delay from slow catalog.data.gov pages
         "sourcing_mode": "unclaimed",  # Row filter: unclaimed (default), completed (Download Location filled), all
         "adc_request_delay": 0.1,  # Seconds between Figshare API calls during adc_sourcing
+        # Globus supplemental collector (adc_globus_collector)
+        "globus_client_id": None,  # Native app client ID from Globus developers console
+        "globus_refresh_token": None,  # OAuth refresh token with transfer scopes
+        "globus_destination_endpoint_id": None,  # Globus Connect Personal collection UUID
+        "globus_destination_base_path": "/~/",  # Base path on GCP mapped to base_output_dir
+        "globus_transfer_poll_timeout_sec": 3600,
+        "globus_survey_resurvey": False,  # Re-run adc_globus_survey when inventory line exists
         "num_rows": None,  # None = unlimited; batch limit for orchestration
         "start_row": None,  # If set, skip first (start_row - 1) rows (1-origin); used when listing from DB
         "start_drpid": None,  # If set, only projects with DRPID >= start_drpid (overrides start_row when set)

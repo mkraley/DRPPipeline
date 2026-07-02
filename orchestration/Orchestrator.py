@@ -41,6 +41,14 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": "sourced",
         "class_name": "AdcCollector",
     },
+    "adc_globus_collector": {
+        "prereq": "collected - external archive",
+        "class_name": "AdcGlobusCollector",
+    },
+    "adc_globus_survey": {
+        "prereq": "collected - external archive",
+        "class_name": "AdcGlobusSurvey",
+    },
     "interactive_collector": {
         "prereq": "sourced",
         "class_name": None,  # Handled directly: start Flask app with first eligible URL
@@ -343,6 +351,26 @@ class Orchestrator:
                         continue
                     seen_large.add(drpid)
                     projects.append(proj)
+                projects.sort(key=lambda p: p["DRPID"])
+                if num_rows is not None:
+                    projects = projects[:num_rows]
+            elif module == "adc_globus_collector":
+                from collectors.AdcGlobusCollector import is_globus_external_archive
+
+                candidates = Storage.list_eligible_projects(
+                    "collected - external archive", None, start_row, start_drpid
+                )
+                projects = [proj for proj in candidates if is_globus_external_archive(proj)]
+                projects.sort(key=lambda p: p["DRPID"])
+                if num_rows is not None:
+                    projects = projects[:num_rows]
+            elif module == "adc_globus_survey":
+                from collectors.AdcGlobusSurvey import is_globus_external_archive
+
+                candidates = Storage.list_eligible_projects(
+                    "collected - external archive", None, start_row, start_drpid
+                )
+                projects = [proj for proj in candidates if is_globus_external_archive(proj)]
                 projects.sort(key=lambda p: p["DRPID"])
                 if num_rows is not None:
                     projects = projects[:num_rows]

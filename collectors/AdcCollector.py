@@ -1,9 +1,10 @@
 """
 Ag Data Commons (ADC) collector for DRP Pipeline.
 
-Downloads dataset files via the public Figshare API (and Dryad/Zenodo when
-applicable). Files larger than 1 GB are not downloaded; their filenames are
-recorded in ``status_notes`` for manual retrieval (USFS pattern).
+Downloads Figshare-hosted dataset files via the public Figshare API. Records
+with external-only storage (link-only or DOI placeholders) save catalog metadata
+only and set status ``collected - external archive``. Files larger than 1 GB are
+not downloaded; their filenames are recorded in ``status_notes``.
 """
 
 from __future__ import annotations
@@ -29,6 +30,13 @@ from utils.file_utils import (
     format_file_size,
     sanitize_filename,
 )
+from utils.retry_http import (
+    DEFAULT_BACKOFF_SECONDS,
+    DEFAULT_MAX_RETRIES,
+    SourceNotFoundError,
+    download_with_retry,
+    retry_http_call,
+)
 from utils.url_utils import is_valid_url
 
 _DOWNLOAD_TIMEOUT_SEC = 3600
@@ -36,6 +44,7 @@ _CATALOG_HTML_NAME = "catalog_detail.html"
 _METADATA_JSON_NAME = "adc_metadata.json"
 STATUS_COLLECTED_LARGE_FILE = "collected - large file"
 STATUS_COLLECTED_EXTERNAL_ARCHIVE = "collected - external archive"
+STATUS_NOT_FOUND = "not_found"
 _ADC_URL_FRAGMENT = "agdatacommons.nal.usda.gov"
 
 
@@ -47,6 +56,9 @@ class AdcCollector:
         *,
         api_client: AdcApiClient | None = None,
         inventory: AdcFileInventory | None = None,
+        fetch_retries: int = DEFAULT_MAX_RETRIES,
+        download_retries: int = DEFAULT_MAX_RETRIES,
+        retry_backoff: float = DEFAULT_BACKOFF_SECONDS,
     ) -> None:
         """
         Initialize the collector.
@@ -54,9 +66,15 @@ class AdcCollector:
         Args:
             api_client: Figshare API client (created when omitted).
             inventory: File inventory helper (created when omitted).
+            fetch_retries: Retries for Figshare article metadata requests.
+            download_retries: Retries for individual file downloads.
+            retry_backoff: Base seconds for exponential backoff between retries.
         """
         self._api = api_client or AdcApiClient()
         self._inventory = inventory or AdcFileInventory()
+        self._fetch_retries = fetch_retries
+        self._download_retries = download_retries
+        self._retry_backoff = retry_backoff
 
     def run(self, drpid: int) -> None:
         """
@@ -78,6 +96,12 @@ class AdcCollector:
         try:
             result = self._collect(source_url, drpid)
             self._update_storage(drpid, result)
+        except SourceNotFoundError as exc:
+            record_error(
+                drpid,
+                f"ADC source not accessible for DRPID {drpid}: {exc}",
+                status_value=STATUS_NOT_FOUND,
+            )
         except Exception as exc:
             record_error(drpid, f"Exception during ADC collection for DRPID {drpid}: {exc}")
 
@@ -86,7 +110,7 @@ class AdcCollector:
         url: str,
         drpid: int,
     ) -> dict[str, Any]:
-        """Fetch metadata and download files for one ADC dataset."""
+        """Fetch metadata and download Figshare-hosted files for one ADC dataset."""
         if not is_valid_url(url):
             record_error(drpid, f"Invalid URL: {url}")
             return {}
@@ -100,7 +124,7 @@ class AdcCollector:
             record_error(drpid, f"Could not extract Figshare article ID from URL: {url}")
             return {}
 
-        article = self._api.fetch_article(article_id)
+        article = self._fetch_article_with_retry(article_id)
         result: dict[str, Any] = extract_metadata(article)
         self._record_geo_warnings(drpid, result)
         result["agency"] = AGENCY
@@ -114,32 +138,25 @@ class AdcCollector:
         self._save_metadata_json(folder_path, article)
         self._save_catalog_html(folder_path, article, url)
 
-        files = self._inventory.list_files_for_article(article)
-        _num_files, _file_size, _extensions, _has_large, has_unresolved, all_unresolved = (
-            self._inventory.summarize_inventory(files)
-        )
-
-        if all_unresolved:
-            external_url = files[0]["url"] if files else url
-            record_warning(
-                drpid,
-                f"Data available via external link (not downloaded): {external_url}",
-            )
+        if self._inventory.is_external_archive(article):
             result.update(self._folder_summary(folder_path))
             result["download_date"] = date.today().isoformat()
             result["_external_archive"] = True
+            external_note = self._inventory.external_archive_status_note(article)
+            if external_note:
+                result["status_notes"] = external_note
             return result
 
-        if has_unresolved:
-            record_warning(drpid, "Some external data links could not be expanded via API.")
-
-        status_notes, _total_bytes, _exts, skipped_large = self._process_files(
+        files = self._inventory.list_figshare_hosted_files(article)
+        status_notes, inventory_bytes, inventory_exts, skipped_large = self._process_files(
             drpid,
             folder_path,
             files,
         )
 
-        result.update(self._folder_summary(folder_path))
+        result.update(
+            self._collection_summary(folder_path, files, inventory_bytes, inventory_exts)
+        )
         result["download_date"] = date.today().isoformat()
         result["_skipped_large_file"] = skipped_large
         result["_external_archive"] = False
@@ -156,6 +173,27 @@ class AdcCollector:
             result.get("file_size"),
         )
         return result
+
+    def _fetch_article_with_retry(self, article_id: int) -> dict[str, Any]:
+        """
+        Fetch Figshare article metadata with retries on transient HTTP errors.
+
+        Args:
+            article_id: Figshare article ID.
+
+        Returns:
+            Article JSON document.
+
+        Raises:
+            SourceNotFoundError: When the article is not found (404/410).
+            requests.HTTPError: When metadata fetch fails after retries.
+        """
+        return retry_http_call(
+            lambda: self._api.fetch_article(article_id),
+            max_retries=self._fetch_retries,
+            base_delay=self._retry_backoff,
+            operation_label=f"Figshare article {article_id}",
+        )
 
     def _record_geo_warnings(self, drpid: int, result: dict[str, Any]) -> None:
         """Surface geographic normalization warnings via Storage."""
@@ -188,6 +226,61 @@ class AdcCollector:
             "extensions": ", ".join(extensions),
         }
 
+    def _collection_summary(
+        self,
+        folder_path: Path,
+        files: list[dict[str, Any]],
+        inventory_bytes: int,
+        inventory_exts: set[str],
+    ) -> dict[str, Any]:
+        """
+        Build Storage file stats including skipped large inventory files.
+
+        Args:
+            folder_path: Project output directory.
+            files: Figshare-hosted inventory rows processed for download.
+            inventory_bytes: Byte total from ``_process_files`` (includes skipped >1GB).
+            inventory_exts: Extensions seen in the inventory pass.
+
+        Returns:
+            ``folder_path``, ``num_files``, ``file_size``, and ``extensions``.
+        """
+        supplementary_bytes, supplementary_count, supplementary_exts = (
+            self._supplementary_file_stats(folder_path)
+        )
+        total_bytes = inventory_bytes + supplementary_bytes
+        all_exts = sorted(inventory_exts | supplementary_exts)
+        return {
+            "folder_path": str(folder_path),
+            "num_files": len(files) + supplementary_count,
+            "file_size": format_file_size(total_bytes),
+            "extensions": ", ".join(all_exts),
+        }
+
+    @staticmethod
+    def _supplementary_file_stats(folder_path: Path) -> tuple[int, int, set[str]]:
+        """
+        Return byte total, file count, and extensions for ADC metadata sidecars.
+
+        Args:
+            folder_path: Project output directory.
+
+        Returns:
+            Tuple of (total bytes, file count, extension set).
+        """
+        total_bytes = 0
+        count = 0
+        extensions: set[str] = set()
+        for name in (_METADATA_JSON_NAME, _CATALOG_HTML_NAME):
+            path = folder_path / name
+            if not path.is_file():
+                continue
+            count += 1
+            total_bytes += path.stat().st_size
+            if path.suffix:
+                extensions.add(path.suffix.lstrip(".").lower())
+        return total_bytes, count, extensions
+
     def _process_files(
         self,
         drpid: int,
@@ -195,7 +288,7 @@ class AdcCollector:
         files: list[dict[str, Any]],
     ) -> tuple[list[str], int, set[str], bool]:
         """
-        Download inventory files; skip those over 1 GB.
+        Download Figshare-hosted inventory files; skip those over 1 GB.
 
         Returns:
             Tuple of (status_note_lines for >1GB skips only, total_bytes, extensions, skipped_large).
@@ -206,10 +299,6 @@ class AdcCollector:
         skipped_large = False
 
         for file_row in files:
-            source = str(file_row.get("source") or "")
-            if source == "external-unresolved":
-                continue
-
             filename = str(file_row.get("name") or "file")
             file_url = str(file_row.get("url") or "")
             size_bytes = file_row.get("size_bytes")
@@ -238,10 +327,15 @@ class AdcCollector:
                 continue
 
             Logger.info("Downloading ADC file: %s", filename)
-            _bytes_written, success = download_via_url(
-                file_url,
-                dest,
-                timeout_sec=_DOWNLOAD_TIMEOUT_SEC,
+            _bytes_written, success = download_with_retry(
+                lambda url=file_url, path=dest: download_via_url(
+                    url,
+                    path,
+                    timeout_sec=_DOWNLOAD_TIMEOUT_SEC,
+                ),
+                max_retries=self._download_retries,
+                base_delay=self._retry_backoff,
+                operation_label=f"ADC download {filename}",
             )
             if not success:
                 record_error(drpid, f"Download failed: {filename} - {file_url}")
