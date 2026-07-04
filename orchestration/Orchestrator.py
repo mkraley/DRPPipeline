@@ -273,8 +273,15 @@ class Orchestrator:
 
         # Handle interactive_collector: set DB path and start Flask app (app loads first eligible from Storage)
         if module == "interactive_collector":
+            from interactive_collector.api_projects import get_interactive_prereq
             from interactive_collector.app import app as interactive_app
-            Logger.info("Starting interactive collector (open http://127.0.0.1:5000/)")
+
+            prereq_status = get_interactive_prereq()
+            Logger.info(
+                "Starting interactive collector (open http://127.0.0.1:5000/) "
+                "eligible_prereq=%r",
+                prereq_status,
+            )
             interactive_app.run(host="127.0.0.1", port=5000, debug=False)
             Logger.info(f"Orchestrator finished module={module!r}")
             return

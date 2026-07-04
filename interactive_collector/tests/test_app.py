@@ -260,7 +260,8 @@ class TestAppRoutes(unittest.TestCase):
     @patch("storage.Storage")
     def test_index_no_url_returns_form(self, mock_storage_cls: MagicMock) -> None:
         """GET / with no url param returns form and empty panes when no eligible project in Storage."""
-        mock_storage_cls.list_eligible_projects.side_effect = [[], []]  # ensure_storage, get_first_eligible
+        # app ensure_storage, api_projects ensure_storage, list eligible
+        mock_storage_cls.list_eligible_projects.side_effect = [[], [], []]
         response = self.client.get("/legacy/")
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Interactive Collector", response.data)
@@ -283,8 +284,8 @@ class TestAppRoutes(unittest.TestCase):
             False,
         )
         project = {"DRPID": 7, "source_url": "https://catalog.data.gov/dataset/foo"}
-        # list_eligible_projects: _ensure_storage (index), first eligible, _ensure_output_folder, metadata
-        mock_storage_cls.list_eligible_projects.side_effect = [[], [project], [], []]
+        # app ensure, api ensure, first eligible, then folder/metadata ensures
+        mock_storage_cls.list_eligible_projects.side_effect = [[], [], [project], [], []]
         mock_storage_cls.get.return_value = project
 
         response = self.client.get("/legacy/")
@@ -301,8 +302,9 @@ class TestAppRoutes(unittest.TestCase):
     ) -> None:
         """GET /?next=1&current_drpid=1 redirects to URL and drpid of next eligible project."""
         next_project = {"DRPID": 5, "source_url": "https://example.com/next"}
-        # First call: _ensure_storage (None, 0); second: _get_next_eligible_after ("sourced", 200)
+        # app ensure, api ensure, list eligible for next
         mock_storage_cls.list_eligible_projects.side_effect = [
+            [],
             [],
             [
                 {"DRPID": 1, "source_url": "https://example.com/first"},

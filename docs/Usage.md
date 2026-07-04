@@ -402,6 +402,12 @@ For Google Sheets setup, see [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md).
    ```bash
    python main.py interactive_collector
    ```
+   To work through ADC (or other) projects already marked `collected - external archive`
+   instead of `sourced`:
+   ```bash
+   python main.py interactive_collector --external-archive
+   ```
+   Optional: `--start-drpid N` to begin at a specific DRPID.
 
 2. **Frontend (development):**  
    ```bash

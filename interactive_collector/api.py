@@ -52,7 +52,7 @@ def _str_or_none(x: Any) -> str | None:
 @api_bp.route("/projects/first", methods=["GET"])
 def projects_first() -> Any:
     """
-    Return the first eligible project (prereq=sourcing, no errors).
+    Return the first eligible project for the configured prereq.
 
     Returns:
         JSON project dict or 404.

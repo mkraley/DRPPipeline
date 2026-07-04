@@ -31,6 +31,7 @@ MODULES
   adc_globus_collector  Transfer Globus-hosted ADC external-archive datasets (after adc_collector)
   adc_globus_survey     Inventory remote Globus file sizes (no download; updates status_notes)
   interactive_collector Browser-assisted collector for sites that block automation
+                        (use --external-archive for collected - external archive projects)
   upload                Upload collected datasets to DataLumos
   upload_large_files    Download/upload large files (uploaded - large file <25GB, uploaded - expanded)
   publisher             Update the Google Sheet with DataLumos links
@@ -48,6 +49,9 @@ COMMON OPTIONS
 
 USFS COLLECTOR
   --usfs-metadata-only    Metadata and page PDFs only; skip publication downloads; keep output folder
+
+INTERACTIVE COLLECTOR
+  --external-archive      Load projects with status collected - external archive (default: sourced)
 
 FIRST TIME?
   Run setup to create your configuration files and verify everything works:

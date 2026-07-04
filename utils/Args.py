@@ -83,6 +83,8 @@ class Args(metaclass=ArgsMeta):
         "delete_all_db_entries": False,
         "max_workers": 1,  # Parallel projects when > 1 (e.g. collector); 1 = sequential
         "usfs_metadata_only": False,  # USFS: harvest metadata/PDFs only; skip publication downloads; keep folder
+        # interactive_collector: load collected - external archive instead of sourced
+        "interactive_external_archive": False,
         "download_timeout_ms": 30 * 60 * 1000,  # 30 min for large datasets; increase for 10GB+
         "use_url_download": True,  # Get URL from Playwright then download with requests (progress/resume)
         "socrata_app_token": None,  # Optional; set in config for direct Socrata API download (avoids 403)
@@ -233,6 +235,12 @@ class Args(metaclass=ArgsMeta):
                 "--usfs-metadata-only",
                 help="USFS collector: update metadata and page PDFs only; skip publication file downloads and preserve the output folder",
             ),
+            external_archive: bool = typer.Option(
+                False,
+                "--external-archive",
+                help="interactive_collector: load projects with status "
+                "'collected - external archive' instead of 'sourced'",
+            ),
         ) -> None:
             """Callback to capture Typer parsed values."""
             parsed_values["module"] = module
@@ -264,6 +272,8 @@ class Args(metaclass=ArgsMeta):
                 parsed_values["sourcing_mode"] = sourcing_mode
             if usfs_metadata_only:
                 parsed_values["usfs_metadata_only"] = True
+            if external_archive:
+                parsed_values["interactive_external_archive"] = True
 
         # Use a single @app.command() so the first positional (module) is not treated as a
         # subcommand. A Group would require the first token to match a subcommand.

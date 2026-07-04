@@ -8,11 +8,63 @@ for the Interactive Collector SPA.
 
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from utils.url_utils import is_valid_url
 
 from interactive_collector.collector_state import get_base_output_dir, get_db_path, get_result_by_drpid
+
+STATUS_SOURCED = "sourced"
+STATUS_EXTERNAL_ARCHIVE = "collected - external archive"
+
+
+def get_interactive_prereq() -> str:
+    """
+    Return the status used to list eligible interactive_collector projects.
+
+    Defaults to ``sourced``. When ``Args.interactive_external_archive`` is true
+    (``--external-archive`` or config), uses ``collected - external archive``.
+
+    Returns:
+        Prerequisite status string for ``Storage.list_eligible_projects``.
+    """
+    try:
+        from utils.Args import Args
+
+        if not getattr(Args, "_initialized", False):
+            return STATUS_SOURCED
+        if bool(Args.interactive_external_archive):
+            return STATUS_EXTERNAL_ARCHIVE
+    except (RuntimeError, AttributeError):
+        pass
+    return STATUS_SOURCED
+
+
+def _list_eligible(limit: Optional[int]) -> List[Dict[str, Any]]:
+    """
+    List eligible interactive_collector projects for the configured prereq.
+
+    Args:
+        limit: Max rows to return, or None for no limit.
+
+    Returns:
+        Eligible project rows ordered by DRPID.
+    """
+    _ensure_storage()
+    from storage import Storage
+
+    prereq = get_interactive_prereq()
+    start_row: Optional[int] = None
+    min_drpid: Optional[int] = None
+    try:
+        from utils.Args import Args
+
+        if getattr(Args, "_initialized", False):
+            start_row = Args.start_row
+            min_drpid = Args.start_drpid
+    except (RuntimeError, AttributeError):
+        pass
+    return Storage.list_eligible_projects(prereq, limit, start_row, min_drpid)
 
 
 def _ensure_storage() -> None:
@@ -36,14 +88,12 @@ def _ensure_storage() -> None:
 
 def get_first_eligible() -> Optional[Dict[str, Any]]:
     """
-    Return the first eligible project (prereq=sourcing, no errors) or None.
+    Return the first eligible project for the configured prereq, or None.
 
     Returns:
-        Project dict with DPRID, source_url, etc., or None.
+        Project dict with DRPID, source_url, etc., or None.
     """
-    _ensure_storage()
-    from storage import Storage
-    projects = Storage.list_eligible_projects("sourced", 1)
+    projects = _list_eligible(1)
     return projects[0] if projects else None
 
 
@@ -57,9 +107,7 @@ def get_next_eligible_after(current_drpid: int) -> Optional[Dict[str, Any]]:
     Returns:
         Next project dict or None.
     """
-    _ensure_storage()
-    from storage import Storage
-    projects = Storage.list_eligible_projects("sourced", 200)
+    projects = _list_eligible(200)
     for proj in projects:
         if proj["DRPID"] > current_drpid:
             return proj

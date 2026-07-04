@@ -5,8 +5,8 @@ Multi-pane layout: scoreboard (left), Source pane, Linked pane.
 Links open in the Linked pane so you can see where you came from.
 
 When the pipeline DB is available (config DRP_DB_PATH or default drp_pipeline.db),
-the app loads the first eligible project (prereq=sourced, no errors) on start,
-and supports Next (next eligible) and Load by DRPID.
+the app loads the first eligible project on start (prereq=sourced by default, or
+collected - external archive with --external-archive), and supports Next and Load by DRPID.
 
 When the original source page is retrieved and we have a DRPID, an output folder
 is created (or emptied) and folder_path is stored in _result and in Storage.
@@ -147,23 +147,19 @@ def _ensure_storage(flask_app: Flask) -> None:
 
 
 def _get_first_eligible(flask_app: Flask) -> Optional[Dict[str, Any]]:
-    """Return the first eligible project (prereq=sourcing, no errors) or None."""
+    """Return the first eligible project for the configured prereq, or None."""
     _ensure_storage(flask_app)
-    from storage import Storage
-    projects = Storage.list_eligible_projects("sourced", 1)
-    return projects[0] if projects else None
+    from interactive_collector.api_projects import get_first_eligible
+
+    return get_first_eligible()
 
 
 def _get_next_eligible_after(flask_app: Flask, current_drpid: int) -> Optional[Dict[str, Any]]:
     """Return the next eligible project after current_drpid, or None."""
     _ensure_storage(flask_app)
-    from storage import Storage
-    # Fetch a chunk and find first with DRPID > current_drpid
-    projects = Storage.list_eligible_projects("sourced", 200)
-    for proj in projects:
-        if proj["DRPID"] > current_drpid:
-            return proj
-    return None
+    from interactive_collector.api_projects import get_next_eligible_after
+
+    return get_next_eligible_after(current_drpid)
 
 
 def _get_project_by_drpid(flask_app: Flask, drpid: int) -> Optional[Dict[str, Any]]:
