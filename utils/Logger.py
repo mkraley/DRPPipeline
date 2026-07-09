@@ -143,7 +143,8 @@ class Logger(metaclass=LoggerMeta):
         """
         Initialize the logger with specified settings.
 
-        Logs to stdout and appends to a file (default: drp_pipeline.log in cwd).
+        Logs to stdout and appends to files (default: drp_pipeline.log and err_warn.log in cwd).
+        err_warn.log receives only WARNING, ERROR, and CRITICAL lines.
         Format omits logger name and includes thread id (T1, T2, ...) and drpid when set via set_current_drpid().
         When log_color is True and stdout is a TTY, the severity field is colored in the terminal only.
 
@@ -151,8 +152,9 @@ class Logger(metaclass=LoggerMeta):
             log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
             log_format: Custom log format string. If None, uses default format.
                 Default includes %(drpid)s (set by filter when current drpid is set).
-            log_file: Path for log file. If None, uses drp_pipeline.log in current
-                working directory. Pass False to disable file logging.
+            log_file: Path for the full log file. If None, uses drp_pipeline.log in current
+                working directory. Pass False to disable all file logging. When enabled, a
+                companion err_warn.log in the same directory receives warnings and errors only.
             log_color: If True and stdout is a TTY, color the levelname in stream output (DEBUG=gray, etc.).
         """
         if cls._initialized:
@@ -191,6 +193,12 @@ class Logger(metaclass=LoggerMeta):
             file_handler.setLevel(level)
             file_handler.setFormatter(plain_formatter)
             cls._logger.addHandler(file_handler)
+
+            err_warn_path = log_path.parent / "err_warn.log"
+            err_warn_handler = logging.FileHandler(err_warn_path, mode="a", encoding="utf-8")
+            err_warn_handler.setLevel(logging.WARNING)
+            err_warn_handler.setFormatter(plain_formatter)
+            cls._logger.addHandler(err_warn_handler)
 
         cls._initialized = True
     

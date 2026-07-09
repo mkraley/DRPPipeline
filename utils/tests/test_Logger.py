@@ -49,15 +49,32 @@ class TestLogger(unittest.TestCase):
         """Test logger initialization writes to file when log_file is set."""
         with tempfile.TemporaryDirectory() as tmpdir:
             log_path = Path(tmpdir) / "test.log"
+            err_warn_path = Path(tmpdir) / "err_warn.log"
             Logger.initialize(log_level="INFO", log_file=str(log_path))
-            Logger.info("Written to file")
+            Logger.info("Info only")
+            Logger.warning("Warning line")
+            Logger.error("Error line")
             self.assertTrue(log_path.exists())
-            self.assertIn("Written to file", log_path.read_text(encoding="utf-8"))
+            full_log = log_path.read_text(encoding="utf-8")
+            self.assertIn("Info only", full_log)
+            self.assertIn("Warning line", full_log)
+            self.assertIn("Error line", full_log)
+            self.assertTrue(err_warn_path.exists())
+            err_warn_log = err_warn_path.read_text(encoding="utf-8")
+            self.assertNotIn("Info only", err_warn_log)
+            self.assertIn("Warning line", err_warn_log)
+            self.assertIn("Error line", err_warn_log)
             # Close handlers so temp dir can be removed on Windows
             for h in Logger._logger.handlers:
                 h.close()
             Logger._logger.handlers.clear()
             Logger._initialized = False
+
+    def test_initialize_with_file_disabled_skips_err_warn_log(self) -> None:
+        """When log_file is False, no err_warn.log handler is added."""
+        Logger.initialize(log_level="INFO", log_file=False)
+        self.assertEqual(len(Logger._logger.handlers), 1)
+        self.assertFalse(any(isinstance(h, logging.FileHandler) for h in Logger._logger.handlers))
 
     def test_initialize_idempotent(self) -> None:
         """Test that initialize can be called multiple times safely."""
