@@ -6,8 +6,11 @@ Used by ``scripts/reconcile_inventory_sheet.py``.
 
 from __future__ import annotations
 
+import csv
+import io
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 from urllib.parse import urlparse, urlunparse
 
@@ -75,6 +78,39 @@ def build_sheet_url_index(sheet_rows: Sequence[Dict[str, str]]) -> Dict[str, Dic
         if nu:
             index[nu] = row
     return index
+
+
+def fetch_inventory_sheet_rows(sheet_name: str) -> List[Dict[str, str]]:
+    """
+    Fetch all rows from the configured Google Sheet inventory tab as dicts.
+
+    Args:
+        sheet_name: Worksheet tab name (for example ``CDC``).
+
+    Returns:
+        List of row dicts with stripped keys and values.
+
+    Raises:
+        RuntimeError: When the sheet tab cannot be found.
+    """
+    from utils.Args import Args
+    from sourcing.SpreadsheetCandidateFetcher import SpreadsheetCandidateFetcher
+    from utils.sheet_url_utils import get_gid_for_sheet_name
+
+    fetcher = SpreadsheetCandidateFetcher()
+    gid = get_gid_for_sheet_name(
+        Args.google_sheet_id,
+        sheet_name,
+        Path(Args.google_credentials),
+    )
+    if gid is None:
+        raise RuntimeError(f"Sheet tab {sheet_name!r} not found")
+    csv_text = fetcher._fetch_sheet_csv(Args.google_sheet_id, gid)
+    reader = csv.DictReader(io.StringIO(csv_text))
+    return [
+        {(k or "").strip(): (v or "").strip() for k, v in row.items() if k}
+        for row in reader
+    ]
 
 
 def classify_reconcile_actions(

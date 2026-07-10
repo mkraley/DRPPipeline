@@ -81,6 +81,10 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": "uploaded",
         "class_name": "DataLumosPublisher",
     },
+    "verify_upload": {
+        "prereq": "updated_inventory",
+        "class_name": "UploadVerifier",
+    },
     "cleanup_inprogress": {
         "prereq": None,
         "class_name": "CleanupInProgress",

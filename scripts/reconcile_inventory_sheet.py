@@ -14,8 +14,6 @@ From repo root:
 from __future__ import annotations
 
 import argparse
-import csv
-import io
 import sys
 import time
 from pathlib import Path
@@ -27,6 +25,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from utils.inventory_sheet_reconcile import (  # noqa: E402
     ReconcileAction,
     classify_reconcile_actions,
+    fetch_inventory_sheet_rows,
     format_action_line,
 )
 from utils.project_utils import get_field  # noqa: E402
@@ -35,24 +34,7 @@ STATUS_UPDATED_INVENTORY = "updated_inventory"
 
 
 def fetch_sheet_rows(sheet_name: str) -> List[Dict[str, str]]:
-    from utils.Args import Args
-    from sourcing.SpreadsheetCandidateFetcher import SpreadsheetCandidateFetcher
-    from utils.sheet_url_utils import get_gid_for_sheet_name
-
-    fetcher = SpreadsheetCandidateFetcher()
-    gid = get_gid_for_sheet_name(
-        Args.google_sheet_id,
-        sheet_name,
-        Path(Args.google_credentials),
-    )
-    if gid is None:
-        raise RuntimeError(f"Sheet tab {sheet_name!r} not found")
-    csv_text = fetcher._fetch_sheet_csv(Args.google_sheet_id, gid)
-    reader = csv.DictReader(io.StringIO(csv_text))
-    return [
-        {(k or "").strip(): (v or "").strip() for k, v in row.items() if k}
-        for row in reader
-    ]
+    return fetch_inventory_sheet_rows(sheet_name)
 
 
 def load_db_rows(db_path: Path) -> List[Dict[str, object]]:

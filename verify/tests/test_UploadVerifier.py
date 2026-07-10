@@ -1,0 +1,140 @@
+"""
+Unit tests for UploadVerifier.
+"""
+
+import sys
+import unittest
+from unittest.mock import MagicMock, patch
+
+from utils.Args import Args
+from utils.Logger import Logger
+
+from verify.DatalumosViewFileStats import DatalumosViewFileStats
+from verify.UploadVerifier import UploadVerifier
+
+
+class TestUploadVerifier(unittest.TestCase):
+    """Tests for UploadVerifier module."""
+
+    def setUp(self) -> None:
+        """Reset verifier state before each test."""
+        self._original_argv = sys.argv.copy()
+        sys.argv = ["test", "verify_upload"]
+        Args.initialize()
+        Logger.initialize(log_level="ERROR", log_file=False)
+        UploadVerifier._sheet_index = None
+
+    def tearDown(self) -> None:
+        """Restore argv after each test."""
+        sys.argv = self._original_argv
+        UploadVerifier._sheet_index = None
+
+    @patch("verify.UploadVerifier.Logger")
+    @patch("verify.UploadVerifier.Storage")
+    def test_run_missing_project_logs_error(
+        self, mock_storage: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        """Test missing project logs an error."""
+        mock_storage.get.return_value = None
+        verifier = UploadVerifier()
+        verifier.run(1)
+        mock_logger.error.assert_called_once()
+        self.assertIn("not found", mock_logger.error.call_args[0][0])
+
+    @patch("verify.UploadVerifier.Logger")
+    @patch("verify.UploadVerifier.Storage")
+    def test_run_missing_sheet_row_logs_error(
+        self, mock_storage: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        """Test missing inventory sheet row logs an error."""
+        mock_storage.get.return_value = {
+            "DRPID": 1,
+            "source_url": "https://example.gov/data",
+            "num_files": 1,
+            "file_size": "1000",
+        }
+        UploadVerifier._sheet_index = {}
+        verifier = UploadVerifier()
+        verifier.run(1)
+        mock_logger.error.assert_called_once()
+        self.assertIn("not found on inventory sheet", mock_logger.error.call_args[0][0])
+
+    @patch("verify.UploadVerifier.Logger")
+    @patch("verify.UploadVerifier.Storage")
+    def test_run_missing_download_location_logs_error(
+        self, mock_storage: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        """Test empty Download Location logs an error."""
+        mock_storage.get.return_value = {
+            "DRPID": 1,
+            "source_url": "https://example.gov/data",
+            "num_files": 1,
+            "file_size": "1000",
+        }
+        UploadVerifier._sheet_index = {
+            "https://example.gov/data": {"URL": "https://example.gov/data"}
+        }
+        verifier = UploadVerifier()
+        verifier.run(1)
+        mock_logger.error.assert_called_once()
+        self.assertIn("Download Location empty", mock_logger.error.call_args[0][0])
+
+    @patch("verify.UploadVerifier.Logger")
+    @patch("verify.UploadVerifier.Storage")
+    def test_run_mismatch_logs_error(
+        self, mock_storage: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        """Test inventory mismatch logs verification errors."""
+        mock_storage.get.return_value = {
+            "DRPID": 5,
+            "source_url": "https://example.gov/data",
+            "num_files": 2,
+            "file_size": "2048",
+        }
+        UploadVerifier._sheet_index = {
+            "https://example.gov/data": {
+                "URL": "https://example.gov/data",
+                "Download Location": "https://www.datalumos.org/datalumos/project/1/version/V1/view",
+            }
+        }
+        verifier = UploadVerifier()
+        verifier._fetch_page_stats = MagicMock(  # type: ignore[method-assign]
+            return_value=DatalumosViewFileStats(file_count=1, total_bytes=2048)
+        )
+        verifier.run(5)
+        mock_logger.error.assert_called_once()
+        self.assertIn("file count mismatch", mock_logger.error.call_args[0][0])
+
+    @patch("verify.UploadVerifier.Logger")
+    @patch("verify.UploadVerifier.Storage")
+    def test_run_match_logs_success_summary(
+        self, mock_storage: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        """Test successful verification logs expected/actual files and size."""
+        mock_storage.get.return_value = {
+            "DRPID": 5,
+            "source_url": "https://example.gov/data",
+            "num_files": 1,
+            "file_size": "2048",
+        }
+        UploadVerifier._sheet_index = {
+            "https://example.gov/data": {
+                "URL": "https://example.gov/data",
+                "Download Location": "https://www.datalumos.org/datalumos/project/1/version/V1/view",
+            }
+        }
+        verifier = UploadVerifier()
+        verifier._fetch_page_stats = MagicMock(  # type: ignore[method-assign]
+            return_value=DatalumosViewFileStats(file_count=1, total_bytes=2048)
+        )
+        verifier.run(5)
+        mock_logger.error.assert_not_called()
+        mock_logger.info.assert_called_once()
+        message = mock_logger.info.call_args[0][0]
+        self.assertIn("DRPID 5: OK", message)
+        self.assertIn("files 1/1", message)
+        self.assertIn("size 2048/", message)
+
+
+if __name__ == "__main__":
+    unittest.main()
