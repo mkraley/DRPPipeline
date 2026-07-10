@@ -105,6 +105,36 @@ class TestUploadVerifier(unittest.TestCase):
         mock_logger.error.assert_called_once()
         self.assertIn("file count mismatch", mock_logger.error.call_args[0][0])
 
+    @patch("verify.UploadVerifier.set_records_per_page")
+    @patch("verify.UploadVerifier.DatalumosViewFileStats.from_page")
+    def test_fetch_page_stats_sets_records_per_page(
+        self,
+        mock_from_page: MagicMock,
+        mock_set_records: MagicMock,
+    ) -> None:
+        """_fetch_page_stats expands Records per page before extracting files."""
+        mock_from_page.return_value = DatalumosViewFileStats(
+            file_count=1, total_bytes=100
+        )
+        verifier = UploadVerifier()
+        page = MagicMock()
+        response = MagicMock()
+        response.status = 200
+        page.goto.return_value = response
+        verifier._session = MagicMock()
+        verifier._session.ensure_browser.return_value = page
+
+        with patch(
+            "upload.DataLumosAuthenticator.wait_for_human_verification"
+        ):
+            stats = verifier._fetch_page_stats(
+                "https://www.datalumos.org/datalumos/project/1/version/V1/view"
+            )
+
+        mock_set_records.assert_called_once_with(page)
+        mock_from_page.assert_called_once_with(page)
+        self.assertEqual(stats.file_count, 1)
+
     @patch("verify.UploadVerifier.Logger")
     @patch("verify.UploadVerifier.Storage")
     def test_run_match_logs_success_summary(

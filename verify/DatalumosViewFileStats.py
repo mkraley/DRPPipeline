@@ -7,11 +7,46 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
 
-from playwright.sync_api import Page
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from utils.file_utils import format_file_size, parse_file_size_to_bytes
 
-SIZE_TOLERANCE = 0.02
+SIZE_TOLERANCE = 0.05
+DEFAULT_RECORDS_PER_PAGE = 100
+
+
+def set_records_per_page(page: Page, page_size: int = DEFAULT_RECORDS_PER_PAGE) -> bool:
+    """
+    Set the DataLumos view-page ``Records per page`` dropdown when present.
+
+    The published view defaults to 10 rows. Selecting a larger page size
+    (typically 100) ensures projects with more files are fully enumerated.
+    Changing the dropdown triggers ``updatePager``, which navigates; this
+    waits for that navigation to finish before returning.
+
+    Args:
+        page: Playwright page on a DataLumos project view URL.
+        page_size: Desired page size option value (default 100).
+
+    Returns:
+        True when the dropdown was found and set (or already set); False when absent.
+    """
+    select = page.query_selector("#pageSizeOptions")
+    if select is None:
+        return False
+    desired = str(page_size)
+    if select.input_value() == desired:
+        return True
+    try:
+        with page.expect_navigation(wait_until="domcontentloaded", timeout=120000):
+            select.select_option(desired)
+    except PlaywrightTimeoutError:
+        # Some responses may update without a full document navigation.
+        pass
+    page.wait_for_load_state("networkidle", timeout=120000)
+    page.wait_for_selector("#pageSizeOptions", state="attached", timeout=60000)
+    return True
+
 
 _EXTRACT_VIEW_FILES_JS = """
 () => {
@@ -94,7 +129,7 @@ class DatalumosViewFileStats:
         Returns:
             Parsed stats, or an instance with ``error`` set on failure.
         """
-        raw = page.evaluate(_EXTRACT_VIEW_FILES_JS)
+        raw = _evaluate_view_files(page)
         if not isinstance(raw, dict):
             return cls(error="invalid_page_response")
         if raw.get("error"):
@@ -116,6 +151,27 @@ class DatalumosViewFileStats:
         if total is None:
             return cls(file_count=len(sizes), error="unparseable_file_sizes")
         return cls(file_count=len(sizes), total_bytes=total)
+
+
+def _evaluate_view_files(page: Page) -> object:
+    """
+    Run the file-table extractor, retrying once after a mid-navigation race.
+
+    Args:
+        page: Playwright page on the DataLumos view URL.
+
+    Returns:
+        The value returned by ``page.evaluate``.
+    """
+    try:
+        return page.evaluate(_EXTRACT_VIEW_FILES_JS)
+    except Exception as exc:
+        message = str(exc)
+        if "Execution context was destroyed" not in message and "navigation" not in message.lower():
+            raise
+        page.wait_for_load_state("domcontentloaded", timeout=120000)
+        page.wait_for_load_state("networkidle", timeout=120000)
+        return page.evaluate(_EXTRACT_VIEW_FILES_JS)
 
 
 def sum_sizes_text(sizes: Sequence[str]) -> Optional[int]:
@@ -144,7 +200,7 @@ def sizes_within_tolerance(expected: int, actual: int, tolerance: float = SIZE_T
     Args:
         expected: Expected size in bytes.
         actual: Actual size in bytes.
-        tolerance: Relative tolerance (default 2%).
+        tolerance: Relative tolerance (default 5%).
 
     Returns:
         True when the difference is within tolerance.

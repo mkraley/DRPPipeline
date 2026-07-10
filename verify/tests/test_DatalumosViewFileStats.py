@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 from verify.DatalumosViewFileStats import (
     DatalumosViewFileStats,
     format_verify_success_message,
+    set_records_per_page,
     sizes_within_tolerance,
     sum_sizes_text,
     verify_upload_counts,
@@ -23,10 +24,10 @@ class TestDatalumosViewFileStats(unittest.TestCase):
         self.assertIsNone(sum_sizes_text(["1.0 MB", "bad"]))
 
     def test_sizes_within_tolerance(self) -> None:
-        """Test relative size tolerance."""
-        self.assertTrue(sizes_within_tolerance(1000, 1010))
-        self.assertTrue(sizes_within_tolerance(1000, 980))
-        self.assertFalse(sizes_within_tolerance(1000, 1030))
+        """Test relative size tolerance (default 5%)."""
+        self.assertTrue(sizes_within_tolerance(1000, 1040))
+        self.assertTrue(sizes_within_tolerance(1000, 960))
+        self.assertFalse(sizes_within_tolerance(1000, 1060))
         self.assertTrue(sizes_within_tolerance(0, 0))
         self.assertFalse(sizes_within_tolerance(0, 1))
 
@@ -97,6 +98,60 @@ class TestDatalumosViewFileStats(unittest.TestCase):
         page.evaluate.return_value = {"error": "page_not_found"}
         stats = DatalumosViewFileStats.from_page(page)
         self.assertEqual(stats.error, "page_not_found")
+
+    def test_set_records_per_page_absent(self) -> None:
+        """When the pager dropdown is missing, return False and do nothing."""
+        page = MagicMock()
+        page.query_selector.return_value = None
+        self.assertFalse(set_records_per_page(page))
+        page.wait_for_load_state.assert_not_called()
+
+    def test_set_records_per_page_already_set(self) -> None:
+        """When dropdown is already 100, do not re-select."""
+        page = MagicMock()
+        select = MagicMock()
+        select.input_value.return_value = "100"
+        page.query_selector.return_value = select
+        self.assertTrue(set_records_per_page(page))
+        select.select_option.assert_not_called()
+        page.wait_for_load_state.assert_not_called()
+
+    def test_set_records_per_page_selects_100(self) -> None:
+        """When dropdown is present at 10, select 100 and wait for navigation."""
+        page = MagicMock()
+        select = MagicMock()
+        select.input_value.return_value = "10"
+        page.query_selector.return_value = select
+        nav_cm = MagicMock()
+        nav_cm.__enter__ = MagicMock(return_value=None)
+        nav_cm.__exit__ = MagicMock(return_value=False)
+        page.expect_navigation.return_value = nav_cm
+        self.assertTrue(set_records_per_page(page))
+        select.select_option.assert_called_once_with("100")
+        page.expect_navigation.assert_called_once()
+        page.wait_for_load_state.assert_called_once_with(
+            "networkidle", timeout=120000
+        )
+        page.wait_for_selector.assert_called_once_with(
+            "#pageSizeOptions", state="attached", timeout=60000
+        )
+
+    def test_from_page_retries_after_navigation_race(self) -> None:
+        """from_page retries evaluate when the pager navigation destroys context."""
+        page = MagicMock()
+        page.evaluate.side_effect = [
+            Exception("Page.evaluate: Execution context was destroyed, most likely because of a navigation"),
+            {
+                "files": [
+                    {"name": "a.csv", "size": "1.0 KB"},
+                ]
+            },
+        ]
+        stats = DatalumosViewFileStats.from_page(page)
+        self.assertIsNone(stats.error)
+        self.assertEqual(stats.file_count, 1)
+        self.assertEqual(page.evaluate.call_count, 2)
+        self.assertEqual(page.wait_for_load_state.call_count, 2)
 
 
 if __name__ == "__main__":

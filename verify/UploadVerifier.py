@@ -26,6 +26,7 @@ from utils.project_utils import get_field
 from verify.DatalumosViewFileStats import (
     DatalumosViewFileStats,
     format_verify_success_message,
+    set_records_per_page,
     verify_upload_counts,
 )
 
@@ -146,6 +147,7 @@ class UploadVerifier:
             from upload.DataLumosAuthenticator import wait_for_human_verification
 
             wait_for_human_verification(page, timeout=60000)
+            set_records_per_page(page)
             return DatalumosViewFileStats.from_page(page)
         except PlaywrightTimeoutError:
             return DatalumosViewFileStats(error="page_load_timeout")
