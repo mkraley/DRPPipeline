@@ -89,13 +89,15 @@ def sanitize_filename(name: str, max_length: int = 100) -> str:
 
 _SIZE_UNIT_BYTES = {
     "B": 1,
+    "BYTE": 1,
+    "BYTES": 1,
     "KB": 1024,
     "MB": 1024**2,
     "GB": 1024**3,
 }
 
 _SIZE_WITH_UNIT_RE = re.compile(
-    r"^\s*([\d.]+)\s*(B|KB|MB|GB)\s*$",
+    r"^\s*([\d.]+)\s*(B|BYTE|BYTES|KB|MB|GB)\s*$",
     re.IGNORECASE,
 )
 
@@ -105,7 +107,8 @@ def parse_file_size_to_bytes(value: str | int | float | None) -> int | None:
     Parse a ``file_size`` field value to bytes.
 
     Accepts raw byte counts (``10485760``), formatted sizes from
-    ``format_file_size`` (``"1.5 GB"``), or numeric strings.
+    ``format_file_size`` (``"1.5 GB"``), DataLumos view sizes
+    (``"159 bytes"``), or numeric strings.
     """
     if value is None:
         return None

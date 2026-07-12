@@ -4,11 +4,14 @@ Verify uploaded projects by comparing database inventory to DataLumos view pages
 For each ``updated_inventory`` project, locates the matching Google Sheet row,
 opens the Download Location URL, and checks file count and total size against
 ``num_files`` and ``file_size`` in Storage.
+
+When DataLumos has fewer files than the database, attempts to re-download and
+re-upload missing catalog publication files, then sets status ``re-uploaded``.
 """
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
@@ -29,6 +32,11 @@ from verify.DatalumosViewFileStats import (
     set_records_per_page,
     verify_upload_counts,
 )
+from verify.MissingFileRepair import (
+    STATUS_RE_UPLOADED,
+    MissingFileRepair,
+    should_attempt_missing_file_repair,
+)
 
 
 class UploadVerifier:
@@ -37,6 +45,7 @@ class UploadVerifier:
 
     Implements ModuleProtocol. Processes projects with status ``updated_inventory``.
     Logs a one-line info summary on success; logs errors on failure.
+    On successful missing-file repair, sets status to ``re-uploaded``.
     """
 
     _sheet_index: Optional[Dict[str, Dict[str, str]]] = None
@@ -81,15 +90,62 @@ class UploadVerifier:
         if db_num_files is not None:
             db_num_files = int(db_num_files)
         db_file_size = get_field(project, "file_size")
+        datalumos_id = (get_field(project, "datalumos_id") or "").strip() or "?"
 
         errors = verify_upload_counts(db_num_files, db_file_size, page_stats)
-        if errors:
-            for message in errors:
-                Logger.error(f"DRPID {drpid}: {message}")
+        if not errors:
+            Logger.info(
+                f"DRPID {drpid}: OK — "
+                f"{format_verify_success_message(db_num_files, db_file_size, page_stats)}"
+            )
             return
+
+        if should_attempt_missing_file_repair(db_num_files, page_stats):
+            if self._try_repair_missing_files(drpid, project, page_stats, datalumos_id):
+                return
+
+        for message in errors:
+            Logger.error(
+                f"DRPID {drpid} datalumos_id={datalumos_id}: {message}"
+            )
+
+    def _try_repair_missing_files(
+        self,
+        drpid: int,
+        project: Dict[str, Any],
+        page_stats: DatalumosViewFileStats,
+        datalumos_id: str,
+    ) -> bool:
+        """
+        Attempt missing-file repair; on success set status ``re-uploaded``.
+
+        Args:
+            drpid: Project DRPID.
+            project: Storage project record.
+            page_stats: DataLumos view stats.
+            datalumos_id: DataLumos id for log messages.
+
+        Returns:
+            True when repair succeeded and status was updated.
+        """
+        try:
+            repaired = MissingFileRepair(self._session).repair(
+                drpid, project, page_stats
+            )
+        except Exception as exc:
+            Logger.error(
+                f"DRPID {drpid} datalumos_id={datalumos_id}: "
+                f"missing-file repair failed: {exc}"
+            )
+            return False
+        if not repaired:
+            return False
+        Storage.update_record(drpid, {"status": STATUS_RE_UPLOADED})
         Logger.info(
-            f"DRPID {drpid}: OK — {format_verify_success_message(db_num_files, db_file_size, page_stats)}"
+            f"DRPID {drpid} datalumos_id={datalumos_id}: "
+            f"re-uploaded missing file(s); status={STATUS_RE_UPLOADED}"
         )
+        return True
 
     def _sheet_row_for_url(self, source_url: str) -> Optional[Dict[str, str]]:
         """

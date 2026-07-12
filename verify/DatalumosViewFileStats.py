@@ -5,7 +5,7 @@ Extract and compare file statistics from a DataLumos published project view page
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
@@ -112,10 +112,11 @@ _EXTRACT_VIEW_FILES_JS = """
 
 @dataclass(frozen=True)
 class DatalumosViewFileStats:
-    """File count and total bytes from a DataLumos view page."""
+    """File count, names, and total bytes from a DataLumos view page."""
 
     file_count: int = 0
     total_bytes: int = 0
+    file_names: Tuple[str, ...] = ()
     error: Optional[str] = None
 
     @classmethod
@@ -137,6 +138,7 @@ class DatalumosViewFileStats:
         files = raw.get("files")
         if not isinstance(files, list) or not files:
             return cls(error="no_files_found")
+        names: List[str] = []
         sizes: List[str] = []
         for entry in files:
             if not isinstance(entry, dict):
@@ -144,13 +146,23 @@ class DatalumosViewFileStats:
             name = str(entry.get("name") or "").strip()
             if not name:
                 continue
+            names.append(name)
             sizes.append(str(entry.get("size") or "").strip())
         if not sizes:
             return cls(error="no_files_found")
+        name_tuple = tuple(names)
         total = sum_sizes_text(sizes)
         if total is None:
-            return cls(file_count=len(sizes), error="unparseable_file_sizes")
-        return cls(file_count=len(sizes), total_bytes=total)
+            return cls(
+                file_count=len(sizes),
+                file_names=name_tuple,
+                error="unparseable_file_sizes",
+            )
+        return cls(
+            file_count=len(sizes),
+            total_bytes=total,
+            file_names=name_tuple,
+        )
 
 
 def _evaluate_view_files(page: Page) -> object:

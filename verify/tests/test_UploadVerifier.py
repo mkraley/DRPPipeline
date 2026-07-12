@@ -84,10 +84,11 @@ class TestUploadVerifier(unittest.TestCase):
     def test_run_mismatch_logs_error(
         self, mock_storage: MagicMock, mock_logger: MagicMock
     ) -> None:
-        """Test inventory mismatch logs verification errors."""
+        """Test inventory mismatch logs verification errors when repair is skipped."""
         mock_storage.get.return_value = {
             "DRPID": 5,
             "source_url": "https://example.gov/data",
+            "datalumos_id": "248712",
             "num_files": 2,
             "file_size": "2048",
         }
@@ -99,11 +100,96 @@ class TestUploadVerifier(unittest.TestCase):
         }
         verifier = UploadVerifier()
         verifier._fetch_page_stats = MagicMock(  # type: ignore[method-assign]
-            return_value=DatalumosViewFileStats(file_count=1, total_bytes=2048)
+            return_value=DatalumosViewFileStats(
+                file_count=1,
+                total_bytes=2048,
+                file_names=("a.txt",),
+            )
+        )
+        verifier._try_repair_missing_files = MagicMock(  # type: ignore[method-assign]
+            return_value=False
         )
         verifier.run(5)
         mock_logger.error.assert_called_once()
-        self.assertIn("file count mismatch", mock_logger.error.call_args[0][0])
+        message = mock_logger.error.call_args[0][0]
+        self.assertIn("file count mismatch", message)
+        self.assertIn("datalumos_id=248712", message)
+
+    @patch("verify.UploadVerifier.MissingFileRepair")
+    @patch("verify.UploadVerifier.Logger")
+    @patch("verify.UploadVerifier.Storage")
+    def test_run_repairs_missing_files_and_sets_reuploaded(
+        self,
+        mock_storage: MagicMock,
+        mock_logger: MagicMock,
+        mock_repair_cls: MagicMock,
+    ) -> None:
+        """When DL count is low, successful repair sets status re-uploaded."""
+        mock_storage.get.return_value = {
+            "DRPID": 5,
+            "source_url": "https://example.gov/data",
+            "datalumos_id": "248712",
+            "num_files": 2,
+            "file_size": "2048",
+            "folder_path": r"C:\data\DRP000005",
+        }
+        UploadVerifier._sheet_index = {
+            "https://example.gov/data": {
+                "URL": "https://example.gov/data",
+                "Download Location": "https://www.datalumos.org/datalumos/project/1/version/V1/view",
+            }
+        }
+        mock_repair_cls.return_value.repair.return_value = True
+        verifier = UploadVerifier()
+        verifier._fetch_page_stats = MagicMock(  # type: ignore[method-assign]
+            return_value=DatalumosViewFileStats(
+                file_count=1,
+                total_bytes=100,
+                file_names=("keep.pdf",),
+            )
+        )
+        verifier.run(5)
+        mock_storage.update_record.assert_called_once_with(
+            5, {"status": "re-uploaded"}
+        )
+        mock_logger.error.assert_not_called()
+        info_msg = mock_logger.info.call_args[0][0]
+        self.assertIn("re-uploaded", info_msg)
+
+    @patch("verify.UploadVerifier.Logger")
+    @patch("verify.UploadVerifier.Storage")
+    def test_run_size_only_mismatch_does_not_repair(
+        self, mock_storage: MagicMock, mock_logger: MagicMock
+    ) -> None:
+        """Size-only mismatches are logged without attempting repair."""
+        mock_storage.get.return_value = {
+            "DRPID": 5,
+            "source_url": "https://example.gov/data",
+            "datalumos_id": "248712",
+            "num_files": 1,
+            "file_size": "1000",
+        }
+        UploadVerifier._sheet_index = {
+            "https://example.gov/data": {
+                "URL": "https://example.gov/data",
+                "Download Location": "https://www.datalumos.org/datalumos/project/1/version/V1/view",
+            }
+        }
+        verifier = UploadVerifier()
+        verifier._fetch_page_stats = MagicMock(  # type: ignore[method-assign]
+            return_value=DatalumosViewFileStats(
+                file_count=1,
+                total_bytes=5000,
+                file_names=("a.zip",),
+            )
+        )
+        verifier._try_repair_missing_files = MagicMock(  # type: ignore[method-assign]
+            return_value=False
+        )
+        verifier.run(5)
+        verifier._try_repair_missing_files.assert_not_called()
+        mock_logger.error.assert_called()
+        self.assertIn("file size mismatch", mock_logger.error.call_args[0][0])
 
     @patch("verify.UploadVerifier.set_records_per_page")
     @patch("verify.UploadVerifier.DatalumosViewFileStats.from_page")

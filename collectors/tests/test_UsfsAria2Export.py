@@ -10,6 +10,7 @@ from collectors.UsfsAria2Export import (
     entries_for_publication_files,
     format_windows_command,
     format_windows_commands,
+    is_usfs_catalog_maintenance_page,
     max_connections_for_url,
     out_name_from_aria2_cmd_line,
     parse_aria2_windows_cmd_line,
@@ -30,6 +31,15 @@ class TestUsfsAria2Export(unittest.TestCase):
             max_connections_for_url("https://www.fs.usda.gov/rds/archive/products/RDS/x.zip"),
             4,
         )
+
+    def test_is_usfs_catalog_maintenance_page(self) -> None:
+        """Detect the USFS maintenance placeholder page."""
+        self.assertTrue(
+            is_usfs_catalog_maintenance_page(
+                "Database currently under maintenance. Please try again later."
+            )
+        )
+        self.assertFalse(is_usfs_catalog_maintenance_page("<dt>Data Access</dt>"))
 
     def test_entries_for_publication_files_skips_on_disk(self) -> None:
         folder = Path(__file__).parent / "_tmp_aria2_export"

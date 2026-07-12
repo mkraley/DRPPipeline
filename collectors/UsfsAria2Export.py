@@ -23,6 +23,11 @@ MAX_DOWNLOAD_BYTES = 1 * 1024**3  # match UsfsCollector.MAX_DOWNLOAD_BYTES
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ARIA2_OUTPUT_DIR = REPO_ROOT / "aria2_inputs"
 
+_CATALOG_MAINTENANCE_RE = re.compile(
+    r"Database currently under maintenance",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class Aria2Entry:
@@ -47,6 +52,11 @@ def max_connections_for_url(url: str) -> int:
     if host.endswith("fs.usda.gov"):
         return 4
     return 8
+
+
+def is_usfs_catalog_maintenance_page(html: str) -> bool:
+    """Return True when the USFS catalog HTML is the maintenance placeholder."""
+    return bool(_CATALOG_MAINTENANCE_RE.search(html or ""))
 
 
 def entries_for_publication_files(

@@ -31,6 +31,7 @@ from collectors.UsfsAria2Export import (  # noqa: E402
     entries_for_publication_files,
     format_windows_command,
     format_windows_commands,
+    is_usfs_catalog_maintenance_page,
     max_connections_for_url,
     write_drpid_aria2_cmd,
 )
@@ -138,7 +139,18 @@ def export_drpid(
 
     status, body, _, _ = fetch_page_body(source_url)
     if status != 200 or not body:
-        print(f"DRPID {drpid}: failed to fetch catalog (status={status})", file=sys.stderr)
+        print(
+            f"DRPID {drpid}: USFS catalog page not available "
+            f"(fetch status={status})",
+            file=sys.stderr,
+        )
+        return 0
+    if is_usfs_catalog_maintenance_page(body):
+        print(
+            f"DRPID {drpid}: USFS catalog page not available "
+            "(database currently under maintenance)",
+            file=sys.stderr,
+        )
         return 0
 
     links = parse_data_access_links(body, source_url)

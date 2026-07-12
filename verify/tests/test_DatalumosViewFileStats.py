@@ -21,6 +21,7 @@ class TestDatalumosViewFileStats(unittest.TestCase):
     def test_sum_sizes_text(self) -> None:
         """Test summing human-readable size strings."""
         self.assertEqual(sum_sizes_text(["1.0 MB", "500 B"]), 1024 * 1024 + 500)
+        self.assertEqual(sum_sizes_text(["6.7 KB", "159 bytes"]), int(6.7 * 1024) + 159)
         self.assertIsNone(sum_sizes_text(["1.0 MB", "bad"]))
 
     def test_sizes_within_tolerance(self) -> None:
@@ -70,6 +71,7 @@ class TestDatalumosViewFileStats(unittest.TestCase):
         self.assertIsNone(stats.error)
         self.assertEqual(stats.file_count, 2)
         self.assertEqual(stats.total_bytes, 2048)
+        self.assertEqual(stats.file_names, ("a.csv", "b.csv"))
 
     def test_from_page_parses_view_table_layout(self) -> None:
         """Test from_page handles published view table (table-striped, Name/Size headers)."""
