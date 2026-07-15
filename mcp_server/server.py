@@ -41,6 +41,7 @@ _MODULES: dict[str, dict[str, Optional[str]]] = {
     "upload":             {"prereq": "collected","output": "uploaded"},
     "upload_large_files": {"prereq": "uploaded - large file|uploaded - expanded", "output": "finish wait"},
     "publisher":          {"prereq": "uploaded", "output": "published"},
+    "republisher":        {"prereq": "re-uploaded", "output": "updated_inventory"},
     "cleanup_inprogress": {"prereq": None,       "output": None},
 }
 

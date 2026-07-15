@@ -116,12 +116,15 @@ class DataLumosAuthenticator:
         self._page.goto(self.HOME_URL, wait_until="domcontentloaded")
         self.wait_for_verification()
         
-        # Click Login button
+        # Click Login button (session may already be valid after a long download)
         Logger.debug("Looking for Login button")
         login_button = self._find_login_button()
         if login_button is None:
+            if self.is_authenticated():
+                Logger.info("DataLumos session still authenticated; skipping login form")
+                return True
             raise RuntimeError("Could not find Login button on DataLumos home page")
-        
+
         login_button.click()
         self.wait_for_verification()
         

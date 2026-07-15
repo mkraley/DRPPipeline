@@ -49,12 +49,14 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertEqual(updater._column_index_to_letter(27), "AA")
 
     def test_download_location_template(self) -> None:
-        """Test DOWNLOAD_LOCATION_TEMPLATE format."""
-        url = DOWNLOAD_LOCATION_TEMPLATE.format(workspace_id="239181")
+        """Test DOWNLOAD_LOCATION_TEMPLATE format includes version."""
+        url = DOWNLOAD_LOCATION_TEMPLATE.format(workspace_id="239181", version="V1")
         self.assertEqual(
             url,
             "https://www.datalumos.org/datalumos/project/239181/version/V1/view",
         )
+        url_v2 = DOWNLOAD_LOCATION_TEMPLATE.format(workspace_id="239181", version="V2")
+        self.assertIn("/version/V2/view", url_v2)
 
     def test_find_row_by_url_exact_wins_over_earlier_prefix(self) -> None:
         """Exact URL row must win even if a shorter prefix appears first in the column."""
@@ -130,6 +132,37 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         dataset_size_requests = [r for r in requests if "F2" in r.get("range", "")]
         self.assertEqual(len(dataset_size_requests), 1)
         self.assertEqual(dataset_size_requests[0]["values"], [["10.0 MB"]])
+
+    def test_build_update_requests_uses_version_for_download_location(self) -> None:
+        """Download Location uses the requested DataLumos version segment."""
+        updater = GoogleSheetUpdater()
+        column_map = {
+            "Download Location": "D",
+            "Dataset Size": "F",
+            "Claimed": "B",
+            "Data Added": "C",
+            "Dataset Download Possible?": "I",
+            "Nominated to EOT / USGWDA": "J",
+            "Metadata availability info": "H",
+        }
+        project = {"file_size": "2048", "download_date": "", "extensions": ""}
+        requests = updater._build_update_requests(
+            "CDC",
+            2,
+            column_map,
+            "239181",
+            project,
+            "testuser",
+            version="V2",
+        )
+        download_reqs = [r for r in requests if "D2" in r.get("range", "")]
+        self.assertEqual(len(download_reqs), 1)
+        self.assertEqual(
+            download_reqs[0]["values"],
+            [["https://www.datalumos.org/datalumos/project/239181/version/V2/view"]],
+        )
+        size_reqs = [r for r in requests if "F2" in r.get("range", "")]
+        self.assertEqual(size_reqs[0]["values"], [["2.0 KB"]])
 
     def test_build_update_requests_prepends_url_for_new_row(self) -> None:
         """When source_url_for_new_row is set, URL column is written first."""

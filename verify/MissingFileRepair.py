@@ -12,6 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from playwright.sync_api import Page
+
 from collectors.UsfsAria2Export import (
     Aria2Entry,
     MAX_DOWNLOAD_BYTES,
@@ -21,7 +23,6 @@ from collectors.UsfsAria2Export import (
     run_aria2_cmd_line_with_retries,
 )
 from collectors.UsfsMetadataExtractor import parse_data_access_links
-from collectors.UsfsPageDownloader import UsfsPageDownloader
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from upload.DataLumosFileUploader import DataLumosFileUploader
 from utils.Args import Args
@@ -29,13 +30,16 @@ from utils.download_with_progress import download_via_url
 from utils.file_utils import sanitize_filename
 from utils.Logger import Logger
 from utils.project_utils import get_field
-from utils.url_utils import BROWSER_HEADERS, fetch_page_body
+from utils.url_utils import (
+    BROWSER_HEADERS,
+    _fetch_html_with_playwright_page,
+    fetch_page_body,
+)
 from verify.DatalumosViewFileStats import DatalumosViewFileStats
 
 PublicationFile = Tuple[str, str, Optional[int]]
 STATUS_RE_UPLOADED = "re-uploaded"
 WORKSPACE_URL = "https://www.datalumos.org/datalumos/workspace"
-_USFS_HOST = "fs.usda.gov"
 _DOWNLOAD_TIMEOUT_SEC = 3600
 _UPLOAD_TIMEOUT_MS = 2 * 60 * 60 * 1000
 
@@ -105,12 +109,41 @@ def missing_publication_files(
     return missing
 
 
-def fetch_catalog_publication_files(source_url: str) -> List[PublicationFile]:
+def _publication_files_from_html(html: str, source_url: str) -> List[PublicationFile]:
+    """
+    Parse publication files from catalog HTML, rejecting maintenance pages.
+
+    Args:
+        html: Catalog page HTML.
+        source_url: Catalog URL used to resolve relative links.
+
+    Returns:
+        Publication file tuples.
+
+    Raises:
+        RuntimeError: When the catalog reports maintenance.
+    """
+    if is_usfs_catalog_maintenance_page(html):
+        raise RuntimeError("USFS catalog is under maintenance")
+    links = parse_data_access_links(html, source_url)
+    return list(links.get("publication_files") or [])
+
+
+def fetch_catalog_publication_files(
+    source_url: str,
+    *,
+    page: Optional[Page] = None,
+) -> List[PublicationFile]:
     """
     Fetch the USFS catalog page and return publication file entries.
 
+    Uses HTTP first. When that yields no publication links and ``page`` is set,
+    retries via the existing Playwright page (avoids starting a second Sync API
+    session while DataLumosBrowserSession is already open).
+
     Args:
         source_url: Project catalog URL.
+        page: Optional existing Playwright page for fallback fetch.
 
     Returns:
         Publication file tuples from Data Access links.
@@ -119,26 +152,21 @@ def fetch_catalog_publication_files(source_url: str) -> List[PublicationFile]:
         RuntimeError: When the catalog cannot be fetched or is under maintenance.
     """
     status, body, _, _ = fetch_page_body(source_url, timeout=60)
-    if status != 200 or not body:
-        raise RuntimeError(f"catalog fetch failed (status={status})")
-    if is_usfs_catalog_maintenance_page(body):
-        raise RuntimeError("USFS catalog is under maintenance")
-    links = parse_data_access_links(body, source_url)
-    pubs: List[PublicationFile] = list(links.get("publication_files") or [])
-    if pubs:
-        return pubs
+    if status == 200 and body:
+        pubs = _publication_files_from_html(body, source_url)
+        if pubs:
+            return pubs
 
-    downloader = UsfsPageDownloader(headless=True)
-    try:
-        pw_status, pw_body, _, _ = downloader.fetch_page_html(source_url, timeout=60)
-    finally:
-        downloader.close()
+    if page is None:
+        if status != 200 or not body:
+            raise RuntimeError(f"catalog fetch failed (status={status})")
+        return []
+
+    Logger.info("Catalog HTTP parse empty; retrying with existing browser page")
+    pw_status, pw_body, _, _ = _fetch_html_with_playwright_page(page, source_url, 60)
     if pw_status != 200 or not pw_body:
-        raise RuntimeError(f"catalog Playwright fetch failed (status={pw_status})")
-    if is_usfs_catalog_maintenance_page(pw_body):
-        raise RuntimeError("USFS catalog is under maintenance")
-    links = parse_data_access_links(pw_body, source_url)
-    return list(links.get("publication_files") or [])
+        raise RuntimeError(f"catalog browser fetch failed (status={pw_status})")
+    return _publication_files_from_html(pw_body, source_url)
 
 
 def ensure_file_on_disk(
@@ -148,12 +176,12 @@ def ensure_file_on_disk(
     catalog_bytes: Optional[int],
     *,
     drpid: int,
-    page_downloader: Optional[UsfsPageDownloader] = None,
 ) -> Path:
     """
     Ensure a publication file exists under ``folder``, downloading when needed.
 
     Skips download when the sanitized filename is already present (aria2-style).
+    Uses aria2 for files >= 1 GB; otherwise HTTP ``download_via_url``.
 
     Args:
         folder: Destination project folder.
@@ -161,7 +189,6 @@ def ensure_file_on_disk(
         file_url: Download URL.
         catalog_bytes: Optional size from the catalog.
         drpid: Project DRPID (for aria2 log paths).
-        page_downloader: Optional Playwright downloader for USDA hosts.
 
     Returns:
         Path to the on-disk file.
@@ -181,7 +208,11 @@ def ensure_file_on_disk(
     if catalog_bytes is not None and catalog_bytes >= MAX_DOWNLOAD_BYTES:
         _download_with_aria2(dest, file_url, out_name, drpid=drpid)
     else:
-        _download_http(dest, file_url, page_downloader=page_downloader)
+        _bytes_written, success = download_via_url(
+            file_url, dest, timeout_sec=_DOWNLOAD_TIMEOUT_SEC
+        )
+        if not success:
+            raise RuntimeError(f"HTTP download failed: {file_url}")
 
     if not dest.is_file():
         raise RuntimeError(f"download produced no file: {dest}")
@@ -212,24 +243,6 @@ def _download_with_aria2(
             f"aria2 download failed for {out_name} after {attempts} attempt(s); "
             f"see {log_path}"
         )
-
-
-def _download_http(
-    dest: Path,
-    file_url: str,
-    *,
-    page_downloader: Optional[UsfsPageDownloader],
-) -> None:
-    """Download a non-large file via Playwright (USDA) or HTTP."""
-    success = False
-    if page_downloader is not None and _USFS_HOST in file_url:
-        _bytes_written, success = page_downloader.download_file(file_url, dest)
-    if not success:
-        _bytes_written, success = download_via_url(
-            file_url, dest, timeout_sec=_DOWNLOAD_TIMEOUT_SEC
-        )
-    if not success:
-        raise RuntimeError(f"HTTP download failed: {file_url}")
 
 
 def project_workspace_url(workspace_id: str) -> str:
@@ -286,7 +299,10 @@ class MissingFileRepair:
             Logger.warning("DRPID %s: cannot repair — missing datalumos_id", drpid)
             return False
 
-        publication_files = fetch_catalog_publication_files(source_url)
+        browser_page = self._session.ensure_browser()
+        publication_files = fetch_catalog_publication_files(
+            source_url, page=browser_page
+        )
         missing = missing_publication_files(publication_files, page_stats.file_names)
         if not missing:
             Logger.info(
@@ -304,23 +320,22 @@ class MissingFileRepair:
             ", ".join(sanitize_filename(name) for name, _, _ in missing),
         )
 
-        page_downloader = UsfsPageDownloader(headless=True)
-        try:
-            paths = [
-                ensure_file_on_disk(
-                    folder,
-                    filename,
-                    file_url,
-                    catalog_bytes,
-                    drpid=drpid,
-                    page_downloader=page_downloader,
-                )
-                for filename, file_url, catalog_bytes in missing
-            ]
-        finally:
-            page_downloader.close()
+        paths = [
+            ensure_file_on_disk(
+                folder,
+                filename,
+                file_url,
+                catalog_bytes,
+                drpid=drpid,
+            )
+            for filename, file_url, catalog_bytes in missing
+        ]
 
+        # Long downloads can expire the DataLumos session — refresh before upload.
+        self._session.reauthenticate()
         self._upload_paths(workspace_id, paths)
+        # Refresh again so the next verify_upload project starts with a good session.
+        self._session.reauthenticate()
         return True
 
     def _upload_paths(self, workspace_id: str, file_paths: List[Path]) -> None:
@@ -332,7 +347,6 @@ class MissingFileRepair:
             file_paths: Local files to upload.
         """
         page = self._session.ensure_browser()
-        self._session.ensure_authenticated()
         project_url = project_workspace_url(workspace_id)
         Logger.info("Navigating to DataLumos project %s for re-upload", workspace_id)
         page.goto(project_url, wait_until="domcontentloaded")

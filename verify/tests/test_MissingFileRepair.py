@@ -123,14 +123,12 @@ class TestMissingFileRepairFlow(unittest.TestCase):
         """Restore argv."""
         sys.argv = self._original_argv
 
-    @patch("verify.MissingFileRepair.UsfsPageDownloader")
     @patch("verify.MissingFileRepair.ensure_file_on_disk")
     @patch("verify.MissingFileRepair.fetch_catalog_publication_files")
     def test_repair_uploads_missing_and_returns_true(
         self,
         mock_fetch: MagicMock,
         mock_ensure: MagicMock,
-        mock_downloader_cls: MagicMock,
     ) -> None:
         """Repair downloads missing catalog files and uploads them."""
         mock_fetch.return_value = [
@@ -147,7 +145,11 @@ class TestMissingFileRepairFlow(unittest.TestCase):
             page = MagicMock()
             session.ensure_browser.return_value = page
             repairer = MissingFileRepair(session)
-            repairer._upload_paths = MagicMock()  # type: ignore[method-assign]
+            call_order: list[str] = []
+            session.reauthenticate.side_effect = lambda: call_order.append("reauth")
+            repairer._upload_paths = MagicMock(  # type: ignore[method-assign]
+                side_effect=lambda *_a, **_k: call_order.append("upload")
+            )
 
             project = {
                 "source_url": "https://example.gov/catalog/RDS-1",
@@ -160,8 +162,12 @@ class TestMissingFileRepairFlow(unittest.TestCase):
                 file_names=("small.txt",),
             )
             self.assertTrue(repairer.repair(5, project, stats))
+            mock_fetch.assert_called_once_with(
+                "https://example.gov/catalog/RDS-1", page=page
+            )
             mock_ensure.assert_called_once()
             repairer._upload_paths.assert_called_once_with("99", [big])
+            self.assertEqual(call_order, ["reauth", "upload", "reauth"])
 
     @patch("verify.MissingFileRepair.fetch_catalog_publication_files")
     def test_repair_returns_false_when_no_missing_names(

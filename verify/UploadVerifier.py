@@ -18,6 +18,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from storage import Storage
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from utils.Args import Args
+from utils.Errors import record_error
 from utils.Logger import Logger
 from utils.inventory_sheet_reconcile import (
     build_sheet_url_index,
@@ -44,7 +45,8 @@ class UploadVerifier:
     Verify that DataLumos published pages match collected inventory metadata.
 
     Implements ModuleProtocol. Processes projects with status ``updated_inventory``.
-    Logs a one-line info summary on success; logs errors on failure.
+    Logs a one-line info summary on success. On failure, records project errors via
+    ``record_error`` (status becomes ``updated_inventory-error``).
     On successful missing-file repair, sets status to ``re-uploaded``.
     """
 
@@ -63,25 +65,32 @@ class UploadVerifier:
         """
         project = Storage.get(drpid)
         if project is None:
-            Logger.error(f"DRPID {drpid}: project not found in database")
+            record_error(
+                drpid,
+                f"DRPID {drpid}: project not found in database",
+                update_storage=False,
+            )
             return
 
         source_url = (get_field(project, "source_url") or "").strip()
         if not source_url:
-            Logger.error(f"DRPID {drpid}: missing source_url in database")
+            record_error(drpid, f"DRPID {drpid}: missing source_url in database")
             return
 
         sheet_row = self._sheet_row_for_url(source_url)
         if sheet_row is None:
-            Logger.error(
-                f"DRPID {drpid}: source_url not found on inventory sheet: {source_url}"
+            record_error(
+                drpid,
+                f"DRPID {drpid}: source_url not found on inventory sheet: {source_url}",
             )
             return
 
         download_url = pick_sheet_col(sheet_row, "Download Location").strip()
         if not download_url:
-            Logger.error(
-                f"DRPID {drpid}: Download Location empty on inventory sheet for {source_url}"
+            record_error(
+                drpid,
+                f"DRPID {drpid}: Download Location empty on inventory sheet "
+                f"for {source_url}",
             )
             return
 
@@ -105,8 +114,9 @@ class UploadVerifier:
                 return
 
         for message in errors:
-            Logger.error(
-                f"DRPID {drpid} datalumos_id={datalumos_id}: {message}"
+            record_error(
+                drpid,
+                f"DRPID {drpid} datalumos_id={datalumos_id}: {message}",
             )
 
     def _try_repair_missing_files(
@@ -133,9 +143,10 @@ class UploadVerifier:
                 drpid, project, page_stats
             )
         except Exception as exc:
-            Logger.error(
+            record_error(
+                drpid,
                 f"DRPID {drpid} datalumos_id={datalumos_id}: "
-                f"missing-file repair failed: {exc}"
+                f"missing-file repair failed: {exc}",
             )
             return False
         if not repaired:

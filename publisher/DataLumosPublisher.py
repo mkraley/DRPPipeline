@@ -22,8 +22,13 @@ from utils.project_folder_cleanup import (
 )
 
 
-# Published project URL template (same as Download Location in chiara_upload update_google_sheet)
-PUBLISHED_URL_TEMPLATE = "https://www.datalumos.org/datalumos/project/{workspace_id}/version/V1/view"
+# Published / Download Location URL template (``version`` is V1 on first publish, V2 on republish)
+VIEW_URL_TEMPLATE = (
+    "https://www.datalumos.org/datalumos/project/{workspace_id}/version/{version}/view"
+)
+PUBLISHED_URL_TEMPLATE = (
+    "https://www.datalumos.org/datalumos/project/{workspace_id}/version/V1/view"
+)
 
 # Sheet-only publisher paths: input status -> (notes, success status, download possible)
 _SHEET_ONLY_STATUS_CONFIG: Dict[str, tuple[str, str, str]] = {
@@ -118,6 +123,11 @@ class DataLumosPublisher:
             from upload.DataLumosAuthenticator import wait_for_human_verification
             wait_for_human_verification(page, timeout=60000)
 
+            gate_error = self._pre_publish_gate(page, project, drpid)
+            if gate_error:
+                record_error(drpid, gate_error)
+                return
+
             upload_issue = self._uploads_incomplete_on_project_page(page)
             if upload_issue:
                 Logger.warning(
@@ -132,7 +142,7 @@ class DataLumosPublisher:
                 record_error(drpid, error_message or "Publish workflow failed")
                 return
 
-            published_url = PUBLISHED_URL_TEMPLATE.format(workspace_id=workspace_id)
+            published_url = self._published_view_url(workspace_id)
             Storage.update_record(drpid, {
                 "published_url": published_url,
                 "status": "published",
@@ -146,7 +156,9 @@ class DataLumosPublisher:
 
         # Sheet update is separate: publish already succeeded; TLS/API failures are warnings only.
         try:
-            self._update_google_sheet_if_configured(drpid, project, workspace_id)
+            # Reload so sheet Dataset Size / fields reflect any post-collect updates.
+            fresh = Storage.get(drpid) or project
+            self._update_google_sheet_if_configured(drpid, fresh, workspace_id)
         except RuntimeError:
             raise
         except Exception as e:
@@ -158,6 +170,57 @@ class DataLumosPublisher:
             Storage.append_to_field(
                 drpid, "warnings", f"Google Sheet update failed: {e}"
             )
+
+        self._finalize_after_publish(drpid)
+
+    def _pre_publish_gate(
+        self,
+        page: Page,
+        project: Dict[str, Any],
+        drpid: int,
+    ) -> Optional[str]:
+        """
+        Optional check before starting the publish click sequence.
+
+        Args:
+            page: Playwright page on the DataLumos project workspace.
+            project: Storage project record.
+            drpid: Project DRPID.
+
+        Returns:
+            Error message to abort publish, or None to continue.
+        """
+        return None
+
+    def _finalize_after_publish(self, drpid: int) -> None:
+        """
+        Hook after browser publish and sheet update attempt.
+
+        Args:
+            drpid: Project DRPID.
+        """
+        return
+
+    def _published_view_url(self, workspace_id: str) -> str:
+        """
+        Build the public DataLumos view URL stored in ``published_url``.
+
+        Args:
+            workspace_id: DataLumos project id.
+
+        Returns:
+            View URL for the published version (V1 for first publish).
+        """
+        return VIEW_URL_TEMPLATE.format(workspace_id=workspace_id, version="V1")
+
+    def _sheet_download_version(self) -> str:
+        """
+        Version segment used for the Google Sheet Download Location column.
+
+        Returns:
+            ``V1`` for first publish; republisher overrides to ``V2``.
+        """
+        return "V1"
 
     def _update_sheet_if_configured(
         self,
@@ -253,6 +316,7 @@ class DataLumosPublisher:
                 source_url=get_field(project, "source_url"),
                 workspace_id=workspace_id,
                 project=project,
+                version=self._sheet_download_version(),
             )
 
         self._update_sheet_if_configured(drpid, project, _do_update, "updated_inventory")
@@ -373,14 +437,34 @@ class DataLumosPublisher:
                     return False, error_msg
         return False, "Publish workflow failed after retry"
 
+    def _click_publish_entry_button(self, page: Page) -> None:
+        """
+        Click the workspace button that starts the publish review flow.
+
+        Args:
+            page: Playwright page on the DataLumos project workspace.
+        """
+        publish_btn = page.locator("button.btn-primary:has-text('Publish Project')")
+        publish_btn.click()
+
+    def _prepare_review_page(self, page: Page) -> None:
+        """
+        Optional review-page setup before Proceed to Publish.
+
+        Default is a no-op; republish fills Version Title.
+
+        Args:
+            page: Playwright page on the review/publish URL.
+        """
+        return
+
     def _run_publish_flow_once(self, page: Page, drpid: int) -> tuple[bool, Optional[str]]:
         """Run the publish flow once (no retry). Raises on failure."""
         timeout_ms = Args.upload_timeout
 
-        # Step 1: Click "Publish Project"
+        # Step 1: Click publish / re-publish entry button
         self._wait_for_busy(page)
-        publish_btn = page.locator("button.btn-primary:has-text('Publish Project')")
-        publish_btn.click()
+        self._click_publish_entry_button(page)
 
         # Step 2: Wait for review page (URL contains reviewPublish)
         try:
@@ -391,6 +475,9 @@ class DataLumosPublisher:
             if err_text:
                 raise RuntimeError(f"Error message on page: {err_text}")
             raise RuntimeError("Timeout waiting for review/publish page")
+
+        # Step 2b: Optional review fields (e.g. version title on re-publish)
+        self._prepare_review_page(page)
 
         # Step 3: Click "Proceed to Publish"
         self._wait_for_busy(page)

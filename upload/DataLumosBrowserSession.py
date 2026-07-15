@@ -1,7 +1,8 @@
 """
 Shared browser session for DataLumos (upload and publisher).
 
-Provides ensure_browser(), ensure_authenticated(), and close() using Args for config.
+Provides ensure_browser(), ensure_authenticated(), reauthenticate(), and close()
+using Args for config.
 """
 
 from pathlib import Path
@@ -100,6 +101,16 @@ class DataLumosBrowserSession:
 
         authenticator.authenticate(Args.datalumos_username, Args.datalumos_password)
         self._authenticated = True
+
+    def reauthenticate(self, reporter: Optional["UploadIssueReporter"] = None) -> None:
+        """
+        Force a fresh DataLumos login, even when already marked authenticated.
+
+        Use after long operations (e.g. downloads) that may expire the session.
+        """
+        Logger.info("Re-authenticating with DataLumos")
+        self._authenticated = False
+        self.ensure_authenticated(reporter=reporter)
 
     def close(self) -> None:
         """Close the browser and clean up resources."""

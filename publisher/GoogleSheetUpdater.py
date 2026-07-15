@@ -48,7 +48,9 @@ _REQUIRED_COLUMNS_NOT_FOUND = [
     "Nominated to EOT / USGWDA",
 ]
 
-DOWNLOAD_LOCATION_TEMPLATE = "https://www.datalumos.org/datalumos/project/{workspace_id}/version/V1/view"
+DOWNLOAD_LOCATION_TEMPLATE = (
+    "https://www.datalumos.org/datalumos/project/{workspace_id}/version/{version}/view"
+)
 
 
 class GoogleSheetUpdater:
@@ -230,6 +232,7 @@ class GoogleSheetUpdater:
         source_url: str,
         workspace_id: str,
         project: Dict[str, Any],
+        version: str = "V1",
     ) -> tuple[bool, Optional[str]]:
         """
         Update the Google Sheet row matching source_url with publishing data.
@@ -239,6 +242,7 @@ class GoogleSheetUpdater:
             source_url: Source URL to match in the URL column.
             workspace_id: DataLumos workspace ID (for Download Location).
             project: Project dict (download_date, file_size, extensions, title, agency, office).
+            version: DataLumos version segment for Download Location (``V1`` or ``V2``).
 
         Returns:
             (True, None) on success, (False, error_message) on failure.
@@ -255,6 +259,7 @@ class GoogleSheetUpdater:
             workspace_id: str,
             project: Dict[str, Any],
             username: str,
+            version: str = "V1",
             **kwargs: Any,
         ) -> List[Dict[str, Any]]:
             return self._build_update_requests(
@@ -268,6 +273,7 @@ class GoogleSheetUpdater:
                 title_to_write=title_to_write or "",
                 agency_to_write=agency_to_write or "",
                 office_to_write=office_to_write or "",
+                version=version,
             )
 
         return self._update_row(
@@ -278,6 +284,7 @@ class GoogleSheetUpdater:
             workspace_id=workspace_id,
             project=project,
             username=Args.google_username or "",
+            version=version,
         )
 
     def update_for_not_found_or_no_links(
@@ -643,6 +650,7 @@ class GoogleSheetUpdater:
         title_to_write: str = "",
         agency_to_write: str = "",
         office_to_write: str = "",
+        version: str = "V1",
     ) -> List[Dict[str, Any]]:
         """Build list of range/value update dicts for batchUpdate."""
         requests: List[Dict[str, Any]] = []
@@ -700,7 +708,8 @@ class GoogleSheetUpdater:
 
         if column_map.get("Download Location") and workspace_id:
             download_location = DOWNLOAD_LOCATION_TEMPLATE.format(
-                workspace_id=workspace_id
+                workspace_id=workspace_id,
+                version=(version or "V1").strip() or "V1",
             )
             requests.append({
                 "range": f"{sheet_name}!{column_map['Download Location']}{row_number}",

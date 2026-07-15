@@ -155,13 +155,22 @@ class TestDataLumosAuthenticatorAuthenticate(unittest.TestCase):
         self.authenticator = DataLumosAuthenticator(self.mock_page, timeout=5000)
 
     def test_authenticate_no_login_button_raises(self) -> None:
-        """Test authenticate raises when login button not found."""
+        """Test authenticate raises when login button not found and not logged in."""
         with patch.object(self.authenticator, '_find_login_button', return_value=None):
             with patch.object(self.authenticator, 'wait_for_verification'):
-                with self.assertRaises(RuntimeError) as context:
-                    self.authenticator.authenticate("user@test.com", "password")
-                
+                with patch.object(self.authenticator, 'is_authenticated', return_value=False):
+                    with self.assertRaises(RuntimeError) as context:
+                        self.authenticator.authenticate("user@test.com", "password")
+
                 self.assertIn("Login button", str(context.exception))
+
+    def test_authenticate_already_logged_in_skips_form(self) -> None:
+        """Test authenticate succeeds when session is still valid (no Login button)."""
+        with patch.object(self.authenticator, '_find_login_button', return_value=None):
+            with patch.object(self.authenticator, 'wait_for_verification'):
+                with patch.object(self.authenticator, 'is_authenticated', return_value=True):
+                    result = self.authenticator.authenticate("user@test.com", "password")
+        self.assertTrue(result)
 
     def test_authenticate_email_button_not_found_raises(self) -> None:
         """Test authenticate raises when email login button not found."""
