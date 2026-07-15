@@ -157,6 +157,62 @@ class TestCmsGovCollector(unittest.TestCase):
         dict_files = [f for f in files if f["type"] == "Data Dictionary"]
         self.assertEqual(len(dict_files), 1)
 
+    @patch("collectors.CmsGovCollector.record_error")
+    @patch.object(CmsGovCollector, "_fetch_resources")
+    def test_gather_files_current_api_failure_records_error(
+        self, mock_fetch: Mock, mock_record_error: Mock
+    ) -> None:
+        """Current-dataset resources API failure is recorded, not treated as empty."""
+        mock_fetch.return_value = None
+        self.collector._last_resources_error = (
+            "CMS resources API error (https://example/resources): boom"
+        )
+        result = self.collector._gather_files(1, "current-uuid", "taxonomy-uuid")
+        self.assertIsNone(result)
+        mock_record_error.assert_called_once()
+        self.assertIn("CMS resources API error", mock_record_error.call_args[0][1])
+        self.assertEqual(mock_fetch.call_count, 1)
+
+    @patch("collectors.CmsGovCollector.record_error")
+    @patch.object(CmsGovCollector, "_fetch_resources")
+    def test_gather_files_taxonomy_api_failure_records_error(
+        self, mock_fetch: Mock, mock_record_error: Mock
+    ) -> None:
+        """Dataset-type resources API failure is recorded and aborts gather."""
+        mock_fetch.side_effect = [
+            _SAMPLE_CURRENT_RESOURCES,
+            None,
+        ]
+        self.collector._last_resources_error = (
+            "CMS resources API error (https://example/dataset-type): timeout"
+        )
+        result = self.collector._gather_files(1, "current-uuid", "taxonomy-uuid")
+        self.assertIsNone(result)
+        mock_record_error.assert_called_once()
+        self.assertIn("CMS resources API error", mock_record_error.call_args[0][1])
+        self.assertEqual(mock_fetch.call_count, 2)
+
+    @patch("collectors.CmsGovCollector.record_warning")
+    @patch.object(CmsGovCollector, "_fetch_resources")
+    def test_gather_files_empty_success_warns_not_error(
+        self, mock_fetch: Mock, mock_warn: Mock
+    ) -> None:
+        """Successful empty API responses remain a warning, not an error."""
+        mock_fetch.return_value = []
+        result = self.collector._gather_files(1, "current-uuid", None)
+        self.assertEqual(result, [])
+        mock_warn.assert_called_once()
+        self.assertIn("No downloadable files", mock_warn.call_args[0][1])
+
+    @patch("collectors.CmsGovCollector.requests.get")
+    def test_fetch_resources_returns_none_on_http_error(self, mock_get: Mock) -> None:
+        """_fetch_resources returns None and stores error detail on failure."""
+        mock_get.side_effect = Exception("connection reset")
+        result = self.collector._fetch_resources("https://data.cms.gov/data-api/v1/x")
+        self.assertIsNone(result)
+        self.assertIn("connection reset", self.collector._last_resources_error)
+        self.assertIn("https://data.cms.gov/data-api/v1/x", self.collector._last_resources_error)
+
     # ── _scrape_description ──────────────────────────────────────────────────
 
     @patch("collectors.CmsGovCollector.sync_playwright")
@@ -323,6 +379,38 @@ class TestCmsGovCollector(unittest.TestCase):
         mock_warn.assert_called()
         self.assertIn("Download failed", mock_warn.call_args[0][1])
 
+    @patch("collectors.CmsGovCollector.record_warning")
+    @patch("collectors.CmsGovCollector.record_error")
+    @patch("collectors.CmsGovCollector.folder_extensions_and_size")
+    @patch("collectors.CmsGovCollector.create_output_folder")
+    @patch.object(CmsGovCollector, "_gather_files")
+    @patch.object(CmsGovCollector, "_scrape_description")
+    @patch.object(CmsGovCollector, "_fetch_slug")
+    def test_collect_resources_api_failure_aborts(
+        self,
+        mock_slug: Mock,
+        mock_scrape: Mock,
+        mock_gather: Mock,
+        mock_create_folder: Mock,
+        mock_ext_size: Mock,
+        mock_record_error: Mock,
+        mock_warn: Mock,
+    ) -> None:
+        """When gather returns None (API failure), collect aborts without warning."""
+        mock_slug.return_value = _SAMPLE_SLUG_DATA
+        mock_scrape.return_value = None
+        mock_gather.return_value = None
+        mock_create_folder.return_value = Path("/tmp/DRP000001")
+        mock_ext_size.return_value = ([], 0, 0)
+
+        result = self.collector._collect("https://data.cms.gov/some/path", 1)
+
+        self.assertEqual(result["folder_path"], "/tmp/DRP000001")
+        mock_warn.assert_not_called()
+        # Error was recorded inside _gather_files (mocked here); collect just aborts.
+        mock_record_error.assert_not_called()
+        mock_ext_size.assert_not_called()
+
     # ── run() ────────────────────────────────────────────────────────────────
 
     @patch("collectors.CmsGovCollector.record_error")
@@ -377,6 +465,27 @@ class TestCmsGovCollector(unittest.TestCase):
 
         fields = mock_storage.update_record.call_args[0][1]
         self.assertEqual(fields["status"], "error")
+
+    @patch("collectors.CmsGovCollector.Storage")
+    @patch.object(CmsGovCollector, "_collect")
+    def test_run_preserves_derived_error_status(
+        self, mock_collect: Mock, mock_storage: Mock
+    ) -> None:
+        """Do not promote to collected when record_error set sourced-error."""
+        mock_storage.get.side_effect = [
+            {
+                "DRPID": 1,
+                "source_url": "https://data.cms.gov/some/path",
+                "status": "sourced",
+            },
+            {"DRPID": 1, "status": "sourced-error"},
+        ]
+        mock_collect.return_value = {"folder_path": "/tmp/DRP000001"}
+
+        self.collector.run(1)
+
+        fields = mock_storage.update_record.call_args[0][1]
+        self.assertEqual(fields["status"], "sourced-error")
 
 
     # ── _extract_date_range ───────────────────────────────────────────────────

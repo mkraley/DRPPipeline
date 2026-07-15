@@ -58,6 +58,7 @@ class CmsGovCollector:
         self._playwright: Optional[Playwright] = None
         self._browser: Optional[Browser] = None
         self._page: Optional[Page] = None
+        self._last_resources_error: str = ""
 
     def run(self, drpid: int) -> None:
         """
@@ -126,6 +127,9 @@ class CmsGovCollector:
 
         # Collect files: all historical Primary files + ancillaries (once each)
         all_files = self._gather_files(drpid, current_uuid, taxonomy_uuid)
+        if all_files is None:
+            # Resources API failure already recorded via record_error.
+            return result
         if not all_files:
             record_warning(drpid, "No files found to download")
         else:
@@ -169,7 +173,17 @@ class CmsGovCollector:
             Logger.error("CMS slug API error: %s", exc)
             return None
 
-    def _fetch_resources(self, endpoint: str) -> List[Dict[str, Any]]:
+    def _fetch_resources(self, endpoint: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch a CMS resources API endpoint.
+
+        Args:
+            endpoint: Full resources API URL.
+
+        Returns:
+            Resource dicts on success (possibly empty), or None when the request fails.
+            On failure, ``_last_resources_error`` holds the message for ``record_error``.
+        """
         Logger.info("Fetching CMS resources: %s", endpoint)
         try:
             resp = requests.get(endpoint, headers=BROWSER_HEADERS, timeout=30)
@@ -177,8 +191,32 @@ class CmsGovCollector:
             body = resp.json()
             return body.get("data") or []
         except Exception as exc:
-            Logger.error("CMS resources API error (%s): %s", endpoint, exc)
-            return []
+            self._last_resources_error = (
+                f"CMS resources API error ({endpoint}): {exc}"
+            )
+            return None
+
+    def _require_resources(
+        self, drpid: int, endpoint: str
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch resources and record an error when the API request fails.
+
+        Args:
+            drpid: Project DRPID.
+            endpoint: Full resources API URL.
+
+        Returns:
+            Resource list on success, or None after recording an error.
+        """
+        resources = self._fetch_resources(endpoint)
+        if resources is None:
+            record_error(
+                drpid,
+                self._last_resources_error
+                or f"CMS resources API error ({endpoint})",
+            )
+        return resources
 
     def _parse_slug_metadata(self, slug_data: Dict[str, Any]) -> Dict[str, Any]:
         fields: Dict[str, Any] = {}
@@ -214,7 +252,7 @@ class CmsGovCollector:
         drpid: int,
         current_uuid: str,
         taxonomy_uuid: Optional[str],
-    ) -> List[Dict[str, Any]]:
+    ) -> Optional[List[Dict[str, Any]]]:
         """
         Return a deduplicated list of file dicts to download.
 
@@ -223,10 +261,20 @@ class CmsGovCollector:
 
         If taxonomy_uuid is available, also fetches /dataset-type/{taxonomy_uuid}/resources
         for all historical Primary files.
+
+        Args:
+            drpid: Project DRPID (for error recording).
+            current_uuid: Current dataset UUID.
+            taxonomy_uuid: Optional dataset-type UUID for historical Primaries.
+
+        Returns:
+            File resource dicts, an empty list when the API succeeds with no files,
+            or None when a resources API request fails (error already recorded).
         """
-        current_resources = self._fetch_resources(
-            f"{_API_BASE}/dataset/{current_uuid}/resources"
-        )
+        current_endpoint = f"{_API_BASE}/dataset/{current_uuid}/resources"
+        current_resources = self._require_resources(drpid, current_endpoint)
+        if current_resources is None:
+            return None
 
         # Collect ancillary files from current resources (deduplicated by file_uuid)
         seen_uuids: set = set()
@@ -234,9 +282,12 @@ class CmsGovCollector:
 
         # Historical Primary files via dataset-type (all years)
         if taxonomy_uuid:
-            all_resources = self._fetch_resources(
+            taxonomy_endpoint = (
                 f"{_API_BASE}/dataset-type/{taxonomy_uuid}/resources"
             )
+            all_resources = self._require_resources(drpid, taxonomy_endpoint)
+            if all_resources is None:
+                return None
             for r in all_resources:
                 if r.get("type") == "Primary" and r.get("file_url"):
                     fid = r.get("file_uuid") or r.get("file_url")
@@ -352,9 +403,17 @@ class CmsGovCollector:
         self._page = None
 
     def _update_storage(self, drpid: int, result: Dict[str, Any]) -> None:
+        """
+        Merge collect results into Storage without clearing a recorded error status.
+
+        Args:
+            drpid: Project DRPID.
+            result: Fields collected for this run.
+        """
         current = Storage.get(drpid)
-        if current and current.get("status") == "error":
-            result["status"] = "error"
+        previous = (current.get("status") or "") if current else ""
+        if previous == "error" or previous.endswith("-error"):
+            result["status"] = previous
         elif result.get("folder_path") and not result.get("status"):
             result["status"] = "collected"
 
