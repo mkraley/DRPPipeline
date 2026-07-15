@@ -178,7 +178,6 @@ class TestDataLumosRepublisher(unittest.TestCase):
         mock_publish.assert_called_once()
         mock_sheet.assert_called_once()
 
-    @patch("publisher.DataLumosPublisher.record_error")
     @patch.object(DataLumosRepublisher, "_publish_workspace")
     @patch.object(
         DataLumosRepublisher,
@@ -189,9 +188,8 @@ class TestDataLumosRepublisher(unittest.TestCase):
         self,
         mock_gate: MagicMock,
         mock_publish: MagicMock,
-        mock_record_error: MagicMock,
     ) -> None:
-        """Republish does not click through when inventory check fails."""
+        """Gate failure records errors and does not republish or finalize."""
         drpid = Storage.create_record("https://example.gov/data")
         Storage.update_record(
             drpid,
@@ -205,6 +203,8 @@ class TestDataLumosRepublisher(unittest.TestCase):
         page = MagicMock()
         self.module._session = MagicMock()
         self.module._session.ensure_browser.return_value = page
+        self.module._finalize_after_publish = MagicMock()  # type: ignore[method-assign]
+        self.module._update_google_sheet_if_configured = MagicMock()  # type: ignore[method-assign]
 
         with patch(
             "upload.DataLumosAuthenticator.wait_for_human_verification"
@@ -212,10 +212,12 @@ class TestDataLumosRepublisher(unittest.TestCase):
             self.module.run(drpid)
 
         mock_publish.assert_not_called()
-        mock_record_error.assert_called_once()
+        self.module._finalize_after_publish.assert_not_called()
+        self.module._update_google_sheet_if_configured.assert_not_called()
         project = Storage.get(drpid)
         assert project is not None
-        self.assertEqual(project["status"], "re-uploaded")
+        self.assertEqual(project["status"], "re-uploaded-error")
+        self.assertIn("Aborting republish", project.get("errors") or "")
 
     @patch("publisher.DataLumosRepublisher.workspace_file_stats_from_page")
     def test_workspace_inventory_mismatches_uses_verify_counts(

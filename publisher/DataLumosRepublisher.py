@@ -163,8 +163,8 @@ class DataLumosRepublisher(DataLumosPublisher):
                 drpid,
             )
             return None
-        for message in errors:
-            Logger.error("DRPID %s: %s", drpid, message)
+        # Return message for DataLumosPublisher.run to persist via record_error
+        # (do not Logger.error here — that skips Storage status/errors).
         return (
             "Aborting republish: workspace file count/size does not match database — "
             + "; ".join(errors)

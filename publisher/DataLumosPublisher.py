@@ -112,6 +112,7 @@ class DataLumosPublisher:
             record_error(drpid, "Missing datalumos_id; project must be uploaded before publish")
             return
 
+        publish_ok = False
         try:
             page = self._session.ensure_browser()
             self._session.ensure_authenticated()
@@ -126,33 +127,37 @@ class DataLumosPublisher:
             gate_error = self._pre_publish_gate(page, project, drpid)
             if gate_error:
                 record_error(drpid, gate_error)
-                return
-
-            upload_issue = self._uploads_incomplete_on_project_page(page)
-            if upload_issue:
-                Logger.warning(
-                    "Skipping publish for DRPID=%s: uploads incomplete — %s",
-                    drpid,
-                    upload_issue,
-                )
-                return
-
-            success, error_message = self._publish_workspace(page, drpid)
-            if not success:
-                record_error(drpid, error_message or "Publish workflow failed")
-                return
-
-            published_url = self._published_view_url(workspace_id)
-            Storage.update_record(drpid, {
-                "published_url": published_url,
-                "status": "published",
-            })
-            Logger.info(f"Publish completed for DRPID={drpid}, published_url={published_url}")
+            else:
+                upload_issue = self._uploads_incomplete_on_project_page(page)
+                if upload_issue:
+                    Logger.warning(
+                        "Skipping publish for DRPID=%s: uploads incomplete — %s",
+                        drpid,
+                        upload_issue,
+                    )
+                else:
+                    success, error_message = self._publish_workspace(page, drpid)
+                    if not success:
+                        record_error(drpid, error_message or "Publish workflow failed")
+                    else:
+                        published_url = self._published_view_url(workspace_id)
+                        Storage.update_record(drpid, {
+                            "published_url": published_url,
+                            "status": "published",
+                        })
+                        Logger.info(
+                            f"Publish completed for DRPID={drpid}, "
+                            f"published_url={published_url}"
+                        )
+                        publish_ok = True
         except Exception as e:
             record_error(drpid, f"Publish failed: {e}")
             raise
         finally:
             self._session.close()
+
+        if not publish_ok:
+            return
 
         # Sheet update is separate: publish already succeeded; TLS/API failures are warnings only.
         try:
