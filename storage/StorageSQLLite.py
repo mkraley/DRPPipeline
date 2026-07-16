@@ -478,6 +478,7 @@ class StorageSQLLite:
         limit: Optional[int],
         start_row: Optional[int] = None,
         min_drpid: Optional[int] = None,
+        include_errored: bool = False,
     ) -> list[Dict[str, Any]]:
         """
         List projects eligible for the next module: status == prereq_status.
@@ -491,6 +492,8 @@ class StorageSQLLite:
             limit: Max rows to return. None = no limit.
             start_row: If set, skip first (start_row - 1) rows of the full table (1-origin).
             min_drpid: If set, only return projects with DRPID >= this value.
+            include_errored: If True, include rows with a non-empty errors field
+                (for modules that retry error statuses like ``updated_inventory-error``).
 
         Returns:
             List of full row dicts (all columns, including None for nulls).
@@ -508,9 +511,10 @@ class StorageSQLLite:
             subq = "SELECT DRPID FROM projects ORDER BY DRPID LIMIT 1 OFFSET ?"
             min_drpid_clause = " AND DRPID >= (" + subq + ")"
             params.append(start_row - 1)
+        errors_clause = "" if include_errored else " AND (errors IS NULL OR errors = '')"
         query = (
             "SELECT * FROM projects "
-            f"WHERE {status_clause} AND (errors IS NULL OR errors = '')"
+            f"WHERE {status_clause}{errors_clause}"
             + min_drpid_clause
             + " ORDER BY DRPID ASC"
         )

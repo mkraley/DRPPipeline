@@ -116,6 +116,7 @@ class StorageProtocol(Protocol):
         limit: Optional[int],
         start_row: Optional[int] = None,
         min_drpid: Optional[int] = None,
+        include_errored: bool = False,
     ) -> list[Dict[str, Any]]:
         """
         List projects eligible for the next module: status == prereq_status and no errors.
@@ -129,6 +130,7 @@ class StorageProtocol(Protocol):
             limit: Max rows to return. None = no limit.
             start_row: If set, skip first (start_row - 1) rows of the full table (1-origin).
             min_drpid: If set, only return projects with DRPID >= this value (takes precedence over start_row when both set).
+            include_errored: If True, include rows with a non-empty errors field.
 
         Returns:
             List of full row dicts (all columns, including None for nulls).

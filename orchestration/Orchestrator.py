@@ -155,6 +155,34 @@ def _find_module_class(class_name: str) -> type:
     )
 
 
+def _merge_project_lists(
+    project_lists: list[list[Dict[str, Any]]],
+    num_rows: Optional[int],
+) -> list[Dict[str, Any]]:
+    """
+    Merge project lists, dedupe by DRPID, sort by DRPID, and apply a row limit.
+
+    Args:
+        project_lists: Lists of project row dicts to combine.
+        num_rows: Max projects to return. None = no limit.
+
+    Returns:
+        Deduplicated projects ordered by DRPID ASC, truncated to num_rows.
+    """
+    seen: set[int] = set()
+    projects: list[Dict[str, Any]] = []
+    for project_list in project_lists:
+        for proj in project_list:
+            drpid = proj["DRPID"]
+            if drpid not in seen:
+                seen.add(drpid)
+                projects.append(proj)
+    projects.sort(key=lambda p: p["DRPID"])
+    if num_rows is not None:
+        projects = projects[:num_rows]
+    return projects
+
+
 def _stop_requested() -> bool:
     """Return True if the GUI requested stop (stop file exists)."""
     stop_file = getattr(Args, "stop_file", None)
@@ -313,23 +341,17 @@ class Orchestrator:
                 projects_no_dataset = Storage.list_eligible_projects("no dataset", num_rows, start_row, start_drpid)
                 projects_gigantic = Storage.list_eligible_projects("gigantic upload", num_rows, start_row, start_drpid)
                 projects_needs_scripting = Storage.list_eligible_projects("needs scripting", num_rows, start_row, start_drpid)
-                seen: set[int] = set()
-                projects = []
-                for proj in (
-                    projects_upload
-                    + projects_not_found
-                    + projects_no_links
-                    + projects_no_dataset
-                    + projects_gigantic
-                    + projects_needs_scripting
-                ):
-                    drpid = proj["DRPID"]
-                    if drpid not in seen:
-                        seen.add(drpid)
-                        projects.append(proj)
-                projects.sort(key=lambda p: p["DRPID"])
-                if num_rows is not None:
-                    projects = projects[:num_rows]
+                projects = _merge_project_lists(
+                    [
+                        projects_upload,
+                        projects_not_found,
+                        projects_no_links,
+                        projects_no_dataset,
+                        projects_gigantic,
+                        projects_needs_scripting,
+                    ],
+                    num_rows,
+                )
             elif module == "upload":
                 projects_collected = Storage.list_eligible_projects(
                     "collected", num_rows, start_row, start_drpid
@@ -337,16 +359,9 @@ class Orchestrator:
                 projects_large = Storage.list_eligible_projects(
                     "collected - large file", num_rows, start_row, start_drpid
                 )
-                seen_upload: set[int] = set()
-                projects = []
-                for proj in projects_collected + projects_large:
-                    drpid = proj["DRPID"]
-                    if drpid not in seen_upload:
-                        seen_upload.add(drpid)
-                        projects.append(proj)
-                projects.sort(key=lambda p: p["DRPID"])
-                if num_rows is not None:
-                    projects = projects[:num_rows]
+                projects = _merge_project_lists(
+                    [projects_collected, projects_large], num_rows
+                )
             elif module == "upload_large_files":
                 from upload.UploadLargeFiles import is_eligible_for_upload_large_files
 
@@ -356,19 +371,30 @@ class Orchestrator:
                 candidates_expanded = Storage.list_eligible_projects(
                     "uploaded - expanded", None, start_row, start_drpid
                 )
-                seen_large: set[int] = set()
-                projects = []
-                for proj in candidates_large + candidates_expanded:
-                    drpid = proj["DRPID"]
-                    if drpid in seen_large:
-                        continue
-                    if not is_eligible_for_upload_large_files(proj):
-                        continue
-                    seen_large.add(drpid)
-                    projects.append(proj)
-                projects.sort(key=lambda p: p["DRPID"])
+                merged = _merge_project_lists(
+                    [candidates_large, candidates_expanded], None
+                )
+                projects = [
+                    proj for proj in merged
+                    if is_eligible_for_upload_large_files(proj)
+                ]
                 if num_rows is not None:
                     projects = projects[:num_rows]
+            elif module == "verify_upload":
+                # Also retry projects whose previous verification errored
+                projects_inventory = Storage.list_eligible_projects(
+                    "updated_inventory", num_rows, start_row, start_drpid
+                )
+                projects_errored = Storage.list_eligible_projects(
+                    "updated_inventory-error",
+                    num_rows,
+                    start_row,
+                    start_drpid,
+                    include_errored=True,
+                )
+                projects = _merge_project_lists(
+                    [projects_inventory, projects_errored], num_rows
+                )
             elif module == "adc_globus_collector":
                 from collectors.AdcGlobusCollector import is_globus_external_archive
 

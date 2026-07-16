@@ -16,6 +16,7 @@ from orchestration.Orchestrator import (
     _BatchLevelCounter,
     _format_duration,
     _log_batch_summary,
+    _merge_project_lists,
     _stop_requested,
     _BatchStats,
 )
@@ -50,6 +51,15 @@ class TestOrchestrator(unittest.TestCase):
                 self.assertTrue(_stop_requested())
         finally:
             Path(stop_path).unlink(missing_ok=True)
+
+    def test_merge_project_lists_dedupes_sorts_and_limits(self) -> None:
+        """_merge_project_lists dedupes by DRPID, sorts ASC, and applies num_rows."""
+        list_a = [{"DRPID": 3}, {"DRPID": 1}]
+        list_b = [{"DRPID": 1}, {"DRPID": 2}]
+        merged = _merge_project_lists([list_a, list_b], None)
+        self.assertEqual([p["DRPID"] for p in merged], [1, 2, 3])
+        limited = _merge_project_lists([list_a, list_b], 2)
+        self.assertEqual([p["DRPID"] for p in limited], [1, 2])
 
     def test_run_unknown_module_raises(self) -> None:
         """Test run() with unknown module raises ValueError with valid modules listed."""
@@ -246,6 +256,32 @@ class TestOrchestrator(unittest.TestCase):
         mock_storage_cls.list_eligible_projects.assert_any_call("gigantic upload", None, None, None)
         mock_storage_cls.list_eligible_projects.assert_any_call("needs scripting", None, None, None)
         self.assertEqual(mock_pub_instance.run.call_count, 2)  # DRPID 2 and 3
+
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
+    def test_run_verify_upload_includes_errored_status(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
+    ) -> None:
+        """Test run('verify_upload') lists updated_inventory and updated_inventory-error."""
+        mock_storage = MagicMock()
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.get_instance.return_value = mock_storage
+        mock_storage_cls.list_eligible_projects.side_effect = [
+            [{"DRPID": 1, "source_url": "https://a.com"}],
+            [{"DRPID": 2, "source_url": "https://b.com"}],
+        ]
+        mock_verifier_instance = MagicMock()
+        mock_find_class.return_value = MagicMock(return_value=mock_verifier_instance)
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
+            Orchestrator.run("verify_upload")
+        self.assertEqual(mock_storage_cls.list_eligible_projects.call_count, 2)
+        mock_storage_cls.list_eligible_projects.assert_any_call(
+            "updated_inventory", None, None, None
+        )
+        mock_storage_cls.list_eligible_projects.assert_any_call(
+            "updated_inventory-error", None, None, None, include_errored=True
+        )
+        self.assertEqual(mock_verifier_instance.run.call_count, 2)
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")

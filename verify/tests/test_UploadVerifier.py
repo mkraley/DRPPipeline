@@ -164,7 +164,7 @@ class TestUploadVerifier(unittest.TestCase):
         )
         verifier.run(5)
         mock_storage.update_record.assert_called_once_with(
-            5, {"status": "re-uploaded"}
+            5, {"status": "re-uploaded", "errors": None}
         )
         mock_record_error.assert_not_called()
         info_msgs = [call.args[0] for call in mock_logger.info.call_args_list]
@@ -315,11 +315,80 @@ class TestUploadVerifier(unittest.TestCase):
         )
         verifier.run(5)
         mock_record_error.assert_not_called()
+        mock_storage.update_record.assert_not_called()
         mock_logger.info.assert_called_once()
         message = mock_logger.info.call_args[0][0]
         self.assertIn("DRPID 5: OK", message)
         self.assertIn("files=1/1", message)
         self.assertIn("size=2.0 KB/2.0 KB", message)
+
+    @patch("verify.UploadVerifier.record_error")
+    @patch("verify.UploadVerifier.Logger")
+    @patch("verify.UploadVerifier.Storage")
+    def test_run_errored_status_resets_on_clean_verify(
+        self,
+        mock_storage: MagicMock,
+        mock_logger: MagicMock,
+        mock_record_error: MagicMock,
+    ) -> None:
+        """Retry of updated_inventory-error resets status and clears errors when OK."""
+        mock_storage.get.return_value = {
+            "DRPID": 7,
+            "source_url": "https://example.gov/data",
+            "num_files": 1,
+            "file_size": "2048",
+            "status": "updated_inventory-error",
+            "errors": "DRPID 7: inventory mismatch",
+        }
+        UploadVerifier._sheet_index = {
+            "https://example.gov/data": {
+                "URL": "https://example.gov/data",
+                "Download Location": "https://www.datalumos.org/datalumos/project/1/version/V1/view",
+            }
+        }
+        verifier = UploadVerifier()
+        verifier._fetch_page_stats = MagicMock(  # type: ignore[method-assign]
+            return_value=DatalumosViewFileStats(file_count=1, total_bytes=2048)
+        )
+        verifier.run(7)
+        mock_record_error.assert_not_called()
+        mock_storage.update_record.assert_called_once_with(
+            7, {"status": "updated_inventory", "errors": None}
+        )
+
+    @patch("verify.UploadVerifier.record_error")
+    @patch("verify.UploadVerifier.Storage")
+    def test_run_errored_status_still_mismatched_keeps_error(
+        self, mock_storage: MagicMock, mock_record_error: MagicMock
+    ) -> None:
+        """Retry of updated_inventory-error that still mismatches records error again."""
+        mock_storage.get.return_value = {
+            "DRPID": 8,
+            "source_url": "https://example.gov/data",
+            "datalumos_id": "248800",
+            "num_files": 2,
+            "file_size": "2048",
+            "status": "updated_inventory-error",
+            "errors": "old error",
+        }
+        UploadVerifier._sheet_index = {
+            "https://example.gov/data": {
+                "URL": "https://example.gov/data",
+                "Download Location": "https://www.datalumos.org/datalumos/project/1/version/V1/view",
+            }
+        }
+        verifier = UploadVerifier()
+        verifier._fetch_page_stats = MagicMock(  # type: ignore[method-assign]
+            return_value=DatalumosViewFileStats(
+                file_count=1, total_bytes=2048, file_names=("a.txt",)
+            )
+        )
+        verifier._try_repair_missing_files = MagicMock(  # type: ignore[method-assign]
+            return_value=False
+        )
+        verifier.run(8)
+        mock_record_error.assert_called_once()
+        mock_storage.update_record.assert_not_called()
 
 
 if __name__ == "__main__":

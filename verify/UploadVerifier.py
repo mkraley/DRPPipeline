@@ -1,9 +1,10 @@
 """
 Verify uploaded projects by comparing database inventory to DataLumos view pages.
 
-For each ``updated_inventory`` project, locates the matching Google Sheet row,
-opens the Download Location URL, and checks file count and total size against
-``num_files`` and ``file_size`` in Storage.
+For each ``updated_inventory`` (or previously errored ``updated_inventory-error``)
+project, locates the matching Google Sheet row, opens the Download Location URL,
+and checks file count and total size against ``num_files`` and ``file_size`` in
+Storage.
 
 When DataLumos has fewer files than the database, attempts to re-download and
 re-upload missing catalog publication files, then sets status ``re-uploaded``.
@@ -41,14 +42,20 @@ from verify.MissingFileRepair import (
 )
 
 
+STATUS_UPDATED_INVENTORY = "updated_inventory"
+
+
 class UploadVerifier:
     """
     Verify that DataLumos published pages match collected inventory metadata.
 
-    Implements ModuleProtocol. Processes projects with status ``updated_inventory``.
+    Implements ModuleProtocol. Processes projects with status ``updated_inventory``
+    or ``updated_inventory-error`` (retry of a previously failed verification).
     Logs a one-line info summary on success. On failure, records project errors via
     ``record_error`` (status becomes ``updated_inventory-error``).
     On successful missing-file repair, sets status to ``re-uploaded``.
+    When a previously errored project now verifies clean, resets status to
+    ``updated_inventory`` and clears the errors field.
     """
 
     _sheet_index: Optional[Dict[str, Dict[str, str]]] = None
@@ -108,6 +115,7 @@ class UploadVerifier:
                 f"DRPID {drpid}: OK — "
                 f"{format_verify_success_message(db_num_files, db_file_size, page_stats)}"
             )
+            self._reset_error_status_if_needed(drpid, project)
             return
 
         comparison = format_verify_comparison(
@@ -159,12 +167,38 @@ class UploadVerifier:
             return False
         if not repaired:
             return False
-        Storage.update_record(drpid, {"status": STATUS_RE_UPLOADED})
+        # Clear stale errors so the republisher will pick the project up.
+        Storage.update_record(drpid, {"status": STATUS_RE_UPLOADED, "errors": None})
         Logger.info(
             f"DRPID {drpid} datalumos_id={datalumos_id}: "
             f"re-uploaded missing file(s); status={STATUS_RE_UPLOADED}"
         )
         return True
+
+    def _reset_error_status_if_needed(
+        self, drpid: int, project: Dict[str, Any]
+    ) -> None:
+        """
+        Reset a previously errored project once verification passes.
+
+        For a project retried from ``updated_inventory-error``, restore status
+        ``updated_inventory`` and clear the errors field so downstream modules
+        (e.g. republisher) treat it as eligible again.
+
+        Args:
+            drpid: Project DRPID.
+            project: Storage project record as loaded at the start of run().
+        """
+        status = (get_field(project, "status") or "").strip()
+        if not status.endswith("-error"):
+            return
+        Storage.update_record(
+            drpid, {"status": STATUS_UPDATED_INVENTORY, "errors": None}
+        )
+        Logger.info(
+            f"DRPID {drpid}: verification passed on retry; "
+            f"status reset to {STATUS_UPDATED_INVENTORY} and errors cleared"
+        )
 
     def _sheet_row_for_url(self, source_url: str) -> Optional[Dict[str, str]]:
         """

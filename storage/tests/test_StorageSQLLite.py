@@ -595,6 +595,22 @@ class TestStorageSQLLite(unittest.TestCase):
         drpids = [r["DRPID"] for r in out]
         self.assertEqual(drpids, [1])
 
+    def test_list_eligible_projects_include_errored_returns_error_rows(self) -> None:
+        """Test include_errored=True returns rows with a non-empty errors field."""
+        self.storage.initialize(db_path=self.test_db_path)
+        self.storage.create_record("https://a.com")
+        self.storage.update_record(
+            1, {"status": "updated_inventory-error", "errors": "mismatch"}
+        )
+        self.storage.create_record("https://b.com")
+        self.storage.update_record(2, {"status": "updated_inventory-error"})
+        default_out = self.storage.list_eligible_projects("updated_inventory-error", None)
+        self.assertEqual([r["DRPID"] for r in default_out], [2])
+        errored_out = self.storage.list_eligible_projects(
+            "updated_inventory-error", None, include_errored=True
+        )
+        self.assertEqual([r["DRPID"] for r in errored_out], [1, 2])
+
     def test_list_eligible_projects_respects_limit(self) -> None:
         """Test list_eligible_projects respects limit."""
         self.storage.initialize(db_path=self.test_db_path)
