@@ -29,6 +29,7 @@ from utils.inventory_sheet_reconcile import (
 from utils.project_utils import get_field
 from verify.DatalumosViewFileStats import (
     DatalumosViewFileStats,
+    format_verify_comparison,
     format_verify_success_message,
     set_records_per_page,
     verify_upload_counts,
@@ -108,6 +109,13 @@ class UploadVerifier:
                 f"{format_verify_success_message(db_num_files, db_file_size, page_stats)}"
             )
             return
+
+        comparison = format_verify_comparison(
+            db_num_files, db_file_size, page_stats
+        )
+        Logger.info(
+            f"DRPID {drpid} datalumos_id={datalumos_id}: mismatch — {comparison}"
+        )
 
         if should_attempt_missing_file_repair(db_num_files, page_stats):
             if self._try_repair_missing_files(drpid, project, page_stats, datalumos_id):

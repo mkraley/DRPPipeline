@@ -246,21 +246,48 @@ def verify_upload_counts(
         return errors
     if db_num_files is None:
         errors.append("missing num_files in database")
-    elif page_stats.file_count != db_num_files:
-        errors.append(
-            f"file count mismatch: database={db_num_files}, "
-            f"datalumos={page_stats.file_count}"
-        )
     expected_bytes = parse_file_size_to_bytes(db_file_size)
     if expected_bytes is None:
         errors.append("missing or unparseable file_size in database")
-    elif not sizes_within_tolerance(expected_bytes, page_stats.total_bytes):
+    if errors or db_num_files is None or expected_bytes is None:
+        return errors
+
+    count_mismatch = page_stats.file_count != db_num_files
+    size_mismatch = not sizes_within_tolerance(expected_bytes, page_stats.total_bytes)
+    if count_mismatch or size_mismatch:
         errors.append(
-            f"file size mismatch: database={format_file_size(expected_bytes)} "
-            f"({expected_bytes} B), datalumos={format_file_size(page_stats.total_bytes)} "
-            f"({page_stats.total_bytes} B)"
+            f"inventory mismatch: "
+            f"{format_verify_comparison(db_num_files, db_file_size, page_stats)}"
         )
     return errors
+
+
+def format_verify_comparison(
+    db_num_files: Optional[int],
+    db_file_size: Optional[str],
+    page_stats: DatalumosViewFileStats,
+) -> str:
+    """
+    Format expected (database) vs actual (DataLumos) files and size.
+
+    Args:
+        db_num_files: Expected file count from Storage.
+        db_file_size: Expected total size from Storage.
+        page_stats: Stats extracted from the DataLumos view page.
+
+    Returns:
+        Compact comparison like ``files=5/6 size=3.0 GB/5.0 GB``
+        (database/datalumos).
+    """
+    expected_files = str(db_num_files) if db_num_files is not None else "?"
+    actual_files = str(page_stats.file_count)
+    expected_bytes = parse_file_size_to_bytes(db_file_size)
+    if expected_bytes is not None:
+        expected_size = format_file_size(expected_bytes)
+    else:
+        expected_size = (db_file_size or "").strip() or "?"
+    actual_size = format_file_size(page_stats.total_bytes)
+    return f"files={expected_files}/{actual_files} size={expected_size}/{actual_size}"
 
 
 def format_verify_success_message(
@@ -277,10 +304,6 @@ def format_verify_success_message(
         page_stats: Stats extracted from the DataLumos view page.
 
     Returns:
-        Summary string like ``files 5/5, size 185.2 MB/185.2 MB``.
+        Summary string like ``files=5/5 size=185.2 MB/185.2 MB``.
     """
-    expected_files = str(db_num_files) if db_num_files is not None else "?"
-    actual_files = str(page_stats.file_count)
-    expected_size = (db_file_size or "").strip() or "?"
-    actual_size = format_file_size(page_stats.total_bytes)
-    return f"files {expected_files}/{actual_files}, size {expected_size}/{actual_size}"
+    return format_verify_comparison(db_num_files, db_file_size, page_stats)

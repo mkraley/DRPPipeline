@@ -232,7 +232,8 @@ class TestDataLumosRepublisher(unittest.TestCase):
             MagicMock(),
             {"num_files": 5, "file_size": "1000"},
         )
-        self.assertTrue(any("file count mismatch" in e for e in errors))
+        self.assertTrue(any("inventory mismatch" in e for e in errors))
+        self.assertTrue(any("files=5/4" in e for e in errors))
         mock_stats.assert_called_once()
 
     def test_workspace_file_stats_from_page_parses_table(self) -> None:

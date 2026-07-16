@@ -122,7 +122,8 @@ class TestUploadVerifier(unittest.TestCase):
         verifier.run(5)
         mock_record_error.assert_called_once()
         message = mock_record_error.call_args[0][1]
-        self.assertIn("file count mismatch", message)
+        self.assertIn("inventory mismatch", message)
+        self.assertIn("files=", message)
         self.assertIn("datalumos_id=248712", message)
 
     @patch("verify.UploadVerifier.MissingFileRepair")
@@ -166,6 +167,11 @@ class TestUploadVerifier(unittest.TestCase):
             5, {"status": "re-uploaded"}
         )
         mock_record_error.assert_not_called()
+        info_msgs = [call.args[0] for call in mock_logger.info.call_args_list]
+        self.assertTrue(
+            any("mismatch —" in msg and "files=" in msg for msg in info_msgs),
+            f"expected mismatch comparison before repair; got {info_msgs!r}",
+        )
         info_msg = mock_logger.info.call_args[0][0]
         self.assertIn("re-uploaded", info_msg)
 
@@ -209,7 +215,8 @@ class TestUploadVerifier(unittest.TestCase):
         self.assertTrue(
             any("missing-file repair failed" in msg for msg in messages)
         )
-        self.assertTrue(any("file count mismatch" in msg for msg in messages))
+        self.assertTrue(any("inventory mismatch" in msg for msg in messages))
+        self.assertTrue(any("files=" in msg for msg in messages))
 
     @patch("verify.UploadVerifier.record_error")
     @patch("verify.UploadVerifier.Storage")
@@ -245,9 +252,9 @@ class TestUploadVerifier(unittest.TestCase):
         verifier.run(5)
         verifier._try_repair_missing_files.assert_not_called()
         mock_record_error.assert_called()
-        self.assertIn(
-            "file size mismatch", mock_record_error.call_args[0][1]
-        )
+        self.assertIn("inventory mismatch", mock_record_error.call_args[0][1])
+        self.assertIn("files=", mock_record_error.call_args[0][1])
+        self.assertIn("size=", mock_record_error.call_args[0][1])
 
     @patch("verify.UploadVerifier.set_records_per_page")
     @patch("verify.UploadVerifier.DatalumosViewFileStats.from_page")
@@ -311,8 +318,8 @@ class TestUploadVerifier(unittest.TestCase):
         mock_logger.info.assert_called_once()
         message = mock_logger.info.call_args[0][0]
         self.assertIn("DRPID 5: OK", message)
-        self.assertIn("files 1/1", message)
-        self.assertIn("size 2048/", message)
+        self.assertIn("files=1/1", message)
+        self.assertIn("size=2.0 KB/2.0 KB", message)
 
 
 if __name__ == "__main__":

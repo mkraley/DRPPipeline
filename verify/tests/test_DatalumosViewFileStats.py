@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 from verify.DatalumosViewFileStats import (
     DatalumosViewFileStats,
+    format_verify_comparison,
     format_verify_success_message,
     set_records_per_page,
     sizes_within_tolerance,
@@ -39,18 +40,30 @@ class TestDatalumosViewFileStats(unittest.TestCase):
         self.assertEqual(errors, [])
 
     def test_verify_upload_counts_file_count_mismatch(self) -> None:
-        """Test file count mismatch is reported."""
+        """Test file count mismatch uses compact files=/size= format."""
         page_stats = DatalumosViewFileStats(file_count=2, total_bytes=1024)
         errors = verify_upload_counts(3, "1024", page_stats)
         self.assertEqual(len(errors), 1)
-        self.assertIn("file count mismatch", errors[0])
+        self.assertIn("inventory mismatch", errors[0])
+        self.assertIn("files=3/2", errors[0])
+        self.assertIn("size=", errors[0])
 
     def test_verify_upload_counts_size_mismatch(self) -> None:
-        """Test file size mismatch beyond tolerance is reported."""
+        """Test size mismatch beyond tolerance uses compact comparison."""
         page_stats = DatalumosViewFileStats(file_count=1, total_bytes=2000)
         errors = verify_upload_counts(1, "1000", page_stats)
         self.assertEqual(len(errors), 1)
-        self.assertIn("file size mismatch", errors[0])
+        self.assertIn("inventory mismatch", errors[0])
+        self.assertIn("files=1/1", errors[0])
+        self.assertRegex(errors[0], r"size=\d+(\.\d+)?\s+\w+/\d+(\.\d+)?\s+\w+")
+
+    def test_verify_upload_counts_both_mismatches_one_message(self) -> None:
+        """Count and size mismatches are reported in one comparison line."""
+        page_stats = DatalumosViewFileStats(file_count=5, total_bytes=3 * 1024**3)
+        errors = verify_upload_counts(6, "5.0 GB", page_stats)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("files=6/5", errors[0])
+        self.assertIn("size=", errors[0])
 
     def test_verify_upload_counts_page_error(self) -> None:
         """Test page extraction errors are reported."""
@@ -91,8 +104,18 @@ class TestDatalumosViewFileStats(unittest.TestCase):
         """Test success summary shows expected/actual files and size."""
         page_stats = DatalumosViewFileStats(file_count=5, total_bytes=194215627)
         message = format_verify_success_message(5, "185.2 MB", page_stats)
-        self.assertIn("files 5/5", message)
-        self.assertIn("size 185.2 MB/185.2 MB", message)
+        self.assertEqual(
+            message,
+            format_verify_comparison(5, "185.2 MB", page_stats),
+        )
+        self.assertIn("files=5/5", message)
+        self.assertIn("size=", message)
+
+    def test_format_verify_comparison_order_is_db_then_datalumos(self) -> None:
+        """Comparison is database/datalumos for both files and size."""
+        page_stats = DatalumosViewFileStats(file_count=6, total_bytes=5 * 1024**3)
+        message = format_verify_comparison(5, "3.0 GB", page_stats)
+        self.assertEqual(message, "files=5/6 size=3.0 GB/5.0 GB")
 
     def test_from_page_handles_error_payload(self) -> None:
         """Test from_page surfaces JS error codes."""
