@@ -28,40 +28,57 @@ class StorageSQLLite:
     _connection: Optional[sqlite3.Connection] = None
     _db_path: Optional[Path] = None
     _initialized: bool = False
-    
-    # Table schema definition
-    _schema_sql = """
-    CREATE TABLE IF NOT EXISTS projects (
-        DRPID INTEGER PRIMARY KEY AUTOINCREMENT,
-        status TEXT,
-        status_notes TEXT,
-        warnings TEXT,
-        errors TEXT,
-        datalumos_id TEXT UNIQUE,
-        source_url TEXT NOT NULL UNIQUE,
-        folder_path TEXT,
-        title TEXT,
-        agency TEXT,
-        office TEXT,
-        summary TEXT,
-        keywords TEXT,
-        time_start TEXT,
-        time_end TEXT,
-        data_types TEXT,
-        geographic_coverage TEXT,
-        extensions TEXT,
-        download_date TEXT,
-        collection_notes TEXT,
-        file_size TEXT,
-        published_url TEXT,
-        num_files INTEGER,
-        downloads INTEGER
-    );
-    
+
+    # Column order for projects (name, SQL type / constraints).
+    # num_files and file_size follow datalumos_id for inventory visibility.
+    _PROJECT_COLUMNS: list[tuple[str, str]] = [
+        ("DRPID", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+        ("status", "TEXT"),
+        ("status_notes", "TEXT"),
+        ("warnings", "TEXT"),
+        ("errors", "TEXT"),
+        ("datalumos_id", "TEXT UNIQUE"),
+        ("num_files", "INTEGER"),
+        ("file_size", "TEXT"),
+        ("source_url", "TEXT NOT NULL UNIQUE"),
+        ("folder_path", "TEXT"),
+        ("title", "TEXT"),
+        ("agency", "TEXT"),
+        ("office", "TEXT"),
+        ("summary", "TEXT"),
+        ("keywords", "TEXT"),
+        ("time_start", "TEXT"),
+        ("time_end", "TEXT"),
+        ("data_types", "TEXT"),
+        ("geographic_coverage", "TEXT"),
+        ("extensions", "TEXT"),
+        ("download_date", "TEXT"),
+        ("collection_notes", "TEXT"),
+        ("published_url", "TEXT"),
+        ("downloads", "INTEGER"),
+    ]
+
+    _INDEX_SQL = """
     CREATE INDEX IF NOT EXISTS idx_source_url ON projects(source_url);
     CREATE INDEX IF NOT EXISTS idx_datalumos_id ON projects(datalumos_id);
     CREATE INDEX IF NOT EXISTS idx_status ON projects(status);
     """
+
+    @classmethod
+    def _schema_create_sql(cls) -> str:
+        """Build CREATE TABLE + indexes SQL for a fresh projects table."""
+        cols = ",\n        ".join(
+            f"{name} {decl}" for name, decl in cls._PROJECT_COLUMNS
+        )
+        return (
+            f"CREATE TABLE IF NOT EXISTS projects (\n        {cols}\n    );\n"
+            f"{cls._INDEX_SQL}"
+        )
+
+    @property
+    def _schema_sql(self) -> str:
+        """Schema script used on initialize (create table if missing + indexes)."""
+        return self._schema_create_sql()
     
     def _ensure_initialized(self) -> None:
         """
@@ -160,42 +177,8 @@ class StorageSQLLite:
             self._connection.executescript(self._schema_sql)
             self._connection.commit()
 
-            # Migration: add extensions column if missing (existing DBs)
-            try:
-                self._connection.execute(
-                    "ALTER TABLE projects ADD COLUMN extensions TEXT"
-                )
-                self._connection.commit()
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-
-            try:
-                self._connection.execute(
-                    "ALTER TABLE projects ADD COLUMN num_files INTEGER"
-                )
-                self._connection.commit()
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-
-            try:
-                self._connection.execute(
-                    "ALTER TABLE projects ADD COLUMN downloads INTEGER"
-                )
-                self._connection.commit()
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
-
-            try:
-                self._connection.execute(
-                    "ALTER TABLE projects ADD COLUMN geographic_coverage TEXT"
-                )
-                self._connection.commit()
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
+            self._add_missing_columns()
+            self._reorder_projects_columns_if_needed()
 
             self._initialized = True
             Logger.info(f"Storage initialized: {self._db_path}")
@@ -205,6 +188,69 @@ class StorageSQLLite:
             self._initialized = False
             error_msg = f"Failed to initialize database at {self._db_path}: {e}"
             record_crash(error_msg)
+
+    def _add_missing_columns(self) -> None:
+        """Add columns introduced after the initial schema (existing DBs)."""
+        assert self._connection is not None
+        migrations = [
+            ("extensions", "TEXT"),
+            ("num_files", "INTEGER"),
+            ("downloads", "INTEGER"),
+            ("geographic_coverage", "TEXT"),
+        ]
+        for column, col_type in migrations:
+            try:
+                self._connection.execute(
+                    f"ALTER TABLE projects ADD COLUMN {column} {col_type}"
+                )
+                self._connection.commit()
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
+
+    def _projects_column_names(self) -> list[str]:
+        """Return current projects table column names in definition order."""
+        assert self._connection is not None
+        cursor = self._connection.execute("PRAGMA table_info(projects)")
+        return [row[1] for row in cursor.fetchall()]
+
+    def _reorder_projects_columns_if_needed(self) -> None:
+        """
+        Rebuild projects so column order matches ``_PROJECT_COLUMNS``.
+
+        SQLite cannot ALTER column order; recreate the table when needed.
+        """
+        assert self._connection is not None
+        desired = [name for name, _ in self._PROJECT_COLUMNS]
+        existing = self._projects_column_names()
+        if existing == desired:
+            return
+        missing = set(desired) - set(existing)
+        if missing:
+            raise RuntimeError(
+                f"Cannot reorder projects columns; missing columns: {sorted(missing)}"
+            )
+
+        Logger.info(
+            "Reordering projects columns so num_files and file_size follow datalumos_id"
+        )
+        cols_csv = ", ".join(desired)
+        col_defs = ",\n            ".join(
+            f"{name} {decl}" for name, decl in self._PROJECT_COLUMNS
+        )
+        self._connection.executescript(
+            f"""
+            CREATE TABLE projects_new (
+            {col_defs}
+            );
+            INSERT INTO projects_new ({cols_csv})
+            SELECT {cols_csv} FROM projects;
+            DROP TABLE projects;
+            ALTER TABLE projects_new RENAME TO projects;
+            {self._INDEX_SQL}
+            """
+        )
+        self._connection.commit()
     
     def create_record(self, source_url: str) -> int:
         """

@@ -372,33 +372,81 @@ class TestStorageSQLLite(unittest.TestCase):
         self.assertEqual(new_drpid, 1, "Auto-increment should reset to 1 after clearing")
     
     def test_schema_all_fields(self) -> None:
-        """Test that schema includes all required fields."""
+        """Test that schema includes all required fields in the expected order."""
         self.storage.initialize(db_path=self.test_db_path)
-        
+
         cursor = self.storage._connection.execute("PRAGMA table_info(projects)")
-        columns = {row[1]: row[2] for row in cursor.fetchall()}
-        
-        # Check all required fields exist
-        required_fields = [
-            "DRPID", "source_url", "folder_path", "title", "agency", "office",
-            "summary", "keywords", "time_start", "time_end", "data_types",
-            "geographic_coverage",
-            "extensions", "download_date", "collection_notes", "file_size",
-            "num_files", "downloads",
-            "datalumos_id",
-            "published_url", "status", "status_notes", "warnings", "errors"
-        ]
-        
-        for field in required_fields:
-            self.assertIn(field, columns, f"Field {field} missing from schema")
-        
+        columns = [(row[1], row[2]) for row in cursor.fetchall()]
+        names = [name for name, _ in columns]
+        types = {name: col_type for name, col_type in columns}
+
+        expected_order = [name for name, _ in StorageSQLLite._PROJECT_COLUMNS]
+        self.assertEqual(names, expected_order)
+
         # Verify file_size is TEXT, not INTEGER
-        self.assertEqual(columns["file_size"], "TEXT")
-        self.assertEqual(columns["num_files"], "INTEGER")
-        self.assertEqual(columns["downloads"], "INTEGER")
-        
+        self.assertEqual(types["file_size"], "TEXT")
+        self.assertEqual(types["num_files"], "INTEGER")
+        self.assertEqual(types["downloads"], "INTEGER")
+
         # Verify DRPID is INTEGER
-        self.assertEqual(columns["DRPID"], "INTEGER")
+        self.assertEqual(types["DRPID"], "INTEGER")
+
+        # Inventory fields sit immediately after datalumos_id
+        dl_idx = names.index("datalumos_id")
+        self.assertEqual(names[dl_idx + 1], "num_files")
+        self.assertEqual(names[dl_idx + 2], "file_size")
+
+    def test_initialize_reorders_legacy_column_layout(self) -> None:
+        """Existing DBs with old column order are rebuilt on initialize."""
+        legacy_sql = """
+        CREATE TABLE projects (
+            DRPID INTEGER PRIMARY KEY AUTOINCREMENT,
+            status TEXT,
+            status_notes TEXT,
+            warnings TEXT,
+            errors TEXT,
+            datalumos_id TEXT UNIQUE,
+            source_url TEXT NOT NULL UNIQUE,
+            folder_path TEXT,
+            title TEXT,
+            agency TEXT,
+            office TEXT,
+            summary TEXT,
+            keywords TEXT,
+            time_start TEXT,
+            time_end TEXT,
+            data_types TEXT,
+            geographic_coverage TEXT,
+            extensions TEXT,
+            download_date TEXT,
+            collection_notes TEXT,
+            file_size TEXT,
+            published_url TEXT,
+            num_files INTEGER,
+            downloads INTEGER
+        );
+        """
+        conn = sqlite3.connect(str(self.test_db_path))
+        conn.executescript(legacy_sql)
+        conn.execute(
+            "INSERT INTO projects (source_url, datalumos_id, num_files, file_size) "
+            "VALUES (?, ?, ?, ?)",
+            ("https://example.com/legacy", "DL1", 4, "10.0 MB"),
+        )
+        conn.commit()
+        conn.close()
+
+        self.storage.initialize(db_path=self.test_db_path)
+        names = self.storage._projects_column_names()
+        expected = [name for name, _ in StorageSQLLite._PROJECT_COLUMNS]
+        self.assertEqual(names, expected)
+
+        record = self.storage.get(1)
+        assert record is not None
+        self.assertEqual(record["source_url"], "https://example.com/legacy")
+        self.assertEqual(record["datalumos_id"], "DL1")
+        self.assertEqual(record["num_files"], 4)
+        self.assertEqual(record["file_size"], "10.0 MB")
     
     def test_concurrent_access_simulation(self) -> None:
         """Test that database can handle multiple operations (simulating concurrency)."""
