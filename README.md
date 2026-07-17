@@ -4,6 +4,7 @@ A modular pipeline for collecting data from various sources (e.g., government we
 
 - **[Setup](docs/Setup.md)** — Prerequisites and installation  
 - **[Usage](docs/Usage.md)** — Parameters, SPA, command line, database  
+- **[Status](docs/Status.md)** — Project status values, meanings, and transitions  
 
 ## Overview
 
@@ -17,7 +18,8 @@ The DRP Pipeline is a Python-based data collection and processing system that:
 - **Updates** the original inventory spreadsheet
 
 Projects move through a series of modules in order; each module updates status so the next can process eligible projects.
-In some cases, we have multiple implementations of a particular module. This allows us to support different source and destination formats
+In some cases, we have multiple implementations of a particular module. This allows us to support different source and destination formats.
+See **[Status](docs/Status.md)** for every status value, what it means, and how projects transition between them.
 
 ## Terminology
 

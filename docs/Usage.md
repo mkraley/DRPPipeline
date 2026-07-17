@@ -1,6 +1,6 @@
 # DRP Pipeline — Usage
 
-This document describes how to use the pipeline. For installation, see [Setup](Setup.md).
+This document describes how to use the pipeline. For installation, see [Setup](Setup.md). For every project `status` value and how modules advance between them, see [Status](Status.md).
 
 There are three ways to run the pipeline: the **MCP orchestration server** (AI-assisted, recommended), the **SPA GUI** (interactive collector and pipeline controls), and the **command line** (per-module invocation).
 
