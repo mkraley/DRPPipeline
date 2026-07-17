@@ -14,20 +14,17 @@ When a module fails via `record_error`, it usually sets status to `{previous_sta
 
 ## Happy-path overview
 
+Nodes are **status values** only. Edge labels are the modules that perform the transition.
+
 ```mermaid
 flowchart LR
-  sourcing["sourcing / adc_sourcing"] --> sourced
-  sourced --> collectors["collectors"]
-  collectors --> collected
-  collected --> upload
-  upload --> uploaded
-  uploaded --> publisher
-  publisher --> published
-  published --> sheet["Google Sheet update"]
-  sheet --> updated_inventory
+  sourced -->|collectors| collected
+  collected -->|upload| uploaded
+  uploaded -->|publisher| published
+  published -->|publisher sheet update| updated_inventory
 ```
 
-Large-file and repair side paths branch off this main line; see below.
+Projects enter at `sourced` via `sourcing` / `adc_sourcing`. Large-file and repair side paths branch off this main line; see below.
 
 ---
 
