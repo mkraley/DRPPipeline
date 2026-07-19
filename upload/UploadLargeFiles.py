@@ -23,6 +23,7 @@ from collectors.UsfsAria2Export import (
     run_aria2_cmd_line_with_retries,
     write_drpid_aria2_cmd,
 )
+from collectors.SkipNoteFiles import parse_skip_note_publication_files
 from collectors.UsfsMetadataExtractor import parse_data_access_links
 from storage import Storage
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
@@ -141,10 +142,17 @@ def ensure_aria2_cmd(drpid: int, project: Dict[str, Any]) -> Tuple[Path, List[st
     folder = resolve_output_folder(drpid, get_field(project, "folder_path") or None)
     folder.mkdir(parents=True, exist_ok=True)
 
+    publication_files = links.get("publication_files", [])
+    if not publication_files:
+        # Non-USFS sources (e.g. Ag Data Commons) record large files in status_notes.
+        publication_files = parse_skip_note_publication_files(
+            get_field(project, "status_notes")
+        )
+
     write_drpid_aria2_cmd(
         drpid,
         folder,
-        links.get("publication_files", []),
+        publication_files,
         output_dir=DEFAULT_ARIA2_OUTPUT_DIR,
         user_agent=BROWSER_HEADERS["User-Agent"],
     )

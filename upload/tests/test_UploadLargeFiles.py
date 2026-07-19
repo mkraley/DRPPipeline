@@ -72,6 +72,40 @@ class TestUploadLargeFilesHelpers(unittest.TestCase):
         self.assertEqual(planned_out_names(lines), ["big.zip", "other.zip"])
 
 
+class TestEnsureAria2CmdSkipNoteFallback(unittest.TestCase):
+    """ensure_aria2_cmd builds commands from status_notes for non-USFS sources."""
+
+    @patch("upload.UploadLargeFiles.parse_data_access_links", return_value={"publication_files": []})
+    @patch("upload.UploadLargeFiles.fetch_page_body", return_value=(200, "<html></html>", None, None))
+    def test_uses_status_notes_when_catalog_empty(
+        self, _mock_fetch: MagicMock, _mock_parse: MagicMock
+    ) -> None:
+        from upload.UploadLargeFiles import ensure_aria2_cmd
+
+        notes = (
+            "Skipped download (>1GB): A01L4_1.zip (2.9 GB) - "
+            "download manually: https://ndownloader.figshare.com/files/43634028"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "DRP000157"
+            out_dir = Path(tmp) / "aria2_inputs"
+            project = {
+                "source_url": "https://agdatacommons.nal.usda.gov/articles/dataset/x/1",
+                "folder_path": str(folder),
+                "status_notes": notes,
+            }
+            with patch("upload.UploadLargeFiles.DEFAULT_ARIA2_OUTPUT_DIR", out_dir), patch(
+                "upload.UploadLargeFiles.drpid_cmd_path",
+                return_value=out_dir / "DRP000157.cmd",
+            ):
+                cmd_path, lines = ensure_aria2_cmd(157, project)
+
+            self.assertTrue(cmd_path.is_file())
+            joined = "\n".join(lines)
+            self.assertIn("43634028", joined)
+            self.assertIn("A01L4_1.zip", joined)
+
+
 def format_bytes(n: int) -> str:
     from utils.file_utils import format_file_size
 

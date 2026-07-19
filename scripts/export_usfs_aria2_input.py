@@ -28,6 +28,7 @@ from collectors.UsfsAria2Export import (  # noqa: E402
     Aria2Entry,
     DEFAULT_ARIA2_OUTPUT_DIR,
     MAX_DOWNLOAD_BYTES,
+    PublicationFile,
     entries_for_publication_files,
     format_windows_command,
     format_windows_commands,
@@ -37,13 +38,16 @@ from collectors.UsfsAria2Export import (  # noqa: E402
 )
 from collectors.UsfsMetadataExtractor import parse_data_access_links  # noqa: E402
 from collectors.UsfsCollector import STATUS_COLLECTED_LARGE_FILE  # noqa: E402
+from collectors.SkipNoteFiles import (  # noqa: E402
+    SKIP_NOTE_MARKER,
+    parse_skip_note_publication_files,
+)
 from utils.file_utils import format_file_size, sanitize_filename  # noqa: E402
 from utils.url_utils import BROWSER_HEADERS, fetch_page_body  # noqa: E402
 
 DEFAULT_DB_PATH = REPO_ROOT / "usfs.db"
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config.json"
 DEFAULT_OUTPUT_DIR = DEFAULT_ARIA2_OUTPUT_DIR
-SKIP_NOTE_MARKER = "Skipped download (>1GB)"
 
 
 def resolve_output_folder(
@@ -113,6 +117,77 @@ def ensure_drpid_aria2_cmd(
     return cmd_path, count
 
 
+def catalog_publication_files(drpid: int, source_url: str | None) -> List[PublicationFile]:
+    """
+    Fetch and parse USFS catalog publication files for a project.
+
+    Returns an empty list (with a diagnostic on stderr) when the page is missing,
+    under maintenance, or not a USFS catalog page (e.g. Ag Data Commons).
+    """
+    if not source_url:
+        print(f"DRPID {drpid}: missing source_url", file=sys.stderr)
+        return []
+
+    status, body, _, _ = fetch_page_body(source_url)
+    if status != 200 or not body:
+        print(
+            f"DRPID {drpid}: catalog page not available (fetch status={status})",
+            file=sys.stderr,
+        )
+        return []
+    if is_usfs_catalog_maintenance_page(body):
+        print(
+            f"DRPID {drpid}: USFS catalog page not available "
+            "(database currently under maintenance)",
+            file=sys.stderr,
+        )
+        return []
+
+    links = parse_data_access_links(body, source_url)
+    return list(links.get("publication_files", []))
+
+
+def resolve_publication_files(
+    drpid: int,
+    row: sqlite3.Row,
+    folder: Path,
+    *,
+    min_bytes: int,
+    missing_only: bool,
+) -> List[PublicationFile]:
+    """
+    Choose large-file downloads: USFS catalog first, else ``status_notes`` skips.
+
+    Ag Data Commons (Figshare) projects have no parseable USFS catalog, but their
+    skipped large files are recorded in ``status_notes`` with direct URLs.
+    """
+    publication_files = catalog_publication_files(drpid, row["source_url"])
+    if _has_downloadable(publication_files, folder, min_bytes, missing_only):
+        return publication_files
+
+    skip_files = parse_skip_note_publication_files(row["status_notes"])
+    if _has_downloadable(skip_files, folder, min_bytes, missing_only):
+        return skip_files
+    return []
+
+
+def _has_downloadable(
+    publication_files: List[PublicationFile],
+    folder: Path,
+    min_bytes: int,
+    missing_only: bool,
+) -> bool:
+    """Return True when at least one publication file is eligible to download."""
+    return bool(
+        entries_for_publication_files(
+            publication_files,
+            folder,
+            min_bytes=min_bytes,
+            missing_only=missing_only,
+        )
+    )
+
+
 def export_drpid(
     conn: sqlite3.Connection,
     drpid: int,
@@ -125,40 +200,21 @@ def export_drpid(
     combined_entries: List[Aria2Entry],
 ) -> int:
     row = conn.execute(
-        "SELECT DRPID, source_url, folder_path FROM projects WHERE DRPID = ?",
+        "SELECT DRPID, source_url, folder_path, status_notes FROM projects WHERE DRPID = ?",
         (drpid,),
     ).fetchone()
     if not row:
         print(f"DRPID {drpid}: not found in database", file=sys.stderr)
         return 0
 
-    source_url = row["source_url"]
-    if not source_url:
-        print(f"DRPID {drpid}: missing source_url", file=sys.stderr)
-        return 0
-
-    status, body, _, _ = fetch_page_body(source_url)
-    if status != 200 or not body:
-        print(
-            f"DRPID {drpid}: USFS catalog page not available "
-            f"(fetch status={status})",
-            file=sys.stderr,
-        )
-        return 0
-    if is_usfs_catalog_maintenance_page(body):
-        print(
-            f"DRPID {drpid}: USFS catalog page not available "
-            "(database currently under maintenance)",
-            file=sys.stderr,
-        )
-        return 0
-
-    links = parse_data_access_links(body, source_url)
     folder = resolve_output_folder(drpid, row["folder_path"], base_output_dir)
     folder.mkdir(parents=True, exist_ok=True)
 
+    publication_files = resolve_publication_files(
+        drpid, row, folder, min_bytes=min_bytes, missing_only=missing_only
+    )
     entries = entries_for_publication_files(
-        links.get("publication_files", []),
+        publication_files,
         folder,
         min_bytes=min_bytes,
         missing_only=missing_only,
@@ -171,7 +227,7 @@ def export_drpid(
     out_path = write_drpid_aria2_cmd(
         drpid,
         folder,
-        links.get("publication_files", []),
+        publication_files,
         output_dir=output_dir,
         min_bytes=min_bytes,
         missing_only=missing_only,
@@ -181,7 +237,7 @@ def export_drpid(
 
     export_bytes = sum(
         sz
-        for name, _url, sz in links.get("publication_files", [])
+        for name, _url, sz in publication_files
         if sz is not None
         and sz >= min_bytes
         and not (missing_only and (folder / sanitize_filename(name)).is_file())
