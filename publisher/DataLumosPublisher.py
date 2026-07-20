@@ -20,6 +20,7 @@ from utils.project_folder_cleanup import (
     folder_path_can_be_cleared,
     try_delete_project_folder,
 )
+from publisher.sheet_only_status import resolve_sheet_only_config
 
 
 # Published / Download Location URL template (``version`` is V1 on first publish, V2 on republish)
@@ -29,15 +30,6 @@ VIEW_URL_TEMPLATE = (
 PUBLISHED_URL_TEMPLATE = (
     "https://www.datalumos.org/datalumos/project/{workspace_id}/version/V1/view"
 )
-
-# Sheet-only publisher paths: input status -> (notes, success status, download possible)
-_SHEET_ONLY_STATUS_CONFIG: Dict[str, tuple[str, str, str]] = {
-    "not_found": ("Not found", "updated_not_found", "N"),
-    "no_links": ("No live links", "updated_no_links", "N"),
-    "no dataset": ("no dataset", "updated_no_dataset", "?"),
-    "gigantic upload": ("gigantic upload", "updated_gigantic_upload", "?"),
-    "needs scripting": ("needs scripting", "updated_needs_scripting", "?"),
-}
 
 FILE_NOT_AVAILABLE_TEXT = "File not available for download"
 
@@ -87,10 +79,10 @@ class DataLumosPublisher:
         """
         Run the publish process for a single project.
 
-        Implements ModuleProtocol. Gets project from Storage. For status
-        not_found or no_links: updates Google Sheet only (no browser). For
-        status upload: validates datalumos_id, authenticates, runs publish
-        flow, then updates sheet.
+        Implements ModuleProtocol. Gets project from Storage. For sheet-only
+        statuses (not_found, no_links, skip presets, collector_hold - reason):
+        updates Google Sheet only (no browser). For status uploaded: validates
+        datalumos_id, authenticates, runs publish flow, then updates sheet.
 
         Args:
             drpid: The DRPID of the project to publish.
@@ -102,9 +94,10 @@ class DataLumosPublisher:
             record_error(drpid, f"Project with DRPID={drpid} not found in Storage")
             return
 
-        status = (project.get("status") or "").strip().lower()
-        if status in _SHEET_ONLY_STATUS_CONFIG:
-            self._run_sheet_only_update(drpid, project, status)
+        status = (project.get("status") or "").strip()
+        sheet_only = resolve_sheet_only_config(status)
+        if sheet_only is not None:
+            self._run_sheet_only_update(drpid, project, status, sheet_only)
             return
 
         workspace_id = get_field(project, "datalumos_id")
@@ -281,10 +274,14 @@ class DataLumosPublisher:
             )
 
     def _run_sheet_only_update(
-        self, drpid: int, project: Dict[str, Any], status: str
+        self,
+        drpid: int,
+        project: Dict[str, Any],
+        status: str,
+        sheet_only: tuple[str, str, str],
     ) -> None:
-        """Update Google Sheet only for sheet-only statuses (not_found, no_links, skip presets)."""
-        notes_value, status_value, download_possible = _SHEET_ONLY_STATUS_CONFIG[status]
+        """Update Google Sheet only for sheet-only statuses (skips / collector holds)."""
+        notes_value, status_value, download_possible = sheet_only
         include_metadata = download_possible == "?"
 
         from publisher.GoogleSheetUpdater import GoogleSheetUpdater

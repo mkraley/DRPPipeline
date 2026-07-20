@@ -611,6 +611,24 @@ class TestStorageSQLLite(unittest.TestCase):
         )
         self.assertEqual([r["DRPID"] for r in errored_out], [1, 2])
 
+    def test_list_eligible_projects_with_status_prefix(self) -> None:
+        """Prefix listing matches collector_hold variants and excludes other statuses."""
+        self.storage.initialize(db_path=self.test_db_path)
+        self.storage.create_record("https://a.com")
+        self.storage.update_record(1, {"status": "collector_hold - needs login"})
+        self.storage.create_record("https://b.com")
+        self.storage.update_record(2, {"status": "collector_hold - paywall"})
+        self.storage.create_record("https://c.com")
+        self.storage.update_record(3, {"status": "no_links"})
+        self.storage.create_record("https://d.com")
+        self.storage.update_record(
+            4, {"status": "collector_hold - x", "errors": "oops"}
+        )
+        out = self.storage.list_eligible_projects_with_status_prefix(
+            "collector_hold - ", None
+        )
+        self.assertEqual([r["DRPID"] for r in out], [1, 2])
+
     def test_list_eligible_projects_respects_limit(self) -> None:
         """Test list_eligible_projects respects limit."""
         self.storage.initialize(db_path=self.test_db_path)

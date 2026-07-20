@@ -531,6 +531,62 @@ class StorageSQLLite:
             result.append(dict(zip(column_names, row)))
         return result
 
+    def list_eligible_projects_with_status_prefix(
+        self,
+        status_prefix: str,
+        limit: Optional[int],
+        start_row: Optional[int] = None,
+        min_drpid: Optional[int] = None,
+        include_errored: bool = False,
+    ) -> list[Dict[str, Any]]:
+        """
+        List projects whose status starts with ``status_prefix``.
+
+        Order by DRPID ASC. Same limit / start_row / min_drpid / include_errored
+        behavior as ``list_eligible_projects``.
+
+        Args:
+            status_prefix: Status prefix (e.g. ``collector_hold - ``). Empty -> [].
+            limit: Max rows to return. None = no limit.
+            start_row: If set, skip first (start_row - 1) rows of the full table.
+            min_drpid: If set, only return projects with DRPID >= this value.
+            include_errored: If True, include rows with a non-empty errors field.
+
+        Returns:
+            List of full row dicts ordered by DRPID ASC.
+        """
+        if not status_prefix:
+            return []
+        status_clause = "status LIKE ?"
+        params: list[Any] = [f"{status_prefix}%"]
+        min_drpid_clause = ""
+        if min_drpid is not None:
+            min_drpid_clause = " AND DRPID >= ?"
+            params.append(min_drpid)
+        elif start_row is not None and start_row > 1:
+            subq = "SELECT DRPID FROM projects ORDER BY DRPID LIMIT 1 OFFSET ?"
+            min_drpid_clause = " AND DRPID >= (" + subq + ")"
+            params.append(start_row - 1)
+        errors_clause = "" if include_errored else " AND (errors IS NULL OR errors = '')"
+        query = (
+            "SELECT * FROM projects "
+            f"WHERE {status_clause}{errors_clause}"
+            + min_drpid_clause
+            + " ORDER BY DRPID ASC"
+        )
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+        cursor = self._execute_query(
+            query,
+            tuple(params),
+            operation_name="list_eligible_projects_with_status_prefix",
+            commit=False,
+        )
+        rows = cursor.fetchall()
+        column_names = [d[0] for d in cursor.description]
+        return [dict(zip(column_names, row)) for row in rows]
+
     def list_records_with_status_notes(self) -> list[Dict[str, Any]]:
         """
         List all records that have non-null, non-empty status_notes.

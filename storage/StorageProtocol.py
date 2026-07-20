@@ -137,6 +137,21 @@ class StorageProtocol(Protocol):
         """
         ...
 
+    def list_eligible_projects_with_status_prefix(
+        self,
+        status_prefix: str,
+        limit: Optional[int],
+        start_row: Optional[int] = None,
+        min_drpid: Optional[int] = None,
+        include_errored: bool = False,
+    ) -> list[Dict[str, Any]]:
+        """
+        List projects whose status starts with ``status_prefix`` (and no errors).
+
+        Same ordering/limit/start options as ``list_eligible_projects``.
+        """
+        ...
+
     def list_records_with_status_notes(self) -> list[Dict[str, Any]]:
         """
         List all records that have non-null, non-empty status_notes.

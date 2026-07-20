@@ -244,17 +244,27 @@ class TestOrchestrator(unittest.TestCase):
             [],
             [],
         ]
+        mock_storage_cls.list_eligible_projects_with_status_prefix.return_value = []
         mock_pub_instance = MagicMock()
         mock_find_class.return_value = MagicMock(return_value=mock_pub_instance)
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
             Orchestrator.run("publisher")
         self.assertEqual(mock_storage_cls.list_eligible_projects.call_count, 6)
+        self.assertEqual(
+            mock_storage_cls.list_eligible_projects_with_status_prefix.call_count, 2
+        )
         mock_storage_cls.list_eligible_projects.assert_any_call("uploaded", None, None, None)
         mock_storage_cls.list_eligible_projects.assert_any_call("not_found", None, None, None)
         mock_storage_cls.list_eligible_projects.assert_any_call("no_links", None, None, None)
         mock_storage_cls.list_eligible_projects.assert_any_call("no dataset", None, None, None)
         mock_storage_cls.list_eligible_projects.assert_any_call("gigantic upload", None, None, None)
         mock_storage_cls.list_eligible_projects.assert_any_call("needs scripting", None, None, None)
+        mock_storage_cls.list_eligible_projects_with_status_prefix.assert_any_call(
+            "collector_hold - ", None, None, None, include_errored=False
+        )
+        mock_storage_cls.list_eligible_projects_with_status_prefix.assert_any_call(
+            "collector hold - ", None, None, None, include_errored=False
+        )
         self.assertEqual(mock_pub_instance.run.call_count, 2)  # DRPID 2 and 3
 
     @patch("orchestration.Orchestrator._find_module_class")
@@ -458,6 +468,7 @@ class TestOrchestrator(unittest.TestCase):
             [],
             [],
         ]
+        mock_storage_cls.list_eligible_projects_with_status_prefix.return_value = []
         mock_pub_instance = MagicMock()
         mock_find_class.return_value = MagicMock(return_value=mock_pub_instance)
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls), \

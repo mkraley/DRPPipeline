@@ -138,6 +138,37 @@ class TestDataLumosPublisher(unittest.TestCase):
         record = Storage.get(drpid)
         self.assertEqual(record.get("status"), "updated_no_links")
 
+    def test_run_collector_hold_updates_sheet_with_reason_in_notes(self) -> None:
+        """collector_hold - reason is sheet-only; Notes get the reason text."""
+        drpid = Storage.create_record("https://example.com/hold")
+        Storage.update_record(
+            drpid,
+            {
+                "status": "collector_hold - needs login",
+                "title": "Locked Dataset",
+                "agency": "USDA",
+            },
+        )
+
+        mock_updater = MagicMock()
+        mock_updater.update_for_sheet_only.return_value = (True, None)
+        project = Storage.get(drpid)
+
+        with patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater", return_value=mock_updater), patch.object(
+            Args, "google_sheet_id", "sheet1"
+        ), patch.object(Args, "google_credentials", __file__):
+            self.publisher.run(drpid)
+
+        mock_updater.update_for_sheet_only.assert_called_once_with(
+            source_url="https://example.com/hold",
+            notes_value="needs login",
+            dataset_download_possible="?",
+            project=project,
+            log_suffix=" (collector_hold - needs login)",
+        )
+        record = Storage.get(drpid)
+        self.assertEqual(record.get("status"), "updated_collector_hold")
+
     def test_run_no_dataset_updates_sheet_with_metadata(self) -> None:
         """Test run with status no dataset updates sheet with Notes and download possible ?."""
         drpid = Storage.create_record("https://example.com/nodataset")

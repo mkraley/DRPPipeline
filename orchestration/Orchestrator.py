@@ -420,6 +420,18 @@ class Orchestrator:
             }
             if module == "publisher":
                 # Publisher also processes sheet-only statuses (no browser)
+                from publisher.sheet_only_status import COLLECTOR_HOLD_PREFIXES
+
+                hold_lists = [
+                    Storage.list_eligible_projects_with_status_prefix(
+                        prefix,
+                        list_kwargs["num_rows"],
+                        list_kwargs["start_row"],
+                        list_kwargs["start_drpid"],
+                        include_errored=retry,
+                    )
+                    for prefix in COLLECTOR_HOLD_PREFIXES
+                ]
                 projects = _merge_project_lists(
                     [
                         _list_by_base_status("uploaded", **list_kwargs),
@@ -428,6 +440,7 @@ class Orchestrator:
                         _list_by_base_status("no dataset", **list_kwargs),
                         _list_by_base_status("gigantic upload", **list_kwargs),
                         _list_by_base_status("needs scripting", **list_kwargs),
+                        *hold_lists,
                     ],
                     None if ids else num_rows,
                 )

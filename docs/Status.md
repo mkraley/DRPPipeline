@@ -53,6 +53,7 @@ Projects enter at `sourced` via `sourcing` / `adc_sourcing`. Large-file and repa
 | `no dataset` | Interactive skip: no dataset to archive. | `publisher` (sheet-only → `updated_no_dataset`). |
 | `gigantic upload` | Interactive skip: too large for normal upload workflow. | `publisher` (sheet-only → `updated_gigantic_upload`). |
 | `needs scripting` | Interactive skip: needs custom automation later. | `publisher` (sheet-only → `updated_needs_scripting`). |
+| `collector_hold - {reason}` | Interactive skip with a free-text reason (legacy: `collector hold - {reason}`). | `publisher` (sheet-only → `updated_collector_hold`; Notes = `{reason}`). |
 
 ### Upload outcomes
 
@@ -75,6 +76,7 @@ Projects enter at `sourced` via `sourcing` / `adc_sourcing`. Large-file and repa
 | `updated_no_dataset` | Sheet updated for a `no dataset` skip. | Terminal |
 | `updated_gigantic_upload` | Sheet updated for a `gigantic upload` skip. | Terminal |
 | `updated_needs_scripting` | Sheet updated for a `needs scripting` skip. | Terminal |
+| `updated_collector_hold` | Sheet updated for a `collector_hold - {reason}` project (Notes = reason). | Terminal |
 
 ### Error statuses
 
@@ -102,7 +104,7 @@ To re-run a module against error statuses from the CLI, use ``--retry`` (selects
 | `adc_globus_survey` | `collected - external archive` (Globus) | *(survey only; does not advance to upload)* |
 | `upload` | `collected`, `collected - large file` | `uploaded` or `uploaded - large file` |
 | `upload_large_files` | `uploaded - large file` (&lt; 25 GB), `uploaded - expanded` (any size) | `finish wait` |
-| `publisher` | `uploaded`, plus sheet-only: `not_found`, `no_links`, `no dataset`, `gigantic upload`, `needs scripting` | `published` then `updated_inventory` (browser path); or `updated_*` (sheet-only path) |
+| `publisher` | `uploaded`, plus sheet-only: `not_found`, `no_links`, `no dataset`, `gigantic upload`, `needs scripting`, `collector_hold - *` | `published` then `updated_inventory` (browser path); or `updated_*` (sheet-only path) |
 | `verify_upload` | `updated_inventory`, `updated_inventory-error` | Unchanged on match; `re-uploaded` on repair; `updated_inventory-error` on mismatch; retry success → `updated_inventory` |
 | `republisher` | `re-uploaded` | `updated_inventory` (V2 URL / republish note) |
 
@@ -162,12 +164,14 @@ stateDiagram-v2
   sourced --> no_dataset: skip "no dataset"
   sourced --> gigantic: skip "gigantic upload"
   sourced --> needs_scripting: skip "needs scripting"
+  sourced --> collector_hold: skip collector_hold - reason
   sourced --> not_found: sourcing 404
 
   no_links --> updated_no_links: publisher
   no_dataset --> updated_no_dataset: publisher
   gigantic --> updated_gigantic_upload: publisher
   needs_scripting --> updated_needs_scripting: publisher
+  collector_hold --> updated_collector_hold: publisher
   not_found --> updated_not_found: publisher
 ```
 
