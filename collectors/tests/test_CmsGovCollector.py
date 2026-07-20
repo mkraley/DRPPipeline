@@ -487,6 +487,27 @@ class TestCmsGovCollector(unittest.TestCase):
         fields = mock_storage.update_record.call_args[0][1]
         self.assertEqual(fields["status"], "sourced-error")
 
+    @patch("collectors.CmsGovCollector.Storage")
+    @patch.object(CmsGovCollector, "_collect")
+    def test_run_normalizes_spaced_error_status(
+        self, mock_collect: Mock, mock_storage: Mock
+    ) -> None:
+        """Spaced error statuses are rewritten to compact xxx-error form."""
+        mock_storage.get.side_effect = [
+            {
+                "DRPID": 1,
+                "source_url": "https://data.cms.gov/some/path",
+                "status": "sourced",
+            },
+            {"DRPID": 1, "status": "sourced - error"},
+        ]
+        mock_collect.return_value = {"folder_path": "/tmp/DRP000001"}
+
+        self.collector.run(1)
+
+        fields = mock_storage.update_record.call_args[0][1]
+        self.assertEqual(fields["status"], "sourced-error")
+
 
     # ── _extract_date_range ───────────────────────────────────────────────────
 

@@ -15,15 +15,41 @@ from storage import Storage
 from utils.Logger import Logger
 
 
+def normalize_status_hyphens(status: str) -> str:
+    """
+    Collapse whitespace and spaced hyphens into a compact hyphenated status.
+
+    Example: ``uploaded - large file`` -> ``uploaded-large-file``.
+    """
+    collapsed = " ".join(str(status).split())
+    return collapsed.replace(" - ", "-").replace(" ", "-")
+
+
+def is_error_status(status: str | None) -> bool:
+    """
+    Return True when ``status`` is a bare or derived error status.
+
+    Accepts both compact (``sourced-error``) and spaced (``sourced - error``)
+    forms; the latter are treated as already-error for idempotent updates.
+    """
+    if not status or not str(status).strip():
+        return False
+    normalized = normalize_status_hyphens(status.strip())
+    return normalized == "error" or normalized.endswith("-error")
+
+
 def derive_error_status(previous_status: str | None) -> str:
     """
     Build status after an error from the status the project had when work started.
 
-    Example: ``sourced`` -> ``sourced-error``. Already-error statuses are unchanged.
+    Always returns a compact ``xxx-error`` form (no spaces around hyphens).
+    Example: ``sourced`` -> ``sourced-error``;
+    ``uploaded - large file`` -> ``uploaded-large-file-error``.
+    Already-error statuses are returned in normalized form.
     """
     if not previous_status or not str(previous_status).strip():
         return "error"
-    prev = str(previous_status).strip()
+    prev = normalize_status_hyphens(str(previous_status).strip())
     if prev == "error" or prev.endswith("-error"):
         return prev
     return f"{prev}-error"
@@ -64,7 +90,9 @@ def record_error(
         drpid: Project DRPID.
         error_msg: Error message to log and persist.
         update_storage: If True, update Storage status and append to errors field.
-        status_value: Value for ``status``; default is ``{previous_status}-error``.
+        status_value: Value for ``status``; default is ``{previous_status}-error``
+            in compact form (spaces around hyphens removed). Custom values that
+            look like error statuses are also normalized to ``xxx-error``.
     """
     Logger.error(error_msg)
 
@@ -75,6 +103,9 @@ def record_error(
         record = Storage.get(drpid)
         previous = record.get("status") if record else None
         status_value = derive_error_status(previous)
+    elif is_error_status(status_value):
+        # Normalize custom error statuses (e.g. "sourced - error") to compact form.
+        status_value = derive_error_status(status_value)
 
     try:
         Storage.update_record(drpid, {"status": status_value})
@@ -110,4 +141,3 @@ def record_warning(
         Storage.append_to_field(drpid, "warnings", warning_msg)
     except Exception as exc:  # pragma: no cover (defensive; Storage impl may vary)
         Logger.exception(f"Failed recording warning for DRPID={drpid}: {exc}")
-

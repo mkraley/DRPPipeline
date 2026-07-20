@@ -19,7 +19,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from storage import Storage
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from utils.Args import Args
-from utils.Errors import record_error
+from utils.Errors import is_error_status, record_error
 from utils.Logger import Logger
 from utils.inventory_sheet_reconcile import (
     build_sheet_url_index,
@@ -190,7 +190,7 @@ class UploadVerifier:
             project: Storage project record as loaded at the start of run().
         """
         status = (get_field(project, "status") or "").strip()
-        if not status.endswith("-error"):
+        if not is_error_status(status):
             return
         Storage.update_record(
             drpid, {"status": STATUS_UPDATED_INVENTORY, "errors": None}

@@ -81,9 +81,9 @@ Projects enter at `sourced` via `sourcing` / `adc_sourcing`. Large-file and repa
 | Status | Meaning |
 |--------|---------|
 | `error` | Generic / legacy failure (also used by sourcing). |
-| `{status}-error` | Failure while the project was at `{status}`. Examples: `sourced-error`, `uploaded-error`, `updated_inventory-error`, `re-uploaded-error`. |
+| `{status}-error` | Failure while the project was at `{status}`. Always written in **compact** form with no spaces: e.g. `sourced-error`, `uploaded-error`, `updated_inventory-error`, `re-uploaded-error`, `uploaded-large-file-error` (from `uploaded - large file`). |
 
-`record_error` derives `{previous}-error` unless the status is already `error` or already ends in `-error`. The message is appended to the `errors` column, which blocks normal eligibility until cleared (MCP `clear_errors` / manual DB update).
+`record_error` derives a compact `{previous}-error` unless the status is already `error` or already an error form. Spaced variants such as `sourced - error` or `uploaded - large file-error` are recognized as already-error and normalized to `sourced-error` / `uploaded-large-file-error`. The message is appended to the `errors` column, which blocks normal eligibility until cleared (MCP `clear_errors` / manual DB update).
 
 `verify_upload` is the special case that **will** pick up `updated_inventory-error` for retry. On a clean verify it resets status to `updated_inventory` and clears `errors`. On successful missing-file repair it sets `re-uploaded` and clears `errors`.
 

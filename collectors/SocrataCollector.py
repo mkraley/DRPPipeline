@@ -16,7 +16,7 @@ from playwright.sync_api import sync_playwright, Page, Browser, Playwright
 
 from storage import Storage
 from utils.Logger import Logger
-from utils.Errors import record_error
+from utils.Errors import derive_error_status, is_error_status, record_error
 from utils.Args import Args
 from utils.url_utils import is_valid_url, access_url
 from utils.file_utils import sanitize_filename, create_output_folder, folder_extensions_and_size
@@ -309,8 +309,8 @@ class SocrataCollector:
             result: Flat result dict from collect() (Storage field names).
         """
         current = Storage.get(drpid)
-        if current and current.get("status") == "error":
-            result = {**result, "status": "error"}
+        if current and is_error_status(current.get("status")):
+            result = {**result, "status": derive_error_status(current.get("status"))}
         elif not result.get("status") and result.get("folder_path"):
             result = {**result, "status": "collected"}
 

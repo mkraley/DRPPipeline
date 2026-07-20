@@ -27,7 +27,7 @@ from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 
 from storage import Storage
 from utils.Args import Args
-from utils.Errors import record_error, record_warning
+from utils.Errors import derive_error_status, is_error_status, record_error, record_warning
 from utils.Logger import Logger
 from utils.download_with_progress import download_via_url
 from utils.file_utils import (
@@ -412,8 +412,9 @@ class CmsGovCollector:
         """
         current = Storage.get(drpid)
         previous = (current.get("status") or "") if current else ""
-        if previous == "error" or previous.endswith("-error"):
-            result["status"] = previous
+        if is_error_status(previous):
+            # Keep error status, but normalize spaced forms (e.g. "xxx - error").
+            result["status"] = derive_error_status(previous)
         elif result.get("folder_path") and not result.get("status"):
             result["status"] = "collected"
 
