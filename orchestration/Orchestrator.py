@@ -19,7 +19,7 @@ from typing import Any, Dict, Iterator, Optional
 
 from storage import Storage
 from utils.Args import Args
-from utils.Errors import record_crash, record_error
+from utils.Errors import derive_error_status, is_error_status, record_crash, record_error
 from utils.Logger import Logger
 
 
@@ -183,6 +183,79 @@ def _merge_project_lists(
     return projects
 
 
+def _list_by_base_status(
+    base_status: str,
+    *,
+    num_rows: Optional[int],
+    start_row: Optional[int],
+    start_drpid: Optional[int],
+    retry: bool,
+) -> list[Dict[str, Any]]:
+    """
+    List projects for a module prerequisite status.
+
+    When ``retry`` is True, selects ``derive_error_status(base_status)`` and
+    includes rows with a non-empty errors field. Each returned dict is tagged
+    with ``_retry_base_status`` so the orchestrator can restore the base status
+    before running the module.
+    """
+    lookup = derive_error_status(base_status) if retry else base_status
+    if retry:
+        projects = Storage.list_eligible_projects(
+            lookup,
+            num_rows,
+            start_row,
+            start_drpid,
+            include_errored=True,
+        )
+        for proj in projects:
+            proj["_retry_base_status"] = base_status
+        return projects
+    return Storage.list_eligible_projects(
+        lookup, num_rows, start_row, start_drpid
+    )
+
+
+def _filter_by_ids(
+    projects: list[Dict[str, Any]],
+    ids: Optional[list[int]],
+) -> list[Dict[str, Any]]:
+    """Keep only projects whose DRPID is in ``ids`` (no-op when ids is None)."""
+    if not ids:
+        return projects
+    id_set = set(ids)
+    return [proj for proj in projects if proj["DRPID"] in id_set]
+
+
+def _prepare_retry_project(proj: Dict[str, Any]) -> None:
+    """
+    Restore base status before a --retry run so modules can advance status.
+
+    Leaves the errors field intact until success (see ``_finalize_retry_project``).
+    """
+    base = proj.get("_retry_base_status")
+    if not base:
+        return
+    drpid = proj["DRPID"]
+    Storage.update_record(drpid, {"status": base})
+    Logger.info(
+        f"Orchestrator retry: DRPID={drpid} status reset {proj.get('status')!r} -> {base!r}"
+    )
+
+
+def _finalize_retry_project(drpid: int) -> None:
+    """Clear the errors field after a successful --retry run."""
+    if not bool(getattr(Args, "retry", False)):
+        return
+    record = Storage.get(drpid)
+    if record is None:
+        return
+    if is_error_status(record.get("status")):
+        return
+    Storage.update_record(drpid, {"errors": None})
+    Logger.info(f"Orchestrator retry: DRPID={drpid} succeeded; errors cleared")
+
+
 def _stop_requested() -> bool:
     """Return True if the GUI requested stop (stop file exists)."""
     stop_file = getattr(Args, "stop_file", None)
@@ -300,7 +373,13 @@ class Orchestrator:
         num_rows: Optional[int] = Args.num_rows
         start_row: Optional[int] = Args.start_row
         start_drpid: Optional[int] = getattr(Args, "start_drpid", None)
-        Logger.info(f"Orchestrator running module={module!r} num_rows={num_rows} start_row={start_row} start_drpid={start_drpid}")
+        retry: bool = bool(getattr(Args, "retry", False))
+        ids: Optional[list[int]] = getattr(Args, "ids", None)
+        Logger.info(
+            f"Orchestrator running module={module!r} num_rows={num_rows} "
+            f"start_row={start_row} start_drpid={start_drpid} "
+            f"retry={retry} ids={ids!r}"
+        )
         
         # Handle noop directly
         if module == "noop":
@@ -333,91 +412,117 @@ class Orchestrator:
                 batch.note_project_finished()
         else:
             # Modules with prereq: call run(drpid) for each eligible project
+            list_kwargs = {
+                "num_rows": None if ids else num_rows,
+                "start_row": None if ids else start_row,
+                "start_drpid": None if ids else start_drpid,
+                "retry": retry,
+            }
             if module == "publisher":
                 # Publisher also processes sheet-only statuses (no browser)
-                projects_upload = Storage.list_eligible_projects("uploaded", num_rows, start_row, start_drpid)
-                projects_not_found = Storage.list_eligible_projects("not_found", num_rows, start_row, start_drpid)
-                projects_no_links = Storage.list_eligible_projects("no_links", num_rows, start_row, start_drpid)
-                projects_no_dataset = Storage.list_eligible_projects("no dataset", num_rows, start_row, start_drpid)
-                projects_gigantic = Storage.list_eligible_projects("gigantic upload", num_rows, start_row, start_drpid)
-                projects_needs_scripting = Storage.list_eligible_projects("needs scripting", num_rows, start_row, start_drpid)
                 projects = _merge_project_lists(
                     [
-                        projects_upload,
-                        projects_not_found,
-                        projects_no_links,
-                        projects_no_dataset,
-                        projects_gigantic,
-                        projects_needs_scripting,
+                        _list_by_base_status("uploaded", **list_kwargs),
+                        _list_by_base_status("not_found", **list_kwargs),
+                        _list_by_base_status("no_links", **list_kwargs),
+                        _list_by_base_status("no dataset", **list_kwargs),
+                        _list_by_base_status("gigantic upload", **list_kwargs),
+                        _list_by_base_status("needs scripting", **list_kwargs),
                     ],
-                    num_rows,
+                    None if ids else num_rows,
                 )
             elif module == "upload":
-                projects_collected = Storage.list_eligible_projects(
-                    "collected", num_rows, start_row, start_drpid
-                )
-                projects_large = Storage.list_eligible_projects(
-                    "collected - large file", num_rows, start_row, start_drpid
-                )
                 projects = _merge_project_lists(
-                    [projects_collected, projects_large], num_rows
+                    [
+                        _list_by_base_status("collected", **list_kwargs),
+                        _list_by_base_status("collected - large file", **list_kwargs),
+                    ],
+                    None if ids else num_rows,
                 )
             elif module == "upload_large_files":
                 from upload.UploadLargeFiles import is_eligible_for_upload_large_files
 
-                candidates_large = Storage.list_eligible_projects(
-                    "uploaded - large file", None, start_row, start_drpid
-                )
-                candidates_expanded = Storage.list_eligible_projects(
-                    "uploaded - expanded", None, start_row, start_drpid
-                )
+                # Always list without a row limit; apply num_rows after size filter.
+                large_kwargs = {**list_kwargs, "num_rows": None}
                 merged = _merge_project_lists(
-                    [candidates_large, candidates_expanded], None
+                    [
+                        _list_by_base_status("uploaded - large file", **large_kwargs),
+                        _list_by_base_status("uploaded - expanded", **large_kwargs),
+                    ],
+                    None,
                 )
                 projects = [
                     proj for proj in merged
-                    if is_eligible_for_upload_large_files(proj)
+                    if is_eligible_for_upload_large_files(
+                        {
+                            **proj,
+                            "status": proj.get("_retry_base_status")
+                            or proj.get("status"),
+                        }
+                    )
                 ]
-                if num_rows is not None:
+                if not ids and num_rows is not None:
                     projects = projects[:num_rows]
             elif module == "verify_upload":
-                # Also retry projects whose previous verification errored
-                projects_inventory = Storage.list_eligible_projects(
-                    "updated_inventory", num_rows, start_row, start_drpid
-                )
-                projects_errored = Storage.list_eligible_projects(
-                    "updated_inventory-error",
-                    num_rows,
-                    start_row,
-                    start_drpid,
-                    include_errored=True,
-                )
-                projects = _merge_project_lists(
-                    [projects_inventory, projects_errored], num_rows
-                )
+                if retry:
+                    projects = _list_by_base_status(
+                        "updated_inventory", **list_kwargs
+                    )
+                else:
+                    # Normal mode also retries previously failed verifications
+                    projects = _merge_project_lists(
+                        [
+                            _list_by_base_status(
+                                "updated_inventory",
+                                num_rows=list_kwargs["num_rows"],
+                                start_row=list_kwargs["start_row"],
+                                start_drpid=list_kwargs["start_drpid"],
+                                retry=False,
+                            ),
+                            Storage.list_eligible_projects(
+                                "updated_inventory-error",
+                                list_kwargs["num_rows"],
+                                list_kwargs["start_row"],
+                                list_kwargs["start_drpid"],
+                                include_errored=True,
+                            ),
+                        ],
+                        None if ids else num_rows,
+                    )
             elif module == "adc_globus_collector":
                 from collectors.AdcGlobusCollector import is_globus_external_archive
 
-                candidates = Storage.list_eligible_projects(
-                    "collected - external archive", None, start_row, start_drpid
+                # List without row limit; filter Globus then apply num_rows.
+                globus_kwargs = {**list_kwargs, "num_rows": None}
+                candidates = _list_by_base_status(
+                    "collected - external archive", **globus_kwargs
                 )
-                projects = [proj for proj in candidates if is_globus_external_archive(proj)]
+                projects = [
+                    proj for proj in candidates if is_globus_external_archive(proj)
+                ]
                 projects.sort(key=lambda p: p["DRPID"])
-                if num_rows is not None:
+                if not ids and num_rows is not None:
                     projects = projects[:num_rows]
             elif module == "adc_globus_survey":
                 from collectors.AdcGlobusSurvey import is_globus_external_archive
 
-                candidates = Storage.list_eligible_projects(
-                    "collected - external archive", None, start_row, start_drpid
+                globus_kwargs = {**list_kwargs, "num_rows": None}
+                candidates = _list_by_base_status(
+                    "collected - external archive", **globus_kwargs
                 )
-                projects = [proj for proj in candidates if is_globus_external_archive(proj)]
+                projects = [
+                    proj for proj in candidates if is_globus_external_archive(proj)
+                ]
                 projects.sort(key=lambda p: p["DRPID"])
-                if num_rows is not None:
+                if not ids and num_rows is not None:
                     projects = projects[:num_rows]
             else:
-                Logger.info(f"Orchestrator listing eligible projects prereq={prereq!r}")
-                projects = Storage.list_eligible_projects(prereq, num_rows, start_row, start_drpid)
+                Logger.info(
+                    f"Orchestrator listing eligible projects prereq={prereq!r} retry={retry}"
+                )
+                projects = _list_by_base_status(prereq, **list_kwargs)
+
+            projects = _filter_by_ids(projects, ids)
             Logger.info(f"Orchestrator module={module!r} eligible projects={len(projects)}")
             max_workers = Args.max_workers or 1
             max_workers = max(1, int(max_workers))
@@ -434,7 +539,11 @@ class Orchestrator:
                             f"Orchestrator starting project module={module!r} "
                             f"DRPID={drpid} source_url={source_url!r}"
                         )
+                        if retry:
+                            _prepare_retry_project(proj)
                         instance.run(drpid)
+                        if retry:
+                            _finalize_retry_project(drpid)
                     except Exception as exc:
                         record_error(
                             drpid,
@@ -463,7 +572,11 @@ class Orchestrator:
                                 f"Orchestrator starting project module={module!r} "
                                 f"DRPID={drpid} ({idx}/{n_projects}) source_url={source_url!r}"
                             )
+                            if retry:
+                                _prepare_retry_project(proj)
                             module_instance.run(drpid)
+                            if retry:
+                                _finalize_retry_project(drpid)
                         except Exception as exc:
                             record_error(
                                 drpid,

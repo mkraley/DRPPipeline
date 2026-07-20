@@ -77,6 +77,8 @@ class Args(metaclass=ArgsMeta):
         "num_rows": None,  # None = unlimited; batch limit for orchestration
         "start_row": None,  # If set, skip first (start_row - 1) rows (1-origin); used when listing from DB
         "start_drpid": None,  # If set, only projects with DRPID >= start_drpid (overrides start_row when set)
+        "retry": False,  # If True, select prereq-error statuses and ignore errors field
+        "ids": None,  # Optional list[int] of DRPIDs from --ids (ranges allowed)
         "db_path": 'drp_pipeline.db',
         "storage_implementation": "StorageSQLLite",
         "base_output_dir": r"C:\Documents\DataRescue\DRPData",
@@ -162,6 +164,7 @@ class Args(metaclass=ArgsMeta):
         
         # Apply command line arguments (highest priority - overrides config file and defaults)
         cls._apply_command_line_args(parsed_args)
+        cls._validate_selection_args()
 
         # config_file: same as config (--config) for code that reads Args.config_file (stored as str)
         if "config" in cls._config and cls._config["config"] is not None:
@@ -216,7 +219,24 @@ class Args(metaclass=ArgsMeta):
             log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Set the logging level", case_sensitive=False),
             num_rows: Optional[int] = typer.Option(None, "--num-rows", "-n", help="Max projects or candidate URLs per batch; None = unlimited"),
             start_row: Optional[int] = typer.Option(None, "--start-row", help="Start at this 1-origin row (all rows, ORDER BY DRPID); skip earlier rows"),
-            start_drpid: Optional[int] = typer.Option(None, "--start-drpid", help="Only process projects with DRPID >= this value"),
+            start: Optional[int] = typer.Option(
+                None,
+                "--start",
+                "--start-drpid",
+                help="Only process projects with DRPID >= this value",
+            ),
+            ids: Optional[str] = typer.Option(
+                None,
+                "--ids",
+                help="Comma-delimited DRPIDs to process (ranges allowed, e.g. 5,7,10-12). "
+                "Incompatible with -n/--num-rows and --start",
+            ),
+            retry: bool = typer.Option(
+                False,
+                "--retry",
+                help="Process projects in <prereq>-error status (ignore errors field); "
+                "clear errors on success",
+            ),
             db_path: Optional[Path] = typer.Option(None, "--db-path", help="Path to SQLite database file"),
             storage: Optional[str] = typer.Option(None, "--storage", help="Storage implementation (e.g. StorageSQLLite)"),
             delete_all_db_entries: bool = typer.Option(
@@ -252,8 +272,14 @@ class Args(metaclass=ArgsMeta):
                 parsed_values["num_rows"] = num_rows
             if start_row is not None:
                 parsed_values["start_row"] = start_row
-            if start_drpid is not None:
-                parsed_values["start_drpid"] = start_drpid
+            if start is not None:
+                parsed_values["start_drpid"] = start
+            if ids is not None:
+                from utils.drpid_list import parse_drpid_ids
+
+                parsed_values["ids"] = parse_drpid_ids(ids)
+            if retry:
+                parsed_values["retry"] = True
             if db_path is not None:
                 parsed_values["db_path"] = db_path
             if storage is not None:
@@ -327,6 +353,26 @@ class Args(metaclass=ArgsMeta):
         for key, value in parsed_args.items():
             if value is not None:
                 cls._config[key] = value
+
+    @classmethod
+    def _validate_selection_args(cls) -> None:
+        """
+        Reject incompatible project-selection CLI options.
+
+        ``--ids`` cannot be combined with ``-n``/``--num-rows`` or ``--start``.
+        """
+        ids = cls._config.get("ids")
+        if not ids:
+            return
+        conflicts: list[str] = []
+        if cls._config.get("num_rows") is not None:
+            conflicts.append("-n/--num-rows")
+        if cls._config.get("start_drpid") is not None:
+            conflicts.append("--start")
+        if conflicts:
+            raise ValueError(
+                f"--ids is incompatible with {', '.join(conflicts)}"
+            )
 
     @classmethod
     def get_args(cls) -> Dict[str, Any]:

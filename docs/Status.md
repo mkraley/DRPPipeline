@@ -85,6 +85,8 @@ Projects enter at `sourced` via `sourcing` / `adc_sourcing`. Large-file and repa
 
 `record_error` derives a compact `{previous}-error` unless the status is already `error` or already an error form. Spaced variants such as `sourced - error` or `uploaded - large file-error` are recognized as already-error and normalized to `sourced-error` / `uploaded-large-file-error`. The message is appended to the `errors` column, which blocks normal eligibility until cleared (MCP `clear_errors` / manual DB update).
 
+To re-run a module against error statuses from the CLI, use ``--retry`` (selects `<prereq>-error`, ignores the errors field, restores the base status for the run, and clears `errors` on success). Combine with ``--ids 5,10-12`` to limit which DRPIDs are retried.
+
 `verify_upload` is the special case that **will** pick up `updated_inventory-error` for retry. On a clean verify it resets status to `updated_inventory` and clears `errors`. On successful missing-file repair it sets `re-uploaded` and clears `errors`.
 
 ---

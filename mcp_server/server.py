@@ -351,7 +351,7 @@ def run_module(
     if max_workers is not None:
         cmd += ["--max-workers", str(max_workers)]
     if start_drpid is not None:
-        cmd += ["--start-drpid", str(start_drpid)]
+        cmd += ["--start", str(start_drpid)]
     if sourcing_mode is not None:
         cmd += ["--sourcing-mode", sourcing_mode]
 

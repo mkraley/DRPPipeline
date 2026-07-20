@@ -252,6 +252,52 @@ class TestArgs(unittest.TestCase):
         Args.initialize()
         self.assertEqual(Args.start_row, 10)
 
+    def test_start_from_cli(self) -> None:
+        """Test --start (and legacy --start-drpid alias) from CLI."""
+        import sys
+        sys.argv = ["test", "collector", "--start", "42"]
+        Args._initialized = False
+        Args.initialize()
+        self.assertEqual(Args.start_drpid, 42)
+
+        Args._initialized = False
+        Args._config = {}
+        sys.argv = ["test", "collector", "--start-drpid", "99"]
+        Args.initialize()
+        self.assertEqual(Args.start_drpid, 99)
+
+    def test_ids_from_cli(self) -> None:
+        """Test --ids parsing including ranges."""
+        import sys
+        sys.argv = ["test", "collector", "--ids", "5,7,10-12"]
+        Args._initialized = False
+        Args.initialize()
+        self.assertEqual(Args.ids, [5, 7, 10, 11, 12])
+        self.assertFalse(Args.retry)
+
+    def test_retry_from_cli(self) -> None:
+        """Test --retry flag."""
+        import sys
+        sys.argv = ["test", "collector", "--retry"]
+        Args._initialized = False
+        Args.initialize()
+        self.assertTrue(Args.retry)
+
+    def test_ids_incompatible_with_num_rows_and_start(self) -> None:
+        """--ids cannot be combined with -n or --start."""
+        import sys
+        sys.argv = ["test", "collector", "--ids", "1,2", "-n", "5"]
+        Args._initialized = False
+        with self.assertRaises(ValueError) as ctx:
+            Args.initialize()
+        self.assertIn("--ids", str(ctx.exception))
+
+        Args._initialized = False
+        Args._config = {}
+        sys.argv = ["test", "collector", "--ids", "1", "--start", "10"]
+        with self.assertRaises(ValueError):
+            Args.initialize()
+
 
 if __name__ == "__main__":
     unittest.main()

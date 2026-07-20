@@ -285,6 +285,65 @@ class TestOrchestrator(unittest.TestCase):
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")
+    def test_run_retry_lists_error_status_and_clears_errors_on_success(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
+    ) -> None:
+        """--retry selects sourced-error, restores sourced, clears errors on success."""
+        mock_storage = MagicMock()
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.get_instance.return_value = mock_storage
+        mock_storage_cls.list_eligible_projects.return_value = [
+            {
+                "DRPID": 5,
+                "source_url": "https://a.com",
+                "status": "sourced-error",
+                "errors": "boom",
+            }
+        ]
+        mock_storage_cls.get.return_value = {
+            "DRPID": 5,
+            "status": "collected",
+            "errors": "boom",
+        }
+        mock_collector = MagicMock()
+        mock_find_class.return_value = MagicMock(return_value=mock_collector)
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls), patch.object(
+            Args, "retry", True
+        ):
+            Orchestrator.run("cms_collector")
+        mock_storage_cls.list_eligible_projects.assert_called_once_with(
+            "sourced-error", None, None, None, include_errored=True
+        )
+        mock_storage_cls.update_record.assert_any_call(5, {"status": "sourced"})
+        mock_collector.run.assert_called_once_with(5)
+        mock_storage_cls.update_record.assert_any_call(5, {"errors": None})
+
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
+    def test_run_ids_filters_eligible_projects(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
+    ) -> None:
+        """--ids keeps only matching DRPIDs from the eligible list."""
+        mock_storage = MagicMock()
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.get_instance.return_value = mock_storage
+        mock_storage_cls.list_eligible_projects.return_value = [
+            {"DRPID": 1, "source_url": "https://a.com"},
+            {"DRPID": 2, "source_url": "https://b.com"},
+            {"DRPID": 3, "source_url": "https://c.com"},
+        ]
+        mock_collector = MagicMock()
+        mock_find_class.return_value = MagicMock(return_value=mock_collector)
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls), patch.object(
+            Args, "ids", [1, 3]
+        ):
+            Orchestrator.run("cms_collector")
+        self.assertEqual(mock_collector.run.call_count, 2)
+        mock_collector.run.assert_any_call(1)
+        mock_collector.run.assert_any_call(3)
+
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
     def test_run_upload_lists_collected_and_large_file(
         self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
     ) -> None:

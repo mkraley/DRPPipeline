@@ -121,7 +121,7 @@ def run_module() -> Any:
             pass
     if start_drpid is not None:
         try:
-            argv.extend(["--start-drpid", str(int(start_drpid))])
+            argv.extend(["--start", str(int(start_drpid))])
         except (TypeError, ValueError):
             pass
     if log_level:

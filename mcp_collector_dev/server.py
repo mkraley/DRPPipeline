@@ -505,7 +505,7 @@ def register_collector(
 @mcp.tool()
 def test_collector_on_project(module_name: str, drpid: int) -> str:
     """
-    Run a collector against a single project (--num-rows 1 --start-drpid <drpid>).
+    Run a collector against a single project (--num-rows 1 --start <drpid>).
 
     Returns the Storage record before and after, files created in the output
     folder, and any errors recorded. Makes real network requests and writes
@@ -536,7 +536,7 @@ def test_collector_on_project(module_name: str, drpid: int) -> str:
         sys.executable, str(PROJECT_ROOT / "main.py"),
         module_name,
         "--num-rows", "1",
-        "--start-drpid", str(drpid),
+        "--start", str(drpid),
     ]
     try:
         proc = subprocess.run(

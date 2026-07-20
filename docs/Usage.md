@@ -407,7 +407,9 @@ For Google Sheets setup, see [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md).
    ```bash
    python main.py interactive_collector --external-archive
    ```
-   Optional: `--start-drpid N` to begin at a specific DRPID.
+   Optional: `--start N` to begin at a specific DRPID. Use `--ids 5,7,10-12` to
+   process an explicit list (incompatible with `-n` and `--start`). Use `--retry`
+   to process `<prereq>-error` projects and clear errors on success.
 
 2. **Frontend (development):**  
    ```bash

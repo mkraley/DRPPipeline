@@ -44,7 +44,11 @@ MODULES
 COMMON OPTIONS
   -c, --config PATH       Config file (default: ./config.json)
   -n, --num-rows INT      Max projects per batch
-  --start-drpid INT       Only process projects with DRPID >= this value
+  --start INT             Only process projects with DRPID >= this value
+  --ids LIST              Comma-delimited DRPIDs (ranges ok, e.g. 5,7,10-12);
+                          incompatible with -n and --start
+  --retry                 Process <prereq>-error projects (ignore errors field);
+                          clear errors on success
   -l, --log-level LEVEL   DEBUG, INFO, WARNING, ERROR (default: INFO)
   --log-color             Colorize log severity in terminal
   --delete-all-db-entries  For sourcing only: wipe the SQLite DB before run (or set delete_all_db_entries in config; default off)
