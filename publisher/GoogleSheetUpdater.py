@@ -322,25 +322,107 @@ class GoogleSheetUpdater:
         dataset_download_possible: str = "N",
         project: Optional[Dict[str, Any]] = None,
         log_suffix: str = "",
+        write_claimed: bool = True,
     ) -> tuple[bool, Optional[str]]:
         """
         Update the Google Sheet for sheet-only publisher paths (not_found, no_links,
         no dataset, gigantic upload, needs scripting).
 
-        Writes Claimed, Data Added=N, Dataset Download Possible?, Nominated=N, Notes,
+        Writes Data Added=N, Dataset Download Possible?, Nominated=N, Notes,
         and optional Title of Site/Title, Agency, Office from project metadata.
-        Appends a row with URL when no match exists.
+        Sets Claimed when ``write_claimed`` is True (default). Appends a row with
+        URL when no match exists.
         """
+        required_columns = list(_REQUIRED_COLUMNS_NOT_FOUND)
+        if not write_claimed:
+            required_columns = [c for c in required_columns if c != "Claimed"]
         return self._update_row(
             source_url=source_url,
-            required_columns=_REQUIRED_COLUMNS_NOT_FOUND,
+            required_columns=required_columns,
             optional_columns=["Notes", "Title of Site", "Title", "Agency", "Office"],
             build_requests=self._build_sheet_only_requests,
             log_suffix=log_suffix,
             notes_value=notes_value,
             dataset_download_possible=dataset_download_possible,
             project=project,
+            write_claimed=write_claimed,
         )
+
+    def update_claimed(
+        self,
+        source_url: str,
+        project: Optional[Dict[str, Any]] = None,
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Set Claimed to ``google_username`` on the row matching ``source_url``.
+
+        Only the Claimed column is updated on a matched row. When no row matches,
+        appends a new row with URL and Claimed (and optional Title/Agency/Office
+        from project metadata when those cells would be empty).
+
+        Args:
+            source_url: Source URL to match in the URL column.
+            project: Optional project dict for optional metadata columns on append.
+
+        Returns:
+            (True, None) on success, (False, error_message) on failure.
+        """
+        return self._update_row(
+            source_url=source_url,
+            required_columns=["URL", "Claimed"],
+            optional_columns=["Title of Site", "Title", "Agency", "Office"],
+            build_requests=self._build_claimed_only_requests,
+            log_suffix=" (claimed)",
+            project=project,
+        )
+
+    def _build_claimed_only_requests(
+        self,
+        sheet_name: str,
+        row_number: int,
+        column_map: Dict[str, str],
+        append_new_row: bool,
+        source_url: str,
+        title_to_write: str = "",
+        agency_to_write: str = "",
+        office_to_write: str = "",
+        **kwargs: Any,
+    ) -> List[Dict[str, Any]]:
+        """Build update requests that set only Claimed (plus URL on append)."""
+        username = Args.google_username or ""
+        requests: List[Dict[str, Any]] = []
+
+        u = (source_url or "").strip()
+        if append_new_row and u and column_map.get("URL"):
+            requests.append({
+                "range": f"{sheet_name}!{column_map['URL']}{row_number}",
+                "values": [[u]],
+            })
+
+        def _add_metadata(col_key: str, value: str) -> None:
+            col_letter = column_map.get(col_key)
+            val = (value or "").strip()
+            if col_letter and val:
+                requests.append({
+                    "range": f"{sheet_name}!{col_letter}{row_number}",
+                    "values": [[val]],
+                })
+
+        t_title = (title_to_write or "").strip()
+        if t_title:
+            if column_map.get("Title of Site"):
+                _add_metadata("Title of Site", t_title)
+            elif column_map.get("Title"):
+                _add_metadata("Title", t_title)
+        _add_metadata("Agency", agency_to_write)
+        _add_metadata("Office", office_to_write)
+
+        if column_map.get("Claimed"):
+            requests.append({
+                "range": f"{sheet_name}!{column_map['Claimed']}{row_number}",
+                "values": [[username]],
+            })
+        return requests
 
     def _build_sheet_only_requests(
         self,
@@ -356,6 +438,7 @@ class GoogleSheetUpdater:
         office_to_write: str = "",
         service: Any = None,
         sheet_id: str = "",
+        write_claimed: bool = True,
         **kwargs: Any,
     ) -> List[Dict[str, Any]]:
         """Build update requests for sheet-only inventory updates."""
@@ -393,10 +476,11 @@ class GoogleSheetUpdater:
             if col_key in ("URL", "Title of Site", "Title", "Agency", "Office"):
                 continue
             if col_key == "Claimed":
-                requests.append({
-                    "range": f"{sheet_name}!{col_letter}{row_number}",
-                    "values": [[username]],
-                })
+                if write_claimed:
+                    requests.append({
+                        "range": f"{sheet_name}!{col_letter}{row_number}",
+                        "values": [[username]],
+                    })
             elif col_key == "Data Added":
                 requests.append({
                     "range": f"{sheet_name}!{col_letter}{row_number}",

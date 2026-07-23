@@ -63,10 +63,12 @@ class TestMissingFileRepairHelpers(unittest.TestCase):
         self.assertEqual(folder, Path(r"C:\Data\DRP000012"))
 
     def test_resolve_project_folder_default(self) -> None:
-        """Without folder_path, use base_output_dir/DRP######."""
-        with patch.object(Args, "base_output_dir", r"C:\Out"):
+        """Without folder_path, use base_output_dir/{sheet prefix}######."""
+        with patch("utils.file_utils._configured_output_folder_prefix", return_value="USFS"), patch.object(
+            Args, "base_output_dir", r"C:\Out"
+        ):
             folder = resolve_project_folder(7, None)
-        self.assertEqual(folder, Path(r"C:\Out") / "DRP000007")
+        self.assertEqual(folder, Path(r"C:\Out") / "USFS000007")
 
     def test_ensure_file_on_disk_skips_existing(self) -> None:
         """Existing files are not re-downloaded."""

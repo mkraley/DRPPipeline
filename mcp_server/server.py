@@ -392,8 +392,10 @@ def _fetch_sheet_csv(sheet_id: str, gid: str) -> str:
 
 
 def _row_passes_sourcing_filter(row: dict, mode: str, url_prefix: str) -> bool:
+    from utils.sheet_column_utils import row_value_by_column_prefix
+
     claimed = (row.get("Claimed (add your name)") or "").strip()
-    download_location = (row.get("Download Location") or "").strip()
+    download_location = row_value_by_column_prefix(row, "Download Location")
     url = (row.get("URL") or "").strip()
     if mode == "unclaimed":
         passes = claimed == "" and download_location == ""

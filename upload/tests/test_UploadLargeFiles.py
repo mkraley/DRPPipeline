@@ -75,6 +75,17 @@ class TestUploadLargeFilesHelpers(unittest.TestCase):
 class TestEnsureAria2CmdSkipNoteFallback(unittest.TestCase):
     """ensure_aria2_cmd builds commands from status_notes for non-USFS sources."""
 
+    def setUp(self) -> None:
+        """Use DRP prefix so aria2 cmd paths match test fixtures."""
+        self._original_argv = sys.argv.copy()
+        sys.argv = ["test", "noop"]
+        Args.initialize()
+        Args._config["google_sheet_name"] = "DRP"
+        Logger.initialize(log_level="WARNING")
+
+    def tearDown(self) -> None:
+        sys.argv = self._original_argv
+
     @patch("upload.UploadLargeFiles.parse_data_access_links", return_value={"publication_files": []})
     @patch("upload.UploadLargeFiles.fetch_page_body", return_value=(200, "<html></html>", None, None))
     def test_uses_status_notes_when_catalog_empty(
@@ -94,10 +105,7 @@ class TestEnsureAria2CmdSkipNoteFallback(unittest.TestCase):
                 "folder_path": str(folder),
                 "status_notes": notes,
             }
-            with patch("upload.UploadLargeFiles.DEFAULT_ARIA2_OUTPUT_DIR", out_dir), patch(
-                "upload.UploadLargeFiles.drpid_cmd_path",
-                return_value=out_dir / "DRP000157.cmd",
-            ):
+            with patch("upload.UploadLargeFiles.DEFAULT_ARIA2_OUTPUT_DIR", out_dir):
                 cmd_path, lines = ensure_aria2_cmd(157, project)
 
             self.assertTrue(cmd_path.is_file())

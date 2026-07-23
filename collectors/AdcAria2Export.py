@@ -15,7 +15,7 @@ from collectors.UsfsAria2Export import (
     max_connections_for_url,
 )
 from sourcing.AdcFileInventory import MAX_DOWNLOAD_BYTES
-from utils.file_utils import sanitize_filename
+from utils.file_utils import output_folder_name, sanitize_filename
 from utils.url_utils import BROWSER_HEADERS
 
 InventoryFile = tuple[str, str, int | None]
@@ -87,7 +87,7 @@ def write_drpid_aria2_cmd(
 
     out_dir = output_dir or DEFAULT_ARIA2_OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"DRP{drpid:06d}.cmd"
+    out_path = out_dir / f"{output_folder_name(drpid)}.cmd"
     ua = user_agent or BROWSER_HEADERS["User-Agent"]
     out_path.write_text(format_windows_commands(entries, ua, drpid=drpid), encoding="utf-8")
     return out_path

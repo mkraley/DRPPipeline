@@ -188,6 +188,61 @@ def folder_extensions_and_size(folder_path: Path) -> tuple[list[str], int, int]:
     return (sorted(exts), total, n_files)
 
 
+def output_folder_prefix(sheet_name: str | None = None) -> str:
+    """
+    Return the prefix for project output folder names.
+
+    Uses ``google_sheet_name`` from Args when ``sheet_name`` is omitted (e.g. ``AHRQ``).
+    Falls back to ``DRP`` when Args is not initialized or the sheet name is empty.
+
+    Args:
+        sheet_name: Optional override for the sheet/tab name used as prefix.
+
+    Returns:
+        Sanitized prefix safe for Windows folder names.
+    """
+    if sheet_name is None:
+        sheet_name = _configured_output_folder_prefix()
+    name = (sheet_name or "DRP").strip()
+    if not name:
+        return "DRP"
+    invalid_chars = r'[<>:"/\\|?*]'
+    sanitized = re.sub(invalid_chars, "_", name)
+    sanitized = sanitized.strip(". ")
+    return sanitized or "DRP"
+
+
+def _configured_output_folder_prefix() -> str:
+    """Read google_sheet_name from Args, or return DRP when unavailable."""
+    try:
+        from utils.Args import Args
+
+        if getattr(Args, "_initialized", False):
+            configured = (getattr(Args, "google_sheet_name", None) or "DRP").strip()
+            return configured or "DRP"
+    except (RuntimeError, AttributeError):
+        pass
+    return "DRP"
+
+
+def output_folder_name(drpid: int, *, prefix: str | None = None) -> str:
+    """
+    Return the standard output folder name for a DRPID.
+
+    Args:
+        drpid: Project DRPID.
+        prefix: Optional sheet-name override; defaults to configured google_sheet_name.
+
+    Returns:
+        Folder name such as ``AHRQ000123``.
+
+    Example:
+        >>> output_folder_name(123, prefix="AHRQ")
+        'AHRQ000123'
+    """
+    return f"{output_folder_prefix(prefix)}{drpid:06d}"
+
+
 def create_output_folder(base_dir: Path, drpid: int, *, recreate: bool = True) -> Optional[Path]:
     """
     Create output folder for a DRPID.
@@ -206,10 +261,10 @@ def create_output_folder(base_dir: Path, drpid: int, *, recreate: bool = True) -
     Example:
         >>> from pathlib import Path
         >>> folder = create_output_folder(Path("/tmp"), 123)
-        >>> folder.name
-        'DRP000123'
+        >>> folder.name  # with google_sheet_name="AHRQ"
+        'AHRQ000123'
     """
-    folder_name = f"DRP{drpid:06d}"
+    folder_name = output_folder_name(drpid)
     folder_path = base_dir / folder_name
 
     try:

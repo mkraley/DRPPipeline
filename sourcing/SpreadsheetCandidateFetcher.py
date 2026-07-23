@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 
 from utils.Args import Args
 from utils.Logger import Logger
+from utils.sheet_column_utils import find_column_by_prefix, row_value_by_column_prefix
 from utils.sheet_url_utils import get_gid_for_sheet_name
 
 
@@ -106,7 +107,7 @@ class SpreadsheetCandidateFetcher:
         """
         url_prefix = (getattr(Args, "sourcing_url_prefix", None) or "").strip()
         claimed = (row.get("Claimed (add your name)") or "").strip()
-        download_location = (row.get("Download Location") or "").strip()
+        download_location = row_value_by_column_prefix(row, "Download Location")
         url = (row.get("URL") or "").strip()
         mode = (getattr(Args, "sourcing_mode", None) or "unclaimed").strip().lower()
 
@@ -144,9 +145,6 @@ class SpreadsheetCandidateFetcher:
         reader = csv.DictReader(io.StringIO(csv_text))
         fieldnames = reader.fieldnames or []
 
-        # Required columns for _row_passes_filter
-        required_filter_columns = ["Claimed (add your name)", "Download Location"]
-
         # Check URL column
         if url_column not in fieldnames:
             raise ValueError(
@@ -154,13 +152,15 @@ class SpreadsheetCandidateFetcher:
                 f"Available columns: {fieldnames}"
             )
 
-        # Check filter columns
-        missing_filter_columns = [
-            col for col in required_filter_columns if col not in fieldnames
-        ]
-        if missing_filter_columns:
+        # Claimed column is exact; Download Location may use a long header prefix.
+        if "Claimed (add your name)" not in fieldnames:
             raise ValueError(
-                f"CSV missing required filter columns: {missing_filter_columns}. "
+                "CSV missing required filter column 'Claimed (add your name)'. "
+                f"Available columns: {fieldnames}"
+            )
+        if find_column_by_prefix(fieldnames, "Download Location") is None:
+            raise ValueError(
+                "CSV missing required filter column starting with 'Download Location'. "
                 f"Available columns: {fieldnames}"
             )
 

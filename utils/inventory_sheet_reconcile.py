@@ -35,13 +35,16 @@ def datalumos_project_id(url_or_id: str) -> str:
 
 
 def pick_sheet_col(row: Dict[str, str], *names: str) -> str:
+    """Return a cell value by exact header match, then by header prefix."""
     lower = {k.lower(): v for k, v in row.items()}
     for name in names:
         if name.lower() in lower:
             return lower[name.lower()]
-    for key, val in row.items():
-        if any(n.lower() in key.lower() for n in names):
-            return val
+    for name in names:
+        prefix = name.lower()
+        for key, val in row.items():
+            if key.lower().startswith(prefix):
+                return val
     return ""
 
 

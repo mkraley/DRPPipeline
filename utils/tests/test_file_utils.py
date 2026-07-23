@@ -5,6 +5,7 @@ Unit tests for file_utils module.
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from utils.Args import Args
@@ -101,12 +102,17 @@ class TestFileUtils(unittest.TestCase):
         self.assertIsNone(file_utils.parse_file_size_to_bytes(None))
     
     def test_create_output_folder(self) -> None:
-        """Test create_output_folder creates folder."""
-        folder_path = file_utils.create_output_folder(self.temp_dir, 123)
-        
+        """Test create_output_folder creates folder using google_sheet_name prefix."""
+        with patch("utils.file_utils._configured_output_folder_prefix", return_value="AHRQ"):
+            folder_path = file_utils.create_output_folder(self.temp_dir, 123)
+
         self.assertIsNotNone(folder_path)
         self.assertTrue(folder_path.exists())
-        self.assertEqual(folder_path.name, "DRP000123")
+        self.assertEqual(folder_path.name, "AHRQ000123")
+
+    def test_output_folder_name_defaults_to_drp_without_sheet(self) -> None:
+        """Test output_folder_prefix falls back to DRP when sheet name is empty."""
+        self.assertEqual(file_utils.output_folder_name(7, prefix="DRP"), "DRP000007")
     
     def test_create_output_folder_multiple(self) -> None:
         """Test create_output_folder creates multiple folders."""

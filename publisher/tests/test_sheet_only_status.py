@@ -7,6 +7,7 @@ from publisher.sheet_only_status import (
     collector_hold_reason,
     is_collector_hold_status,
     resolve_sheet_only_config,
+    should_write_claimed_for_sheet_only,
 )
 
 
@@ -39,3 +40,10 @@ class TestSheetOnlyStatus(unittest.TestCase):
             ("needs login", STATUS_UPDATED_COLLECTOR_HOLD, "?"),
         )
         self.assertIsNone(resolve_sheet_only_config("uploaded"))
+
+    def test_should_write_claimed_for_sheet_only(self) -> None:
+        self.assertTrue(should_write_claimed_for_sheet_only("not_found"))
+        self.assertTrue(should_write_claimed_for_sheet_only("no dataset"))
+        self.assertTrue(should_write_claimed_for_sheet_only("collector_hold - x"))
+        self.assertFalse(should_write_claimed_for_sheet_only("gigantic upload"))
+        self.assertFalse(should_write_claimed_for_sheet_only("needs scripting"))

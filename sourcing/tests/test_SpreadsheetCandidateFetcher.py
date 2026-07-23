@@ -88,8 +88,25 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         mock_fetch.return_value = csv_no_dl
         with self.assertRaises(ValueError) as cm:
             self.fetcher.get_candidate_urls()
-        self.assertIn("missing required filter columns", str(cm.exception))
         self.assertIn("Download Location", str(cm.exception))
+
+    @patch("sourcing.SpreadsheetCandidateFetcher.get_gid_for_sheet_name", return_value="0")
+    @patch.object(SpreadsheetCandidateFetcher, "_fetch_sheet_csv")
+    def test_get_candidate_urls_accepts_long_download_location_header(
+        self, mock_fetch: object, _mock_gid: object
+    ) -> None:
+        """Test get_candidate_urls accepts Download Location columns with long headers."""
+        csv_long_dl = (
+            "Admin Notes,Claimed (add your name),URL,"
+            "Download Location (where is the rescued data in datalumos?)\r\n"
+            ",,https://catalog.data.gov/dataset/a,\r\n"
+            ",,https://catalog.data.gov/dataset/b,https://www.datalumos.org/x\r\n"
+        )
+        mock_fetch.return_value = csv_long_dl
+        rows, skipped = self.fetcher.get_candidate_urls()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["url"], "https://catalog.data.gov/dataset/a")
+        self.assertEqual(skipped, 1)
 
     def test_row_passes_filter_both_empty(self) -> None:
         """Test _row_passes_filter returns True when Claimed and Download Location empty and URL matches sourcing_url_prefix."""
@@ -105,6 +122,18 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         """Test _row_passes_filter returns False when Download Location non-empty."""
         row = {"Claimed (add your name)": "", "Download Location": "/path", "URL": "https://catalog.data.gov/dataset/x"}
         self.assertFalse(self.fetcher._row_passes_filter(row))
+
+    def test_row_passes_filter_long_download_location_header(self) -> None:
+        """Test _row_passes_filter reads Download Location via header prefix."""
+        dl_col = "Download Location (where is the rescued data in datalumos?)"
+        row = {
+            "Claimed (add your name)": "",
+            dl_col: "https://www.datalumos.org/datalumos/project/1/version/V1/view",
+            "URL": "https://catalog.data.gov/dataset/x",
+        }
+        self.assertFalse(self.fetcher._row_passes_filter(row))
+        row[dl_col] = ""
+        self.assertTrue(self.fetcher._row_passes_filter(row))
 
     def test_row_passes_filter_missing_url_treated_empty_fails(self) -> None:
         """Test _row_passes_filter returns False when URL is missing (empty); requires matching sourcing_url_prefix."""

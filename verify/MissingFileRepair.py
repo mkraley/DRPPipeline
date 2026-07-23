@@ -27,7 +27,7 @@ from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from upload.DataLumosFileUploader import DataLumosFileUploader
 from utils.Args import Args
 from utils.download_with_progress import download_via_url
-from utils.file_utils import sanitize_filename
+from utils.file_utils import output_folder_name, sanitize_filename
 from utils.Logger import Logger
 from utils.project_utils import get_field
 from utils.url_utils import (
@@ -74,11 +74,11 @@ def resolve_project_folder(drpid: int, folder_path: str | None) -> Path:
         folder_path: Stored folder path, if any.
 
     Returns:
-        Absolute folder path (``folder_path`` or ``base_output_dir/DRP######``).
+        Absolute folder path (``folder_path`` or ``base_output_dir/{sheet}######``).
     """
     if folder_path:
         return Path(folder_path)
-    return Path(Args.base_output_dir) / f"DRP{drpid:06d}"
+    return Path(Args.base_output_dir) / output_folder_name(drpid)
 
 
 def _name_key(name: str) -> str:
@@ -234,7 +234,7 @@ def _download_with_aria2(
         max_connections=max_connections_for_url(file_url),
     )
     cmd_line = format_windows_command(entry, BROWSER_HEADERS["User-Agent"])
-    log_root = Path(Args.base_output_dir) / "logs" / f"DRP{drpid:06d}"
+    log_root = Path(Args.base_output_dir) / "logs" / output_folder_name(drpid)
     log_root.mkdir(parents=True, exist_ok=True)
     log_path = log_root / f"{out_name}.log"
     ok, attempts = run_aria2_cmd_line_with_retries(cmd_line, log_path=log_path)

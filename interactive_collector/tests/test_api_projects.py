@@ -24,8 +24,16 @@ class TestEnsureOutputFolder(unittest.TestCase):
     def setUp(self) -> None:
         self.tmpdir = Path(tempfile.mkdtemp())
         get_result_by_drpid().clear()
+        self._sheet_name_patch = patch.object(Args, "google_sheet_name", "DRP")
+        self._sheet_name_patch.start()
+        self._storage_patch = patch("storage.Storage")
+        self._mock_storage_cls = self._storage_patch.start()
+        self._mock_storage_cls.get.return_value = None
+        self._mock_storage_cls.list_eligible_projects.return_value = []
 
     def tearDown(self) -> None:
+        self._storage_patch.stop()
+        self._sheet_name_patch.stop()
         shutil.rmtree(self.tmpdir, ignore_errors=True)
         get_result_by_drpid().clear()
 

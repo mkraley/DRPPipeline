@@ -24,6 +24,12 @@ COLLECTOR_HOLD_PREFIXES: tuple[str, ...] = (
 STATUS_UPDATED_COLLECTOR_HOLD = "updated_collector_hold"
 COLLECTOR_HOLD_DOWNLOAD_POSSIBLE = "?"
 
+# Sheet-only statuses that update Notes/metadata but must not set Claimed.
+SHEET_ONLY_SKIP_CLAIMED_STATUSES: frozenset[str] = frozenset({
+    "gigantic upload",
+    "needs scripting",
+})
+
 
 def collector_hold_reason(status: str | None) -> Optional[str]:
     """
@@ -48,6 +54,17 @@ def collector_hold_reason(status: str | None) -> Optional[str]:
 def is_collector_hold_status(status: str | None) -> bool:
     """Return True when status is ``collector_hold - …`` (or legacy spelling)."""
     return collector_hold_reason(status) is not None
+
+
+def should_write_claimed_for_sheet_only(status: str | None) -> bool:
+    """
+    Return whether sheet-only publish should set the Claimed column.
+
+    ``gigantic upload`` and ``needs scripting`` leave Claimed unchanged so others
+    can pick up the row; other sheet-only paths still claim with ``google_username``.
+    """
+    key = (status or "").strip().lower()
+    return key not in SHEET_ONLY_SKIP_CLAIMED_STATUSES
 
 
 def resolve_sheet_only_config(

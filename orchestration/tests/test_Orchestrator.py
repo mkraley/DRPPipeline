@@ -154,6 +154,39 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(args[0], 1)
         self.assertIn("not yet implemented", args[1])
 
+    @patch("orchestration.Orchestrator._maybe_claim_inventory_sheet")
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
+    def test_run_collector_claims_sheet_after_success(
+        self,
+        mock_storage_cls: MagicMock,
+        mock_find_class: MagicMock,
+        mock_claim: MagicMock,
+    ) -> None:
+        """Test successful catalog_collector run triggers inventory sheet claim."""
+        mock_storage = MagicMock()
+        mock_storage.list_eligible_projects.return_value = [
+            {"DRPID": 2, "source_url": "https://example.com/x"}
+        ]
+        mock_storage.get.return_value = {
+            "DRPID": 2,
+            "source_url": "https://example.com/x",
+            "status": "collected",
+        }
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.list_eligible_projects = mock_storage.list_eligible_projects
+        mock_storage_cls.get = mock_storage.get
+
+        mock_collector_instance = MagicMock()
+        mock_collector_cls = MagicMock(return_value=mock_collector_instance)
+        mock_find_class.return_value = mock_collector_cls
+
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
+            Orchestrator.run("catalog_collector")
+
+        mock_collector_instance.run.assert_called_once_with(2)
+        mock_claim.assert_called_once_with(2, "catalog_collector")
+
     @patch("interactive_collector.app.app.run")
     def test_run_interactive_collector_starts_app(self, mock_app_run: MagicMock) -> None:
         """Test run('interactive_collector') starts Flask app (uses Args like rest of pipeline)."""

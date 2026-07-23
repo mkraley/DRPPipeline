@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import urlparse
 
-from utils.file_utils import sanitize_filename
+from utils.file_utils import output_folder_name, sanitize_filename
 from utils.url_utils import BROWSER_HEADERS
 
 PublicationFile = Tuple[str, str, Optional[int]]
@@ -218,9 +218,9 @@ def run_aria2_cmd_line_with_retries(
 
 
 def drpid_cmd_path(drpid: int, output_dir: Path | None = None) -> Path:
-    """Path to ``aria2_inputs/DRP######.cmd`` for a DRPID."""
+    """Path to ``aria2_inputs/{prefix}######.cmd`` for a DRPID."""
     out_dir = output_dir or DEFAULT_ARIA2_OUTPUT_DIR
-    return out_dir / f"DRP{drpid:06d}.cmd"
+    return out_dir / f"{output_folder_name(drpid)}.cmd"
 
 
 def format_windows_command(entry: Aria2Entry, user_agent: str) -> str:
@@ -289,7 +289,7 @@ def write_drpid_aria2_cmd(
 
     out_dir = output_dir or DEFAULT_ARIA2_OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"DRP{drpid:06d}.cmd"
+    out_path = out_dir / f"{output_folder_name(drpid)}.cmd"
     ua = user_agent or BROWSER_HEADERS["User-Agent"]
     out_path.write_text(format_windows_commands(entries, ua, drpid=drpid), encoding="utf-8")
     return out_path

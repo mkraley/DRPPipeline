@@ -55,6 +55,7 @@ class TestExportDrpidSkipNoteFallback(unittest.TestCase):
                     min_bytes=1 * 1024**3,
                     missing_only=True,
                     combined_entries=[],
+                    sheet_name="DRP",
                 )
             conn.close()
 
@@ -92,6 +93,7 @@ class TestExportDrpidSkipNoteFallback(unittest.TestCase):
                     min_bytes=1 * 1024**3,
                     missing_only=True,
                     combined_entries=[],
+                    sheet_name="DRP",
                 )
             conn.close()
 
@@ -124,6 +126,7 @@ class TestExportDrpidSkipNoteFallback(unittest.TestCase):
                     min_bytes=1 * 1024**3,
                     missing_only=True,
                     combined_entries=[],
+                    sheet_name="DRP",
                 )
             conn.close()
 

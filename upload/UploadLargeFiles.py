@@ -29,7 +29,7 @@ from storage import Storage
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from upload.UploadIssueReporter import UploadIssueReporter
 from utils.Args import Args
-from utils.file_utils import parse_file_size_to_bytes
+from utils.file_utils import output_folder_name, parse_file_size_to_bytes
 from utils.Logger import Logger
 from utils.project_utils import get_field
 from utils.url_utils import BROWSER_HEADERS, fetch_page_body
@@ -69,12 +69,12 @@ def is_eligible_for_upload_large_files(project: Dict[str, Any]) -> bool:
 def resolve_output_folder(drpid: int, folder_path: str | None) -> Path:
     if folder_path:
         return Path(folder_path)
-    return Path(Args.base_output_dir) / f"DRP{drpid:06d}"
+    return Path(Args.base_output_dir) / output_folder_name(drpid)
 
 
 def log_path_for_download(log_root: Path, drpid: int, out_name: str) -> Path:
     safe = re.sub(r'[<>:"/\\|?*]', "_", out_name)
-    return log_root / f"DRP{drpid:06d}" / f"{safe}.log"
+    return log_root / output_folder_name(drpid) / f"{safe}.log"
 
 
 def planned_out_names(aria2_lines: Sequence[str]) -> List[str]:
@@ -177,7 +177,7 @@ def run_aria2_downloads(
     Returns:
         (ok_count, fail_count)
     """
-    log_dir = log_root / f"DRP{drpid:06d}"
+    log_dir = log_root / output_folder_name(drpid)
     log_dir.mkdir(parents=True, exist_ok=True)
 
     ok_count = 0

@@ -42,7 +42,7 @@ from collectors.SkipNoteFiles import (  # noqa: E402
     SKIP_NOTE_MARKER,
     parse_skip_note_publication_files,
 )
-from utils.file_utils import format_file_size, sanitize_filename  # noqa: E402
+from utils.file_utils import format_file_size, output_folder_name, sanitize_filename  # noqa: E402
 from utils.url_utils import BROWSER_HEADERS, fetch_page_body  # noqa: E402
 
 DEFAULT_DB_PATH = REPO_ROOT / "usfs.db"
@@ -50,14 +50,25 @@ DEFAULT_CONFIG_PATH = REPO_ROOT / "config.json"
 DEFAULT_OUTPUT_DIR = DEFAULT_ARIA2_OUTPUT_DIR
 
 
+def load_google_sheet_name(config_path: Path) -> str:
+    """Return google_sheet_name from config, or DRP when unset."""
+    if config_path.is_file():
+        raw = json.loads(config_path.read_text(encoding="utf-8")).get("google_sheet_name")
+        if raw:
+            return str(raw).strip()
+    return "DRP"
+
+
 def resolve_output_folder(
     drpid: int,
     folder_path: str | None,
     base_output_dir: Path,
+    *,
+    sheet_name: str = "DRP",
 ) -> Path:
     if folder_path:
         return Path(folder_path)
-    return base_output_dir / f"DRP{drpid:06d}"
+    return base_output_dir / output_folder_name(drpid, prefix=sheet_name)
 
 
 def load_base_output_dir(config_path: Path) -> Path:
@@ -88,13 +99,14 @@ def ensure_drpid_aria2_cmd(
     user_agent: str,
     min_bytes: int,
     missing_only: bool,
+    sheet_name: str = "DRP",
 ) -> tuple[Path | None, int]:
     """
     Return ``(cmd_path, line_count)`` for a DRPID, exporting ``.cmd`` when missing or empty.
     """
     from collectors.UsfsAria2Export import parse_aria2c_lines_from_cmd_file
 
-    cmd_path = output_dir / f"DRP{drpid:06d}.cmd"
+    cmd_path = output_dir / f"{output_folder_name(drpid, prefix=sheet_name)}.cmd"
     if cmd_path.is_file():
         lines = parse_aria2c_lines_from_cmd_file(cmd_path)
         if lines:
@@ -198,6 +210,7 @@ def export_drpid(
     min_bytes: int,
     missing_only: bool,
     combined_entries: List[Aria2Entry],
+    sheet_name: str = "DRP",
 ) -> int:
     row = conn.execute(
         "SELECT DRPID, source_url, folder_path, status_notes FROM projects WHERE DRPID = ?",
@@ -207,7 +220,9 @@ def export_drpid(
         print(f"DRPID {drpid}: not found in database", file=sys.stderr)
         return 0
 
-    folder = resolve_output_folder(drpid, row["folder_path"], base_output_dir)
+    folder = resolve_output_folder(
+        drpid, row["folder_path"], base_output_dir, sheet_name=sheet_name
+    )
     folder.mkdir(parents=True, exist_ok=True)
 
     publication_files = resolve_publication_files(
@@ -331,6 +346,7 @@ def main() -> None:
         parser.error("No DRPIDs to export; pass --drpids or ensure status_notes contain skip lines")
 
     base_output_dir = load_base_output_dir(args.config)
+    sheet_name = load_google_sheet_name(args.config)
     user_agent = BROWSER_HEADERS["User-Agent"]
     combined: List[Aria2Entry] = []
     total_items = 0
@@ -345,6 +361,7 @@ def main() -> None:
             min_bytes=min_bytes,
             missing_only=missing_only,
             combined_entries=combined,
+            sheet_name=sheet_name,
         )
 
     conn.close()
@@ -358,7 +375,7 @@ def main() -> None:
         print(f"Combined: {combined_path} ({len(combined)} item(s))", file=sys.stderr)
 
     if total_items:
-        example = args.output_dir / f"DRP{drpids[0]:06d}.cmd"
+        example = args.output_dir / f"{output_folder_name(drpids[0], prefix=sheet_name)}.cmd"
         print("\nRun all downloads for one DRPID:", file=sys.stderr)
         print(f"  {example}", file=sys.stderr)
         print("Or open the .cmd file and copy individual aria2c lines.", file=sys.stderr)

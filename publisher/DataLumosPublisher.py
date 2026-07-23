@@ -288,6 +288,8 @@ class DataLumosPublisher:
 
         updater = GoogleSheetUpdater()
 
+        from publisher.sheet_only_status import should_write_claimed_for_sheet_only
+
         def _do_update() -> tuple[bool, Optional[str]]:
             return updater.update_for_sheet_only(
                 source_url=get_field(project, "source_url"),
@@ -295,6 +297,7 @@ class DataLumosPublisher:
                 dataset_download_possible=download_possible,
                 project=project if include_metadata else None,
                 log_suffix=f" ({status})",
+                write_claimed=should_write_claimed_for_sheet_only(status),
             )
 
         self._update_sheet_if_configured(drpid, project, _do_update, status_value)

@@ -1,5 +1,6 @@
 """Tests for collectors.UsfsAria2Export helpers."""
 
+import sys
 import unittest
 from pathlib import Path
 
@@ -18,10 +19,23 @@ from collectors.UsfsAria2Export import (
     run_aria2_cmd_line_with_retries,
     write_drpid_aria2_cmd,
 )
+from utils.Args import Args
+from utils.Logger import Logger
 from utils.url_utils import BROWSER_HEADERS
 
 
 class TestUsfsAria2Export(unittest.TestCase):
+    def setUp(self) -> None:
+        """Use a stable folder prefix so cmd paths are predictable."""
+        self._original_argv = sys.argv.copy()
+        sys.argv = ["test", "noop"]
+        Args.initialize()
+        Args._config["google_sheet_name"] = "DRP"
+        Logger.initialize(log_level="WARNING")
+
+    def tearDown(self) -> None:
+        sys.argv = self._original_argv
+
     def test_max_connections_for_url(self) -> None:
         self.assertEqual(
             max_connections_for_url("https://usfs-public.box.com/shared/static/x.zip"),

@@ -111,6 +111,7 @@ class TestDataLumosPublisher(unittest.TestCase):
             dataset_download_possible="N",
             project=None,
             log_suffix=" (not_found)",
+            write_claimed=True,
         )
         record = Storage.get(drpid)
         self.assertEqual(record.get("status"), "updated_not_found")
@@ -134,6 +135,7 @@ class TestDataLumosPublisher(unittest.TestCase):
             dataset_download_possible="N",
             project=None,
             log_suffix=" (no_links)",
+            write_claimed=True,
         )
         record = Storage.get(drpid)
         self.assertEqual(record.get("status"), "updated_no_links")
@@ -165,6 +167,7 @@ class TestDataLumosPublisher(unittest.TestCase):
             dataset_download_possible="?",
             project=project,
             log_suffix=" (collector_hold - needs login)",
+            write_claimed=True,
         )
         record = Storage.get(drpid)
         self.assertEqual(record.get("status"), "updated_collector_hold")
@@ -197,6 +200,7 @@ class TestDataLumosPublisher(unittest.TestCase):
             dataset_download_possible="?",
             project=project,
             log_suffix=" (no dataset)",
+            write_claimed=True,
         )
         record = Storage.get(drpid)
         self.assertEqual(record.get("status"), "updated_no_dataset")
@@ -221,6 +225,7 @@ class TestDataLumosPublisher(unittest.TestCase):
             dataset_download_possible="?",
             project=project,
             log_suffix=" (gigantic upload)",
+            write_claimed=False,
         )
         record = Storage.get(drpid)
         self.assertEqual(record.get("status"), "updated_gigantic_upload")
@@ -245,6 +250,7 @@ class TestDataLumosPublisher(unittest.TestCase):
             dataset_download_possible="?",
             project=project,
             log_suffix=" (needs scripting)",
+            write_claimed=False,
         )
         record = Storage.get(drpid)
         self.assertEqual(record.get("status"), "updated_needs_scripting")

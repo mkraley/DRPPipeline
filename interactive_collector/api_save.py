@@ -84,6 +84,14 @@ def save_metadata(
     except ValueError:
         raise
 
+    from utils.sheet_claimed_update import (
+        claim_project_on_inventory_sheet,
+        should_claim_after_collector_status,
+    )
+
+    if should_claim_after_collector_status(values.get("status")):
+        claim_project_on_inventory_sheet(drpid)
+
 
 # PDF generation: use "commit" so we only wait for the navigation to commit (response received).
 # Some pages never fire domcontentloaded in headless (e.g. FDA REMS); commit avoids that.

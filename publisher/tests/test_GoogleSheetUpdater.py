@@ -608,3 +608,99 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertTrue(notes_col)
         title_col = [d for d in body if d.get("values") == [["Site Name"]]]
         self.assertTrue(title_col)
+
+    @skip_if_no_google
+    @patch("publisher.GoogleSheetUpdater.build_sheets_v4_service")
+    @patch("google.oauth2.service_account.Credentials.from_service_account_file")
+    def test_update_for_sheet_only_skips_claimed_when_disabled(
+        self, mock_from_sa: MagicMock, mock_build: MagicMock
+    ) -> None:
+        """Sheet-only update with write_claimed=False must not write Claimed."""
+        mock_creds = MagicMock()
+        mock_creds.universe_domain = "googleapis.com"
+        mock_from_sa.return_value = mock_creds
+        mock_service = MagicMock()
+        header_response = {
+            "values": [
+                [
+                    "URL",
+                    "Data Added",
+                    "Dataset Download Possible?",
+                    "Nominated to EOT / USGWDA",
+                    "Notes",
+                ]
+            ]
+        }
+        url_column_response = {"values": [["https://example.com/existing"]]}
+        mock_get = mock_service.spreadsheets.return_value.values.return_value.get.return_value
+        mock_get.execute.side_effect = [header_response, url_column_response]
+        mock_service.spreadsheets.return_value.values.return_value.batchUpdate.return_value.execute.return_value = {}
+        mock_build.return_value = mock_service
+
+        cred_path = Path(tempfile.gettempdir()) / "creds_sheet_only_no_claim_test.json"
+        cred_path.write_text("{}")
+
+        updater = GoogleSheetUpdater()
+        with patch.object(Args, "google_sheet_id", "sheet123"), patch.object(
+            Args, "google_credentials", cred_path
+        ), patch.object(Args, "google_sheet_name", "CDC"), patch.object(
+            Args, "google_username", "alice"
+        ):
+            success, msg = updater.update_for_sheet_only(
+                "https://example.com/existing",
+                notes_value="needs scripting",
+                dataset_download_possible="?",
+                write_claimed=False,
+            )
+        cred_path.unlink(missing_ok=True)
+
+        self.assertTrue(success)
+        self.assertIsNone(msg)
+        body = mock_service.spreadsheets.return_value.values.return_value.batchUpdate.call_args[1][
+            "body"
+        ]["data"]
+        claimed_writes = [d for d in body if d.get("values") == [["alice"]]]
+        self.assertEqual(claimed_writes, [])
+        notes_col = [d for d in body if d.get("values") == [["needs scripting"]]]
+        self.assertTrue(notes_col)
+
+    @skip_if_no_google
+    @patch("publisher.GoogleSheetUpdater.build_sheets_v4_service")
+    @patch("google.oauth2.service_account.Credentials.from_service_account_file")
+    def test_update_claimed_writes_username_only(
+        self, mock_from_sa: MagicMock, mock_build: MagicMock
+    ) -> None:
+        """update_claimed sets only Claimed on a matched row."""
+        mock_creds = MagicMock()
+        mock_creds.universe_domain = "googleapis.com"
+        mock_from_sa.return_value = mock_creds
+        mock_service = MagicMock()
+        header_response = {
+            "values": [["URL", "Claimed (add your name)", "Data Added"]]
+        }
+        url_column_response = {"values": [["https://example.com/a"]]}
+        mock_get = mock_service.spreadsheets.return_value.values.return_value.get.return_value
+        mock_get.execute.side_effect = [header_response, url_column_response]
+        mock_service.spreadsheets.return_value.values.return_value.batchUpdate.return_value.execute.return_value = {}
+        mock_build.return_value = mock_service
+
+        cred_path = Path(tempfile.gettempdir()) / "creds_claimed_test.json"
+        cred_path.write_text("{}")
+
+        updater = GoogleSheetUpdater()
+        with patch.object(Args, "google_sheet_id", "sheet123"), patch.object(
+            Args, "google_credentials", cred_path
+        ), patch.object(Args, "google_sheet_name", "CDC"), patch.object(
+            Args, "google_username", "mkraley"
+        ):
+            success, msg = updater.update_claimed("https://example.com/a")
+
+        cred_path.unlink(missing_ok=True)
+        self.assertTrue(success)
+        self.assertIsNone(msg)
+        body = mock_service.spreadsheets.return_value.values.return_value.batchUpdate.call_args[1][
+            "body"
+        ]["data"]
+        self.assertEqual(len(body), 1)
+        self.assertIn("CDC!B2", body[0]["range"])
+        self.assertEqual(body[0]["values"], [["mkraley"]])

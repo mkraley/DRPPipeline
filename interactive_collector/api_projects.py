@@ -134,7 +134,8 @@ def ensure_output_folder(drpid: int, *, recreate: bool = False) -> Optional[str]
     Create or resolve the output folder for this DRPID; store in result state.
 
     By default (``recreate=False``), reuses Storage ``folder_path`` or the
-  default ``DRP######`` directory under ``base_output_dir`` without deleting files.
+    default ``{google_sheet_name}######`` directory under ``base_output_dir``
+    without deleting files.
     Only ``/api/projects/load`` passes ``recreate=True`` when the user opts to
     delete the folder on load.
 

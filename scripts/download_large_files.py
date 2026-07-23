@@ -34,7 +34,9 @@ from scripts.export_usfs_aria2_input import (  # noqa: E402
     ensure_drpid_aria2_cmd,
     load_base_output_dir,
     load_db_path,
+    load_google_sheet_name,
 )
+from utils.file_utils import output_folder_name  # noqa: E402
 from utils.url_utils import BROWSER_HEADERS  # noqa: E402
 
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config.json"
@@ -43,7 +45,7 @@ DEFAULT_SUMMARY_INTERVAL = 0
 
 def log_path_for_download(log_root: Path, drpid: int, out_name: str) -> Path:
     safe = re.sub(r'[<>:"/\\|?*]', "_", out_name)
-    return log_root / f"DRP{drpid:06d}" / f"{safe}.log"
+    return log_root / output_folder_name(drpid) / f"{safe}.log"
 
 
 def run_drpid(
@@ -58,6 +60,7 @@ def run_drpid(
     max_attempts: int,
     min_bytes: int,
     missing_only: bool,
+    sheet_name: str = "DRP",
 ) -> int:
     cmd_path, _ = ensure_drpid_aria2_cmd(
         conn,
@@ -67,6 +70,7 @@ def run_drpid(
         user_agent=BROWSER_HEADERS["User-Agent"],
         min_bytes=min_bytes,
         missing_only=missing_only,
+        sheet_name=sheet_name,
     )
     if cmd_path is None or not cmd_path.is_file():
         print(f"DRP {drpid}: nothing to download (no large files missing on disk).")
@@ -77,7 +81,7 @@ def run_drpid(
         print(f"DRP {drpid}: no aria2c commands in {cmd_path.name} (nothing to download).")
         return 0
 
-    log_dir = log_root / f"DRP{drpid:06d}"
+    log_dir = log_root / output_folder_name(drpid)
     log_dir.mkdir(parents=True, exist_ok=True)
 
     ok_count = 0
@@ -176,6 +180,7 @@ def main() -> int:
         parser.error("--max-retries must be at least 1")
 
     base_output = load_base_output_dir(args.config)
+    sheet_name = load_google_sheet_name(args.config)
     log_root = base_output / "logs"
     min_bytes = int(args.min_gb * 1024**3)
     missing_only = not args.include_on_disk
@@ -197,6 +202,7 @@ def main() -> int:
                 max_attempts=args.max_retries,
                 min_bytes=min_bytes,
                 missing_only=missing_only,
+                sheet_name=sheet_name,
             )
             if code != 0:
                 exit_code = code

@@ -18,7 +18,7 @@ from storage import Storage
 from collectors.GlobusConfig import build_transfer_service
 from utils.Errors import record_error, record_warning
 from utils.Logger import Logger
-from utils.file_utils import folder_extensions_and_size, format_file_size
+from utils.file_utils import folder_extensions_and_size, format_file_size, output_folder_name
 
 STATUS_EXTERNAL_ARCHIVE = "collected - external archive"
 STATUS_COLLECTED = "collected"
@@ -88,7 +88,7 @@ class AdcGlobusCollector:
             source_endpoint_id=globus_url.origin_id,
             source_path=globus_url.origin_path,
             destination_relative_path=rel_dest,
-            label=f"DRP{drpid:06d} ADC Globus",
+            label=f"{output_folder_name(drpid)} ADC Globus",
         )
         service.wait_for_task(task_id)
 
