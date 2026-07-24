@@ -46,7 +46,7 @@ class TestGWDANominator(unittest.TestCase):
         """Test nominate returns False when email not configured."""
         mock_page = MagicMock()
         nominator = GWDANominator(mock_page)
-        with patch("upload.GWDANominator.Args") as mock_args:
+        with patch("upload.GWDANominator.Args", MagicMock()) as mock_args:
             mock_args.gwda_email = None
             mock_args.datalumos_username = None
             mock_args.gwda_your_name = "Test"

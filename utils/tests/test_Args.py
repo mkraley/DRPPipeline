@@ -44,6 +44,18 @@ class TestArgs(unittest.TestCase):
         self.assertEqual(Args.sourcing_url_column, "URL")
         self.assertIsNone(Args.num_rows)  # Default is None (unlimited)
 
+    def test_initialize_uses_pytest_config_when_env_set(self) -> None:
+        """Under pytest, Args.initialize loads DRP_PYTEST_CONFIG instead of config.json."""
+        import os
+        import sys
+
+        sys.argv = ["test", "noop"]
+        pytest_config = os.environ.get("DRP_PYTEST_CONFIG")
+        self.assertTrue(pytest_config, "conftest.py should set DRP_PYTEST_CONFIG")
+        Args.initialize()
+        self.assertEqual(str(Args.base_output_dir), str(Path(pytest_config).parent / "output"))
+        self.assertEqual(Args.google_sheet_name, "TEST")
+
     
     def test_initialize_with_config_file(self) -> None:
         """Test Args initialization with config file."""
@@ -133,11 +145,16 @@ class TestArgs(unittest.TestCase):
         # Run from a temp dir where default config.json does not exist
         with tempfile.TemporaryDirectory() as tmpdir:
             import os
-            os.chdir(tmpdir)
-            sys.argv = ["test", "noop"]  # No --config specified, should use default
-            Args._initialized = False
-            Args.initialize()
-            os.chdir(original_cwd)
+            saved_pytest_config = os.environ.pop("DRP_PYTEST_CONFIG", None)
+            try:
+                os.chdir(tmpdir)
+                sys.argv = ["test", "noop"]  # No --config specified, should use default
+                Args._initialized = False
+                Args.initialize()
+            finally:
+                os.chdir(original_cwd)
+                if saved_pytest_config is not None:
+                    os.environ["DRP_PYTEST_CONFIG"] = saved_pytest_config
 
         self.assertTrue(Args._initialized)
         # Should warn about default config file not found

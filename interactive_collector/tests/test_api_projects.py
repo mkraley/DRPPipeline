@@ -22,8 +22,11 @@ from utils.Logger import Logger
 
 class TestEnsureOutputFolder(unittest.TestCase):
     def setUp(self) -> None:
+        self._original_argv = sys.argv.copy()
+        sys.argv = ["test", "noop"]
         self.tmpdir = Path(tempfile.mkdtemp())
         get_result_by_drpid().clear()
+        Args.initialize()
         self._sheet_name_patch = patch.object(Args, "google_sheet_name", "DRP")
         self._sheet_name_patch.start()
         self._storage_patch = patch("storage.Storage")
@@ -32,6 +35,7 @@ class TestEnsureOutputFolder(unittest.TestCase):
         self._mock_storage_cls.list_eligible_projects.return_value = []
 
     def tearDown(self) -> None:
+        sys.argv = self._original_argv
         self._storage_patch.stop()
         self._sheet_name_patch.stop()
         shutil.rmtree(self.tmpdir, ignore_errors=True)

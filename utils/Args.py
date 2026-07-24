@@ -125,6 +125,26 @@ class Args(metaclass=ArgsMeta):
     _parsed_args: Dict[str, Any] = {}
 
     @classmethod
+    def _default_config_path(cls) -> Path:
+        """
+        Return the config file path for initialization.
+
+        During pytest, ``DRP_PYTEST_CONFIG`` points at an isolated config so tests
+        do not read the repo ``config.json`` or write under real output folders.
+        """
+        pytest_config = os.environ.get("DRP_PYTEST_CONFIG")
+        if pytest_config:
+            return Path(pytest_config)
+        return Path("./config.json")
+
+    @classmethod
+    def reset_for_tests(cls) -> None:
+        """Reset initialization state so the next ``initialize()`` reloads config (tests only)."""
+        cls._initialized = False
+        cls._config = {}
+        cls._parsed_args = {}
+
+    @classmethod
     def initialize(cls, config_file: Optional[Path] = None) -> None:
         """
         Initialize configuration from defaults, config file, and command line args.
@@ -150,7 +170,7 @@ class Args(metaclass=ArgsMeta):
         # Default to "./config.json" if not explicitly provided
         config_path = config_file or parsed_args.get("config")
         if config_path is None:
-            config_path = "./config.json"
+            config_path = cls._default_config_path()
         
         if config_path:
             if not isinstance(config_path, Path):
@@ -190,7 +210,7 @@ class Args(metaclass=ArgsMeta):
             return
         cls._config = dict(cls._defaults)
         if config_path is None:
-            config_path = Path("./config.json")
+            config_path = cls._default_config_path()
         if not isinstance(config_path, Path):
             config_path = Path(config_path)
         if config_path.exists():
