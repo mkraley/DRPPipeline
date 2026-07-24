@@ -44,7 +44,11 @@ def set_metadata_from_page(drpid: int, data: Dict[str, str]) -> None:
     """Store metadata extracted from the Copy & Open page (only for that page, not subsequent navigations)."""
     if not data:
         return
+    from utils.title_utils import normalize_inventory_title
+
     cleaned = {k: (v or "").strip() for k, v in data.items() if v and str(v).strip()}
+    if cleaned.get("title"):
+        cleaned["title"] = normalize_inventory_title(cleaned["title"])
     if cleaned:
         _metadata_from_page[drpid] = cleaned
 

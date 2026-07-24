@@ -116,6 +116,32 @@
     return (h && typeof h === "string") ? h.trim() : "";
   }
 
+  function stripCatalogTitleSuffix(text) {
+    var suffixes = [
+      " | Agency for Healthcare Research and Quality",
+      " | Medicaid"
+    ];
+    var t = (text || "").trim();
+    if (!t) return "";
+    var changed = true;
+    while (changed) {
+      changed = false;
+      for (var i = 0; i < suffixes.length; i++) {
+        var suffix = suffixes[i];
+        if (t.endsWith(suffix)) {
+          t = t.slice(0, -suffix.length).trim();
+          changed = true;
+          continue;
+        }
+        if (t.toLowerCase().endsWith(suffix.toLowerCase())) {
+          t = t.slice(0, t.length - suffix.length).trim();
+          changed = true;
+        }
+      }
+    }
+    return t;
+  }
+
   function extractMetadataFromPage(options) {
     var allowDocumentTitle = !options || options.allowDocumentTitle !== false;
     var meta = {};
@@ -213,6 +239,7 @@
 
     var today = new Date();
     meta.download_date = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0") + "-" + String(today.getDate()).padStart(2, "0");
+    if (meta.title) meta.title = stripCatalogTitleSuffix(meta.title);
     return meta;
   }
 
@@ -232,7 +259,7 @@
         }
       }
     }
-    return (document.title || "").trim() || "";
+    return stripCatalogTitleSuffix((document.title || "").trim()) || "";
   }
 
   function urlHost(u) {

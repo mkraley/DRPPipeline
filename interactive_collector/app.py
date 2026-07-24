@@ -31,6 +31,7 @@ from interactive_collector.collector_state import get_result_by_drpid as _get_re
 from interactive_collector.collector_state import get_scoreboard as _get_scoreboard
 from utils.Args import Args
 from utils.file_utils import create_output_folder, sanitize_filename
+from utils.title_utils import normalize_inventory_title
 from utils.url_utils import (
     body_looks_like_html,
     body_looks_like_xml,
@@ -1230,7 +1231,9 @@ def _metadata_for_template(flask_app: Flask, display_drpid: Optional[str], src_h
             project = _get_project_by_drpid(flask_app, int(display_drpid))
         except (ValueError, TypeError):
             pass
-    title = (src_h1 or "").strip() or ((project.get("title") or "") if project else "") or ""
+    title = normalize_inventory_title(
+        (src_h1 or "").strip() or ((project.get("title") or "") if project else "") or ""
+    )
     summary = (project.get("summary") or "") if project else ""
     keywords = (project.get("keywords") or "") if project else ""
     agency = (project.get("agency") or "") if project else ""

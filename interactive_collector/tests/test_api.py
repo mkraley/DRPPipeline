@@ -277,6 +277,19 @@ class TestApiMetadataFromPage(unittest.TestCase):
         data3 = json.loads(resp3.data)
         self.assertEqual(data3["metadata"], {})
 
+    def test_metadata_from_page_strips_ahrq_title_suffix(self) -> None:
+        """Catalog page titles with agency suffix are stored without the suffix."""
+        raw_title = "Hospital Survey | Agency for Healthcare Research and Quality"
+        resp = self.client.post(
+            "/api/metadata-from-page",
+            json={"drpid": 2, "title": raw_title},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        resp2 = self.client.get("/api/metadata-from-page?drpid=2")
+        data = json.loads(resp2.data)
+        self.assertEqual(data["metadata"].get("title"), "Hospital Survey")
+
     def test_metadata_from_page_post_requires_drpid(self) -> None:
         """POST without drpid returns 400."""
         resp = self.client.post("/api/metadata-from-page", json={}, content_type="application/json")

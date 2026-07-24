@@ -36,6 +36,7 @@ from markdownify import markdownify as html_to_markdown
 
 from interactive_collector.html_table_expand import expand_tables_for_markdown
 from utils.file_utils import sanitize_filename
+from utils.title_utils import normalize_inventory_title
 from utils.url_utils import BROWSER_HEADERS, is_valid_url
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -159,7 +160,7 @@ def projects_load() -> Any:
     clear_scoreboard()
 
     metadata = {
-        "title": (proj.get("title") or "").strip(),
+        "title": normalize_inventory_title((proj.get("title") or "").strip()),
         "summary": (proj.get("summary") or "").strip(),
         "keywords": (proj.get("keywords") or "").strip(),
         "agency": (proj.get("agency") or "").strip(),

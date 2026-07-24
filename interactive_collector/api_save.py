@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from utils.file_utils import folder_extensions_and_size, format_file_size, sanitize_filename
+from utils.title_utils import normalize_inventory_title
 from utils.url_utils import is_valid_url
 
 from interactive_collector.pdf_utils import page_title_or_h1, unique_pdf_basename
@@ -53,7 +54,7 @@ def save_metadata(
     values: Dict[str, Any] = {
         "status": (status_override or "collected").strip() or "collected",
         "errors": None,
-        "title": title,
+        "title": normalize_inventory_title(title),
         "status_notes": (status_notes or "").strip() or None,
         "agency": agency,
         "office": office,

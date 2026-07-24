@@ -15,6 +15,7 @@ from utils.Args import Args
 from utils.google_sheets_service import build_sheets_v4_service
 from utils.Logger import Logger
 from utils.file_utils import format_file_size
+from utils.title_utils import normalize_inventory_title
 
 try:
     from google.oauth2 import service_account
@@ -408,7 +409,7 @@ class GoogleSheetUpdater:
                     "values": [[val]],
                 })
 
-        t_title = (title_to_write or "").strip()
+        t_title = normalize_inventory_title(title_to_write)
         if t_title:
             if column_map.get("Title of Site"):
                 _add_metadata("Title of Site", t_title)
@@ -461,7 +462,7 @@ class GoogleSheetUpdater:
                     "values": [[val]],
                 })
 
-        t_title = (title_to_write or "").strip()
+        t_title = normalize_inventory_title(title_to_write)
         if t_title:
             if column_map.get("Title of Site"):
                 _add_metadata("Title of Site", t_title)
@@ -716,6 +717,10 @@ class GoogleSheetUpdater:
         val = (project.get(project_field) or "").strip()
         if not val:
             return None
+        if project_field == "title":
+            val = normalize_inventory_title(val)
+            if not val:
+                return None
         if append_new:
             return val
         if not self._read_cell_text(service, sheet_id, sheet_name, col_letter, row_number):
@@ -754,7 +759,7 @@ class GoogleSheetUpdater:
                     "values": [[value]],
                 })
 
-        t_title = (title_to_write or "").strip()
+        t_title = normalize_inventory_title(title_to_write)
         if t_title and column_map.get("Title of Site"):
             _add("Title of Site", t_title)
         elif t_title and column_map.get("Title"):

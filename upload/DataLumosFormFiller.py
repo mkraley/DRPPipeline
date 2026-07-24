@@ -12,6 +12,7 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from utils.Logger import Logger
 from utils.summary_html import prepare_summary_for_datalumos_upload
+from utils.title_utils import normalize_inventory_title
 
 if TYPE_CHECKING:
     from upload.UploadIssueReporter import UploadIssueReporter
@@ -27,7 +28,7 @@ def truncate_title_for_datalumos(title: str, max_len: int = DATALUMOS_TITLE_MAX_
     allowed span (when that keeps most of the title). Otherwise hard-truncates.
     Appends an ellipsis when text was removed.
     """
-    normalized = " ".join(title.split())
+    normalized = " ".join(normalize_inventory_title(title).split())
     if len(normalized) <= max_len:
         return normalized
 
