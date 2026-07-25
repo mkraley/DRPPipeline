@@ -6,7 +6,7 @@ Coordinates browser lifecycle, authentication, and the publish workflow.
 Publish flow derived from chiara_upload.py (Selenium) → Playwright.
 """
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright, TimeoutError as PlaywrightTimeoutError
 
@@ -21,6 +21,8 @@ from utils.project_folder_cleanup import (
     try_delete_project_folder,
 )
 from publisher.sheet_only_status import resolve_sheet_only_config
+from publisher.WorkspaceFileStats import workspace_file_stats_from_page
+from verify.DatalumosViewFileStats import verify_upload_counts
 
 
 # Published / Download Location URL template (``version`` is V1 on first publish, V2 on republish)
@@ -59,8 +61,9 @@ class DataLumosPublisher:
     """
     Publisher module that publishes uploaded projects in DataLumos.
 
-    Implements ModuleProtocol. For each eligible project (status="uploaded"),
-    this module: authenticates, navigates to the project, runs the publish
+    Implements ModuleProtocol.     For each eligible project (status="uploaded"),
+    this module: authenticates, navigates to the project, verifies workspace
+    file count/size against the database, runs the publish
     workflow (Publish Project → review → Proceed to Publish → dialog →
     Publish Data → Back to Project), and updates Storage with published_url
     and status="published".
@@ -171,6 +174,15 @@ class DataLumosPublisher:
 
         self._finalize_after_publish(drpid)
 
+    def _pre_publish_abort_label(self) -> str:
+        """
+        Verb used in inventory gate error messages (``publish`` or ``republish``).
+
+        Returns:
+            Short label for log and error text.
+        """
+        return "publish"
+
     def _pre_publish_gate(
         self,
         page: Page,
@@ -178,7 +190,10 @@ class DataLumosPublisher:
         drpid: int,
     ) -> Optional[str]:
         """
-        Optional check before starting the publish click sequence.
+        Abort publish when workspace inventory does not match the database.
+
+        Compares workspace file count/size to Storage ``num_files`` and
+        ``file_size`` before starting the publish click sequence.
 
         Args:
             page: Playwright page on the DataLumos project workspace.
@@ -186,9 +201,43 @@ class DataLumosPublisher:
             drpid: Project DRPID.
 
         Returns:
-            Error message to abort publish, or None to continue.
+            Combined error message when mismatched; None when inventory matches.
         """
-        return None
+        errors = self._workspace_inventory_mismatches(page, project)
+        if not errors:
+            Logger.info(
+                "DRPID %s: workspace inventory matches database; proceeding to %s",
+                drpid,
+                self._pre_publish_abort_label(),
+            )
+            return None
+        return (
+            f"Aborting {self._pre_publish_abort_label()}: "
+            "workspace file count/size does not match database — "
+            + "; ".join(errors)
+        )
+
+    def _workspace_inventory_mismatches(
+        self,
+        page: Page,
+        project: Dict[str, Any],
+    ) -> List[str]:
+        """
+        Compare workspace file count/size to Storage ``num_files`` / ``file_size``.
+
+        Args:
+            page: Playwright page on the DataLumos project workspace.
+            project: Storage project record.
+
+        Returns:
+            Human-readable mismatch messages; empty when inventory matches.
+        """
+        page_stats = workspace_file_stats_from_page(page)
+        db_num_files = project.get("num_files")
+        if db_num_files is not None:
+            db_num_files = int(db_num_files)
+        db_file_size = get_field(project, "file_size")
+        return verify_upload_counts(db_num_files, db_file_size, page_stats)
 
     def _finalize_after_publish(self, drpid: int) -> None:
         """

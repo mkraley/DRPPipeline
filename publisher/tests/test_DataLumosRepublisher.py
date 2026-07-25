@@ -100,7 +100,7 @@ class TestDataLumosRepublisher(unittest.TestCase):
     def test_pre_publish_gate_aborts_on_mismatch(self) -> None:
         """Inventory mismatch returns an abort error message."""
         self.module._workspace_inventory_mismatches = MagicMock(  # type: ignore[method-assign]
-            return_value=["file count mismatch: database=5, datalumos=4"]
+            return_value=["inventory mismatch: files=5/4 size=1.0 MB/500 KB"]
         )
         message = self.module._pre_publish_gate(
             MagicMock(),
@@ -109,7 +109,7 @@ class TestDataLumosRepublisher(unittest.TestCase):
         )
         assert message is not None
         self.assertIn("Aborting republish", message)
-        self.assertIn("file count mismatch", message)
+        self.assertIn("inventory mismatch", message)
 
     def test_pre_publish_gate_ok_when_matching(self) -> None:
         """Matching inventory allows republish to proceed."""
@@ -219,7 +219,7 @@ class TestDataLumosRepublisher(unittest.TestCase):
         self.assertEqual(project["status"], "re-uploaded-error")
         self.assertIn("Aborting republish", project.get("errors") or "")
 
-    @patch("publisher.DataLumosRepublisher.workspace_file_stats_from_page")
+    @patch("publisher.DataLumosPublisher.workspace_file_stats_from_page")
     def test_workspace_inventory_mismatches_uses_verify_counts(
         self,
         mock_stats: MagicMock,
@@ -235,32 +235,6 @@ class TestDataLumosRepublisher(unittest.TestCase):
         self.assertTrue(any("inventory mismatch" in e for e in errors))
         self.assertTrue(any("files=5/4" in e for e in errors))
         mock_stats.assert_called_once()
-
-    def test_workspace_file_stats_from_page_parses_table(self) -> None:
-        """Workspace scraper reads name/size from table.table-hover columns."""
-        from publisher.DataLumosRepublisher import workspace_file_stats_from_page
-
-        page = MagicMock()
-        page.evaluate.return_value = {
-            "files": [
-                {"name": "a.pdf", "size": "1.0 KB"},
-                {"name": "b.zip", "size": "1.0 KB"},
-            ]
-        }
-        stats = workspace_file_stats_from_page(page)
-        self.assertIsNone(stats.error)
-        self.assertEqual(stats.file_count, 2)
-        self.assertEqual(stats.total_bytes, 2048)
-        self.assertEqual(stats.file_names, ("a.pdf", "b.zip"))
-
-    def test_workspace_file_stats_from_page_no_rows(self) -> None:
-        """Empty workspace table surfaces no_files_found."""
-        from publisher.DataLumosRepublisher import workspace_file_stats_from_page
-
-        page = MagicMock()
-        page.evaluate.return_value = {"error": "no_files_found"}
-        stats = workspace_file_stats_from_page(page)
-        self.assertEqual(stats.error, "no_files_found")
 
 
 if __name__ == "__main__":

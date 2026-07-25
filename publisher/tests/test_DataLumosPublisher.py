@@ -35,9 +35,14 @@ class TestDataLumosPublisher(unittest.TestCase):
         self.test_db_path = self.temp_dir / "test_drp_pipeline.db"
         self.storage = Storage.initialize("StorageSQLLite", db_path=self.test_db_path)
         self.publisher = DataLumosPublisher()
+        self._pre_publish_gate_patch = patch.object(
+            DataLumosPublisher, "_pre_publish_gate", return_value=None
+        )
+        self._pre_publish_gate_mock = self._pre_publish_gate_patch.start()
 
     def tearDown(self) -> None:
         """Clean up after each test."""
+        self._pre_publish_gate_patch.stop()
         sys.argv = self._original_argv
         self.storage.close()
         Storage.reset()
@@ -271,6 +276,88 @@ class TestDataLumosPublisher(unittest.TestCase):
         mock_page = MagicMock()
         mock_page.evaluate.return_value = None
         self.assertIsNone(self.publisher._uploads_incomplete_on_project_page(mock_page))
+
+    def test_pre_publish_gate_aborts_on_mismatch(self) -> None:
+        """Inventory mismatch returns an abort error message."""
+        self._pre_publish_gate_patch.stop()
+        try:
+            self.publisher._workspace_inventory_mismatches = MagicMock(  # type: ignore[method-assign]
+                return_value=["inventory mismatch: files=5/4 size=1.0 MB/500 KB"]
+            )
+            message = self.publisher._pre_publish_gate(
+                MagicMock(),
+                {"num_files": 5, "file_size": "1 MB"},
+                7,
+            )
+        finally:
+            self._pre_publish_gate_mock = self._pre_publish_gate_patch.start()
+        self.assertIsNotNone(message)
+        self.assertIn("Aborting publish", message)
+        self.assertIn("inventory mismatch", message)
+
+    def test_pre_publish_gate_ok_when_matching(self) -> None:
+        """Matching inventory allows publish to proceed."""
+        self.publisher._workspace_inventory_mismatches = MagicMock(  # type: ignore[method-assign]
+            return_value=[]
+        )
+        self.assertIsNone(
+            self.publisher._pre_publish_gate(MagicMock(), {"num_files": 5}, 7)
+        )
+
+    @patch("publisher.DataLumosPublisher.workspace_file_stats_from_page")
+    def test_workspace_inventory_mismatches_uses_verify_counts(
+        self,
+        mock_stats: MagicMock,
+    ) -> None:
+        """Workspace inventory check compares scraped stats to the database."""
+        from verify.DatalumosViewFileStats import DatalumosViewFileStats
+
+        mock_stats.return_value = DatalumosViewFileStats(
+            file_count=4, total_bytes=1000
+        )
+        errors = self.publisher._workspace_inventory_mismatches(
+            MagicMock(),
+            {"num_files": 5, "file_size": "1000"},
+        )
+        self.assertTrue(any("inventory mismatch" in e for e in errors))
+        self.assertTrue(any("files=5/4" in e for e in errors))
+        mock_stats.assert_called_once()
+
+    @patch.object(DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None)
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    @patch.object(DataLumosPublisher, "_publish_workspace")
+    def test_run_aborts_when_inventory_gate_fails(
+        self,
+        mock_publish: MagicMock,
+        mock_wait_for_human: MagicMock,
+        mock_upload_check: MagicMock,
+    ) -> None:
+        """Gate failure records errors and does not publish."""
+        drpid = Storage.create_record("https://example.com/test")
+        Storage.update_record(
+            drpid,
+            {
+                "datalumos_id": "239181",
+                "status": "uploaded",
+                "num_files": 5,
+                "file_size": "1 MB",
+            },
+        )
+        mock_page = MagicMock()
+        self.publisher._session.ensure_browser = MagicMock(return_value=mock_page)
+        self.publisher._session.ensure_authenticated = MagicMock(return_value=None)
+        self.publisher._session.close = MagicMock(return_value=None)
+        self._pre_publish_gate_mock.return_value = (
+            "Aborting publish: workspace file count/size does not match database — files=5/4"
+        )
+
+        self.publisher.run(drpid)
+
+        mock_publish.assert_not_called()
+        mock_upload_check.assert_not_called()
+        record = Storage.get(drpid)
+        self.assertEqual(record.get("status"), "uploaded-error")
+        self.assertIn("Aborting publish", record.get("errors") or "")
 
     @patch.object(
         DataLumosPublisher,
