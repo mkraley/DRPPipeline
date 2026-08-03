@@ -11,7 +11,12 @@ from typing import List
 
 from playwright.sync_api import Page
 
-from verify.DatalumosViewFileStats import DatalumosViewFileStats, sum_sizes_text
+from verify.DatalumosViewFileStats import (
+    DatalumosViewFileStats,
+    set_records_per_page,
+    sum_sizes_text,
+    wait_for_workspace_file_table,
+)
 
 # Workspace file manager: checkbox | name | type | size | lastModified | actions
 _WORKSPACE_FILE_STATS_JS = """
@@ -41,6 +46,27 @@ _WORKSPACE_FILE_STATS_JS = """
 """
 
 
+def _evaluate_workspace_files(page: Page) -> object:
+    """
+    Run the workspace file-table extractor, retrying once after a navigation race.
+
+    Args:
+        page: Playwright page on the DataLumos workspace URL.
+
+    Returns:
+        The value returned by ``page.evaluate``.
+    """
+    try:
+        return page.evaluate(_WORKSPACE_FILE_STATS_JS)
+    except Exception as exc:
+        message = str(exc)
+        if "Execution context was destroyed" not in message and "navigation" not in message.lower():
+            raise
+        page.wait_for_load_state("domcontentloaded", timeout=120000)
+        wait_for_workspace_file_table(page)
+        return page.evaluate(_WORKSPACE_FILE_STATS_JS)
+
+
 def workspace_file_stats_from_page(page: Page) -> DatalumosViewFileStats:
     """
     Extract file count and total bytes from the DataLumos workspace file table.
@@ -51,7 +77,8 @@ def workspace_file_stats_from_page(page: Page) -> DatalumosViewFileStats:
     Returns:
         Parsed stats, or an instance with ``error`` set on failure.
     """
-    raw = page.evaluate(_WORKSPACE_FILE_STATS_JS)
+    set_records_per_page(page)
+    raw = _evaluate_workspace_files(page)
     if not isinstance(raw, dict):
         return DatalumosViewFileStats(error="invalid_page_response")
     if raw.get("error"):

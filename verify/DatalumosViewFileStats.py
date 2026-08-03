@@ -13,29 +13,115 @@ from utils.file_utils import format_file_size, parse_file_size_to_bytes
 
 SIZE_TOLERANCE = 0.05
 DEFAULT_RECORDS_PER_PAGE = 100
+_PAGE_SIZE_SELECTORS = ("#pageSizeOptions", "#recordsPerPage")
+_WORKSPACE_PAGER_SELECTOR = "#recordsPerPage"
+
+
+def _find_page_size_select(page: Page) -> tuple[Optional[str], Optional[object]]:
+    """
+    Locate the DataLumos ``Records per page`` dropdown on the current page.
+
+    The published view uses ``#pageSizeOptions``; the workspace file manager
+    uses ``#recordsPerPage``.
+
+    Args:
+        page: Playwright page on a DataLumos project URL.
+
+    Returns:
+        ``(selector, element)`` when found, otherwise ``(None, None)``.
+    """
+    for selector in _PAGE_SIZE_SELECTORS:
+        select = page.query_selector(selector)
+        if select is not None:
+            return selector, select
+    return None, None
+
+
+def wait_for_workspace_file_table(
+    page: Page,
+    page_size: int = DEFAULT_RECORDS_PER_PAGE,
+    timeout: int = 15000,
+) -> None:
+    """
+    Wait for the workspace file table to list all records for the current page size.
+
+    The workspace pager reloads rows via AJAX. ``networkidle`` and
+    ``expect_navigation`` are unreliable here; instead wait until the visible
+    row count reaches ``min(total records, page_size)``.
+
+    Args:
+        page: Playwright page on the DataLumos workspace URL.
+        page_size: Selected records-per-page value.
+        timeout: Maximum wait in milliseconds.
+    """
+    try:
+        page.wait_for_function(
+            """(pageSize) => {
+              const rows = document.querySelectorAll('table.table-hover tbody tr').length;
+              const match = document.body.innerText.match(/Total of (\\d+) records/);
+              if (!match) {
+                return rows > 10;
+              }
+              const total = parseInt(match[1], 10);
+              const target = Math.min(total, pageSize);
+              return rows >= target;
+            }""",
+            arg=page_size,
+            timeout=timeout,
+        )
+    except PlaywrightTimeoutError:
+        page.wait_for_timeout(1000)
+
+
+def _wait_after_page_size_change(
+    page: Page,
+    active_selector: str,
+    page_size: int = DEFAULT_RECORDS_PER_PAGE,
+) -> None:
+    """
+    Wait for the file table to reflect a page-size change.
+
+    Args:
+        page: Playwright page on a DataLumos project URL.
+        active_selector: Selector for the pager control that was changed.
+        page_size: Selected records-per-page value.
+    """
+    if active_selector == _WORKSPACE_PAGER_SELECTOR:
+        wait_for_workspace_file_table(page, page_size=page_size)
+        return
+    page.wait_for_load_state("networkidle", timeout=120000)
+    try:
+        page.wait_for_selector(active_selector, state="attached", timeout=60000)
+    except PlaywrightTimeoutError:
+        pass
 
 
 def set_records_per_page(page: Page, page_size: int = DEFAULT_RECORDS_PER_PAGE) -> bool:
     """
-    Set the DataLumos view-page ``Records per page`` dropdown when present.
+    Set the DataLumos ``Records per page`` dropdown when present.
 
-    The published view defaults to 10 rows. Selecting a larger page size
-    (typically 100) ensures projects with more files are fully enumerated.
-    Changing the dropdown triggers ``updatePager``, which navigates; this
-    waits for that navigation to finish before returning.
+    The published view uses ``#pageSizeOptions`` and the workspace file manager
+    uses ``#recordsPerPage``. Both default to 10 rows. Selecting a larger page
+    size (typically 100) ensures projects with more files are fully enumerated.
+    Changing the dropdown may trigger ``updatePager`` and a navigation; this
+    waits for that update to finish before returning.
 
     Args:
-        page: Playwright page on a DataLumos project view URL.
+        page: Playwright page on a DataLumos project or workspace URL.
         page_size: Desired page size option value (default 100).
 
     Returns:
         True when the dropdown was found and set (or already set); False when absent.
     """
-    select = page.query_selector("#pageSizeOptions")
+    active_selector, select = _find_page_size_select(page)
     if select is None:
         return False
     desired = str(page_size)
     if select.input_value() == desired:
+        return True
+    if active_selector == _WORKSPACE_PAGER_SELECTOR:
+        select.select_option(desired)
+        _wait_after_page_size_change(page, active_selector, page_size)
         return True
     try:
         with page.expect_navigation(wait_until="domcontentloaded", timeout=120000):
@@ -43,8 +129,7 @@ def set_records_per_page(page: Page, page_size: int = DEFAULT_RECORDS_PER_PAGE) 
     except PlaywrightTimeoutError:
         # Some responses may update without a full document navigation.
         pass
-    page.wait_for_load_state("networkidle", timeout=120000)
-    page.wait_for_selector("#pageSizeOptions", state="attached", timeout=60000)
+    _wait_after_page_size_change(page, active_selector, page_size)
     return True
 
 

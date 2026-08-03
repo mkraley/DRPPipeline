@@ -3,7 +3,7 @@ Unit tests for DatalumosViewFileStats.
 """
 
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from verify.DatalumosViewFileStats import (
     DatalumosViewFileStats,
@@ -129,6 +129,7 @@ class TestDatalumosViewFileStats(unittest.TestCase):
         page = MagicMock()
         page.query_selector.return_value = None
         self.assertFalse(set_records_per_page(page))
+        self.assertEqual(page.query_selector.call_count, len(("#pageSizeOptions", "#recordsPerPage")))
         page.wait_for_load_state.assert_not_called()
 
     def test_set_records_per_page_already_set(self) -> None:
@@ -141,8 +142,8 @@ class TestDatalumosViewFileStats(unittest.TestCase):
         select.select_option.assert_not_called()
         page.wait_for_load_state.assert_not_called()
 
-    def test_set_records_per_page_selects_100(self) -> None:
-        """When dropdown is present at 10, select 100 and wait for navigation."""
+    def test_set_records_per_page_selects_100_on_view_page(self) -> None:
+        """When view-page dropdown is present at 10, select 100 and wait."""
         page = MagicMock()
         select = MagicMock()
         select.input_value.return_value = "10"
@@ -160,6 +161,33 @@ class TestDatalumosViewFileStats(unittest.TestCase):
         page.wait_for_selector.assert_called_once_with(
             "#pageSizeOptions", state="attached", timeout=60000
         )
+
+    @patch("verify.DatalumosViewFileStats.wait_for_workspace_file_table")
+    def test_set_records_per_page_selects_100_on_workspace(
+        self, mock_wait_table: MagicMock
+    ) -> None:
+        """When workspace dropdown is present at 10, select 100 and wait for rows."""
+        page = MagicMock()
+        select = MagicMock()
+        select.input_value.return_value = "10"
+
+        def query_selector(selector: str) -> MagicMock | None:
+            if selector == "#pageSizeOptions":
+                return None
+            if selector == "#recordsPerPage":
+                return select
+            return None
+
+        page.query_selector.side_effect = query_selector
+        nav_cm = MagicMock()
+        nav_cm.__enter__ = MagicMock(return_value=None)
+        nav_cm.__exit__ = MagicMock(return_value=False)
+        page.expect_navigation.return_value = nav_cm
+        self.assertTrue(set_records_per_page(page))
+        select.select_option.assert_called_once_with("100")
+        page.expect_navigation.assert_not_called()
+        mock_wait_table.assert_called_once_with(page, page_size=100)
+        page.wait_for_load_state.assert_not_called()
 
     def test_from_page_retries_after_navigation_race(self) -> None:
         """from_page retries evaluate when the pager navigation destroys context."""
