@@ -58,6 +58,36 @@ class TestFileUtils(unittest.TestCase):
         long_name = "a" * 200
         result = file_utils.sanitize_filename(long_name, max_length=50)
         self.assertLessEqual(len(result), 50)
+
+    def test_sanitize_filename_default_fits_long_academic_names(self) -> None:
+        """Default max length keeps typical long publication filenames intact."""
+        long_name = (
+            "Hunter_2012. History of Early Contributions Homalodisca coagulata "
+            "(Glassy-winged sharpshooter) ESTs, Transcriptome, Micrbiome.docx"
+        )
+        result = file_utils.sanitize_filename(long_name)
+        self.assertLessEqual(len(result), 200)
+        self.assertTrue(result.lower().endswith(".docx"))
+        self.assertIn("Transcriptome", result)
+        self.assertIn("Micrbiome", result)
+
+    def test_sanitize_filename_preserves_extension_when_truncating(self) -> None:
+        """Long filenames keep the extension after truncation."""
+        long_name = (
+            "Hunter_2012. History of Early Contributions Homalodisca coagulata "
+            "(Glassy-winged sharpshooter) ESTs, Transcriptome, Micrbiome.docx"
+        )
+        result = file_utils.sanitize_filename(long_name, max_length=100)
+        self.assertLessEqual(len(result), 100)
+        self.assertTrue(result.lower().endswith(".docx"))
+        self.assertIn("Hunter_2012", result)
+
+    def test_truncate_preserving_extension_compound_suffix(self) -> None:
+        """Compound extensions like .tar.gz are preserved."""
+        name = "a" * 80 + ".tar.gz"
+        result = file_utils._truncate_preserving_extension(name, 50)
+        self.assertLessEqual(len(result), 50)
+        self.assertTrue(result.endswith(".tar.gz"))
     
     def test_sanitize_filename_removes_leading_trailing_dots(self) -> None:
         """Test sanitize_filename removes leading/trailing dots."""

@@ -158,7 +158,7 @@ def _run_pdf_worker(
                             and url.strip() == source_url.strip()
                             and metadata_title.strip()
                         ):
-                            base = sanitize_filename(metadata_title.strip(), max_length=80) or "page"
+                            base = sanitize_filename(metadata_title.strip()) or "page"
                         else:
                             base = page_title_or_h1(page, url)
                         if not base:

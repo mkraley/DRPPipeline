@@ -235,7 +235,7 @@ class SocrataCollector:
         try:
             page_title = self._page.title()
             if page_title:
-                pdf_filename = sanitize_filename(page_title, max_length=100) + ".pdf"
+                pdf_filename = sanitize_filename(page_title) + ".pdf"
             else:
                 # Fallback if no title
                 pdf_filename = "page.pdf"

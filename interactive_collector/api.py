@@ -185,7 +185,7 @@ def projects_load() -> Any:
 
 def _unique_basename_for_folder(base: str, folder_path: Path, file_ext: str) -> str:
     """Return unique sanitized basename with extension (file_ext e.g. '.pdf', '.md')."""
-    safe = sanitize_filename(base, max_length=80) if base else "page"
+    safe = sanitize_filename(base) if base else "page"
     if not safe:
         safe = "page"
     low = safe.lower()
@@ -212,16 +212,16 @@ def _basename_for_saved_page(page_title: str, url: str, *, default: str = "page"
     """Sanitized basename (no extension) from page title, or URL-derived fallback."""
     title = (page_title or "").strip()
     if title:
-        return sanitize_filename(title, max_length=80) or default
+        return sanitize_filename(title) or default
 
     from urllib.parse import urlparse
 
     parsed = urlparse(url)
     path = (parsed.path or "").rstrip("/")
     base = path.split("/")[-1] if path else (parsed.netloc or default).split(".")[0]
-    if not base or len(base) > 80:
+    if not base or len(base) > 200:
         base = (parsed.netloc or default).split(".")[0] or default
-    return sanitize_filename(base, max_length=80) if base else default
+    return sanitize_filename(base) if base else default
 
 
 @api_bp.route("/extension/save-pdf", methods=["POST", "OPTIONS"])

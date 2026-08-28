@@ -1082,7 +1082,7 @@ def _unique_download_basename(base: str, ext: str, used: Dict[str, int]) -> str:
     """Return unique sanitized basename: base.ext or base_1.ext, etc."""
     if not base or base == "download":
         base = "download"
-    base = sanitize_filename(base, max_length=80)
+    base = sanitize_filename(base)
     if ext and not base.lower().endswith(ext.lower()):
         base = base + ext
     key = base.lower()

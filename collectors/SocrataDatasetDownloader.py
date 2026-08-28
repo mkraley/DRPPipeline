@@ -150,7 +150,7 @@ class SocrataDatasetDownloader:
         export_url = _build_socrata_export_url(page.url, view_id)
         cookies = page.context.cookies()
         try:
-            stem = sanitize_filename(page.title(), max_length=100) if page.title() else "dataset"
+            stem = sanitize_filename(page.title()) if page.title() else "dataset"
         except Exception:
             stem = "dataset"
         dataset_filename = f"{stem}.csv"
@@ -271,7 +271,7 @@ class SocrataDatasetDownloader:
             # Filename from page title (sanitized), extension from URL (e.g. export.csv -> .csv)
             try:
                 page_title = page.title()
-                stem = sanitize_filename(page_title, max_length=100) if page_title else "dataset"
+                stem = sanitize_filename(page_title) if page_title else "dataset"
             except Exception:
                 stem = "dataset"
             ext = _extension_from_export_url(captured_url)
@@ -312,7 +312,7 @@ class SocrataDatasetDownloader:
             if suggested_filename:
                 original_name = Path(suggested_filename).stem
                 file_extension = Path(suggested_filename).suffix[1:] if Path(suggested_filename).suffix else None
-                sanitized_name = sanitize_filename(original_name, max_length=100)
+                sanitized_name = sanitize_filename(original_name)
                 dataset_filename = f"{sanitized_name}.{file_extension}" if file_extension else sanitized_name
             else:
                 dataset_filename = "dataset.csv"

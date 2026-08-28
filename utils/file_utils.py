@@ -11,7 +11,46 @@ from pathlib import Path
 from typing import Optional
 
 
-def sanitize_filename(name: str, max_length: int = 100) -> str:
+_COMPOUND_EXTENSIONS: tuple[str, ...] = (
+    ".tar.gz",
+    ".tar.bz2",
+    ".tar.xz",
+    ".tar.z",
+    ".tar.lz",
+)
+
+
+def _split_filename_extension(name: str) -> tuple[str, str]:
+    """
+    Split a sanitized basename into stem and extension.
+
+    Uses the last dotted segment when it looks like a real extension, with
+    support for common compound extensions such as ``.tar.gz``.
+
+    Args:
+        name: Sanitized filename without path separators.
+
+    Returns:
+        ``(stem, extension)`` where extension includes the leading dot or is
+        empty when no extension should be preserved.
+    """
+    lower = name.lower()
+    for compound in _COMPOUND_EXTENSIONS:
+        if lower.endswith(compound):
+            return name[: -len(compound)], compound
+
+    if "." not in name:
+        return name, ""
+
+    stem, ext_part = name.rsplit(".", 1)
+    if not ext_part or len(ext_part) > 10:
+        return name, ""
+    if not all(character.isalnum() or character in "+-" for character in ext_part):
+        return name, ""
+    return stem, f".{ext_part}"
+
+
+def sanitize_filename(name: str, max_length: int = 200) -> str:
     """
     Sanitize a filename to be valid for Windows filesystem.
     
@@ -76,15 +115,42 @@ def sanitize_filename(name: str, max_length: int = 100) -> str:
     sanitized = re.sub(r'[_\s]+', '_', sanitized)
     sanitized = sanitized.strip('_')
     
-    # Limit length
+    # Limit length while preserving a trailing extension (e.g. .docx).
     if len(sanitized) > max_length:
-        sanitized = sanitized[:max_length]
-        sanitized = sanitized.strip('. _')
-    
+        sanitized = _truncate_preserving_extension(sanitized, max_length)
+
     if not sanitized:
         sanitized = "Untitled"
-    
+
     return sanitized
+
+
+def _truncate_preserving_extension(name: str, max_length: int) -> str:
+    """
+    Shorten ``name`` to ``max_length`` characters without dropping the file extension.
+
+    Args:
+        name: Sanitized filename (no path separators).
+        max_length: Maximum total length including extension.
+
+    Returns:
+        Truncated filename, or empty string when nothing usable remains.
+    """
+    if len(name) <= max_length:
+        return name
+
+    stem, extension = _split_filename_extension(name)
+    if not extension:
+        return name[:max_length].strip(". _")
+
+    max_stem_len = max_length - len(extension)
+    if max_stem_len < 1:
+        return name[:max_length].strip(". _")
+
+    stem = stem[:max_stem_len].strip(". _")
+    if not stem:
+        return extension.lstrip(".")[:max_length]
+    return f"{stem}{extension}"
 
 
 _SIZE_UNIT_BYTES = {

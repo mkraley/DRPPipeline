@@ -49,7 +49,7 @@ def page_title_or_h1(page: Any, url: str = "") -> str:
             path = (parsed.path or "").rstrip("/")
             if path:
                 segment = path.split("/")[-1]
-                if segment and len(segment) < 80:
+                if segment and len(segment) < 200:
                     return segment
             if parsed.netloc:
                 return parsed.netloc.split(".")[0] or parsed.netloc
@@ -76,7 +76,7 @@ def unique_pdf_basename(
     Returns:
         Unique filename like "My_Page.pdf" or "Dataset_1.pdf"
     """
-    safe = sanitize_filename(base, max_length=80)
+    safe = sanitize_filename(base)
     if not safe:
         safe = "page"
     key = safe.lower()
