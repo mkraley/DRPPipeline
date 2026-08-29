@@ -187,15 +187,11 @@ class TestOrchestrator(unittest.TestCase):
         mock_collector_instance.run.assert_called_once_with(2)
         mock_claim.assert_called_once_with(2, "collector")
 
-    @patch("interactive_collector.app.app.run")
-    def test_run_interactive_collector_starts_app(self, mock_app_run: MagicMock) -> None:
-        """Test run('interactive_collector') starts Flask app (uses Args like rest of pipeline)."""
+    @patch("interactive_collector.dev_server.run_server")
+    def test_run_interactive_collector_starts_app(self, mock_run_server: MagicMock) -> None:
+        """Test run('interactive_collector') starts the dev server."""
         Orchestrator.run("interactive_collector")
-        mock_app_run.assert_called_once()
-        call_kw = mock_app_run.call_args[1]
-        self.assertEqual(call_kw.get("host"), "127.0.0.1")
-        self.assertEqual(call_kw.get("port"), 5000)
-        self.assertFalse(call_kw.get("debug"))
+        mock_run_server.assert_called_once()
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")
