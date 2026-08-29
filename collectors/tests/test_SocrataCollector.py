@@ -46,33 +46,32 @@ class TestSocrataCollector(unittest.TestCase):
         with patch.object(Args, 'base_output_dir', self.temp_dir):
             collector = SocrataCollector(headless=True)
             self.assertTrue(collector._headless)
-            self.assertIsNone(collector._playwright)
-            self.assertIsNone(collector._browser)
-            self.assertIsNone(collector._page)
+            self.assertIsNotNone(collector._session)
+            self.assertIsNone(collector._session.page)
     
     
-    @patch("collectors.SocrataCollector.record_error")
+    @patch("collectors.collector_url.record_error")
     def test_collect_invalid_url(self, mock_record_error: Mock) -> None:
         """Test collect() with invalid URL calls record_error and returns without folder_path."""
-        result = self.collector._collect("not-a-url", 1)
+        result = self.collector._collect("not-a-url", 1, {})
 
         mock_record_error.assert_called_once_with(1, "Invalid URL: not-a-url")
         self.assertNotIn("folder_path", result)
     
-    @patch("collectors.SocrataCollector.record_error")
+    @patch("collectors.collector_url.record_error")
     @patch('utils.url_utils.requests.get')
     def test_collect_url_access_fails(self, mock_get: Mock, mock_record_error: Mock) -> None:
         """Test collect() when URL access fails calls record_error."""
         import requests
         mock_get.side_effect = requests.exceptions.ConnectionError()
 
-        result = self.collector._collect("https://example.com", 1)
+        result = self.collector._collect("https://example.com", 1, {})
 
         mock_record_error.assert_called_once()
         self.assertIn("URL access failed", mock_record_error.call_args[0][1])
         self.assertNotIn("folder_path", result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     @patch('utils.url_utils.requests.get')
     @patch('collectors.SocrataCollector.SocrataPageProcessor')
     @patch('collectors.SocrataCollector.SocrataMetadataExtractor')
@@ -107,19 +106,18 @@ class TestSocrataCollector(unittest.TestCase):
             'keywords': None
         }
         
-        result = self.collector._collect("https://data.cdc.gov/view/test", 1)
+        result = self.collector._collect("https://data.cdc.gov/view/test", 1, {})
 
         mock_page.goto.assert_called_once()
         self.assertIn("folder_path", result)
     
     def test_cleanup_browser_no_browser(self) -> None:
         """Test _cleanup_browser when no browser is initialized."""
-        # Should not raise error
         self.collector._cleanup_browser()
-        self.assertIsNone(self.collector._browser)
-        self.assertIsNone(self.collector._playwright)
+        self.assertIsNone(self.collector._session.browser)
+        self.assertIsNone(self.collector._session.playwright)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_init_browser_success(self, mock_playwright: Mock) -> None:
         """Test _init_browser successfully initializes browser."""
         setup_mock_playwright(mock_playwright)
@@ -127,36 +125,34 @@ class TestSocrataCollector(unittest.TestCase):
         result = self.collector._init_browser()
         
         self.assertTrue(result)
-        self.assertIsNotNone(self.collector._playwright)
-        self.assertIsNotNone(self.collector._browser)
-        self.assertIsNotNone(self.collector._page)
+        self.assertIsNotNone(self.collector._session.browser)
+        self.assertIsNotNone(self.collector._session.page)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_init_browser_failure(self, mock_playwright: Mock) -> None:
         """Test _init_browser handles initialization failure."""
         mock_playwright.side_effect = Exception("Browser init failed")
         
         result = self.collector._init_browser()
         
-        # Should return False and clean up on failure
         self.assertFalse(result)
-        self.assertIsNone(self.collector._browser)
-        self.assertIsNone(self.collector._playwright)
+        self.assertIsNone(self.collector._session.browser)
+        self.assertIsNone(self.collector._session.page)
 
-    @patch("collectors.SocrataCollector.record_error")
-    @patch('collectors.SocrataCollector.create_output_folder', return_value=None)
+    @patch("collectors.CollectorBase.record_error")
+    @patch("collectors.CollectorBase.create_output_folder", return_value=None)
     @patch('utils.url_utils.requests.get')
-    def test_collect_output_folder_fails(self, mock_get: Mock, mock_create: Mock, mock_record_error: Mock) -> None:
+    def test_collect_output_folder_fails(self, mock_get: Mock, _mock_create: Mock, mock_record_error: Mock) -> None:
         """Test collect() when output folder creation fails calls record_error."""
         mock_get.return_value = Mock(status_code=200)
 
-        result = self.collector._collect("https://data.cdc.gov/view/x", 1)
+        result = self.collector._collect("https://data.cdc.gov/view/x", 1, {})
 
         mock_record_error.assert_called_once_with(1, "Failed to create output folder")
         self.assertNotIn("folder_path", result)
 
     @patch("collectors.SocrataCollector.record_error")
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     @patch('utils.url_utils.requests.get')
     def test_collect_page_load_fails(self, mock_get: Mock, mock_playwright: Mock, mock_record_error: Mock) -> None:
         """Test collect() when browser loads URL but page.goto fails calls record_error."""
@@ -167,13 +163,13 @@ class TestSocrataCollector(unittest.TestCase):
         mock_page.wait_for_timeout.return_value = None
 
         with patch.object(Args, "base_output_dir", self.temp_dir):
-            result = self.collector._collect("https://data.cdc.gov/view/x", 1)
+            result = self.collector._collect("https://data.cdc.gov/view/x", 1, {})
 
         mock_record_error.assert_called_once()
         self.assertIn("Failed to load page", mock_record_error.call_args[0][1])
     
-    @patch("collectors.SocrataCollector.record_error")
-    @patch("collectors.SocrataCollector.Storage")
+    @patch("collectors.CollectorBase.record_error")
+    @patch("collectors.CollectorBase.Storage")
     def test_run_record_not_found(self, mock_storage: Mock, mock_record_error: Mock) -> None:
         """Test run() when project record doesn't exist: record_error(update_storage=False)."""
         mock_storage.get.return_value = None
@@ -186,10 +182,9 @@ class TestSocrataCollector(unittest.TestCase):
             "Project record not found for DRPID: 123",
             update_storage=False,
         )
-        self.assertIsNone(self.collector._result)
     
-    @patch("collectors.SocrataCollector.record_error")
-    @patch("collectors.SocrataCollector.Storage")
+    @patch("collectors.CollectorBase.record_error")
+    @patch("collectors.CollectorBase.Storage")
     def test_run_missing_source_url(self, mock_storage: Mock, mock_record_error: Mock) -> None:
         """Test run() when project record has no source_url: record_error(update_storage=True)."""
         mock_storage.get.return_value = {"DRPID": 123, "status": "sourced"}
@@ -199,19 +194,24 @@ class TestSocrataCollector(unittest.TestCase):
         mock_storage.get.assert_called_once_with(123)
         mock_record_error.assert_called_once_with(
             123,
-            "Project record missing source_url for DRPID: 123",
+            "Missing source_url for DRPID: 123",
         )
-        self.assertIsNone(self.collector._result)
     
-    @patch("collectors.SocrataCollector.Storage")
+    @patch("utils.collector_status.Storage")
+    @patch("collectors.CollectorBase.Storage")
     @patch.object(SocrataCollector, "_collect")
-    def test_run_successful_collection(self, mock_collect: Mock, mock_storage: Mock) -> None:
+    def test_run_successful_collection(
+        self, mock_collect: Mock, mock_storage: Mock, mock_status_storage: Mock
+    ) -> None:
         """Test run() with successful collection (flat result dict)."""
-        mock_storage.get.return_value = {
+        record = {
             "DRPID": 123,
             "source_url": "https://data.cdc.gov/view/test",
             "status": "sourced",
         }
+        mock_storage.get.return_value = record
+        mock_status_storage.get.return_value = record
+        mock_status_storage.update_record = mock_storage.update_record
 
         folder_path = self.temp_dir / "DRP000123"
         folder_path.mkdir(parents=True, exist_ok=True)
@@ -228,7 +228,10 @@ class TestSocrataCollector(unittest.TestCase):
         self.collector.run(123)
 
         mock_storage.get.assert_any_call(123)
-        mock_collect.assert_called_once_with("https://data.cdc.gov/view/test", 123)
+        mock_collect.assert_called_once()
+        collect_args = mock_collect.call_args[0]
+        self.assertEqual(collect_args[0], "https://data.cdc.gov/view/test")
+        self.assertEqual(collect_args[1], 123)
 
         mock_storage.update_record.assert_called_once()
         call_args = mock_storage.update_record.call_args
@@ -244,17 +247,21 @@ class TestSocrataCollector(unittest.TestCase):
         self.assertIn("download_date", update_fields)
         self.assertIn("collection_notes", update_fields)
     
-    @patch("collectors.SocrataCollector.Storage")
+    @patch("utils.collector_status.Storage")
+    @patch("collectors.CollectorBase.Storage")
     @patch.object(SocrataCollector, "_collect")
     def test_run_collection_with_errors(
-        self, mock_collect: Mock, mock_storage: Mock
+        self, mock_collect: Mock, mock_storage: Mock, mock_status_storage: Mock
     ) -> None:
         """Test run() when collect() returns result with no folder_path: result is transferred."""
-        mock_storage.get.return_value = {
+        record = {
             "DRPID": 123,
             "source_url": "https://data.cdc.gov/view/test",
             "status": "sourced",
         }
+        mock_storage.get.return_value = record
+        mock_status_storage.get.return_value = record
+        mock_status_storage.update_record = mock_storage.update_record
 
         mock_collect.return_value = {"collection_notes": "Invalid URL"}
 
@@ -265,17 +272,21 @@ class TestSocrataCollector(unittest.TestCase):
         self.assertEqual(update_fields.get("collection_notes"), "Invalid URL")
         self.assertNotIn("status", update_fields)
     
-    @patch("collectors.SocrataCollector.Storage")
+    @patch("utils.collector_status.Storage")
+    @patch("collectors.CollectorBase.Storage")
     @patch.object(SocrataCollector, "_collect")
     def test_run_collection_with_warnings(
-        self, mock_collect: Mock, mock_storage: Mock
+        self, mock_collect: Mock, mock_storage: Mock, mock_status_storage: Mock
     ) -> None:
         """Test run() when collect() returns folder_path: status set to collector."""
-        mock_storage.get.return_value = {
+        record = {
             "DRPID": 123,
             "source_url": "https://data.cdc.gov/view/test",
             "status": "sourced",
         }
+        mock_storage.get.return_value = record
+        mock_status_storage.get.return_value = record
+        mock_status_storage.update_record = mock_storage.update_record
 
         folder_path = self.temp_dir / "DRP000123"
         folder_path.mkdir(parents=True, exist_ok=True)
@@ -292,8 +303,8 @@ class TestSocrataCollector(unittest.TestCase):
         self.assertIsNotNone(update_call)
         self.assertEqual(update_call[0][1].get("status"), "collected")
     
-    @patch("collectors.SocrataCollector.record_error")
-    @patch("collectors.SocrataCollector.Storage")
+    @patch("collectors.CollectorBase.record_error")
+    @patch("collectors.CollectorBase.Storage")
     @patch.object(SocrataCollector, "_collect")
     def test_run_collection_exception(self, mock_collect: Mock, mock_storage: Mock, mock_record_error: Mock) -> None:
         """Test run() when collect() raises: record_error is invoked."""
@@ -312,15 +323,21 @@ class TestSocrataCollector(unittest.TestCase):
         self.assertEqual(args[0], 123)
         self.assertIn("Exception during collection for DRPID 123", args[1])
     
-    @patch("collectors.SocrataCollector.Storage")
+    @patch("utils.collector_status.Storage")
+    @patch("collectors.CollectorBase.Storage")
     @patch.object(SocrataCollector, "_collect")
-    def test_run_partial_success_pdf_only(self, mock_collect: Mock, mock_storage: Mock) -> None:
+    def test_run_partial_success_pdf_only(
+        self, mock_collect: Mock, mock_storage: Mock, mock_status_storage: Mock
+    ) -> None:
         """Test run() with partial success (PDF but no dataset) using flat result."""
-        mock_storage.get.return_value = {
+        record = {
             "DRPID": 123,
             "source_url": "https://data.cdc.gov/view/test",
             "status": "sourced",
         }
+        mock_storage.get.return_value = record
+        mock_status_storage.get.return_value = record
+        mock_status_storage.update_record = mock_storage.update_record
 
         folder_path = self.temp_dir / "DRP000123"
         folder_path.mkdir(parents=True, exist_ok=True)

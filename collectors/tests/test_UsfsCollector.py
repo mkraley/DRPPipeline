@@ -9,13 +9,13 @@ from unittest.mock import MagicMock, patch
 from utils.Args import Args
 from utils.Logger import Logger
 
-from collectors.UsfsCollector import (
+from utils.collector_status import (
     MAX_DOWNLOAD_BYTES,
     STATUS_COLLECTED_EXTERNAL_ARCHIVE,
     STATUS_COLLECTED_LARGE_FILE,
-    UsfsCollector,
-    _PDF_NAMES,
 )
+
+from collectors.UsfsCollector import UsfsCollector, _PDF_NAMES
 
 
 class TestUsfsCollector(unittest.TestCase):
@@ -152,8 +152,10 @@ class TestUsfsCollector(unittest.TestCase):
                 f.unlink(missing_ok=True)
             folder.rmdir()
 
-    @patch("collectors.UsfsCollector.Storage")
-    def test_update_storage_excludes_metadata_parse_fields(self, mock_storage: MagicMock) -> None:
+    @patch("utils.collector_status.Storage")
+    def test_apply_result_to_storage_excludes_metadata_parse_fields(
+        self, mock_storage: MagicMock
+    ) -> None:
         mock_storage.get.return_value = {"status": "sourced", "errors": None}
         collector = UsfsCollector()
         result = {
@@ -163,41 +165,41 @@ class TestUsfsCollector(unittest.TestCase):
             "place_keywords": ["Oregon"],
             "bounding_box": {"west": -125.0, "east": -124.0, "north": 46.0, "south": 45.0},
         }
-        collector._update_storage(1, result)
+        collector.apply_result_to_storage(1, result)
         update = mock_storage.update_record.call_args[0][1]
         self.assertEqual(update["geographic_coverage"], "Oregon")
         self.assertNotIn("geographic_extent_description", update)
         self.assertNotIn("place_keywords", update)
         self.assertNotIn("bounding_box", update)
 
-    @patch("collectors.UsfsCollector.Storage")
-    def test_update_storage_large_file_status(self, mock_storage: MagicMock) -> None:
+    @patch("utils.collector_status.Storage")
+    def test_apply_result_to_storage_large_file_status(self, mock_storage: MagicMock) -> None:
         mock_storage.get.return_value = {"status": "sourced", "errors": None}
         collector = UsfsCollector()
         result = {"folder_path": "C:\\data\\DRP000001", "_skipped_large_file": True}
-        collector._update_storage(1, result)
+        collector.apply_result_to_storage(1, result)
         mock_storage.update_record.assert_called_once()
         update = mock_storage.update_record.call_args[0][1]
         self.assertEqual(update["status"], STATUS_COLLECTED_LARGE_FILE)
         self.assertNotIn("_skipped_large_file", update)
 
-    @patch("collectors.UsfsCollector.Storage")
-    def test_update_storage_external_archive_status(self, mock_storage: MagicMock) -> None:
+    @patch("utils.collector_status.Storage")
+    def test_apply_result_to_storage_external_archive_status(self, mock_storage: MagicMock) -> None:
         mock_storage.get.return_value = {"status": "sourced", "errors": None}
         collector = UsfsCollector()
         result = {"folder_path": "C:\\data\\DRP000001", "_external_archive": True}
-        collector._update_storage(1, result)
+        collector.apply_result_to_storage(1, result)
         mock_storage.update_record.assert_called_once()
         update = mock_storage.update_record.call_args[0][1]
         self.assertEqual(update["status"], STATUS_COLLECTED_EXTERNAL_ARCHIVE)
         self.assertNotIn("_external_archive", update)
 
-    @patch("collectors.UsfsCollector.Storage")
-    def test_update_storage_preserves_error_status(self, mock_storage: MagicMock) -> None:
+    @patch("utils.collector_status.Storage")
+    def test_apply_result_to_storage_preserves_error_status(self, mock_storage: MagicMock) -> None:
         mock_storage.get.return_value = {"status": "sourced-error", "errors": "Download failed"}
         collector = UsfsCollector()
         result = {"folder_path": "C:\\data\\DRP000001", "_skipped_large_file": True}
-        collector._update_storage(1, result)
+        collector.apply_result_to_storage(1, result)
         update = mock_storage.update_record.call_args[0][1]
         self.assertNotIn("status", update)
         self.assertNotIn("_skipped_large_file", update)
@@ -252,10 +254,11 @@ class TestUsfsCollector(unittest.TestCase):
         ) as mock_geo:
             mock_geo.return_value.geographic_coverage = ""
             mock_geo.return_value.warnings = []
+            collector._page_downloader = page_downloader
             result = collector._collect(
                 "https://www.fs.usda.gov/rds/archive/catalog/RDS-ext-2024-0001",
                 177,
-                page_downloader,
+                {},
             )
 
         mock_write_cmd.assert_not_called()
@@ -323,10 +326,11 @@ class TestUsfsCollector(unittest.TestCase):
         ) as mock_geo:
             mock_geo.return_value.geographic_coverage = ""
             mock_geo.return_value.warnings = []
+            collector._page_downloader = page_downloader
             collector._collect(
                 "https://www.fs.usda.gov/rds/archive/catalog/RDS-2020-0001",
                 1,
-                page_downloader,
+                {},
             )
 
         mock_write_cmd.assert_called_once()
@@ -423,10 +427,11 @@ class TestUsfsCollector(unittest.TestCase):
         ) as mock_geo:
             mock_geo.return_value.geographic_coverage = ""
             mock_geo.return_value.warnings = []
+            collector._page_downloader = page_downloader
             collector._collect(
                 "https://www.fs.usda.gov/rds/archive/catalog/RDS-2020-0001",
                 1,
-                page_downloader,
+                {},
             )
 
         mock_process.assert_called_once()

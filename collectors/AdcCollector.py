@@ -16,16 +16,20 @@ from typing import Any
 
 from collectors.AdcCatalogHtmlBuilder import build_catalog_html
 from collectors.AdcMetadataExtractor import extract_metadata
+from collectors.CollectorBase import CollectorBase
 from sourcing.AdcApiClient import AdcApiClient, article_id_from_source_url
 from sourcing.AdcCandidateFetcher import AGENCY, OFFICE
 from sourcing.AdcFileInventory import MAX_DOWNLOAD_BYTES, AdcFileInventory
-from storage import Storage
-from utils.Args import Args
+from utils.collector_status import (
+    STATUS_COLLECTED_EXTERNAL_ARCHIVE,
+    STATUS_COLLECTED_LARGE_FILE,
+    STATUS_NOT_FOUND,
+    large_file_skip_note,
+)
 from utils.Errors import record_error, record_warning
 from utils.Logger import Logger
 from utils.download_with_progress import download_via_url
 from utils.file_utils import (
-    create_output_folder,
     folder_extensions_and_size,
     format_file_size,
     sanitize_filename,
@@ -37,19 +41,17 @@ from utils.retry_http import (
     download_with_retry,
     retry_http_call,
 )
-from utils.url_utils import is_valid_url
 
 _DOWNLOAD_TIMEOUT_SEC = 3600
 _CATALOG_HTML_NAME = "catalog_detail.html"
 _METADATA_JSON_NAME = "adc_metadata.json"
-STATUS_COLLECTED_LARGE_FILE = "collected - large file"
-STATUS_COLLECTED_EXTERNAL_ARCHIVE = "collected - external archive"
-STATUS_NOT_FOUND = "not_found"
 _ADC_URL_FRAGMENT = "agdatacommons.nal.usda.gov"
 
 
-class AdcCollector:
+class AdcCollector(CollectorBase):
     """Collect ADC datasets via the Figshare public API."""
+
+    _storage_status_mode = "inventory"
 
     def __init__(
         self,
@@ -83,19 +85,12 @@ class AdcCollector:
         Args:
             drpid: The DRPID of the project to process.
         """
-        record = Storage.get(drpid)
-        if record is None:
-            record_error(drpid, f"Project record not found for DRPID: {drpid}", update_storage=False)
+        record, source_url = self.load_project(drpid)
+        if record is None or source_url is None:
             return
-
-        source_url = record.get("source_url")
-        if not source_url:
-            record_error(drpid, f"Missing source_url for DRPID: {drpid}")
-            return
-
         try:
-            result = self._collect(source_url, drpid)
-            self._update_storage(drpid, result)
+            result = self._collect(source_url, drpid, record)
+            self.apply_result_to_storage(drpid, result)
         except SourceNotFoundError as exc:
             record_error(
                 drpid,
@@ -109,10 +104,10 @@ class AdcCollector:
         self,
         url: str,
         drpid: int,
+        record: dict[str, Any],
     ) -> dict[str, Any]:
         """Fetch metadata and download Figshare-hosted files for one ADC dataset."""
-        if not is_valid_url(url):
-            record_error(drpid, f"Invalid URL: {url}")
+        if not self.validate_url(drpid, url):
             return {}
 
         if _ADC_URL_FRAGMENT not in url:
@@ -130,9 +125,8 @@ class AdcCollector:
         result["agency"] = AGENCY
         result["office"] = OFFICE
 
-        folder_path = create_output_folder(Path(Args.base_output_dir), drpid)
-        if not folder_path:
-            record_error(drpid, "Failed to create output folder")
+        folder_path = self.create_project_folder(drpid)
+        if folder_path is None:
             return result
 
         self._save_metadata_json(folder_path, article)
@@ -316,10 +310,7 @@ class AdcCollector:
             if catalog_bytes is not None and catalog_bytes > MAX_DOWNLOAD_BYTES:
                 total_bytes += catalog_bytes
                 skipped_large = True
-                notes.append(
-                    f"Skipped download (>1GB): {filename} ({format_file_size(catalog_bytes)}) - "
-                    f"download manually: {file_url}"
-                )
+                notes.append(large_file_skip_note(filename, file_url, catalog_bytes))
                 continue
 
             if not file_url:
@@ -367,29 +358,3 @@ class AdcCollector:
         cmd_path = write_drpid_aria2_cmd(drpid, folder_path, inventory_files)
         if cmd_path:
             Logger.info("Wrote aria2 download commands for DRPID %s: %s", drpid, cmd_path)
-
-    def _update_storage(self, drpid: int, result: dict[str, Any]) -> None:
-        """Apply collection results to Storage."""
-        current = Storage.get(drpid) or {}
-        skipped_large = bool(result.pop("_skipped_large_file", False))
-        external_archive = bool(result.pop("_external_archive", False))
-        has_errors = bool((current.get("errors") or "").strip())
-
-        if has_errors:
-            result.pop("status", None)
-        elif result.get("folder_path"):
-            if skipped_large:
-                result["status"] = STATUS_COLLECTED_LARGE_FILE
-            elif external_archive:
-                result["status"] = STATUS_COLLECTED_EXTERNAL_ARCHIVE
-            else:
-                result["status"] = "collected"
-
-        update_fields: dict[str, Any] = {}
-        for key, value in result.items():
-            if value is None or value == "":
-                continue
-            update_fields[key] = value
-
-        if update_fields:
-            Storage.update_record(drpid, update_fields)

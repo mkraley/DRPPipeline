@@ -6,8 +6,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Optional, Tuple
 
-from playwright.sync_api import Browser, Playwright, sync_playwright
-
+from collectors.PlaywrightSession import PlaywrightSession
 from utils.Logger import Logger
 from utils.url_utils import _fetch_html_with_playwright_page
 
@@ -23,9 +22,13 @@ class UsfsPageDownloader:
     """Render USFS catalog pages in Chromium and save as PDF."""
 
     def __init__(self, headless: bool = True) -> None:
-        self._headless = headless
-        self._playwright: Playwright | None = None
-        self._browser: Browser | None = None
+        """
+        Initialize the page downloader.
+
+        Args:
+            headless: Launch Chromium headless when True.
+        """
+        self._session = PlaywrightSession(headless=headless)
 
     def fetch_page_html(
         self, url: str, timeout: int = 60
@@ -37,8 +40,9 @@ class UsfsPageDownloader:
         """
         if not self._ensure_browser():
             return -1, "", None, False
-        assert self._browser is not None
-        page = self._browser.new_page()
+        page = self._session.new_page()
+        if page is None:
+            return -1, "", None, False
         try:
             page.set_default_timeout(timeout * 1000)
             return _fetch_html_with_playwright_page(page, url, timeout)
@@ -54,8 +58,9 @@ class UsfsPageDownloader:
         """
         if not self._restart_browser():
             return 0, False
-        assert self._browser is not None
-        page = self._browser.new_page()
+        page = self._session.new_page()
+        if page is None:
+            return 0, False
         try:
             page.set_default_timeout(_FILE_DOWNLOAD_TIMEOUT_MS)
             with page.expect_download(timeout=_FILE_DOWNLOAD_TIMEOUT_MS) as download_info:
@@ -83,8 +88,9 @@ class UsfsPageDownloader:
         """Navigate to ``url`` and write a PDF to ``pdf_path``."""
         if not self._ensure_browser():
             return False
-        assert self._browser is not None
-        page = self._browser.new_page()
+        page = self._session.new_page()
+        if page is None:
+            return False
         try:
             page.set_default_timeout(_PRINT_TIMEOUT_MS)
             page.goto(url, wait_until=_NAVIGATION_WAIT, timeout=_NAVIGATION_TIMEOUT_MS)
@@ -105,8 +111,9 @@ class UsfsPageDownloader:
         """Open a local HTML file in Chromium and write a PDF."""
         if not self._ensure_browser():
             return False
-        assert self._browser is not None
-        page = self._browser.new_page()
+        page = self._session.new_page()
+        if page is None:
+            return False
         try:
             page.set_default_timeout(_PRINT_TIMEOUT_MS)
             page.goto(html_path.resolve().as_uri(), wait_until="load", timeout=_LOAD_TIMEOUT_MS)
@@ -122,14 +129,7 @@ class UsfsPageDownloader:
 
     def close(self) -> None:
         """Release Playwright resources."""
-        if self._browser:
-            with suppress(Exception):
-                self._browser.close()
-            self._browser = None
-        if self._playwright:
-            with suppress(Exception):
-                self._playwright.stop()
-            self._playwright = None
+        self._session.close()
 
     def _restart_browser(self) -> bool:
         """Close and relaunch Chromium (fresh session before each file download)."""
@@ -137,13 +137,7 @@ class UsfsPageDownloader:
         return self._ensure_browser()
 
     def _ensure_browser(self) -> bool:
-        if self._browser:
+        """Start Chromium without a default page when not already running."""
+        if self._session.browser:
             return True
-        try:
-            self._playwright = sync_playwright().start()
-            self._browser = self._playwright.chromium.launch(headless=self._headless)
-            return True
-        except Exception as exc:
-            Logger.error("Failed to initialize Playwright for USFS PDF export: %s", exc)
-            self.close()
-            return False
+        return self._session.start(create_page=False)

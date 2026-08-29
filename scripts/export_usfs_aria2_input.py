@@ -37,7 +37,7 @@ from collectors.UsfsAria2Export import (  # noqa: E402
     write_drpid_aria2_cmd,
 )
 from collectors.UsfsMetadataExtractor import parse_data_access_links  # noqa: E402
-from collectors.UsfsCollector import STATUS_COLLECTED_LARGE_FILE  # noqa: E402
+from utils.collector_status import STATUS_COLLECTED_LARGE_FILE  # noqa: E402
 from collectors.SkipNoteFiles import (  # noqa: E402
     SKIP_NOTE_MARKER,
     parse_skip_note_publication_files,

@@ -31,25 +31,24 @@ class TestCatalogDataCollector(unittest.TestCase):
     def tearDown(self) -> None:
         """Clean up after each test."""
         sys.argv = self._original_argv
-        self.collector._cleanup_browser()
+        self.collector._session.close()
 
     def test_init(self) -> None:
         """Test CatalogDataCollector initialization."""
         collector = CatalogDataCollector(headless=True)
         self.assertTrue(collector._headless)
-        self.assertIsNone(collector._playwright)
-        self.assertIsNone(collector._browser)
-        self.assertIsNone(collector._page)
+        self.assertIsNotNone(collector._session)
+        self.assertIsNone(collector._session.page)
 
-    @patch("collectors.CatalogDataCollector.record_error")
+    @patch("collectors.collector_url.record_error")
     def test_collect_invalid_url(self, mock_record_error: Mock) -> None:
         """Test _collect with invalid URL calls record_error."""
-        result = self.collector._collect("not-a-url", 1)
+        result = self.collector._collect("not-a-url", 1, {})
 
         mock_record_error.assert_called_once_with(1, "Invalid URL: not-a-url")
         self.assertNotIn("status_notes", result)
 
-    @patch("collectors.CatalogDataCollector.record_error")
+    @patch("collectors.collector_url.record_error")
     @patch("utils.url_utils.requests.get")
     def test_collect_url_access_fails(
         self, mock_get: Mock, mock_record_error: Mock
@@ -59,14 +58,14 @@ class TestCatalogDataCollector(unittest.TestCase):
 
         mock_get.side_effect = requests.exceptions.ConnectionError()
 
-        result = self.collector._collect("https://catalog.data.gov/dataset/x", 1)
+        result = self.collector._collect("https://catalog.data.gov/dataset/x", 1, {})
 
         mock_record_error.assert_called_once()
         self.assertIn("URL access failed", mock_record_error.call_args[0][1])
         self.assertNotIn("status_notes", result)
 
     @patch("collectors.CatalogDataCollector.record_error")
-    @patch("collectors.CatalogDataCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     @patch("utils.url_utils.requests.get")
     def test_collect_page_load_fails(
         self, mock_get: Mock, mock_playwright: Mock, mock_record_error: Mock
@@ -79,14 +78,14 @@ class TestCatalogDataCollector(unittest.TestCase):
         mock_page.wait_for_timeout.return_value = None
 
         result = self.collector._collect(
-            "https://catalog.data.gov/dataset/electric-vehicle-population-data", 1
+            "https://catalog.data.gov/dataset/electric-vehicle-population-data", 1, {}
         )
 
         mock_record_error.assert_called_once()
         self.assertIn("Failed to load page", mock_record_error.call_args[0][1])
 
     @patch("collectors.CatalogDataCollector.record_error")
-    @patch("collectors.CatalogDataCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     @patch("utils.url_utils.requests.get")
     def test_collect_downloads_section_missing(
         self, mock_get: Mock, mock_playwright: Mock, mock_record_error: Mock
@@ -100,7 +99,7 @@ class TestCatalogDataCollector(unittest.TestCase):
         mock_page.evaluate.return_value = None
 
         result = self.collector._collect(
-            "https://catalog.data.gov/dataset/x", 1
+            "https://catalog.data.gov/dataset/x", 1, {}
         )
 
         mock_record_error.assert_called_once()
@@ -108,7 +107,7 @@ class TestCatalogDataCollector(unittest.TestCase):
         self.assertNotIn("status_notes", result)
 
     @patch("collectors.CatalogDataCollector.record_error")
-    @patch("collectors.CatalogDataCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     @patch("utils.url_utils.requests.get")
     def test_collect_no_links_in_section(
         self, mock_get: Mock, mock_playwright: Mock, mock_record_error: Mock
@@ -122,14 +121,14 @@ class TestCatalogDataCollector(unittest.TestCase):
         mock_page.evaluate.return_value = []
 
         result = self.collector._collect(
-            "https://catalog.data.gov/dataset/x", 1
+            "https://catalog.data.gov/dataset/x", 1, {}
         )
 
         mock_record_error.assert_called_once()
         self.assertIn("no links", mock_record_error.call_args[0][1])
 
     @patch("collectors.CatalogDataCollector.record_error")
-    @patch("collectors.CatalogDataCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     @patch("collectors.CatalogDataCollector.fetch_url_head")
     @patch("utils.url_utils.requests.get")
     def test_collect_all_links_404(
@@ -151,7 +150,7 @@ class TestCatalogDataCollector(unittest.TestCase):
         ]
 
         result = self.collector._collect(
-            "https://catalog.data.gov/dataset/x", 1
+            "https://catalog.data.gov/dataset/x", 1, {}
         )
 
         mock_record_error.assert_called_once()
@@ -159,7 +158,7 @@ class TestCatalogDataCollector(unittest.TestCase):
         self.assertNotIn("status_notes", result)
 
     @patch("collectors.CatalogDataCollector.record_error")
-    @patch("collectors.CatalogDataCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     @patch("collectors.CatalogDataCollector.fetch_url_head")
     @patch("utils.url_utils.requests.get")
     def test_collect_treats_exception_as_failed_link(
@@ -182,7 +181,7 @@ class TestCatalogDataCollector(unittest.TestCase):
         ]
 
         result = self.collector._collect(
-            "https://catalog.data.gov/dataset/x", 1
+            "https://catalog.data.gov/dataset/x", 1, {}
         )
 
         self.assertNotIn("status_notes", result)
@@ -190,7 +189,7 @@ class TestCatalogDataCollector(unittest.TestCase):
             1, "All download links returned 404"
         )
 
-    @patch("collectors.CatalogDataCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     @patch("collectors.CatalogDataCollector.fetch_url_head")
     @patch("utils.url_utils.requests.get")
     def test_collect_success(
@@ -216,7 +215,7 @@ class TestCatalogDataCollector(unittest.TestCase):
         ]
 
         result = self.collector._collect(
-            "https://catalog.data.gov/dataset/x", 1
+            "https://catalog.data.gov/dataset/x", 1, {}
         )
 
         self.assertIn("status_notes", result)
@@ -226,7 +225,7 @@ class TestCatalogDataCollector(unittest.TestCase):
         self.assertIn("Missing file -> 404", notes)
         self.assertIn("JSON File -> json", notes)
 
-    @patch("collectors.CatalogDataCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     @patch("collectors.CatalogDataCollector.fetch_url_head")
     @patch("utils.url_utils.requests.get")
     def test_collect_resolves_catalog_resource_page(
@@ -256,7 +255,7 @@ class TestCatalogDataCollector(unittest.TestCase):
         mock_page.evaluate.side_effect = [links_response, res_url_response]
 
         result = self.collector._collect(
-            "https://catalog.data.gov/dataset/x", 1
+            "https://catalog.data.gov/dataset/x", 1, {}
         )
 
         self.assertIn("status_notes", result)
@@ -272,7 +271,7 @@ class TestCatalogDataCollector(unittest.TestCase):
             "http://aspe.hhs.gov/health/reports/2015/data.csv"
         )
 
-    @patch("collectors.CatalogDataCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     @patch("collectors.CatalogDataCollector.fetch_url_head")
     @patch("utils.url_utils.requests.get")
     def test_collect_catalog_resource_page_missing_res_url(
@@ -296,7 +295,7 @@ class TestCatalogDataCollector(unittest.TestCase):
         mock_page.evaluate.side_effect = [links_response, None]
 
         result = self.collector._collect(
-            "https://catalog.data.gov/dataset/x", 1
+            "https://catalog.data.gov/dataset/x", 1, {}
         )
 
         self.assertIn("status_notes", result)
@@ -329,23 +328,26 @@ class TestCatalogDataCollector(unittest.TestCase):
             "\n  Download -> 404\n  Text File -> html https://example.com/page.html",
         )
 
-    def test_cleanup_browser_no_browser(self) -> None:
-        """Test _cleanup_browser when no browser initialized."""
-        self.collector._cleanup_browser()
-        self.assertIsNone(self.collector._browser)
-        self.assertIsNone(self.collector._playwright)
+    def test_session_close_no_browser(self) -> None:
+        """Test session close when no browser initialized."""
+        self.collector._session.close()
+        self.assertIsNone(self.collector._session.browser)
+        self.assertIsNone(self.collector._session.playwright)
 
     @patch("collectors.CatalogDataCollector.Storage")
+    @patch("collectors.CollectorBase.Storage")
     @patch.object(CatalogDataCollector, "_collect")
     def test_run_success(
-        self, mock_collect: Mock, mock_storage: Mock
+        self, mock_collect: Mock, mock_storage: Mock, mock_catalog_storage: Mock
     ) -> None:
         """Test run() with successful collection updates Storage with status_notes."""
-        mock_storage.get.return_value = {
+        record = {
             "DRPID": 123,
             "source_url": "https://catalog.data.gov/dataset/test",
             "status": "sourced",
         }
+        mock_storage.get.return_value = record
+        mock_catalog_storage.update_record = mock_storage.update_record
         mock_collect.return_value = {
             "status_notes": "\n  CSV File -> csv https://example.com/a.csv\n  JSON File -> json https://example.com/b.json",
         }
@@ -353,9 +355,10 @@ class TestCatalogDataCollector(unittest.TestCase):
         self.collector.run(123)
 
         mock_storage.get.assert_any_call(123)
-        mock_collect.assert_called_once_with(
-            "https://catalog.data.gov/dataset/test", 123
-        )
+        mock_collect.assert_called_once()
+        call_args = mock_collect.call_args[0]
+        self.assertEqual(call_args[0], "https://catalog.data.gov/dataset/test")
+        self.assertEqual(call_args[1], 123)
         mock_storage.update_record.assert_called_once()
         update_fields = mock_storage.update_record.call_args[0][1]
         self.assertEqual(
@@ -363,8 +366,8 @@ class TestCatalogDataCollector(unittest.TestCase):
             "\n  CSV File -> csv https://example.com/a.csv\n  JSON File -> json https://example.com/b.json",
         )
 
-    @patch("collectors.CatalogDataCollector.record_error")
-    @patch("collectors.CatalogDataCollector.Storage")
+    @patch("collectors.CollectorBase.record_error")
+    @patch("collectors.CollectorBase.Storage")
     def test_run_record_not_found(
         self, mock_storage: Mock, mock_record_error: Mock
     ) -> None:
@@ -379,8 +382,8 @@ class TestCatalogDataCollector(unittest.TestCase):
             update_storage=False,
         )
 
-    @patch("collectors.CatalogDataCollector.record_error")
-    @patch("collectors.CatalogDataCollector.Storage")
+    @patch("collectors.CollectorBase.record_error")
+    @patch("collectors.CollectorBase.Storage")
     def test_run_missing_source_url(
         self, mock_storage: Mock, mock_record_error: Mock
     ) -> None:
@@ -391,5 +394,5 @@ class TestCatalogDataCollector(unittest.TestCase):
 
         mock_record_error.assert_called_once_with(
             123,
-            "Project record missing source_url for DRPID: 123",
+            "Missing source_url for DRPID: 123",
         )

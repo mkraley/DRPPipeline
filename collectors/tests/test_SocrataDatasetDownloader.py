@@ -55,7 +55,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
             downloader = SocrataDatasetDownloader(collector)
             self.assertEqual(downloader._collector, collector)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_click_export_button_success(self, mock_playwright: Mock) -> None:
         """Test _click_export_button successfully clicks Export button."""
         mock_playwright_instance = Mock()
@@ -81,7 +81,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         mock_page.locator.assert_called_with('forge-button[data-testid="export-data-button"]')
         mock_button.first.click.assert_called_once()
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_click_export_button_not_found(self, mock_playwright: Mock) -> None:
         """Test _click_export_button returns False when button not found."""
         mock_playwright_instance = Mock()
@@ -103,7 +103,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         
         self.assertFalse(result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_click_export_button_exception(self, mock_playwright: Mock) -> None:
         """Test _click_export_button handles exceptions."""
         mock_playwright_instance = Mock()
@@ -123,7 +123,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         
         self.assertFalse(result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_find_download_button_success(self, mock_playwright: Mock) -> None:
         """Test _find_download_button finds Download button."""
         mock_playwright_instance = Mock()
@@ -147,7 +147,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         self.assertEqual(result, mock_button.first)
         mock_page.locator.assert_called_with('forge-button[data-testid="export-download-button"]')
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_find_download_button_not_found(self, mock_playwright: Mock) -> None:
         """Test _find_download_button returns None when button not found."""
         mock_playwright_instance = Mock()
@@ -169,7 +169,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         
         self.assertIsNone(result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_get_file_extension_success(self, mock_playwright: Mock) -> None:
         """Test _get_file_extension extracts extension from file."""
         mock_playwright_instance = Mock()
@@ -191,7 +191,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         
         self.assertEqual(result, "csv")
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_get_file_extension_no_extension(self, mock_playwright: Mock) -> None:
         """Test _get_file_extension returns None when no extension."""
         mock_playwright_instance = Mock()
@@ -213,7 +213,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         
         self.assertIsNone(result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_get_file_extension_file_not_exists(self, mock_playwright: Mock) -> None:
         """Test _get_file_extension returns None when file doesn't exist."""
         mock_playwright_instance = Mock()
@@ -233,7 +233,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         
         self.assertIsNone(result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_download_file_success(self, mock_playwright: Mock) -> None:
         """Test _download_file successfully downloads and saves file."""
         mock_playwright_instance = Mock()
@@ -285,7 +285,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         self.assertEqual(self.collector._result["extensions"], "pdf, csv")
         self.assertIn("download_date", self.collector._result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_download_file_no_button(self, mock_playwright: Mock) -> None:
         """Test _download_file returns False when Download button not found."""
         mock_playwright_instance = Mock()
@@ -312,7 +312,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         self.assertFalse(result)
         mock_record_error.assert_called_once_with(1, "Download button not found in dialog")
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_download_success(self, mock_playwright: Mock) -> None:
         """Test download() returns True when _download_file succeeds."""
         setup_mock_playwright(mock_playwright)
@@ -327,7 +327,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
 
         self.assertTrue(result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_download_export_button_not_found(self, mock_playwright: Mock) -> None:
         """Test download() returns False when Export button not found."""
         mock_playwright_instance = Mock()
@@ -350,7 +350,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         self.assertFalse(result)
         mock_record_error.assert_called_once_with(1, "Export button not found")
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_download_timeout(self, mock_playwright: Mock) -> None:
         """Test download() handles timeout exception."""
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -421,7 +421,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         self.assertEqual(_extension_from_export_url("https://x/api/views/id"), "csv")
 
     @patch("collectors.SocrataDatasetDownloader.download_via_url")
-    @patch("collectors.SocrataCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     def test_download_via_constructed_url_success(
         self, mock_playwright: Mock, mock_download: Mock
     ) -> None:
@@ -441,7 +441,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         self.assertEqual(self.collector._result.get("extensions"), "pdf, csv")
 
     @patch("collectors.SocrataDatasetDownloader.download_via_url")
-    @patch("collectors.SocrataCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     def test_download_via_constructed_url_401_falls_back_to_dialog(
         self, mock_playwright: Mock, mock_download: Mock
     ) -> None:
@@ -462,7 +462,7 @@ class TestSocrataDatasetDownloader(unittest.TestCase):
         self.assertTrue(result)
         mock_download_file.assert_called_once()
 
-    @patch("collectors.SocrataCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     def test_download_generic_exception_records_error(self, mock_playwright: Mock) -> None:
         """download() records error and returns False on generic exception."""
         setup_mock_playwright(mock_playwright)

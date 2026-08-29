@@ -215,7 +215,7 @@ class TestCmsGovCollector(unittest.TestCase):
 
     # ── _scrape_description ──────────────────────────────────────────────────
 
-    @patch("collectors.CmsGovCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     def test_scrape_description_success(self, mock_playwright: Mock) -> None:
         mock_page, _, _ = setup_mock_playwright(mock_playwright)
         mock_page.goto.return_value = None
@@ -231,7 +231,7 @@ class TestCmsGovCollector(unittest.TestCase):
         )
 
     @patch("collectors.CmsGovCollector.record_warning")
-    @patch("collectors.CmsGovCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     def test_scrape_description_element_missing(
         self, mock_playwright: Mock, mock_warn: Mock
     ) -> None:
@@ -246,7 +246,7 @@ class TestCmsGovCollector(unittest.TestCase):
         self.assertIn("not found", mock_warn.call_args[0][1])
 
     @patch("collectors.CmsGovCollector.record_warning")
-    @patch("collectors.CmsGovCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     def test_scrape_description_browser_init_fails(
         self, mock_playwright: Mock, mock_warn: Mock
     ) -> None:
@@ -259,7 +259,7 @@ class TestCmsGovCollector(unittest.TestCase):
         self.assertIn("Browser unavailable", mock_warn.call_args[0][1])
 
     @patch("collectors.CmsGovCollector.record_warning")
-    @patch("collectors.CmsGovCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     def test_scrape_description_page_error(
         self, mock_playwright: Mock, mock_warn: Mock
     ) -> None:
@@ -274,15 +274,15 @@ class TestCmsGovCollector(unittest.TestCase):
 
     # ── _collect ─────────────────────────────────────────────────────────────
 
-    @patch("collectors.CmsGovCollector.record_error")
+    @patch("collectors.CollectorBase.record_error")
     def test_collect_invalid_url(self, mock_record_error: Mock) -> None:
-        result = self.collector._collect("not-a-url", 1)
+        result = self.collector._collect("not-a-url", 1, {})
         mock_record_error.assert_called_once_with(1, "Invalid URL: not-a-url")
         self.assertNotIn("folder_path", result)
 
     @patch("collectors.CmsGovCollector.record_error")
     def test_collect_root_url_fails(self, mock_record_error: Mock) -> None:
-        result = self.collector._collect("https://data.cms.gov/", 1)
+        result = self.collector._collect("https://data.cms.gov/", 1, {})
         mock_record_error.assert_called_once()
         self.assertIn("Cannot extract path", mock_record_error.call_args[0][1])
 
@@ -294,6 +294,7 @@ class TestCmsGovCollector(unittest.TestCase):
         result = self.collector._collect(
             "https://data.cms.gov/provider-summary-by-type-of-service/medicare-inpatient-hospitals/hospital-service-area",
             1,
+            {},
         )
         mock_record_error.assert_called_once()
         self.assertIn("Slug API returned nothing", mock_record_error.call_args[0][1])
@@ -309,14 +310,14 @@ class TestCmsGovCollector(unittest.TestCase):
         mock_resp.json.return_value = {"data": {"name": "Test", "uuid": "abc"}}
         mock_get.return_value = mock_resp
         result = self.collector._collect(
-            "https://data.cms.gov/some/path", 1
+            "https://data.cms.gov/some/path", 1, {}
         )
         mock_record_error.assert_called()
         self.assertIn("current_dataset.uuid", mock_record_error.call_args[0][1])
 
     @patch("collectors.CmsGovCollector.folder_extensions_and_size")
     @patch("collectors.CmsGovCollector.download_via_url")
-    @patch("collectors.CmsGovCollector.create_output_folder")
+    @patch.object(CmsGovCollector, "create_project_folder")
     @patch.object(CmsGovCollector, "_gather_files")
     @patch.object(CmsGovCollector, "_scrape_description")
     @patch.object(CmsGovCollector, "_fetch_slug")
@@ -339,6 +340,7 @@ class TestCmsGovCollector(unittest.TestCase):
         result = self.collector._collect(
             "https://data.cms.gov/provider-summary-by-type-of-service/medicare-inpatient-hospitals/hospital-service-area",
             1,
+            {},
         )
 
         self.assertEqual(result["title"], "Hospital Service Area")
@@ -353,7 +355,7 @@ class TestCmsGovCollector(unittest.TestCase):
     @patch("collectors.CmsGovCollector.record_warning")
     @patch("collectors.CmsGovCollector.folder_extensions_and_size")
     @patch("collectors.CmsGovCollector.download_via_url")
-    @patch("collectors.CmsGovCollector.create_output_folder")
+    @patch.object(CmsGovCollector, "create_project_folder")
     @patch.object(CmsGovCollector, "_gather_files")
     @patch.object(CmsGovCollector, "_scrape_description")
     @patch.object(CmsGovCollector, "_fetch_slug")
@@ -374,7 +376,7 @@ class TestCmsGovCollector(unittest.TestCase):
         mock_download.return_value = (0, False)
         mock_ext_size.return_value = ([], 0, 0)
 
-        self.collector._collect("https://data.cms.gov/some/path", 1)
+        self.collector._collect("https://data.cms.gov/some/path", 1, {})
 
         mock_warn.assert_called()
         self.assertIn("Download failed", mock_warn.call_args[0][1])
@@ -382,7 +384,7 @@ class TestCmsGovCollector(unittest.TestCase):
     @patch("collectors.CmsGovCollector.record_warning")
     @patch("collectors.CmsGovCollector.record_error")
     @patch("collectors.CmsGovCollector.folder_extensions_and_size")
-    @patch("collectors.CmsGovCollector.create_output_folder")
+    @patch.object(CmsGovCollector, "create_project_folder")
     @patch.object(CmsGovCollector, "_gather_files")
     @patch.object(CmsGovCollector, "_scrape_description")
     @patch.object(CmsGovCollector, "_fetch_slug")
@@ -403,7 +405,7 @@ class TestCmsGovCollector(unittest.TestCase):
         mock_create_folder.return_value = Path("/tmp/DRP000001")
         mock_ext_size.return_value = ([], 0, 0)
 
-        result = self.collector._collect("https://data.cms.gov/some/path", 1)
+        result = self.collector._collect("https://data.cms.gov/some/path", 1, {})
 
         self.assertEqual(result["folder_path"], "/tmp/DRP000001")
         mock_warn.assert_not_called()
@@ -413,8 +415,8 @@ class TestCmsGovCollector(unittest.TestCase):
 
     # ── run() ────────────────────────────────────────────────────────────────
 
-    @patch("collectors.CmsGovCollector.record_error")
-    @patch("collectors.CmsGovCollector.Storage")
+    @patch("collectors.CollectorBase.record_error")
+    @patch("collectors.CollectorBase.Storage")
     def test_run_record_not_found(self, mock_storage: Mock, mock_record_error: Mock) -> None:
         mock_storage.get.return_value = None
         self.collector.run(123)
@@ -422,21 +424,27 @@ class TestCmsGovCollector(unittest.TestCase):
             123, "Project record not found for DRPID: 123", update_storage=False
         )
 
-    @patch("collectors.CmsGovCollector.record_error")
-    @patch("collectors.CmsGovCollector.Storage")
+    @patch("collectors.CollectorBase.record_error")
+    @patch("collectors.CollectorBase.Storage")
     def test_run_missing_source_url(self, mock_storage: Mock, mock_record_error: Mock) -> None:
         mock_storage.get.return_value = {"DRPID": 123, "status": "sourced"}
         self.collector.run(123)
         mock_record_error.assert_called_once_with(123, "Missing source_url for DRPID: 123")
 
-    @patch("collectors.CmsGovCollector.Storage")
+    @patch("utils.collector_status.Storage")
+    @patch("collectors.CollectorBase.Storage")
     @patch.object(CmsGovCollector, "_collect")
-    def test_run_success_sets_collected(self, mock_collect: Mock, mock_storage: Mock) -> None:
-        mock_storage.get.return_value = {
+    def test_run_success_sets_collected(
+        self, mock_collect: Mock, mock_storage: Mock, mock_status_storage: Mock
+    ) -> None:
+        record = {
             "DRPID": 1,
             "source_url": "https://data.cms.gov/provider-summary-by-type-of-service/medicare-inpatient-hospitals/hospital-service-area",
             "status": "sourced",
         }
+        mock_storage.get.return_value = record
+        mock_status_storage.get.return_value = record
+        mock_status_storage.update_record = mock_storage.update_record
         mock_collect.return_value = {
             "folder_path": "/tmp/DRP000001",
             "title": "Hospital Service Area",
@@ -448,17 +456,21 @@ class TestCmsGovCollector(unittest.TestCase):
         self.assertEqual(fields["status"], "collected")
         self.assertEqual(fields["title"], "Hospital Service Area")
 
-    @patch("collectors.CmsGovCollector.Storage")
+    @patch("utils.collector_status.Storage")
+    @patch("collectors.CollectorBase.Storage")
     @patch.object(CmsGovCollector, "_collect")
-    def test_run_preserves_error_status(self, mock_collect: Mock, mock_storage: Mock) -> None:
-        mock_storage.get.side_effect = [
-            {
-                "DRPID": 1,
-                "source_url": "https://data.cms.gov/some/path",
-                "status": "sourced",
-            },
-            {"DRPID": 1, "status": "error"},
-        ]
+    def test_run_preserves_error_status(
+        self, mock_collect: Mock, mock_storage: Mock, mock_status_storage: Mock
+    ) -> None:
+        load_record = {
+            "DRPID": 1,
+            "source_url": "https://data.cms.gov/some/path",
+            "status": "sourced",
+        }
+        merge_record = {"DRPID": 1, "status": "error"}
+        mock_storage.get.side_effect = [load_record, merge_record]
+        mock_status_storage.get.return_value = merge_record
+        mock_status_storage.update_record = mock_storage.update_record
         mock_collect.return_value = {"folder_path": "/tmp/DRP000001"}
 
         self.collector.run(1)
@@ -466,20 +478,22 @@ class TestCmsGovCollector(unittest.TestCase):
         fields = mock_storage.update_record.call_args[0][1]
         self.assertEqual(fields["status"], "error")
 
-    @patch("collectors.CmsGovCollector.Storage")
+    @patch("utils.collector_status.Storage")
+    @patch("collectors.CollectorBase.Storage")
     @patch.object(CmsGovCollector, "_collect")
     def test_run_preserves_derived_error_status(
-        self, mock_collect: Mock, mock_storage: Mock
+        self, mock_collect: Mock, mock_storage: Mock, mock_status_storage: Mock
     ) -> None:
         """Do not promote to collected when record_error set sourced-error."""
-        mock_storage.get.side_effect = [
-            {
-                "DRPID": 1,
-                "source_url": "https://data.cms.gov/some/path",
-                "status": "sourced",
-            },
-            {"DRPID": 1, "status": "sourced-error"},
-        ]
+        load_record = {
+            "DRPID": 1,
+            "source_url": "https://data.cms.gov/some/path",
+            "status": "sourced",
+        }
+        merge_record = {"DRPID": 1, "status": "sourced-error"}
+        mock_storage.get.side_effect = [load_record, merge_record]
+        mock_status_storage.get.return_value = merge_record
+        mock_status_storage.update_record = mock_storage.update_record
         mock_collect.return_value = {"folder_path": "/tmp/DRP000001"}
 
         self.collector.run(1)
@@ -487,20 +501,22 @@ class TestCmsGovCollector(unittest.TestCase):
         fields = mock_storage.update_record.call_args[0][1]
         self.assertEqual(fields["status"], "sourced-error")
 
-    @patch("collectors.CmsGovCollector.Storage")
+    @patch("utils.collector_status.Storage")
+    @patch("collectors.CollectorBase.Storage")
     @patch.object(CmsGovCollector, "_collect")
     def test_run_normalizes_spaced_error_status(
-        self, mock_collect: Mock, mock_storage: Mock
+        self, mock_collect: Mock, mock_storage: Mock, mock_status_storage: Mock
     ) -> None:
         """Spaced error statuses are rewritten to compact xxx-error form."""
-        mock_storage.get.side_effect = [
-            {
-                "DRPID": 1,
-                "source_url": "https://data.cms.gov/some/path",
-                "status": "sourced",
-            },
-            {"DRPID": 1, "status": "sourced - error"},
-        ]
+        load_record = {
+            "DRPID": 1,
+            "source_url": "https://data.cms.gov/some/path",
+            "status": "sourced",
+        }
+        merge_record = {"DRPID": 1, "status": "sourced - error"}
+        mock_storage.get.side_effect = [load_record, merge_record]
+        mock_status_storage.get.return_value = merge_record
+        mock_status_storage.update_record = mock_storage.update_record
         mock_collect.return_value = {"folder_path": "/tmp/DRP000001"}
 
         self.collector.run(1)

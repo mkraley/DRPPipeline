@@ -49,7 +49,7 @@ class TestSocrataPageProcessor(unittest.TestCase):
             processor = SocrataPageProcessor(collector)
             self.assertEqual(processor._collector, collector)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_get_total_rows_success(self, mock_playwright: Mock) -> None:
         """Test _get_total_rows extracts total rows from paginator."""
         mock_page, _, _ = setup_mock_playwright(mock_playwright)
@@ -64,7 +64,7 @@ class TestSocrataPageProcessor(unittest.TestCase):
         self.assertEqual(result, 125)
         mock_page.evaluate.assert_called_once()
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_get_total_rows_not_found(self, mock_playwright: Mock) -> None:
         """Test _get_total_rows returns None when paginator not found."""
         mock_playwright_instance = Mock()
@@ -85,7 +85,7 @@ class TestSocrataPageProcessor(unittest.TestCase):
         
         self.assertIsNone(result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_get_total_rows_exception(self, mock_playwright: Mock) -> None:
         """Test _get_total_rows handles exceptions."""
         mock_playwright_instance = Mock()
@@ -106,7 +106,7 @@ class TestSocrataPageProcessor(unittest.TestCase):
         
         self.assertIsNone(result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_show_all_rows_success(self, mock_playwright: Mock) -> None:
         """Test _show_all_rows successfully sets pagination."""
         mock_playwright_instance = Mock()
@@ -130,7 +130,7 @@ class TestSocrataPageProcessor(unittest.TestCase):
         self.assertEqual(mock_page.evaluate.call_count, 1)
         mock_page.wait_for_timeout.assert_called_once_with(2000)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_show_all_rows_fallback(self, mock_playwright: Mock) -> None:
         """Test _show_all_rows falls back to 100 when initial attempt fails."""
         mock_playwright_instance = Mock()
@@ -156,7 +156,7 @@ class TestSocrataPageProcessor(unittest.TestCase):
         self.assertTrue(result)
         self.assertEqual(mock_page.evaluate.call_count, 2)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_show_all_rows_small_total(self, mock_playwright: Mock) -> None:
         """Test _show_all_rows uses 100 when total_rows is less than 100."""
         mock_playwright_instance = Mock()
@@ -180,7 +180,7 @@ class TestSocrataPageProcessor(unittest.TestCase):
         call_args = mock_page.evaluate.call_args[0][0]
         self.assertIn('targetSize = 100', call_args)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_expand_read_more_links_success(self, mock_playwright: Mock) -> None:
         """Test _expand_read_more_links successfully clicks buttons."""
         mock_playwright_instance = Mock()
@@ -210,7 +210,7 @@ class TestSocrataPageProcessor(unittest.TestCase):
         self.assertEqual(mock_buttons.click.call_count, 3)
         mock_page.wait_for_timeout.assert_called_once_with(1500)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_expand_read_more_links_no_buttons(self, mock_playwright: Mock) -> None:
         """Test _expand_read_more_links when no buttons found."""
         mock_playwright_instance = Mock()
@@ -233,7 +233,7 @@ class TestSocrataPageProcessor(unittest.TestCase):
         self.assertEqual(result, 0)
         mock_buttons.click.assert_not_called()
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_hide_collapse_buttons(self, mock_playwright: Mock) -> None:
         """Test _hide_collapse_buttons hides buttons."""
         mock_playwright_instance = Mock()
@@ -254,7 +254,7 @@ class TestSocrataPageProcessor(unittest.TestCase):
         
         mock_page.evaluate.assert_called_once()
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_generate_pdf_success(self, mock_playwright: Mock) -> None:
         """Test _generate_pdf successfully generates PDF."""
         mock_playwright_instance = Mock()
@@ -280,7 +280,7 @@ class TestSocrataPageProcessor(unittest.TestCase):
             print_background=True
         )
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_generate_pdf_failure(self, mock_playwright: Mock) -> None:
         """Test _generate_pdf handles PDF generation failure."""
         mock_playwright_instance = Mock()
@@ -301,7 +301,7 @@ class TestSocrataPageProcessor(unittest.TestCase):
         
         self.assertFalse(result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_generate_pdf_full_flow(self, mock_playwright: Mock) -> None:
         """Test generate_pdf() full flow with all steps."""
         mock_playwright_instance = Mock()
@@ -335,7 +335,7 @@ class TestSocrataPageProcessor(unittest.TestCase):
         
         self.assertTrue(result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_generate_pdf_updates_result_on_failure(self, mock_playwright: Mock) -> None:
         """Test generate_pdf() updates result on failure."""
         mock_playwright_instance = Mock()

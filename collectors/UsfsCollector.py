@@ -13,6 +13,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from collectors.CollectorBase import CollectorBase
 from collectors.UsfsMetadataExtractor import (
     AGENCY,
     OFFICE,
@@ -27,6 +28,7 @@ from collectors.UsfsMetadataExtractor import (
 from collectors.UsfsPageDownloader import UsfsPageDownloader
 from storage import Storage
 from utils.Args import Args
+from utils.collector_status import MAX_DOWNLOAD_BYTES, large_file_skip_note
 from utils.Errors import record_error, record_warning
 from utils.Logger import Logger
 from utils.download_with_progress import download_via_url
@@ -35,18 +37,15 @@ from utils.IcpsrGeographicNormalizer import (
     log_geographic_normalization,
     normalize_geographic_metadata,
 )
-from utils.url_utils import fetch_page_body, is_valid_url
+from utils.url_utils import fetch_page_body
 
 PublicationFile = Tuple[str, str, Optional[int]]
 
 _HTML_EXTENSIONS = {".html", ".htm"}
 _KEEP_EXTENSIONS = {".zip", ".csv", ".xlsx", ".xls"}
-MAX_DOWNLOAD_BYTES = 1 * 1024**3  # 1 GB
 TOTAL_SIZE_WARN_BYTES = 50 * 1024**3  # 50 GB
 _DOWNLOAD_TIMEOUT_SEC = 3600  # 1 hour read timeout for large-but-allowed files
 _PDF_NAMES = ("catalog_detail.pdf", "metadata.pdf", "file_index.pdf")
-STATUS_COLLECTED_LARGE_FILE = "collected - large file"
-STATUS_COLLECTED_EXTERNAL_ARCHIVE = "collected - external archive"
 STATUS_UPLOADED_LARGE_FILE = "uploaded - large file"
 # FGDC parse fields kept in memory only; Storage has geographic_coverage instead.
 _METADATA_KEYS_NOT_IN_STORAGE = frozenset({
@@ -80,11 +79,21 @@ def _fetch_usfs_page_body(
     return page_downloader.fetch_page_html(url, timeout=timeout)
 
 
-class UsfsCollector:
+class UsfsCollector(CollectorBase):
     """Collect USFS RDS catalog metadata and publication files."""
 
+    _storage_status_mode = "inventory"
+    _storage_skip_keys = _METADATA_KEYS_NOT_IN_STORAGE
+
     def __init__(self, headless: bool = True) -> None:
+        """
+        Initialize the collector.
+
+        Args:
+            headless: Launch Playwright headless when True.
+        """
         self._headless = headless
+        self._page_downloader: UsfsPageDownloader | None = None
 
     def run(self, drpid: int) -> None:
         """
@@ -93,33 +102,32 @@ class UsfsCollector:
         Args:
             drpid: The DRPID of the project to process.
         """
-        record = Storage.get(drpid)
-        if record is None:
-            record_error(drpid, f"Project record not found for DRPID: {drpid}", update_storage=False)
+        record, source_url = self.load_project(drpid)
+        if record is None or source_url is None:
             return
 
-        source_url = record.get("source_url")
-        if not source_url:
-            record_error(drpid, f"Missing source_url for DRPID: {drpid}")
-            return
-
-        page_downloader = UsfsPageDownloader(headless=self._headless)
+        self._page_downloader = UsfsPageDownloader(headless=self._headless)
         try:
-            result = self._collect(source_url, drpid, page_downloader)
-            self._update_storage(drpid, result)
+            result = self._collect(source_url, drpid, record)
+            self.apply_result_to_storage(drpid, result)
         except Exception as exc:
             record_error(drpid, f"Exception during USFS collection for DRPID {drpid}: {exc}")
         finally:
-            page_downloader.close()
+            self._page_downloader.close()
+            self._page_downloader = None
 
     def _collect(
         self,
         url: str,
         drpid: int,
-        page_downloader: UsfsPageDownloader,
-    ) -> Dict[str, Any]:
-        if not is_valid_url(url):
-            record_error(drpid, f"Invalid URL: {url}")
+        record: dict[str, Any],
+    ) -> dict[str, Any]:
+        page_downloader = self._page_downloader
+        if page_downloader is None:
+            record_error(drpid, "USFS page downloader not initialized")
+            return {}
+
+        if not self.validate_url(drpid, url):
             return {}
 
         if "fs.usda.gov/rds/archive/catalog/" not in url:
@@ -362,10 +370,7 @@ class UsfsCollector:
             if inventory_bytes is not None and inventory_bytes > MAX_DOWNLOAD_BYTES:
                 total_bytes += inventory_bytes
                 skipped_large = True
-                notes.append(
-                    f"Skipped download (>1GB): {filename} ({format_file_size(inventory_bytes)}) - "
-                    f"download manually: {file_url}"
-                )
+                notes.append(large_file_skip_note(filename, file_url, inventory_bytes))
                 continue
 
             if not download:
@@ -442,32 +447,3 @@ class UsfsCollector:
             if path.is_file():
                 total += path.stat().st_size
         return total
-
-    def _update_storage(self, drpid: int, result: Dict[str, Any]) -> None:
-        current = Storage.get(drpid) or {}
-        skipped_large = bool(result.pop("_skipped_large_file", False))
-        external_archive = bool(result.pop("_external_archive", False))
-        has_errors = bool((current.get("errors") or "").strip())
-
-        if has_errors:
-            result.pop("status", None)
-        elif result.get("folder_path"):
-            if skipped_large:
-                result["status"] = STATUS_COLLECTED_LARGE_FILE
-            elif external_archive:
-                result["status"] = STATUS_COLLECTED_EXTERNAL_ARCHIVE
-            else:
-                result["status"] = "collected"
-
-        update_fields: Dict[str, Any] = {}
-        for key, value in result.items():
-            if key in _METADATA_KEYS_NOT_IN_STORAGE:
-                continue
-            if value is None:
-                continue
-            if value == "":
-                continue
-            update_fields[key] = value
-
-        if update_fields:
-            Storage.update_record(drpid, update_fields)

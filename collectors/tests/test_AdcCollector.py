@@ -10,11 +10,12 @@ from unittest.mock import MagicMock, patch
 from utils.Args import Args
 from utils.Logger import Logger
 
-from collectors.AdcCollector import (
+from utils.collector_status import (
     STATUS_COLLECTED_EXTERNAL_ARCHIVE,
     STATUS_COLLECTED_LARGE_FILE,
-    AdcCollector,
 )
+
+from collectors.AdcCollector import AdcCollector
 from collectors.AdcCollector import _CATALOG_HTML_NAME, _METADATA_JSON_NAME
 from sourcing.AdcFileInventory import MAX_DOWNLOAD_BYTES, AdcFileInventory
 from utils.file_utils import format_file_size
@@ -151,12 +152,12 @@ class TestAdcCollector(unittest.TestCase):
                 file_path.unlink(missing_ok=True)
             folder.rmdir()
 
-    @patch("collectors.AdcCollector.Storage")
-    def test_update_storage_large_file_status(self, mock_storage: MagicMock) -> None:
+    @patch("utils.collector_status.Storage")
+    def test_apply_result_to_storage_large_file_status(self, mock_storage: MagicMock) -> None:
         """Skipped large files set collected - large file status."""
         mock_storage.get.return_value = {"errors": ""}
         collector = AdcCollector()
-        collector._update_storage(
+        collector.apply_result_to_storage(
             1,
             {"folder_path": "C:\\Data\\DRP000001", "_skipped_large_file": True, "_external_archive": False},
         )
@@ -164,20 +165,20 @@ class TestAdcCollector(unittest.TestCase):
         fields = mock_storage.update_record.call_args[0][1]
         self.assertEqual(fields["status"], STATUS_COLLECTED_LARGE_FILE)
 
-    @patch("collectors.AdcCollector.Storage")
-    def test_update_storage_external_archive_status(self, mock_storage: MagicMock) -> None:
+    @patch("utils.collector_status.Storage")
+    def test_apply_result_to_storage_external_archive_status(self, mock_storage: MagicMock) -> None:
         """External-only datasets set collected - external archive status."""
         mock_storage.get.return_value = {"errors": ""}
         collector = AdcCollector()
-        collector._update_storage(
+        collector.apply_result_to_storage(
             1,
             {"folder_path": "C:\\Data\\DRP000001", "_external_archive": True},
         )
         fields = mock_storage.update_record.call_args[0][1]
         self.assertEqual(fields["status"], STATUS_COLLECTED_EXTERNAL_ARCHIVE)
 
-    @patch("collectors.AdcCollector.Storage")
-    @patch("collectors.AdcCollector.create_output_folder")
+    @patch("utils.collector_status.Storage")
+    @patch.object(AdcCollector, "create_project_folder")
     @patch("collectors.AdcCollector.extract_metadata")
     @patch("collectors.AdcCollector.record_warning")
     def test_collect_external_archive_skips_downloads(
@@ -208,13 +209,13 @@ class TestAdcCollector(unittest.TestCase):
         url = "https://agdatacommons.nal.usda.gov/articles/dataset/X/123"
 
         try:
-            result = collector._collect(url, 15)
+            result = collector._collect(url, 15, {})
             self.assertTrue(result.get("_external_archive"))
             self.assertIn(
                 "External data URL: https://example.ars.usda.gov/data",
                 result.get("status_notes", ""),
             )
-            collector._update_storage(15, result)
+            collector.apply_result_to_storage(15, result)
             fields = mock_storage.update_record.call_args[0][1]
             self.assertEqual(fields["status"], STATUS_COLLECTED_EXTERNAL_ARCHIVE)
         finally:
@@ -224,7 +225,7 @@ class TestAdcCollector(unittest.TestCase):
 
     @patch("collectors.AdcCollector.record_error")
     @patch("collectors.AdcCollector.retry_http_call")
-    @patch("collectors.AdcCollector.Storage")
+    @patch("collectors.CollectorBase.Storage")
     def test_run_sets_not_found_when_source_inaccessible(
         self,
         mock_storage: MagicMock,

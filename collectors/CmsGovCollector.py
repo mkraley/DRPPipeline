@@ -16,27 +16,24 @@ Flow:
          not exposed by any API endpoint)
 """
 
-from contextlib import suppress
+from collectors.CollectorBase import CollectorBase
+from collectors.PlaywrightSession import PlaywrightSession
+from utils.Errors import record_error, record_warning
 from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote, urlparse
 
 import requests
-from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 
-from storage import Storage
-from utils.Args import Args
-from utils.Errors import derive_error_status, is_error_status, record_error, record_warning
 from utils.Logger import Logger
 from utils.download_with_progress import download_via_url
 from utils.file_utils import (
-    create_output_folder,
     folder_extensions_and_size,
     format_file_size,
     sanitize_filename,
 )
-from utils.url_utils import BROWSER_HEADERS, is_valid_url
+from utils.url_utils import BROWSER_HEADERS
 
 _API_BASE = "https://data.cms.gov/data-api/v1"
 
@@ -44,7 +41,7 @@ _API_BASE = "https://data.cms.gov/data-api/v1"
 _DESCRIPTION_SELECTOR = "[class*='DatasetPage__summary-field-summary-container']"
 
 
-class CmsGovCollector:
+class CmsGovCollector(CollectorBase):
     """
     Collector for data.cms.gov dataset pages.
 
@@ -55,43 +52,25 @@ class CmsGovCollector:
 
     def __init__(self, headless: bool = True) -> None:
         self._headless = headless
-        self._playwright: Optional[Playwright] = None
-        self._browser: Optional[Browser] = None
-        self._page: Optional[Page] = None
+        self._session = PlaywrightSession(headless=headless)
         self._last_resources_error: str = ""
 
     def run(self, drpid: int) -> None:
-        """
-        Run the collector for a single project (ModuleProtocol interface).
-
-        Args:
-            drpid: The DRPID of the project to process.
-        """
-        record = Storage.get(drpid)
-        if record is None:
-            record_error(drpid, f"Project record not found for DRPID: {drpid}", update_storage=False)
-            return
-
-        source_url = record.get("source_url")
-        if not source_url:
-            record_error(drpid, f"Missing source_url for DRPID: {drpid}")
-            return
-
+        """Run collection and always release the browser session."""
         try:
-            result = self._collect(source_url, drpid)
-            self._update_storage(drpid, result)
-        except Exception as exc:
-            record_error(drpid, f"Exception during collection for DRPID {drpid}: {exc}")
+            super().run(drpid)
         finally:
             self._cleanup_browser()
 
-    # ── Internal helpers ──────────────────────────────────────────────────────
-
-    def _collect(self, url: str, drpid: int) -> Dict[str, Any]:
+    def _collect(
+        self,
+        url: str,
+        drpid: int,
+        record: dict[str, Any],
+    ) -> Dict[str, Any]:
         result: Dict[str, Any] = {}
 
-        if not is_valid_url(url):
-            record_error(drpid, f"Invalid URL: {url}")
+        if not self.validate_url(drpid, url):
             return result
 
         url_path = self._extract_path(url)
@@ -117,9 +96,8 @@ class CmsGovCollector:
             record_error(drpid, "Slug API response missing current_dataset.uuid")
             return result
 
-        folder_path = create_output_folder(Path(Args.base_output_dir), drpid)
-        if not folder_path:
-            record_error(drpid, "Failed to create output folder")
+        folder_path = self.create_project_folder(drpid)
+        if folder_path is None:
             return result
         # Normalize to POSIX-style paths so tests and downstream consumers are
         # consistent across platforms.
@@ -367,11 +345,12 @@ class CmsGovCollector:
         if not self._init_browser():
             record_warning(drpid, "Browser unavailable; description not collected")
             return None
+        page = self._session.page
+        assert page is not None
         try:
-            self._page.goto(url, wait_until="networkidle", timeout=60000)
-            el = self._page.query_selector(_DESCRIPTION_SELECTOR)
+            page.goto(url, wait_until="networkidle", timeout=60000)
+            el = page.query_selector(_DESCRIPTION_SELECTOR)
             if el:
-                # Playwright element API: tests mock `inner_text()`.
                 text = el.inner_text().strip()
                 return text if text else None
             record_warning(drpid, "Description element not found on page")
@@ -381,43 +360,7 @@ class CmsGovCollector:
             return None
 
     def _init_browser(self) -> bool:
-        try:
-            self._playwright = sync_playwright().start()
-            self._browser = self._playwright.chromium.launch(headless=self._headless)
-            self._page = self._browser.new_page()
-            return True
-        except Exception as exc:
-            Logger.error("Failed to initialize browser: %s", exc)
-            self._cleanup_browser()
-            return False
+        return self._session.start()
 
     def _cleanup_browser(self) -> None:
-        if self._browser:
-            with suppress(Exception):
-                self._browser.close()
-            self._browser = None
-        if self._playwright:
-            with suppress(Exception):
-                self._playwright.stop()
-            self._playwright = None
-        self._page = None
-
-    def _update_storage(self, drpid: int, result: Dict[str, Any]) -> None:
-        """
-        Merge collect results into Storage without clearing a recorded error status.
-
-        Args:
-            drpid: Project DRPID.
-            result: Fields collected for this run.
-        """
-        current = Storage.get(drpid)
-        previous = (current.get("status") or "") if current else ""
-        if is_error_status(previous):
-            # Keep error status, but normalize spaced forms (e.g. "xxx - error").
-            result["status"] = derive_error_status(previous)
-        elif result.get("folder_path") and not result.get("status"):
-            result["status"] = "collected"
-
-        fields = {k: v for k, v in result.items() if v is not None}
-        if fields:
-            Storage.update_record(drpid, fields)
+        self._session.close()

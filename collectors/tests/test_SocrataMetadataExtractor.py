@@ -48,7 +48,7 @@ class TestSocrataMetadataExtractor(unittest.TestCase):
             extractor = SocrataMetadataExtractor(collector)
             self.assertEqual(extractor._collector, collector)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_extract_title_success(self, mock_playwright: Mock) -> None:
         """Test _extract_title extracts title from h2.asset-name."""
         mock_page, _, _ = setup_mock_playwright(mock_playwright)
@@ -66,7 +66,7 @@ class TestSocrataMetadataExtractor(unittest.TestCase):
         self.assertEqual(result, "Test Dataset Title")
         mock_page.locator.assert_called_with('h2.asset-name')
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_extract_title_not_found(self, mock_playwright: Mock) -> None:
         """Test _extract_title returns None when title not found."""
         mock_playwright_instance = Mock()
@@ -88,7 +88,7 @@ class TestSocrataMetadataExtractor(unittest.TestCase):
         
         self.assertIsNone(result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_extract_title_exception(self, mock_playwright: Mock) -> None:
         """Test _extract_title handles exceptions."""
         mock_playwright_instance = Mock()
@@ -108,7 +108,7 @@ class TestSocrataMetadataExtractor(unittest.TestCase):
         
         self.assertIsNone(result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_extract_dataset_metadata_success(self, mock_playwright: Mock) -> None:
         """Test _extract_dataset_metadata extracts rows and columns."""
         mock_playwright_instance = Mock()
@@ -148,7 +148,7 @@ class TestSocrataMetadataExtractor(unittest.TestCase):
         self.assertEqual(rows, "1000")
         self.assertEqual(columns, "25")
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_extract_dataset_metadata_not_found(self, mock_playwright: Mock) -> None:
         """Test _extract_dataset_metadata returns None when metadata not found."""
         mock_playwright_instance = Mock()
@@ -171,7 +171,7 @@ class TestSocrataMetadataExtractor(unittest.TestCase):
         self.assertIsNone(rows)
         self.assertIsNone(columns)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_extract_description_success(self, mock_playwright: Mock) -> None:
         """Test _extract_description extracts HTML description."""
         mock_playwright_instance = Mock()
@@ -196,7 +196,7 @@ class TestSocrataMetadataExtractor(unittest.TestCase):
         mock_page.locator.assert_called_with('div.description-section')
         mock_locator.first.inner_html.assert_called_once()
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_extract_description_not_found(self, mock_playwright: Mock) -> None:
         """Test _extract_description returns None when not found."""
         mock_playwright_instance = Mock()
@@ -218,7 +218,7 @@ class TestSocrataMetadataExtractor(unittest.TestCase):
         
         self.assertIsNone(result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_extract_keywords_success(self, mock_playwright: Mock) -> None:
         """Test _extract_keywords extracts keywords from metadata table."""
         mock_playwright_instance = Mock()
@@ -269,7 +269,7 @@ class TestSocrataMetadataExtractor(unittest.TestCase):
         
         self.assertEqual(result, "keyword1, keyword2")
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_extract_keywords_not_found(self, mock_playwright: Mock) -> None:
         """Test _extract_keywords returns None when not found."""
         mock_playwright_instance = Mock()
@@ -291,7 +291,7 @@ class TestSocrataMetadataExtractor(unittest.TestCase):
         
         self.assertIsNone(result)
     
-    @patch('collectors.SocrataCollector.sync_playwright')
+    @patch('collectors.PlaywrightSession.sync_playwright')
     def test_extract_all_metadata_success(self, mock_playwright: Mock) -> None:
         """Test extract_all_metadata extracts all metadata and updates result."""
         mock_playwright_instance = Mock()
@@ -326,7 +326,7 @@ class TestSocrataMetadataExtractor(unittest.TestCase):
         self.assertEqual(self.collector._result.get("summary"), expected["description"])
         self.assertEqual(self.collector._result.get("keywords"), expected["keywords"])
 
-    @patch("collectors.SocrataCollector.sync_playwright")
+    @patch("collectors.PlaywrightSession.sync_playwright")
     def test_extract_all_metadata_partial(self, mock_playwright: Mock) -> None:
         """Test extract_all_metadata handles partial metadata."""
         mock_playwright_instance = Mock()
