@@ -68,10 +68,6 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": None,
         "class_name": "Sourcing",
     },
-    "adc_sourcing": {
-        "prereq": None,
-        "class_name": "AdcSourcing",
-    },
     "adc_collector": {
         "prereq": "sourced",
         "class_name": "AdcCollector",
@@ -134,6 +130,29 @@ MODULES: Dict[str, Dict[str, Any]] = {
     },
 
 }
+
+
+def list_pipeline_modules(*, include_noop: bool = False) -> list[str]:
+    """
+    Return module names for CLI and UI lists.
+
+    Excludes ``noop`` unless requested and omits legacy ``*_sourcing`` aliases
+    (use ``sourcing`` with ``Args.source`` instead).
+
+    Args:
+        include_noop: When True, include the ``noop`` module.
+
+    Returns:
+        Ordered module names from :data:`MODULES`.
+    """
+    names: list[str] = []
+    for name in MODULES:
+        if name == "noop" and not include_noop:
+            continue
+        if name.endswith("_sourcing"):
+            continue
+        names.append(name)
+    return names
 
 
 def _find_module_class(class_name: str) -> type:
@@ -398,7 +417,7 @@ class Orchestrator:
 
         # Only sourcing may wipe the DB, and only when delete_all_db_entries is true in config and/or CLI
         # (default false — omit both and the database is left intact).
-        if module in ("sourcing", "adc_sourcing") and bool(Args.delete_all_db_entries):
+        if module == "sourcing" and bool(Args.delete_all_db_entries):
             Logger.warning(
                 "Deleting all database entries before sourcing (delete_all_db_entries in config and/or "
                 "--delete-all-db-entries on command line)"

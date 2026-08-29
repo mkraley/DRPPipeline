@@ -83,7 +83,7 @@ class Args(metaclass=ArgsMeta):
         "sourcing_url_prefix": "https://catalog.data.gov/",  # Only source rows whose URL starts with this prefix
         "sourcing_fetch_timeout": 15,  # Seconds per URL when checking availability in sourcing; reduces delay from slow catalog.data.gov pages
         "sourcing_mode": "unclaimed",  # Row filter: unclaimed (default), completed (Download Location filled), all
-        "adc_request_delay": 0.1,  # Seconds between Figshare API calls during adc_sourcing
+        "adc_request_delay": 0.1,  # Seconds between Figshare API calls during ADC sourcing
         # Globus supplemental collector (adc_globus_collector)
         "globus_client_id": None,  # Native app client ID from Globus developers console
         "globus_refresh_token": None,  # OAuth refresh token with transfer scopes
@@ -251,7 +251,7 @@ class Args(metaclass=ArgsMeta):
         
         def callback(
             ctx: typer.Context,
-            module: Optional[str] = typer.Argument(None, help="Module to run: setup, noop, sourcing, adc_sourcing, adc_collector, socrata_collector, catalog_collector, cms_collector, usfs_collector, interactive_collector, upload, publisher, republisher, cleanup_inprogress, help"),
+            module: Optional[str] = typer.Argument(None, help="Module to run: setup, noop, sourcing, adc_collector, socrata_collector, catalog_collector, cms_collector, usfs_collector, interactive_collector, upload, publisher, republisher, cleanup_inprogress, help"),
             config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to configuration file (JSON format). Default: ./config.json"),
             log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Set the logging level", case_sensitive=False),
             num_rows: Optional[int] = typer.Option(None, "--num-rows", "-n", help="Max projects or candidate URLs per batch; None = unlimited"),

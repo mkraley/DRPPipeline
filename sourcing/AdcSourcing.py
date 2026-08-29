@@ -6,7 +6,6 @@ summaries (including Dryad/Zenodo expansion when applicable), and creates
 ``sourced`` storage records. Run via orchestrator::
 
     python main.py sourcing   # when Args.source is adc
-    python main.py adc_sourcing   # legacy alias
 """
 
 from __future__ import annotations

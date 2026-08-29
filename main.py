@@ -22,7 +22,6 @@ USAGE
 MODULES
   setup                 Check/create config.json and google-credentials.json (start here)
   sourcing              Source candidate URLs into the database (implementation from config source)
-  adc_sourcing          Legacy alias for ADC Figshare sourcing (prefer sourcing with source=adc)
   socrata_collector     Download datasets from Socrata (data.gov) sources
   catalog_collector     Download datasets from catalog.data.gov sources
   cms_collector         Download datasets from data.cms.gov sources

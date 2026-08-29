@@ -558,11 +558,14 @@ class TestOrchestrator(unittest.TestCase):
         cls = _find_module_class("Sourcing")
         self.assertEqual(cls.__name__, "Sourcing")
 
-    def test_find_module_class_returns_adc_sourcing(self) -> None:
-        """Test _find_module_class finds AdcSourcing in the project."""
-        from orchestration.Orchestrator import _find_module_class
-        cls = _find_module_class("AdcSourcing")
-        self.assertEqual(cls.__name__, "AdcSourcing")
+    def test_list_pipeline_modules_excludes_legacy_sourcing_aliases(self) -> None:
+        """UI module list includes sourcing but not *_sourcing legacy names."""
+        from orchestration.Orchestrator import list_pipeline_modules
+
+        mods = list_pipeline_modules()
+        self.assertIn("sourcing", mods)
+        self.assertNotIn("adc_sourcing", mods)
+        self.assertTrue(all(not name.endswith("_sourcing") for name in mods))
 
     def test_find_module_class_returns_adc_collector(self) -> None:
         """Test _find_module_class finds AdcCollector in the project."""

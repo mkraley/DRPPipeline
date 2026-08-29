@@ -50,6 +50,12 @@ def _modules() -> dict[str, dict[str, Any]]:
     return dict(MODULES)
 
 
+def _ui_module_names() -> list[str]:
+    """Return pipeline module names for the SPA (no noop, no legacy *_sourcing)."""
+    from orchestration.Orchestrator import list_pipeline_modules
+    return list_pipeline_modules()
+
+
 @pipeline_bp.route("/modules", methods=["GET"])
 def list_modules() -> Any:
     """
@@ -59,7 +65,7 @@ def list_modules() -> Any:
         JSON: { "modules": ["noop", "sourcing", "collector", ...] }
     """
     # Preserve MODULES order (no noop in list for UI)
-    mods = [m for m in _modules().keys() if m != "noop"]
+    mods = _ui_module_names()
     return {"modules": mods}
 
 

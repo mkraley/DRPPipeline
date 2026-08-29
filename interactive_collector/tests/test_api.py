@@ -749,6 +749,7 @@ class TestApiPipeline(unittest.TestCase):
         mods = data["modules"]
         self.assertIsInstance(mods, list)
         self.assertIn("sourcing", mods)
+        self.assertNotIn("adc_sourcing", mods)
         self.assertIn("interactive_collector", mods)
         self.assertNotIn("noop", mods)
 
