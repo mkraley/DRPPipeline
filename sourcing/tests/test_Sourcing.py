@@ -13,10 +13,11 @@ from utils.Args import Args
 from utils.Logger import Logger
 
 from sourcing import Sourcing
+from sourcing.SpreadsheetSourcing import SpreadsheetSourcing
 
 
-class TestSourcing(unittest.TestCase):
-    """Test cases for Sourcing."""
+class TestSpreadsheetSourcing(unittest.TestCase):
+    """Test cases for SpreadsheetSourcing."""
 
     def setUp(self) -> None:
         """Set up test environment before each test."""
@@ -29,7 +30,7 @@ class TestSourcing(unittest.TestCase):
         self.temp_dir = Path(tempfile.mkdtemp())
         self.test_db_path = self.temp_dir / "test_drp_pipeline.db"
         self.storage = Storage.initialize("StorageSQLLite", db_path=self.test_db_path)
-        self.sourcing = Sourcing()
+        self.sourcing = SpreadsheetSourcing()
 
     def tearDown(self) -> None:
         """Clean up after each test."""
@@ -40,13 +41,13 @@ class TestSourcing(unittest.TestCase):
             import shutil
             shutil.rmtree(self.temp_dir)
 
-    @patch.object(Sourcing, "get_candidate_urls", return_value=([], 0))  # list of row dicts, skipped_count
+    @patch.object(SpreadsheetSourcing, "get_candidate_urls", return_value=([], 0))
     def test_run_returns_none(self, _mock_get: object) -> None:
         """Test run(-1) returns None after processing (no URLs)."""
         result = self.sourcing.run(-1)
         self.assertIsNone(result)
 
-    @patch("sourcing.Sourcing.SpreadsheetCandidateFetcher")
+    @patch("sourcing.SpreadsheetSourcing.SpreadsheetCandidateFetcher")
     def test_get_candidate_urls_delegates_to_fetcher(self, mock_fetcher_cls: object) -> None:
         """Test get_candidate_urls(limit=...) delegates to SpreadsheetCandidateFetcher."""
         mock_fetcher = mock_fetcher_cls.return_value
@@ -64,7 +65,7 @@ class TestSourcing(unittest.TestCase):
         mock_fetcher.get_candidate_urls.assert_called_once_with(limit=10)
 
     @patch("utils.url_utils.fetch_page_body", return_value=(200, "", "text/html", False))
-    @patch.object(Sourcing, "get_candidate_urls")
+    @patch.object(SpreadsheetSourcing, "get_candidate_urls")
     def test_run_creates_row_status_sourced(self, mock_get: object, _mock_fetch: object) -> None:
         """Test run creates record and sets status 'sourced' when URL is good."""
         mock_get.return_value = (
@@ -78,7 +79,7 @@ class TestSourcing(unittest.TestCase):
         self.assertEqual(projects[0]["source_url"], "https://example.com/good")
 
     @patch("utils.url_utils.fetch_page_body", return_value=(404, "", None, False))
-    @patch.object(Sourcing, "get_candidate_urls")
+    @patch.object(SpreadsheetSourcing, "get_candidate_urls")
     def test_run_creates_row_status_not_found(self, mock_get: object, _mock_fetch: object) -> None:
         """Test run creates record and sets status 'not_found' when URL returns 404."""
         mock_get.return_value = (
@@ -92,7 +93,7 @@ class TestSourcing(unittest.TestCase):
         self.assertEqual(record["source_url"], "https://example.com/missing")
 
     @patch("utils.Logger.Logger.error")
-    @patch.object(Sourcing, "get_candidate_urls")
+    @patch.object(SpreadsheetSourcing, "get_candidate_urls")
     def test_run_dupe_in_storage_logs_error_no_row(self, mock_get: object, mock_log_error: object) -> None:
         """Test run does not create a row for duplicate URL; logs Error."""
         self.storage.create_record("https://example.com/dup")
@@ -106,12 +107,12 @@ class TestSourcing(unittest.TestCase):
         self.assertEqual(record1["source_url"], "https://example.com/dup")
         self.assertIsNone(self.storage.get(2))
         mock_log_error.assert_called_once()
-        call_msg = mock_log_error.call_args[0][0]
-        self.assertIn("Duplicate source URL already in storage", call_msg)
-        self.assertIn("https://example.com/dup", call_msg)
+        call_args = mock_log_error.call_args[0]
+        self.assertIn("Duplicate source URL already in storage", call_args[0])
+        self.assertEqual(call_args[1], "https://example.com/dup")
 
     @patch("utils.url_utils.fetch_page_body", side_effect=Exception("network error"))
-    @patch.object(Sourcing, "get_candidate_urls")
+    @patch.object(SpreadsheetSourcing, "get_candidate_urls")
     def test_run_creates_row_status_error_on_exception(
         self, mock_get: object, _mock_fetch: object
     ) -> None:
@@ -126,4 +127,22 @@ class TestSourcing(unittest.TestCase):
         self.assertEqual(record["status"], "error")
         self.assertIn("network error", record.get("errors", ""))
 
+    @patch("sourcing.SpreadsheetSourcing.SpreadsheetCandidateFetcher")
+    def test_sourcing_router_get_candidate_urls_delegates_to_spreadsheet(
+        self, mock_fetcher_cls: object
+    ) -> None:
+        """Sourcing.get_candidate_urls always uses SpreadsheetSourcing."""
+        mock_fetcher = mock_fetcher_cls.return_value
+        mock_fetcher.get_candidate_urls.return_value = (
+            [{"url": "https://example.com/1", "office": "O", "agency": "A"}],
+            0,
+        )
+        rows, skipped = Sourcing().get_candidate_urls(limit=5)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(skipped, 0)
+        mock_fetcher.get_candidate_urls.assert_called_once_with(limit=5)
+
+
+if __name__ == "__main__":
+    unittest.main()
 

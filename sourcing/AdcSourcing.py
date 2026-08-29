@@ -5,7 +5,8 @@ Enumerates ADC datasets via the public Figshare API (no portal WAF), builds file
 summaries (including Dryad/Zenodo expansion when applicable), and creates
 ``sourced`` storage records. Run via orchestrator::
 
-    python main.py adc_sourcing
+    python main.py sourcing   # when Args.source is adc
+    python main.py adc_sourcing   # legacy alias
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import requests
 from duplicate_checking import DuplicateChecker
 from sourcing.AdcApiClient import article_id_from_source_url
 from sourcing.AdcCandidateFetcher import AdcCandidateFetcher
+from sourcing.SourcingBase import SourcingBase
 from storage import Storage
 from utils.Args import Args
 from utils.Logger import Logger
@@ -26,12 +28,12 @@ DEFAULT_FORBIDDEN_RETRIES = 3
 FORBIDDEN_BACKOFF_SECONDS = 2.0
 
 
-class AdcSourcing:
+class AdcSourcing(SourcingBase):
     """
     Source Ag Data Commons datasets into Storage using the Figshare public API.
 
-    Unlike spreadsheet :class:`Sourcing`, URL availability is not re-checked
-    (metadata already comes from ``api.figshare.com``). Duplicate URLs are skipped.
+    Unlike spreadsheet sourcing, URL availability is not re-checked (metadata
+    already comes from ``api.figshare.com``).
     """
 
     def __init__(
@@ -63,22 +65,15 @@ class AdcSourcing:
         Enumerate ADC datasets and insert new rows into Storage.
 
         Already-sourced article IDs are skipped before fetch. ``Args.num_rows``
-        limits how many pending articles are processed per run (for rate-limit recovery).
+        limits how many pending articles are processed per run.
 
         Args:
             drpid: Use -1 (orchestrator convention for batch sourcing modules).
         """
-        if drpid != -1:
-            Logger.warning(
-                "AdcSourcing ignores DRPID %s; batch enumeration uses run(-1).",
-                drpid,
-            )
+        self.ensure_batch_drpid(drpid, self.__class__.__name__)
 
         limit = Args.num_rows
-        Logger.info(
-            "ADC sourcing: starting enumeration (limit=%s)",
-            limit,
-        )
+        Logger.info("ADC sourcing: starting enumeration (limit=%s)", limit)
         all_article_ids = self._fetcher.list_article_ids(limit=None)
         pending_ids = self._pending_article_ids(all_article_ids)
         batch_ids = pending_ids[:limit] if limit is not None else pending_ids
@@ -113,18 +108,13 @@ class AdcSourcing:
                 continue
 
             source_url = row["url"]
-            if checker.exists_in_storage(source_url):
+            if self.is_duplicate_in_storage(source_url, checker):
                 skipped_dupes += 1
-                Logger.error(
-                    "Duplicate source URL already in storage, skipping (no row created): %s",
-                    source_url,
-                )
                 continue
 
             new_drpid = Storage.create_record(source_url)
             assigned_ids.append(new_drpid)
-            update_fields = self._storage_fields_from_row(row)
-            Storage.update_record(new_drpid, update_fields)
+            Storage.update_record(new_drpid, self._storage_fields_from_row(row))
             inserted += 1
 
             if index <= 20 or index % 25 == 0 or index == len(batch_ids):
@@ -133,17 +123,12 @@ class AdcSourcing:
             if self._request_delay > 0:
                 time.sleep(self._request_delay)
 
-        id_range = ""
-        if assigned_ids:
-            low, high = min(assigned_ids), max(assigned_ids)
-            id_range = f" (DRPID: {low})" if low == high else f" (DRPIDs: {low}-{high})"
-
         remaining = len(pending_ids) - len(batch_ids)
         Logger.info(
             "ADC sourcing complete: %s inserted%s, %s failed, %s duplicate(s) skipped, "
             "%s non-ADC article(s) skipped, %s pending for next batch",
             inserted,
-            id_range,
+            self.format_id_range(assigned_ids),
             failed,
             skipped_dupes,
             skipped_invalid,
