@@ -22,13 +22,7 @@ USAGE
 MODULES
   setup                 Check/create config.json and google-credentials.json (start here)
   sourcing              Source candidate URLs into the database (implementation from config source)
-  socrata_collector     Download datasets from Socrata (data.gov) sources
-  catalog_collector     Download datasets from catalog.data.gov sources
-  cms_collector         Download datasets from data.cms.gov sources
-  usfs_collector        Harvest metadata from USFS Research Data Archive pages
-  adc_collector         Collect Ag Data Commons datasets (files + metadata)
-  adc_globus_collector  Transfer Globus-hosted ADC external-archive datasets (after adc_collector)
-  adc_globus_survey     Inventory remote Globus file sizes (no download; updates status_notes)
+  collector             Collect sourced projects (implementation from config source)
   interactive_collector Browser-assisted collector for sites that block automation
                         (use --external-archive for collected - external archive projects)
   upload                Upload collected datasets to DataLumos

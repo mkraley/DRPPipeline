@@ -21,7 +21,7 @@ if not getattr(Args, "_initialized", False):
     Args.initialize()
     Logger.initialize(log_level=getattr(Args, "log_level", "WARNING"))
 
-from interactive_collector.app import app
+from interactive_collector.dev_server import run_server
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    run_server()

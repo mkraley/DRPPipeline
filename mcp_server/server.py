@@ -35,9 +35,7 @@ _MODULES: dict[str, dict[str, Optional[str]]] = {
     "noop":               {"prereq": None,       "output": None},
     "setup":              {"prereq": None,       "output": None},
     "sourcing":           {"prereq": None,       "output": "sourced"},
-    "socrata_collector":  {"prereq": "sourced",  "output": "collected"},
-    "catalog_collector":  {"prereq": "sourced",  "output": "collected"},
-    "cms_collector":      {"prereq": "sourced",  "output": "collected"},
+    "collector":          {"prereq": "sourced",  "output": "collected"},
     "upload":             {"prereq": "collected","output": "uploaded"},
     "upload_large_files": {"prereq": "uploaded - large file|uploaded - expanded", "output": "finish wait"},
     "publisher":          {"prereq": "uploaded", "output": "published"},
@@ -257,8 +255,7 @@ def run_module(
     dry_run=True (default): show which projects are eligible without running.
     dry_run=False: execute via subprocess and return captured log output.
 
-    Supported modules: noop, sourcing, socrata_collector, catalog_collector,
-    cms_collector, upload, publisher, cleanup_inprogress.
+    Supported modules: noop, sourcing, collector, upload, publisher, cleanup_inprogress.
 
     Args:
         module:        Module name to run.

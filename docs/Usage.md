@@ -398,10 +398,12 @@ For Google Sheets setup, see [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md).
    ```bash
    flask run
    ```
-   Or via the orchestrator:  
+   Or via the orchestrator (debug + auto-reload on by default):  
    ```bash
    python main.py interactive_collector
    ```
+   Set ``FLASK_DEBUG=0`` for production-like mode, or ``FLASK_USE_RELOADER=0`` during
+   long upload/publisher runs so Flask does not restart mid-stream.
    To work through ADC (or other) projects already marked `collected - external archive`
    instead of `sourced`:
    ```bash

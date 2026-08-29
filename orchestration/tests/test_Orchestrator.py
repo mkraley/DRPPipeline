@@ -122,7 +122,7 @@ class TestOrchestrator(unittest.TestCase):
         mock_find_class: MagicMock,
         mock_record_error: MagicMock,
     ) -> None:
-        """Test run("catalog_collector") calls record_error when run() raises, and continues."""
+        """Test run("collector") calls record_error when run() raises, and continues."""
         sys.argv = ["test", "noop"]
         Args._initialized = False
         Args.initialize(config_file=Path("/tmp/nonexistent_drp_test_config.json"))
@@ -142,11 +142,11 @@ class TestOrchestrator(unittest.TestCase):
         mock_find_class.return_value = mock_collector_cls
 
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
-            Orchestrator.run("catalog_collector")
+            Orchestrator.run("collector")
 
         mock_storage_cls.initialize.assert_called_once()
         mock_storage.list_eligible_projects.assert_called_once_with("sourced", None, None, None)
-        mock_find_class.assert_called_once_with("CatalogDataCollector")
+        mock_find_class.assert_called_once_with("Collector")
         mock_collector_cls.assert_called_once()
         mock_collector_instance.run.assert_called_once_with(1)
         mock_record_error.assert_called_once()
@@ -163,7 +163,7 @@ class TestOrchestrator(unittest.TestCase):
         mock_find_class: MagicMock,
         mock_claim: MagicMock,
     ) -> None:
-        """Test successful catalog_collector run triggers inventory sheet claim."""
+        """Test successful collector run triggers inventory sheet claim."""
         mock_storage = MagicMock()
         mock_storage.list_eligible_projects.return_value = [
             {"DRPID": 2, "source_url": "https://example.com/x"}
@@ -182,10 +182,10 @@ class TestOrchestrator(unittest.TestCase):
         mock_find_class.return_value = mock_collector_cls
 
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
-            Orchestrator.run("catalog_collector")
+            Orchestrator.run("collector")
 
         mock_collector_instance.run.assert_called_once_with(2)
-        mock_claim.assert_called_once_with(2, "catalog_collector")
+        mock_claim.assert_called_once_with(2, "collector")
 
     @patch("interactive_collector.app.app.run")
     def test_run_interactive_collector_starts_app(self, mock_app_run: MagicMock) -> None:
@@ -353,7 +353,7 @@ class TestOrchestrator(unittest.TestCase):
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls), patch.object(
             Args, "retry", True
         ):
-            Orchestrator.run("cms_collector")
+            Orchestrator.run("collector")
         mock_storage_cls.list_eligible_projects.assert_called_once_with(
             "sourced-error", None, None, None, include_errored=True
         )
@@ -380,7 +380,7 @@ class TestOrchestrator(unittest.TestCase):
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls), patch.object(
             Args, "ids", [1, 3]
         ):
-            Orchestrator.run("cms_collector")
+            Orchestrator.run("collector")
         self.assertEqual(mock_collector.run.call_count, 2)
         mock_collector.run.assert_any_call(1)
         mock_collector.run.assert_any_call(3)
@@ -523,7 +523,7 @@ class TestOrchestrator(unittest.TestCase):
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls), \
              patch.object(Args, "start_row", 5), \
              patch.object(Args, "start_drpid", 100):
-            Orchestrator.run("catalog_collector")
+            Orchestrator.run("collector")
         mock_storage_cls.list_eligible_projects.assert_called_once_with("sourced", None, 5, 100)
 
     @patch("orchestration.Orchestrator._stop_requested")
@@ -549,7 +549,7 @@ class TestOrchestrator(unittest.TestCase):
         mock_instance = MagicMock()
         mock_find_class.return_value = MagicMock(return_value=mock_instance)
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
-            Orchestrator.run("catalog_collector")
+            Orchestrator.run("collector")
         mock_instance.run.assert_called_once_with(1)
 
     def test_find_module_class_returns_sourcing(self) -> None:
@@ -559,19 +559,40 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(cls.__name__, "Sourcing")
 
     def test_list_pipeline_modules_excludes_legacy_sourcing_aliases(self) -> None:
-        """UI module list includes sourcing but not *_sourcing legacy names."""
+        """UI module list includes sourcing/collector but not legacy aliases."""
         from orchestration.Orchestrator import list_pipeline_modules
 
         mods = list_pipeline_modules()
         self.assertIn("sourcing", mods)
+        self.assertIn("collector", mods)
         self.assertNotIn("adc_sourcing", mods)
+        self.assertNotIn("catalog_collector", mods)
+        self.assertNotIn("setup", mods)
+        self.assertNotIn("adc_globus_survey", mods)
         self.assertTrue(all(not name.endswith("_sourcing") for name in mods))
 
-    def test_find_module_class_returns_adc_collector(self) -> None:
-        """Test _find_module_class finds AdcCollector in the project."""
+    def test_find_module_class_returns_collector(self) -> None:
+        """Test _find_module_class finds Collector in the project."""
         from orchestration.Orchestrator import _find_module_class
-        cls = _find_module_class("AdcCollector")
-        self.assertEqual(cls.__name__, "AdcCollector")
+        cls = _find_module_class("Collector")
+        self.assertEqual(cls.__name__, "Collector")
+
+    def test_list_pipeline_modules_excludes_legacy_collector_aliases(self) -> None:
+        """UI module list includes collector but not legacy *_collector names."""
+        from orchestration.Orchestrator import list_pipeline_modules
+
+        mods = list_pipeline_modules()
+        self.assertIn("collector", mods)
+        self.assertIn("interactive_collector", mods)
+        self.assertNotIn("catalog_collector", mods)
+        self.assertNotIn("adc_collector", mods)
+        legacy = [
+            name
+            for name in mods
+            if name.endswith("_collector")
+            and name not in ("collector", "interactive_collector")
+        ]
+        self.assertEqual(legacy, [])
 
     def test_find_module_class_returns_adc_globus_collector(self) -> None:
         """Test _find_module_class finds AdcGlobusCollector in the project."""
@@ -638,7 +659,7 @@ class TestOrchestrator(unittest.TestCase):
             "orchestration.Orchestrator.Logger.info",
             side_effect=lambda msg, *a, **k: info_messages.append(msg),
         ):
-            Orchestrator.run("catalog_collector")
+            Orchestrator.run("collector")
 
         summary = [m for m in info_messages if "Orchestrator batch summary" in m]
         self.assertEqual(len(summary), 1)
@@ -674,7 +695,7 @@ class TestOrchestrator(unittest.TestCase):
             "orchestration.Orchestrator.Logger.info",
             side_effect=lambda msg, *a, **k: info_messages.append(msg),
         ):
-            Orchestrator.run("catalog_collector")
+            Orchestrator.run("collector")
 
         summary = [m for m in info_messages if "Orchestrator batch summary" in m][0]
         self.assertIn("completed=1", summary)

@@ -25,13 +25,9 @@ from utils.Logger import Logger
 
 # Batch modules that collect data from source URLs (not upload/publish/verify).
 _COLLECTOR_MODULES = frozenset({
-    "adc_collector",
+    "collector",
     "adc_globus_collector",
     "adc_globus_survey",
-    "socrata_collector",
-    "catalog_collector",
-    "cms_collector",
-    "usfs_collector",
 })
 
 
@@ -68,9 +64,9 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": None,
         "class_name": "Sourcing",
     },
-    "adc_collector": {
+    "collector": {
         "prereq": "sourced",
-        "class_name": "AdcCollector",
+        "class_name": "Collector",
     },
     "adc_globus_collector": {
         "prereq": "collected - external archive",
@@ -83,22 +79,6 @@ MODULES: Dict[str, Dict[str, Any]] = {
     "interactive_collector": {
         "prereq": "sourced",
         "class_name": None,  # Handled directly: start Flask app with first eligible URL
-    },
-    "socrata_collector": {
-        "prereq": "sourced",
-        "class_name": "SocrataCollector",  
-    },
-    "catalog_collector": {
-        "prereq": "sourced",
-        "class_name": "CatalogDataCollector",
-    },
-    "cms_collector": {
-        "prereq": "sourced",
-        "class_name": "CmsGovCollector",
-    },
-    "usfs_collector": {
-        "prereq": "sourced",
-        "class_name": "UsfsCollector",
     },
     "upload": {
         "prereq": "collected",
@@ -132,12 +112,21 @@ MODULES: Dict[str, Dict[str, Any]] = {
 }
 
 
+# Modules registered in MODULES but omitted from SPA/CLI pick lists.
+_UI_HIDDEN_MODULES = frozenset({
+    "setup",
+    "adc_globus_survey",
+})
+
+
 def list_pipeline_modules(*, include_noop: bool = False) -> list[str]:
     """
     Return module names for CLI and UI lists.
 
-    Excludes ``noop`` unless requested and omits legacy ``*_sourcing`` aliases
-    (use ``sourcing`` with ``Args.source`` instead).
+    Excludes ``noop`` unless requested, legacy ``*_sourcing`` aliases, legacy
+    ``*_collector`` aliases (use ``sourcing`` / ``collector`` with ``Args.source``),
+    and modules in :data:`_UI_HIDDEN_MODULES`.
+    ``interactive_collector`` is always listed.
 
     Args:
         include_noop: When True, include the ``noop`` module.
@@ -149,7 +138,11 @@ def list_pipeline_modules(*, include_noop: bool = False) -> list[str]:
     for name in MODULES:
         if name == "noop" and not include_noop:
             continue
+        if name in _UI_HIDDEN_MODULES:
+            continue
         if name.endswith("_sourcing"):
+            continue
+        if name.endswith("_collector") and name not in ("collector", "interactive_collector"):
             continue
         names.append(name)
     return names
@@ -443,7 +436,7 @@ class Orchestrator:
         # Handle interactive_collector: set DB path and start Flask app (app loads first eligible from Storage)
         if module == "interactive_collector":
             from interactive_collector.api_projects import get_interactive_prereq
-            from interactive_collector.app import app as interactive_app
+            from interactive_collector.dev_server import run_server
 
             prereq_status = get_interactive_prereq()
             Logger.info(
@@ -451,7 +444,7 @@ class Orchestrator:
                 "eligible_prereq=%r",
                 prereq_status,
             )
-            interactive_app.run(host="127.0.0.1", port=5000, debug=False)
+            run_server()
             Logger.info(f"Orchestrator finished module={module!r}")
             return
 

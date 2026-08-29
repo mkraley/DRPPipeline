@@ -10,6 +10,8 @@ Collectors handle the collection of data from various sources:
 """
 
 from .CatalogDataCollector import CatalogDataCollector
+from .Collector import Collector
+from .CollectorFactory import collector_class_for_source, create_collector
 from .SocrataCollector import SocrataCollector
 from .SocrataPageProcessor import SocrataPageProcessor
 from .SocrataMetadataExtractor import SocrataMetadataExtractor
@@ -17,8 +19,11 @@ from .SocrataDatasetDownloader import SocrataDatasetDownloader
 
 __all__ = [
     'CatalogDataCollector',
+    'Collector',
     'SocrataCollector',
     'SocrataPageProcessor',
     'SocrataMetadataExtractor',
     'SocrataDatasetDownloader',
+    'collector_class_for_source',
+    'create_collector',
 ]
