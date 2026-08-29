@@ -13,11 +13,30 @@
   const LAUNCHER_MATCH = /\/extension\/launcher/;
   const DRP_ID = "drp-collector-save-btn";
   const DRP_MD_ID = "drp-collector-save-md-btn";
+  const DRP_BATCH_ID = "drp-collector-batch-btn";
+  const DRP_BATCH_PAUSE_ID = "drp-collector-batch-pause-btn";
+  const DRP_BATCH_CANCEL_ID = "drp-collector-batch-cancel-btn";
   const WATCHER_POLL_MS = 25000;
   var pageScriptInjected = false;
   var pageScriptReady = false;
   var pageScriptReadyPromise = null;
   var watcherPollTimer = null;
+  var batchJobId = null;
+  var batchRunning = false;
+  var batchPaused = false;
+
+  var DATA_FILE_EXT_RE = /\.(pdf|csv|tsv|zip|xlsx|xls|json|xml|txt|rdf|gz|tar|7z|parquet|sas7bdat|dta)(\?|#|$)/i;
+  var EXCLUDE_LINK_SELECTORS = [
+    "header a[href]", "footer a[href]", "nav a[href]",
+    '[role="banner"] a[href]', '[role="navigation"] a[href]', '[role="contentinfo"] a[href]',
+    "#header a[href]", "#footer a[href]", ".header a[href]", ".footer a[href]",
+    ".site-header a[href]", ".site-footer a[href]", ".global-header a[href]", ".global-footer a[href]",
+    ".cms-header a[href]", ".cms-footer a[href]", "#global-nav a[href]", ".skip-link a[href]",
+    ".breadcrumb a[href]", ".breadcrumbs a[href]",
+  ];
+  var MAIN_CONTENT_SELECTORS = [
+    "main", '[role="main"]', "#main-content", "#content", ".region-content", "article",
+  ];
 
   /** Load page.js (~30KB) and wait until expansion handlers are registered. PDF libs load separately on fallback only. */
   function ensurePageScriptReady() {
@@ -442,6 +461,211 @@
     if (pdfBtn) pdfBtn.remove();
     var mdBtn = document.getElementById(DRP_MD_ID);
     if (mdBtn) mdBtn.remove();
+    var batchBtn = document.getElementById(DRP_BATCH_ID);
+    if (batchBtn) batchBtn.remove();
+    var pauseBtn = document.getElementById(DRP_BATCH_PAUSE_ID);
+    if (pauseBtn) pauseBtn.remove();
+    var cancelBtn = document.getElementById(DRP_BATCH_CANCEL_ID);
+    if (cancelBtn) cancelBtn.remove();
+    batchJobId = null;
+    batchRunning = false;
+    batchPaused = false;
+  }
+
+  function isDataFileUrl(href) {
+    if (!href || typeof href !== "string") return false;
+    try {
+      var a = document.createElement("a");
+      a.href = href;
+      if (a.protocol !== "http:" && a.protocol !== "https:") return false;
+      return DATA_FILE_EXT_RE.test(a.pathname || "") || DATA_FILE_EXT_RE.test(a.href || "");
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Collect data-file links from main content, excluding header/footer/nav chrome.
+   */
+  function collectDataLinksFromPage() {
+    var excluded = new Set();
+    EXCLUDE_LINK_SELECTORS.forEach(function (sel) {
+      document.querySelectorAll(sel).forEach(function (el) {
+        excluded.add(el);
+      });
+    });
+    var root = null;
+    for (var i = 0; i < MAIN_CONTENT_SELECTORS.length; i++) {
+      root = document.querySelector(MAIN_CONTENT_SELECTORS[i]);
+      if (root) break;
+    }
+    if (!root) root = document.body;
+    if (!root) return [];
+    var found = new Set();
+    root.querySelectorAll("a[href]").forEach(function (anchor) {
+      if (excluded.has(anchor)) return;
+      var href = (anchor.getAttribute("href") || "").trim();
+      if (!href || href.charAt(0) === "#" || href.toLowerCase().indexOf("javascript:") === 0) return;
+      try {
+        var absolute = new URL(href, window.location.href).href.split("#")[0];
+        if (isDataFileUrl(absolute)) found.add(absolute);
+      } catch (e) { /* ignore bad href */ }
+    });
+    return Array.from(found).sort();
+  }
+
+  function setBatchControlButtonsVisible(visible) {
+    var pauseBtn = document.getElementById(DRP_BATCH_PAUSE_ID);
+    var cancelBtn = document.getElementById(DRP_BATCH_CANCEL_ID);
+    if (pauseBtn) pauseBtn.style.display = visible ? "" : "none";
+    if (cancelBtn) cancelBtn.style.display = visible ? "" : "none";
+  }
+
+  function updateBatchPauseButtonLabel() {
+    var pauseBtn = document.getElementById(DRP_BATCH_PAUSE_ID);
+    if (pauseBtn) pauseBtn.textContent = batchPaused ? "Resume" : "Pause";
+  }
+
+  async function postBatchControl(collectorBase, action) {
+    if (!batchJobId) return;
+    await fetch(collectorBase + "/api/download-batch/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ job_id: batchJobId, action: action }),
+    });
+  }
+
+  async function runBatchDownload(collectorBase, drpid, urls) {
+    if (batchRunning) return;
+    batchRunning = true;
+    batchPaused = false;
+    var batchBtn = document.getElementById(DRP_BATCH_ID);
+    if (batchBtn) {
+      batchBtn.disabled = true;
+      batchBtn.textContent = "Downloading…";
+    }
+    setBatchControlButtonsVisible(true);
+    updateBatchPauseButtonLabel();
+    showToast("Starting batch: " + urls.length + " file(s)…", false);
+    try {
+      var res = await fetch(collectorBase + "/api/download-batch/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          drpid: drpid,
+          urls: urls,
+          referrer: window.location.href,
+          skip_existing: true,
+          delay_sec: 1.5,
+        }),
+      });
+      if (!res.ok) {
+        var errText = await res.text();
+        throw new Error(errText || "Batch start failed (" + res.status + ")");
+      }
+      if (!res.body) {
+        showToast("Batch download finished.", false);
+        return;
+      }
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder();
+      var buf = "";
+      for (;;) {
+        var chunk = await reader.read();
+        if (chunk.done) break;
+        buf += decoder.decode(chunk.value, { stream: true });
+        var lines = buf.split("\n");
+        buf = lines.pop() || "";
+        for (var li = 0; li < lines.length; li++) {
+          var line = lines[li].replace(/\r$/, "");
+          if (!line) continue;
+          if (line.indexOf("JOB\t") === 0) {
+            batchJobId = line.split("\t")[1] || null;
+          } else if (line.indexOf("BATCH\t") === 0) {
+            var parts = line.split("\t");
+            showToast("Downloading " + (parts[1] || "?") + " of " + (parts[2] || "?") + "…", false);
+          } else if (line.indexOf("SAVING\t") === 0) {
+            showToast("Saving: " + (line.split("\t")[1] || "file") + "…", false);
+          } else if (line.indexOf("DONE\t") === 0) {
+            showToast("Saved: " + (line.split("\t")[1] || "file"), false);
+          } else if (line.indexOf("ERROR\t") === 0) {
+            showToast("Error: " + (line.split("\t")[1] || "unknown"), true);
+          } else if (line.indexOf("STATUS\tpaused") === 0) {
+            batchPaused = true;
+            updateBatchPauseButtonLabel();
+            showToast("Paused.", false);
+          } else if (line.indexOf("CANCELLED\t") === 0) {
+            showToast("Batch cancelled.", true);
+            return;
+          } else if (line.indexOf("BATCH_DONE\t") === 0) {
+            var doneParts = line.split("\t");
+            showToast("Done: " + (doneParts[1] || "0") + " of " + (doneParts[2] || "?") + " files.", false);
+            return;
+          }
+        }
+      }
+      showToast("Batch download finished.", false);
+    } catch (e) {
+      var msg = e && e.message ? String(e.message) : "Batch download failed";
+      showToast(msg, true);
+    } finally {
+      batchRunning = false;
+      batchPaused = false;
+      batchJobId = null;
+      setBatchControlButtonsVisible(false);
+      if (batchBtn) {
+        batchBtn.disabled = false;
+        batchBtn.textContent = "Download all data links";
+      }
+    }
+  }
+
+  function ensureBatchControlButtons(collectorBase) {
+    var pauseBtn = document.getElementById(DRP_BATCH_PAUSE_ID);
+    if (!pauseBtn) {
+      pauseBtn = document.createElement("button");
+      pauseBtn.id = DRP_BATCH_PAUSE_ID;
+      pauseBtn.className = "drp-collector-btn drp-collector-btn-batch-control";
+      pauseBtn.style.display = "none";
+      pauseBtn.textContent = "Pause";
+      document.body.appendChild(pauseBtn);
+      pauseBtn.addEventListener("click", async function () {
+        if (!batchJobId || !batchRunning) return;
+        try {
+          if (batchPaused) {
+            await postBatchControl(collectorBase, "resume");
+            batchPaused = false;
+            updateBatchPauseButtonLabel();
+            showToast("Resuming…", false);
+          } else {
+            await postBatchControl(collectorBase, "pause");
+            batchPaused = true;
+            updateBatchPauseButtonLabel();
+            showToast("Pausing…", false);
+          }
+        } catch (e) {
+          showToast("Control failed", true);
+        }
+      });
+    }
+    var cancelBtn = document.getElementById(DRP_BATCH_CANCEL_ID);
+    if (!cancelBtn) {
+      cancelBtn = document.createElement("button");
+      cancelBtn.id = DRP_BATCH_CANCEL_ID;
+      cancelBtn.className = "drp-collector-btn drp-collector-btn-batch-control drp-collector-btn-batch-cancel";
+      cancelBtn.style.display = "none";
+      cancelBtn.textContent = "Cancel";
+      document.body.appendChild(cancelBtn);
+      cancelBtn.addEventListener("click", async function () {
+        if (!batchJobId) return;
+        try {
+          await postBatchControl(collectorBase, "cancel");
+          showToast("Cancelling…", false);
+        } catch (e) {
+          showToast("Cancel failed", true);
+        }
+      });
+    }
   }
 
   /**
@@ -710,6 +934,33 @@
 
     ensurePageScriptReady().catch(function () {});
 
+    chrome.storage.local.get(["drpid", "collectorBase"]).then(function (stored) {
+      var drpid = stored.drpid;
+      var collectorBase = stored.collectorBase;
+      if (!drpid || !collectorBase) return;
+
+      ensureBatchControlButtons(collectorBase);
+
+      if (!document.getElementById(DRP_BATCH_ID)) {
+        var batchBtn = document.createElement("button");
+        batchBtn.id = DRP_BATCH_ID;
+        batchBtn.textContent = "Download all data links";
+        batchBtn.className = "drp-collector-btn drp-collector-btn-batch";
+        batchBtn.title = "Download all PDF, CSV, ZIP, and similar links on this page (skips header/footer)";
+        document.body.appendChild(batchBtn);
+        batchBtn.addEventListener("click", async function () {
+          if (batchRunning) return;
+          var urls = collectDataLinksFromPage();
+          if (!urls.length) {
+            showToast("No data file links found on this page.", true);
+            return;
+          }
+          if (!window.confirm("Download " + urls.length + " data file link(s) to the project?")) return;
+          await runBatchDownload(collectorBase, drpid, urls);
+        });
+      }
+    }).catch(function () {});
+
     const mdBtn = document.createElement("button");
     mdBtn.id = DRP_MD_ID;
     mdBtn.textContent = "Save as Markdown";
@@ -915,7 +1166,7 @@
   }, true);
 
   function ensureButtons() {
-    if (document.getElementById(DRP_ID) || document.getElementById(DRP_MD_ID)) return;
+    if (document.getElementById(DRP_ID) || document.getElementById(DRP_MD_ID) || document.getElementById(DRP_BATCH_ID)) return;
     try {
       checkWatcherAndShowOrHide();
     } catch (e) {

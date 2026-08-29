@@ -315,6 +315,78 @@ class TestArgs(unittest.TestCase):
         with self.assertRaises(ValueError):
             Args.initialize()
 
+    def test_hierarchical_config_merges_source_over_global(self) -> None:
+        """Source section values override globals; source key remains accessible."""
+        import sys
+
+        sys.argv = ["test", "noop"]
+        config_data = {
+            "source": "adc",
+            "log_level": "INFO",
+            "db_path": "global.db",
+            "upload_headless": True,
+            "sources": {
+                "adc": {
+                    "db_path": "adc.db",
+                    "base_output_dir": "C:\\DataRescue\\ADCData",
+                },
+                "usfs": {
+                    "db_path": "usfs.db",
+                },
+            },
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(config_data, f)
+            config_path = Path(f.name)
+
+        try:
+            Args.initialize(config_file=config_path)
+            self.assertEqual(Args.source, "adc")
+            self.assertEqual(Args.log_level, "INFO")
+            self.assertEqual(Args.db_path, "adc.db")
+            self.assertEqual(str(Args.base_output_dir), "C:\\DataRescue\\ADCData")
+            self.assertTrue(Args.upload_headless)
+        finally:
+            config_path.unlink()
+
+    def test_hierarchical_config_unknown_source_raises(self) -> None:
+        """Missing source name in sources raises ValueError."""
+        import sys
+
+        sys.argv = ["test", "noop"]
+        config_data = {
+            "source": "missing",
+            "sources": {"adc": {"db_path": "adc.db"}},
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(config_data, f)
+            config_path = Path(f.name)
+
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                Args.initialize(config_file=config_path)
+            self.assertIn("missing", str(ctx.exception))
+            self.assertIn("sources", str(ctx.exception))
+        finally:
+            config_path.unlink()
+
+    def test_flat_config_without_sources_still_works(self) -> None:
+        """Legacy flat config files load unchanged."""
+        import sys
+
+        sys.argv = ["test", "noop"]
+        config_data = {"log_level": "DEBUG", "db_path": "legacy.db"}
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(config_data, f)
+            config_path = Path(f.name)
+
+        try:
+            Args.initialize(config_file=config_path)
+            self.assertEqual(Args.log_level, "DEBUG")
+            self.assertEqual(Args.db_path, "legacy.db")
+        finally:
+            config_path.unlink()
+
 
 if __name__ == "__main__":
     unittest.main()

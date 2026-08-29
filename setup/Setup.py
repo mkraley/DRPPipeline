@@ -133,7 +133,6 @@ def _setup_config() -> tuple[bool, Path]:
         "base_output_dir":        output_dir,
         "datalumos_username":     dl_user,
         "datalumos_password":     dl_pass,
-        "upload_headless":        True,
         "upload_timeout":         60000,
         "google_sheet_id":        sheet_id,
         "google_credentials":     creds_path,

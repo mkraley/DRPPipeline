@@ -15,6 +15,12 @@ from flask import Blueprint, Response, request
 import requests
 
 from interactive_collector.api_download import generate_download_progress
+from interactive_collector.api_batch_download import (
+    control_batch_download,
+    generate_batch_download_progress,
+    preview_data_links_from_page_url,
+    resolve_batch_urls,
+)
 from interactive_collector.api_projects import (
     add_project_with_source_url,
     ensure_output_folder,
@@ -803,3 +809,89 @@ def download_file_route() -> Any:
         mimetype="text/plain; charset=utf-8",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
+
+
+@api_bp.route("/download-batch/preview", methods=["POST"])
+def download_batch_preview() -> Any:
+    """
+    Preview data-file links on a catalog page (excludes header/footer/nav).
+
+    JSON body: { "url": "https://..." }.
+    """
+    data = request.get_json(silent=True) or {}
+    page_url = _str_or_none(data.get("url"))
+    if not page_url:
+        return {"error": "url required", "ok": False}, 400
+    links, err = preview_data_links_from_page_url(page_url)
+    if err:
+        return {"error": err, "ok": False, "links": []}, 400
+    return {"ok": True, "links": links, "count": len(links)}
+
+
+@api_bp.route("/download-batch/start", methods=["POST"])
+def download_batch_start() -> Any:
+    """
+    Stream-download many data files to the project folder.
+
+    JSON body: drpid, referrer?, page_url?, urls?, delay_sec?, skip_existing? (default true).
+    """
+    data = request.get_json(silent=True) or {}
+    drpid_raw = data.get("drpid")
+    try:
+        drpid = int(drpid_raw)
+    except (TypeError, ValueError):
+        return "Invalid DRPID", 400
+    referrer = _str_or_none(data.get("referrer"))
+    page_url = _str_or_none(data.get("page_url"))
+    explicit = data.get("urls")
+    url_list: list[str] | None = None
+    if isinstance(explicit, list):
+        url_list = [str(u).strip() for u in explicit if str(u).strip()]
+    delay_raw = data.get("delay_sec", 1.5)
+    try:
+        delay_sec = float(delay_raw)
+    except (TypeError, ValueError):
+        delay_sec = 1.5
+    skip_existing = data.get("skip_existing", True)
+    if skip_existing is False or skip_existing == "false":
+        skip_existing = False
+    else:
+        skip_existing = True
+
+    urls, err = resolve_batch_urls(page_url, url_list, skip_existing)
+    if err:
+        return err, 400
+
+    folder_path = get_result_by_drpid().get(drpid, {}).get("folder_path")
+    if not folder_path:
+        folder_path = ensure_output_folder(drpid)
+    if not folder_path:
+        return "No output folder for this project", 400
+
+    def stream() -> Any:
+        for line in generate_batch_download_progress(
+            urls, folder_path, drpid, referrer, delay_sec=delay_sec
+        ):
+            sys.stderr.write(line)
+            sys.stderr.flush()
+            yield line
+
+    return Response(
+        stream(),
+        mimetype="text/plain; charset=utf-8",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
+@api_bp.route("/download-batch/control", methods=["POST"])
+def download_batch_control() -> Any:
+    """Pause, resume, or cancel a batch download. JSON: { job_id, action }."""
+    data = request.get_json(silent=True) or {}
+    job_id = _str_or_none(data.get("job_id"))
+    action = _str_or_none(data.get("action"))
+    if not job_id or not action:
+        return {"ok": False, "error": "job_id and action required"}, 400
+    ok, err = control_batch_download(job_id, action)
+    if not ok:
+        return {"ok": False, "error": err or "failed"}, 404
+    return {"ok": True}

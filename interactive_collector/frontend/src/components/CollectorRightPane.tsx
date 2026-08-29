@@ -31,6 +31,8 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
     stopDownloadsWatcher,
     deleteFolderOnLoad,
     setDeleteFolderOnLoad,
+    startBatchDownload,
+    batchRunning,
   } = useCollectorStore();
   const [toast, setToast] = useState<string | null>(null);
 
@@ -225,14 +227,25 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
           Add
         </button>
         {sourceUrl && drpid != null && (
-          <button
-            type="button"
-            className="btn-top btn-copy-open"
-            onClick={copyAndOpen}
-            title="Copy launcher URL to paste in extended browser (with extension)"
-          >
-            Copy &amp; Open
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn-top btn-copy-open"
+              onClick={copyAndOpen}
+              title="Copy launcher URL to paste in extended browser (with extension)"
+            >
+              Copy &amp; Open
+            </button>
+            <button
+              type="button"
+              className="btn-top"
+              onClick={() => startBatchDownload()}
+              disabled={loading || batchRunning}
+              title="Download all PDF, CSV, and similar links from the source URL (skips header/footer)"
+            >
+              Download all data links
+            </button>
+          </>
         )}
         {folderPath && (
           <>

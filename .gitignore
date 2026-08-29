@@ -67,7 +67,10 @@ desktop.ini
 .claude
 
 debug/datalumos_search_response.html
+# Pipeline configuration (local only; may contain credentials)
 config.json
+config.sample.json
+config - *.json
 google-credentials.json
 *.csv
 *.xlsx

@@ -5,13 +5,30 @@ Provides a centralized configuration accessible via direct attribute access.
 Supports both command line arguments and config file values.
 
 Config File Format:
-    JSON format with simple key-value pairs.
-    
+    JSON with global settings and optional per-source sections.
+
+    The ``source`` key selects which entry under ``sources`` to apply.
+    Source-specific values override globals with the same name.
+
     Example config.json:
     {
-        "log_level": "DEBUG",
-        "config_file": "config.json"
+        "source": "adc",
+        "gwda_your_name": "Your Name",
+        "upload_headless": false,
+        "google_credentials": "C:\\\\path\\\\to\\\\creds.json",
+        "sources": {
+            "adc": {
+                "db_path": "adc.db",
+                "base_output_dir": "C:\\\\DataRescue\\\\ADCData"
+            },
+            "usfs": {
+                "db_path": "usfs.db",
+                "base_output_dir": "C:\\\\DataRescue\\\\USFSData"
+            }
+        }
     }
+
+    Flat configs (no ``sources`` key) remain supported for backward compatibility.
 
 Example usage:
     from utils.Args import Args
@@ -340,6 +357,50 @@ class Args(metaclass=ArgsMeta):
         return parsed_values
 
     @classmethod
+    def _resolve_config_layers(cls, config_file_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Flatten hierarchical config: globals plus the selected source section.
+
+        Top-level keys (except ``sources``) are global. When ``source`` names an
+        entry in ``sources``, that section's values override globals.
+
+        Args:
+            config_file_data: Raw JSON object from the config file.
+
+        Returns:
+            Flat key-value config ready to merge into ``_config``.
+
+        Raises:
+            ValueError: If ``source`` is set but missing from ``sources``, or a
+                source section is not an object.
+        """
+        flat: Dict[str, Any] = {
+            key: value for key, value in config_file_data.items() if key != "sources"
+        }
+        sources = config_file_data.get("sources")
+        if not isinstance(sources, dict):
+            return flat
+
+        source_name = flat.get("source")
+        if not source_name:
+            return flat
+
+        source_section = sources.get(source_name)
+        if source_section is None:
+            available = ", ".join(sorted(str(name) for name in sources))
+            raise ValueError(
+                f"Config source '{source_name}' not found in sources. "
+                f"Available: {available}"
+            )
+        if not isinstance(source_section, dict):
+            raise ValueError(
+                f"Config sources.{source_name} must be an object, "
+                f"got {type(source_section).__name__}"
+            )
+        flat.update(source_section)
+        return flat
+
+    @classmethod
     def _load_config_file(cls, config_path: Path) -> None:
         """
         Load configuration from JSON file and merge into config.
@@ -350,10 +411,15 @@ class Args(metaclass=ArgsMeta):
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 config_file_data = json.load(f)
-                # Merge config file data into existing config (overriding defaults)
-                cls._config.update(config_file_data)
+                if not isinstance(config_file_data, dict):
+                    raise ValueError(
+                        f"Config file '{config_path}' must contain a JSON object"
+                    )
+                cls._config.update(cls._resolve_config_layers(config_file_data))
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON in config file '{config_path}': {e}")
+        except ValueError:
+            raise
         except Exception as e:
             raise IOError(f"Error reading config file '{config_path}': {e}")
 

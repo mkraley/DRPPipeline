@@ -7,7 +7,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from interactive_collector.app import app
 from interactive_collector.api_scoreboard import add_to_scoreboard, clear_scoreboard
@@ -700,6 +700,38 @@ class TestDownloadsWatcher(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = json.loads(resp.data)
         self.assertIn("ok", data)
+
+
+class TestDownloadBatchApi(unittest.TestCase):
+    """Tests for /api/download-batch/* endpoints."""
+
+    def setUp(self) -> None:
+        self.client = app.test_client()
+
+    @patch(
+        "interactive_collector.api.preview_data_links_from_page_url",
+        return_value=(["https://example.com/a.csv"], None),
+    )
+    def test_preview_returns_links(self, _mock: MagicMock) -> None:
+        """POST /api/download-batch/preview returns link list."""
+        resp = self.client.post(
+            "/api/download-batch/preview",
+            json={"url": "https://example.com/catalog"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("count"), 1)
+
+    def test_preview_missing_url(self) -> None:
+        """POST /api/download-batch/preview without url returns 400."""
+        resp = self.client.post(
+            "/api/download-batch/preview",
+            json={},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
 
 
 class TestApiPipeline(unittest.TestCase):

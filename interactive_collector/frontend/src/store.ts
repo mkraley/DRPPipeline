@@ -46,6 +46,11 @@ interface CollectorState {
   skipModalOpen: boolean;
   downloadsWatcherActive: boolean;
   deleteFolderOnLoad: boolean;
+  batchModalOpen: boolean;
+  batchProgress: string;
+  batchJobId: string | null;
+  batchPaused: boolean;
+  batchRunning: boolean;
 }
 
 interface CollectorActions {
@@ -68,10 +73,68 @@ interface CollectorActions {
   startDownloadsWatcher: () => Promise<void>;
   stopDownloadsWatcher: () => Promise<void>;
   setDeleteFolderOnLoad: (value: boolean) => void;
+  startBatchDownload: (options?: { pageUrl?: string; urls?: string[] }) => Promise<void>;
+  pauseBatchDownload: () => Promise<void>;
+  resumeBatchDownload: () => Promise<void>;
+  cancelBatchDownload: () => Promise<void>;
+  closeBatchModal: () => void;
 }
 
 const API = "/api";
 const DELETE_FOLDER_ON_LOAD_KEY = "ic_delete_folder_on_load";
+
+/** Parse tab-delimited batch download stream lines into UI state updates. */
+function applyBatchStreamLine(
+  line: string,
+  state: {
+    jobId: string | null;
+    paused: boolean;
+  }
+): Partial<CollectorState> | null {
+  if (line.startsWith("JOB\t")) {
+    state.jobId = line.split("\t")[1] ?? null;
+    return { batchJobId: state.jobId };
+  }
+  if (line.startsWith("BATCH\t")) {
+    const parts = line.split("\t");
+    const current = parts[1] ?? "?";
+    const total = parts[2] ?? "?";
+    const url = parts[3] ?? "";
+    const suffix = url ? `\n${url}` : "";
+    return { batchProgress: `Downloading ${current} of ${total}${suffix}` };
+  }
+  if (line.startsWith("SAVING\t")) {
+    return { batchProgress: `Saving: ${line.split("\t")[1] ?? "file"}…` };
+  }
+  if (line.startsWith("DONE\t")) {
+    return { batchProgress: `Saved: ${line.split("\t")[1] ?? "file"}` };
+  }
+  if (line.startsWith("ERROR\t")) {
+    return { batchProgress: `Error on file: ${line.split("\t")[1] ?? "unknown"}` };
+  }
+  if (line.startsWith("STATUS\tpaused")) {
+    state.paused = true;
+    return { batchPaused: true, batchProgress: "Paused." };
+  }
+  if (line.startsWith("CANCELLED\t")) {
+    return {
+      batchRunning: false,
+      batchPaused: false,
+      batchProgress: "Cancelled.",
+    };
+  }
+  if (line.startsWith("BATCH_DONE\t")) {
+    const parts = line.split("\t");
+    const done = parts[1] ?? "0";
+    const total = parts[2] ?? "?";
+    return {
+      batchRunning: false,
+      batchPaused: false,
+      batchProgress: `Done: ${done} of ${total} files saved.`,
+    };
+  }
+  return null;
+}
 
 function readDeleteFolderOnLoad(): boolean {
   try {
@@ -159,6 +222,11 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
   skipModalOpen: false,
   downloadsWatcherActive: false,
   deleteFolderOnLoad: readDeleteFolderOnLoad(),
+  batchModalOpen: false,
+  batchProgress: "",
+  batchJobId: null,
+  batchPaused: false,
+  batchRunning: false,
 
   setDeleteFolderOnLoad: (value) => {
     writeDeleteFolderOnLoad(value);
@@ -402,4 +470,155 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
       // No next project
     }
   },
+
+  startBatchDownload: async (options) => {
+    const { drpid, sourceUrl } = get();
+    if (!drpid) {
+      set({ error: "Load a project before batch download." });
+      return;
+    }
+    const pageUrl = (options?.pageUrl ?? sourceUrl).trim();
+    const explicitUrls = options?.urls?.filter((u) => u.trim()) ?? [];
+    if (!explicitUrls.length && !pageUrl) {
+      set({ error: "No page URL or links to download." });
+      return;
+    }
+    set({
+      batchModalOpen: true,
+      batchProgress: "Finding data links…",
+      batchJobId: null,
+      batchPaused: false,
+      batchRunning: true,
+      error: null,
+    });
+    try {
+      let urls = explicitUrls;
+      if (!urls.length && pageUrl) {
+        const preview = await fetchJson<{ ok: boolean; links?: string[]; error?: string; count?: number }>(
+          `${API}/download-batch/preview`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: pageUrl }),
+          }
+        );
+        if (!preview.ok) {
+          throw new Error(preview.error || "Preview failed");
+        }
+        urls = preview.links ?? [];
+        if (!urls.length) {
+          set({
+            batchRunning: false,
+            batchProgress: "No data file links found on the page.",
+          });
+          return;
+        }
+        set({ batchProgress: `Found ${urls.length} link(s). Starting download…` });
+      }
+      const res = await fetch(`${API}/download-batch/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          drpid,
+          urls,
+          page_url: urls.length ? undefined : pageUrl,
+          referrer: pageUrl || undefined,
+          skip_existing: true,
+          delay_sec: 1.5,
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || `HTTP ${res.status}`);
+      }
+      if (!res.body) {
+        set({ batchRunning: false, batchProgress: "Done." });
+        await get().refreshScoreboard();
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      const streamState = { jobId: null as string | null, paused: false };
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trimEnd();
+          if (!trimmed) continue;
+          const update = applyBatchStreamLine(trimmed, streamState);
+          if (update) set(update);
+        }
+      }
+      const final = get();
+      if (final.batchRunning) {
+        set({ batchRunning: false, batchProgress: final.batchProgress || "Done." });
+      }
+      await get().refreshScoreboard();
+    } catch (e) {
+      set({
+        batchRunning: false,
+        batchPaused: false,
+        batchProgress: `Error: ${e instanceof Error ? e.message : "Batch download failed"}`,
+      });
+    }
+  },
+
+  pauseBatchDownload: async () => {
+    const { batchJobId } = get();
+    if (!batchJobId) return;
+    try {
+      await fetchJson<{ ok: boolean }>(`${API}/download-batch/control`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_id: batchJobId, action: "pause" }),
+      });
+      set({ batchPaused: true, batchProgress: "Pausing…" });
+    } catch {
+      // ignore
+    }
+  },
+
+  resumeBatchDownload: async () => {
+    const { batchJobId } = get();
+    if (!batchJobId) return;
+    try {
+      await fetchJson<{ ok: boolean }>(`${API}/download-batch/control`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_id: batchJobId, action: "resume" }),
+      });
+      set({ batchPaused: false, batchProgress: "Resuming…" });
+    } catch {
+      // ignore
+    }
+  },
+
+  cancelBatchDownload: async () => {
+    const { batchJobId } = get();
+    if (batchJobId) {
+      try {
+        await fetchJson<{ ok: boolean }>(`${API}/download-batch/control`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ job_id: batchJobId, action: "cancel" }),
+        });
+      } catch {
+        // ignore
+      }
+    }
+    set({ batchRunning: false, batchPaused: false, batchProgress: "Cancelled." });
+  },
+
+  closeBatchModal: () =>
+    set({
+      batchModalOpen: false,
+      batchJobId: null,
+      batchPaused: false,
+      batchRunning: false,
+      batchProgress: "",
+    }),
 }));

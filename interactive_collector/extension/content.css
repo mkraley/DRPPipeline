@@ -27,6 +27,37 @@
   background: #146c2e;
 }
 
+.drp-collector-btn-batch {
+  bottom: 116px;
+  background: #6b4c9a;
+  font-size: 13px;
+}
+
+.drp-collector-btn-batch:hover {
+  background: #563d7c;
+}
+
+.drp-collector-btn-batch-control {
+  bottom: 164px;
+  background: #555;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+}
+
+.drp-collector-btn-batch-control:hover {
+  background: #333;
+}
+
+.drp-collector-btn-batch-cancel {
+  bottom: 206px;
+  background: #8b3a3a;
+}
+
+.drp-collector-btn-batch-cancel:hover {
+  background: #6e2e2e;
+}
+
 .drp-collector-btn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
@@ -47,6 +78,8 @@
 @media print {
   .drp-collector-btn,
   .drp-collector-btn-md,
+  .drp-collector-btn-batch,
+  .drp-collector-btn-batch-control,
   .drp-collector-disable-btn,
   #drp-collector-save-btn-toast {
     display: none !important;
