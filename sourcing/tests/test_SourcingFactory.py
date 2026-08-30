@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from sourcing.AdcSourcing import AdcSourcing
+from sourcing.BtsSourcing import BtsSourcing
 from sourcing.Sourcing import Sourcing
 from sourcing.SourcingFactory import create_sourcing, sourcing_class_for_source
 from sourcing.SpreadsheetSourcing import SpreadsheetSourcing
@@ -32,6 +33,10 @@ class TestSourcingFactory(unittest.TestCase):
     def test_adc_source_returns_adc_sourcing(self) -> None:
         """ADC source selects AdcSourcing."""
         self.assertIs(sourcing_class_for_source("adc"), AdcSourcing)
+
+    def test_bts_source_returns_bts_sourcing(self) -> None:
+        """BTS source selects BtsSourcing."""
+        self.assertIs(sourcing_class_for_source("bts"), BtsSourcing)
 
     def test_spreadsheet_sources_return_spreadsheet_sourcing(self) -> None:
         """Sheet-based sources select SpreadsheetSourcing."""

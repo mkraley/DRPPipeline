@@ -84,6 +84,7 @@ class Args(metaclass=ArgsMeta):
         "sourcing_fetch_timeout": 15,  # Seconds per URL when checking availability in sourcing; reduces delay from slow catalog.data.gov pages
         "sourcing_mode": "unclaimed",  # Row filter: unclaimed (default), completed (Download Location filled), all
         "adc_request_delay": 0.1,  # Seconds between Figshare API calls during ADC sourcing
+        "bts_request_delay": 0.1,  # Seconds between ROSA P catalog page fetches during BTS sourcing
         # Globus supplemental collector (adc_globus_collector)
         "globus_client_id": None,  # Native app client ID from Globus developers console
         "globus_refresh_token": None,  # OAuth refresh token with transfer scopes
