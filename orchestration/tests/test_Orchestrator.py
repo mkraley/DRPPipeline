@@ -16,6 +16,7 @@ from orchestration.Orchestrator import (
     _BatchLevelCounter,
     _format_duration,
     _log_batch_summary,
+    _maybe_claim_inventory_sheet,
     _merge_project_lists,
     _stop_requested,
     _BatchStats,
@@ -186,6 +187,13 @@ class TestOrchestrator(unittest.TestCase):
 
         mock_collector_instance.run.assert_called_once_with(2)
         mock_claim.assert_called_once_with(2, "collector")
+
+    @patch("utils.sheet_claimed_update.claim_project_on_inventory_sheet")
+    def test_maybe_claim_skips_bts_source(self, mock_claim: MagicMock) -> None:
+        """BTS collector runs do not write inventory Claimed."""
+        Args._config["source"] = "bts"
+        _maybe_claim_inventory_sheet(6, "collector")
+        mock_claim.assert_not_called()
 
     @patch("interactive_collector.dev_server.run_server")
     def test_run_interactive_collector_starts_app(self, mock_run_server: MagicMock) -> None:

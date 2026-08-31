@@ -73,7 +73,7 @@ def entries_for_publication_files(
     """
     entries: List[Aria2Entry] = []
     for filename, file_url, catalog_bytes in publication_files:
-        if catalog_bytes is None or catalog_bytes < min_bytes:
+        if catalog_bytes is not None and catalog_bytes < min_bytes:
             continue
         out_name = sanitize_filename(filename)
         dest = folder_path / out_name

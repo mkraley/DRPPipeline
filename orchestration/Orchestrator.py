@@ -41,13 +41,17 @@ def _maybe_claim_inventory_sheet(drpid: int, module: str) -> None:
     """
     if module not in _COLLECTOR_MODULES:
         return
-    record = Storage.get(drpid)
-    if not record:
-        return
     from utils.sheet_claimed_update import (
         claim_project_on_inventory_sheet,
         should_claim_after_collector_status,
+        should_claim_inventory_sheet,
     )
+
+    if not should_claim_inventory_sheet():
+        return
+    record = Storage.get(drpid)
+    if not record:
+        return
 
     if not should_claim_after_collector_status(record.get("status")):
         return

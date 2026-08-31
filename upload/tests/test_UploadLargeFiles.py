@@ -113,6 +113,36 @@ class TestEnsureAria2CmdSkipNoteFallback(unittest.TestCase):
             self.assertIn("43634028", joined)
             self.assertIn("A01L4_1.zip", joined)
 
+    @patch("upload.UploadLargeFiles.parse_data_access_links", return_value={"publication_files": []})
+    @patch("upload.UploadLargeFiles.fetch_page_body", return_value=(200, "<html></html>", None, None))
+    def test_uses_status_notes_for_sub_gb_deferred_files(
+        self, _mock_fetch: MagicMock, _mock_parse: MagicMock
+    ) -> None:
+        """Skip-note fallback exports deferred files under 1 GB each for aria2."""
+        from upload.UploadLargeFiles import ensure_aria2_cmd
+
+        notes = (
+            "Skipped download (>1GB): part2.zip (400.0 MB) - "
+            "download manually: https://example.com/part2.zip\n"
+            "Skipped download (>1GB): readme.txt - "
+            "download manually: https://example.com/readme.txt"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "DRP000158"
+            out_dir = Path(tmp) / "aria2_inputs"
+            project = {
+                "source_url": "https://rosap.ntl.bts.gov/view/dot/158",
+                "folder_path": str(folder),
+                "status_notes": notes,
+            }
+            with patch("upload.UploadLargeFiles.DEFAULT_ARIA2_OUTPUT_DIR", out_dir):
+                cmd_path, lines = ensure_aria2_cmd(158, project)
+
+            self.assertTrue(cmd_path.is_file())
+            joined = "\n".join(lines)
+            self.assertIn("part2.zip", joined)
+            self.assertIn("readme.txt", joined)
+
 
 def format_bytes(n: int) -> str:
     from utils.file_utils import format_file_size

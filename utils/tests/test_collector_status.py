@@ -6,13 +6,17 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from utils.collector_status import (
+    MAX_DOWNLOAD_BYTES,
     STATUS_COLLECTED,
     STATUS_COLLECTED_EXTERNAL_ARCHIVE,
     STATUS_COLLECTED_LARGE_FILE,
+    deferred_download_skip_note,
+    download_budget_exhausted,
     large_file_skip_note,
     merge_result_to_storage,
     resolve_inventory_collected_status,
     resolve_standard_collected_status,
+    would_exceed_download_budget,
 )
 
 
@@ -25,6 +29,25 @@ class TestCollectorStatus(unittest.TestCase):
         self.assertIn("big.zip", note)
         self.assertIn("Skipped download (>1GB)", note)
         self.assertIn("https://example.com/big.zip", note)
+
+    def test_deferred_download_skip_note_without_size(self) -> None:
+        """Deferred notes omit the size parenthetical when unknown."""
+        note = deferred_download_skip_note("readme.txt", "https://example.com/readme.txt")
+        self.assertIn("readme.txt", note)
+        self.assertNotIn("readme.txt (", note)
+
+    def test_would_exceed_download_budget(self) -> None:
+        """Cumulative budget blocks downloads that would exceed 1 GB."""
+        half = MAX_DOWNLOAD_BYTES // 2
+        self.assertFalse(would_exceed_download_budget(half, half))
+        self.assertTrue(would_exceed_download_budget(half, half + 1))
+        self.assertTrue(would_exceed_download_budget(MAX_DOWNLOAD_BYTES, 1))
+        self.assertFalse(would_exceed_download_budget(half, None))
+
+    def test_download_budget_exhausted(self) -> None:
+        """Budget is exhausted at exactly 1 GB."""
+        self.assertFalse(download_budget_exhausted(MAX_DOWNLOAD_BYTES - 1))
+        self.assertTrue(download_budget_exhausted(MAX_DOWNLOAD_BYTES))
 
     def test_resolve_inventory_large_file_status(self) -> None:
         """Inventory mode sets collected - large file when flagged."""

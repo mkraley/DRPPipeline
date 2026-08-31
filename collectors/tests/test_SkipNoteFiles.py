@@ -47,6 +47,17 @@ class TestParseSkipNotePublicationFiles(unittest.TestCase):
         self.assertEqual(files[0][0], "odd.zip")
         self.assertIsNone(files[0][2])
 
+    def test_parses_sizeless_skip_line(self) -> None:
+        """Cumulative deferrals without catalog sizes still parse."""
+        notes = (
+            "Skipped download (>1GB): README_File.txt - "
+            "download manually: https://rosap.ntl.bts.gov/view/dot/1/file.txt"
+        )
+        files = parse_skip_note_publication_files(notes)
+        self.assertEqual(len(files), 1)
+        self.assertEqual(files[0][0], "README_File.txt")
+        self.assertIsNone(files[0][2])
+
 
 if __name__ == "__main__":
     unittest.main()

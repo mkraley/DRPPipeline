@@ -88,9 +88,13 @@ def save_metadata(
     from utils.sheet_claimed_update import (
         claim_project_on_inventory_sheet,
         should_claim_after_collector_status,
+        should_claim_inventory_sheet,
     )
 
-    if should_claim_after_collector_status(values.get("status")):
+    if (
+        should_claim_after_collector_status(values.get("status"))
+        and should_claim_inventory_sheet()
+    ):
         claim_project_on_inventory_sheet(drpid)
 
 

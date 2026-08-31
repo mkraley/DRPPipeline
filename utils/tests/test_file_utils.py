@@ -99,6 +99,17 @@ class TestFileUtils(unittest.TestCase):
         self.assertEqual(file_utils.format_file_size(0), "0 B")
         self.assertEqual(file_utils.format_file_size(500), "500 B")
 
+    def test_extension_from_archive_member_name(self) -> None:
+        """Archive member paths preserve compound extensions."""
+        self.assertEqual(
+            file_utils.extension_from_archive_member_name("layers/roads.shp"),
+            "shp",
+        )
+        self.assertEqual(
+            file_utils.extension_from_archive_member_name("bundle/data.tar.gz"),
+            "tar.gz",
+        )
+
     def test_folder_extensions_and_size(self) -> None:
         """Test folder_extensions_and_size returns extensions, total bytes, and file count."""
         d = self.temp_dir / "testdir"

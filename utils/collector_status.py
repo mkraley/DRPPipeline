@@ -36,6 +36,66 @@ def large_file_skip_note(filename: str, file_url: str, size_bytes: int) -> str:
     )
 
 
+def deferred_download_skip_note(
+    filename: str,
+    file_url: str,
+    size_bytes: int | None = None,
+) -> str:
+    """
+    Build a status_notes line for a deferred download (individual or cumulative limit).
+
+    Args:
+        filename: Catalog or download filename.
+        file_url: Manual download URL.
+        size_bytes: Catalog-reported size in bytes, when known.
+
+    Returns:
+        Human-readable skip note for status_notes.
+    """
+    if size_bytes is not None:
+        return large_file_skip_note(filename, file_url, size_bytes)
+    return (
+        f"Skipped download (>1GB): {filename} - "
+        f"download manually: {file_url}"
+    )
+
+
+def download_budget_exhausted(downloaded_bytes: int) -> bool:
+    """
+    Return True when the per-project collector download budget is exhausted.
+
+    Args:
+        downloaded_bytes: Bytes already downloaded for this collection run.
+
+    Returns:
+        True when ``downloaded_bytes`` is at or above ``MAX_DOWNLOAD_BYTES``.
+    """
+    return downloaded_bytes >= MAX_DOWNLOAD_BYTES
+
+
+def would_exceed_download_budget(
+    downloaded_bytes: int,
+    file_size_bytes: int | None,
+) -> bool:
+    """
+    Return True when downloading a file would exceed the collector budget.
+
+    Unknown file sizes are allowed unless the budget is already exhausted.
+
+    Args:
+        downloaded_bytes: Bytes already downloaded for this collection run.
+        file_size_bytes: Catalog-reported size for the candidate file.
+
+    Returns:
+        True when the file should be deferred without downloading.
+    """
+    if download_budget_exhausted(downloaded_bytes):
+        return True
+    if file_size_bytes is None:
+        return False
+    return downloaded_bytes + file_size_bytes > MAX_DOWNLOAD_BYTES
+
+
 def resolve_standard_collected_status(
     result: dict[str, Any],
     *,

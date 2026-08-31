@@ -11,6 +11,24 @@ from typing import Any, Dict, Optional
 from utils.Args import Args
 from utils.Logger import Logger
 
+_SOURCES_SKIP_INVENTORY_CLAIMED = frozenset({"bts"})
+
+
+def should_claim_inventory_sheet(source: str | None = None) -> bool:
+    """
+    Return whether collection should write Claimed on the inventory Google Sheet.
+
+    Catalog-sourced pipelines (e.g. BTS ROSA P) do not use spreadsheet Claimed.
+
+    Args:
+        source: Source key override; defaults to ``Args.source``.
+
+    Returns:
+        True when the active source uses inventory Claimed updates.
+    """
+    key = (source if source is not None else getattr(Args, "source", None) or "")
+    return str(key).strip().lower() not in _SOURCES_SKIP_INVENTORY_CLAIMED
+
 
 def claim_project_on_inventory_sheet(
     drpid: int,

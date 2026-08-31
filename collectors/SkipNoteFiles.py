@@ -26,6 +26,9 @@ _SKIP_NOTE_RE = re.compile(
     r"Skipped download \(>1GB\):\s*(?P<name>.+?)\s*"
     r"\((?P<size>[^)]+)\)\s*-\s*download manually:\s*(?P<url>\S+)"
 )
+_SKIP_NOTE_NO_SIZE_RE = re.compile(
+    r"Skipped download \(>1GB\):\s*(?P<name>.+?)\s*-\s*download manually:\s*(?P<url>\S+)"
+)
 
 
 def parse_skip_note_publication_files(
@@ -44,9 +47,24 @@ def parse_skip_note_publication_files(
     if not status_notes:
         return []
     files: List[PublicationFile] = []
+    seen: set[tuple[str, str]] = set()
+    remainder = status_notes
     for match in _SKIP_NOTE_RE.finditer(status_notes):
         name = match.group("name").strip()
         url = match.group("url").strip()
+        key = (name, url)
+        if key in seen:
+            continue
+        seen.add(key)
         size_bytes = parse_file_size_to_bytes(match.group("size").strip())
         files.append((name, url, size_bytes))
+        remainder = remainder.replace(match.group(0), "", 1)
+    for match in _SKIP_NOTE_NO_SIZE_RE.finditer(remainder):
+        name = match.group("name").strip()
+        url = match.group("url").strip()
+        key = (name, url)
+        if key in seen:
+            continue
+        seen.add(key)
+        files.append((name, url, None))
     return files

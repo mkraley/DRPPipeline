@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from collectors.AdcCollector import AdcCollector
+from collectors.BtsCollector import BtsCollector
 from collectors.CatalogDataCollector import CatalogDataCollector
 from collectors.CmsGovCollector import CmsGovCollector
 from collectors.Collector import Collector
@@ -33,6 +34,10 @@ class TestCollectorFactory(unittest.TestCase):
     def test_adc_source_returns_adc_collector(self) -> None:
         """ADC source selects AdcCollector."""
         self.assertIs(collector_class_for_source("adc"), AdcCollector)
+
+    def test_bts_source_returns_bts_collector(self) -> None:
+        """BTS source selects BtsCollector."""
+        self.assertIs(collector_class_for_source("bts"), BtsCollector)
 
     def test_cdc_source_returns_socrata_collector(self) -> None:
         """CDC source selects SocrataCollector."""

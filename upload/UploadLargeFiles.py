@@ -143,11 +143,12 @@ def ensure_aria2_cmd(drpid: int, project: Dict[str, Any]) -> Tuple[Path, List[st
     folder.mkdir(parents=True, exist_ok=True)
 
     publication_files = links.get("publication_files", [])
+    from_skip_notes = False
     if not publication_files:
-        # Non-USFS sources (e.g. Ag Data Commons) record large files in status_notes.
         publication_files = parse_skip_note_publication_files(
             get_field(project, "status_notes")
         )
+        from_skip_notes = bool(publication_files)
 
     write_drpid_aria2_cmd(
         drpid,
@@ -155,6 +156,7 @@ def ensure_aria2_cmd(drpid: int, project: Dict[str, Any]) -> Tuple[Path, List[st
         publication_files,
         output_dir=DEFAULT_ARIA2_OUTPUT_DIR,
         user_agent=BROWSER_HEADERS["User-Agent"],
+        min_bytes=0 if from_skip_notes else MAX_DOWNLOAD_BYTES,
     )
 
     if not cmd_path.is_file():

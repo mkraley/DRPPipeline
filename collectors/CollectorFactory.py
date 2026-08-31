@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Type
 
 from collectors.AdcCollector import AdcCollector
+from collectors.BtsCollector import BtsCollector
 from collectors.CatalogDataCollector import CatalogDataCollector
 from collectors.CmsGovCollector import CmsGovCollector
 from collectors.SocrataCollector import SocrataCollector
@@ -16,6 +17,7 @@ from utils.Args import Args
 _CATALOG_SOURCES = frozenset({"ahrq", "dol"})
 _SOURCE_COLLECTOR: dict[str, type] = {
     "adc": AdcCollector,
+    "bts": BtsCollector,
     "cdc": SocrataCollector,
     "cms": CmsGovCollector,
     "usfs": UsfsCollector,

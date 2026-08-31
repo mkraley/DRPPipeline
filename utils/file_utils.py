@@ -50,6 +50,24 @@ def _split_filename_extension(name: str) -> tuple[str, str]:
     return stem, f".{ext_part}"
 
 
+def extension_from_archive_member_name(member_name: str) -> str:
+    """
+    Return a normalized extension token from a zip/tar member path.
+
+    Args:
+        member_name: Archive member path (may include directories).
+
+    Returns:
+        Lowercase extension without a leading dot, or an empty string.
+    """
+    normalized = member_name.rstrip("/").replace("\\", "/")
+    if not normalized or normalized.endswith("/"):
+        return ""
+    basename = normalized.rsplit("/", 1)[-1]
+    _stem, ext = _split_filename_extension(basename)
+    return ext.lstrip(".").lower() if ext else ""
+
+
 def sanitize_filename(name: str, max_length: int = 200) -> str:
     """
     Sanitize a filename to be valid for Windows filesystem.

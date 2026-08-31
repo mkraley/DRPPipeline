@@ -9,7 +9,32 @@ from utils.Logger import Logger
 from utils.sheet_claimed_update import (
     claim_project_on_inventory_sheet,
     should_claim_after_collector_status,
+    should_claim_inventory_sheet,
 )
+
+
+class TestShouldClaimInventorySheet(unittest.TestCase):
+    """Tests for source-specific Claimed eligibility."""
+
+    def setUp(self) -> None:
+        """Initialize Args for source lookups."""
+        self._original_argv = sys.argv.copy()
+        sys.argv = ["test", "noop"]
+        Args.initialize()
+
+    def tearDown(self) -> None:
+        sys.argv = self._original_argv
+
+    def test_bts_source_skips_claimed(self) -> None:
+        """BTS catalog sourcing does not write inventory Claimed."""
+        Args._config["source"] = "bts"
+        self.assertFalse(should_claim_inventory_sheet())
+        self.assertFalse(should_claim_inventory_sheet("bts"))
+
+    def test_other_sources_claim(self) -> None:
+        """Spreadsheet-sourced pipelines still write Claimed."""
+        Args._config["source"] = "cdc"
+        self.assertTrue(should_claim_inventory_sheet())
 
 
 class TestShouldClaimAfterCollectorStatus(unittest.TestCase):

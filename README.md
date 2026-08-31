@@ -67,7 +67,7 @@ DRPPipeline/
 | Module | Purpose |
 |--------|--------|
 | **sourcing** | Sources candidate URLs into the DB (spreadsheet or ADC Figshare API, selected by `source` in config). |
-| **collector** | Collects sourced projects into local folders (Socrata, catalog.data.gov, CMS, USFS, ADC, etc.; selected by `source` in config). |
+| **collector** | Collects sourced projects into local folders (Socrata, catalog.data.gov, CMS, USFS, ADC, BTS, etc.; selected by `source` in config). |
 | **interactive_collector** | Flask app for manual collection: browse URLs, save PDFs, update metadata. Under active development; not managed by the orchestration MCP. |
 | **upload** | Uploads collected data to DataLumos via browser automation. |
 | **publisher** | Runs DataLumos publish workflow; also updates source inventory|
