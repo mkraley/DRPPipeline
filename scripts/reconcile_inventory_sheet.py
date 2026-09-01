@@ -89,10 +89,10 @@ def print_summary(
 
 
 def run_execute(actions: List[ReconcileAction], *, delay_seconds: float) -> int:
-    from publisher.GoogleSheetUpdater import GoogleSheetUpdater
+    from publisher.inventory_sheet_updater import get_inventory_sheet_updater
     from storage import Storage
 
-    updater = GoogleSheetUpdater()
+    updater = get_inventory_sheet_updater()
     to_run = [a for a in actions if a.action in ("fix", "append")]
     failed = 0
 

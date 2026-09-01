@@ -66,15 +66,17 @@ class TestClaimProjectOnInventorySheet(unittest.TestCase):
     def tearDown(self) -> None:
         sys.argv = self._original_argv
 
-    @patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater.update_claimed")
-    def test_claim_calls_updater_when_configured(self, mock_update: MagicMock) -> None:
-        """Claim writes through GoogleSheetUpdater when sheet is configured."""
+    @patch("publisher.inventory_sheet_updater.get_inventory_sheet_updater")
+    def test_claim_calls_updater_when_configured(self, mock_factory: MagicMock) -> None:
+        """Claim writes through the configured inventory sheet updater."""
         project = {
             "DRPID": 5,
             "source_url": "https://example.com/dataset",
             "status": "collected",
         }
-        mock_update.return_value = (True, None)
+        mock_updater = MagicMock()
+        mock_updater.update_claimed.return_value = (True, None)
+        mock_factory.return_value = mock_updater
         Args._config["google_sheet_id"] = "sheet1"
         Args._config["google_credentials"] = "creds.json"
         Args._config["google_username"] = "mkraley"
@@ -83,7 +85,7 @@ class TestClaimProjectOnInventorySheet(unittest.TestCase):
 
         self.assertTrue(ok)
         self.assertIsNone(err)
-        mock_update.assert_called_once_with(
+        mock_updater.update_claimed.assert_called_once_with(
             "https://example.com/dataset",
             project=project,
         )

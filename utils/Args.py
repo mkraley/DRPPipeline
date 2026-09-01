@@ -126,6 +126,10 @@ class Args(metaclass=ArgsMeta):
         "google_sheet_id": None,  # Google Sheet ID from URL; set in config for sourcing and/or publisher
         "google_credentials": None,  # Path to service account JSON; required for publisher sheet updates
         "google_sheet_name": "CDC",  # Worksheet/tab name (sourcing CSV tab and publisher updates)
+        "inventory_sheet_format": "data_inventories",  # data_inventories | baserow_batch
+        "baserow_maintainers": "DRP,DL",  # Baserow Maintainers column on successful publish
+        "baserow_contact": None,  # Baserow Contact column (email); falls back to google_username
+        "default_metadata_available": True,  # Write "yes" to Metadata available on publish
         # PEM file path: optional; use behind TLS inspection when Google API fails SSL verify
         "ssl_ca_bundle": None,
         "google_username": "mkraley",  # Value for "Claimed" column

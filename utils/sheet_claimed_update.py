@@ -67,9 +67,9 @@ def claim_project_on_inventory_sheet(
     if not username:
         return False, "google_username is not set in config"
 
-    from publisher.GoogleSheetUpdater import GoogleSheetUpdater
+    from publisher.inventory_sheet_updater import get_inventory_sheet_updater
 
-    updater = GoogleSheetUpdater()
+    updater = get_inventory_sheet_updater()
     ok, err = updater.update_claimed(source_url, project=project)
     if ok:
         Logger.info(

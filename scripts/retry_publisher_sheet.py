@@ -57,7 +57,7 @@ def main() -> int:
     from utils.Logger import Logger
     from utils.project_utils import get_field
     from storage import Storage
-    from publisher.GoogleSheetUpdater import GoogleSheetUpdater
+    from publisher.inventory_sheet_updater import get_inventory_sheet_updater
 
     Args.initialize_from_config(args.config)
     Logger.initialize(log_level=Args.log_level, log_color=getattr(Args, "log_color", False))
@@ -71,7 +71,7 @@ def main() -> int:
         )
         return 1
 
-    updater = GoogleSheetUpdater()
+    updater = get_inventory_sheet_updater()
     exit_code = 0
 
     for drpid in args.drpids:

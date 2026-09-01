@@ -210,7 +210,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         r = updater._get_next_append_row(mock_service, "sid", "Tab1", "A")
         self.assertEqual(r, 2)
 
-    @patch("publisher.GoogleSheetUpdater._GOOGLE_SHEETS_AVAILABLE", True)
+    @patch("publisher.inventory_sheet_updater_base.GOOGLE_SHEETS_AVAILABLE", True)
     def test_update_missing_sheet_id(self) -> None:
         """Test update returns error when Args.google_sheet_id is empty."""
         updater = GoogleSheetUpdater()
@@ -219,7 +219,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn("required", (msg or "").lower())
 
-    @patch("publisher.GoogleSheetUpdater._GOOGLE_SHEETS_AVAILABLE", True)
+    @patch("publisher.inventory_sheet_updater_base.GOOGLE_SHEETS_AVAILABLE", True)
     def test_update_missing_source_url(self) -> None:
         """Test update returns error when source_url is empty."""
         updater = GoogleSheetUpdater()
@@ -229,7 +229,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn("source url", (msg or "").lower())
 
-    @patch("publisher.GoogleSheetUpdater._GOOGLE_SHEETS_AVAILABLE", False)
+    @patch("publisher.inventory_sheet_updater_base.GOOGLE_SHEETS_AVAILABLE", False)
     def test_update_google_sheets_not_available(self) -> None:
         """Test update returns error when Google Sheets API is not installed."""
         updater = GoogleSheetUpdater()
@@ -237,7 +237,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn("not installed", msg.lower())
 
-    @patch("publisher.GoogleSheetUpdater._GOOGLE_SHEETS_AVAILABLE", True)
+    @patch("publisher.inventory_sheet_updater_base.GOOGLE_SHEETS_AVAILABLE", True)
     def test_update_for_not_found_or_no_links_missing_sheet_id(self) -> None:
         """Test update_for_not_found_or_no_links returns error when sheet ID missing."""
         updater = GoogleSheetUpdater()
@@ -248,7 +248,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn("required", (msg or "").lower())
 
-    @patch("publisher.GoogleSheetUpdater._GOOGLE_SHEETS_AVAILABLE", False)
+    @patch("publisher.inventory_sheet_updater_base.GOOGLE_SHEETS_AVAILABLE", False)
     def test_update_for_not_found_or_no_links_api_not_available(self) -> None:
         """Test update_for_not_found_or_no_links returns error when API not installed."""
         updater = GoogleSheetUpdater()
@@ -273,7 +273,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertIn("not found", (msg or "").lower())
 
     @skip_if_no_google
-    @patch("publisher.GoogleSheetUpdater.build_sheets_v4_service")
+    @patch("publisher.inventory_sheet_updater_base.build_sheets_v4_service")
     @patch("google.oauth2.service_account.Credentials.from_service_account_file")
     def test_update_success_mocked(
         self, mock_from_sa: MagicMock, mock_build: MagicMock
@@ -332,7 +332,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         mock_service.spreadsheets.return_value.values.return_value.batchUpdate.assert_called_once()
 
     @skip_if_no_google
-    @patch("publisher.GoogleSheetUpdater.build_sheets_v4_service")
+    @patch("publisher.inventory_sheet_updater_base.build_sheets_v4_service")
     @patch("google.oauth2.service_account.Credentials.from_service_account_file")
     def test_update_appends_when_no_url_match(
         self, mock_from_sa: MagicMock, mock_build: MagicMock
@@ -468,7 +468,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertEqual(d2[0]["values"], [["Office of Data"]])
 
     @skip_if_no_google
-    @patch("publisher.GoogleSheetUpdater.build_sheets_v4_service")
+    @patch("publisher.inventory_sheet_updater_base.build_sheets_v4_service")
     @patch("google.oauth2.service_account.Credentials.from_service_account_file")
     def test_update_matched_fills_title_when_empty(
         self, mock_from_sa: MagicMock, mock_build: MagicMock
@@ -543,7 +543,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertEqual(d2[0]["values"], [["Office Y"]])
 
     @skip_if_no_google
-    @patch("publisher.GoogleSheetUpdater.build_sheets_v4_service")
+    @patch("publisher.inventory_sheet_updater_base.build_sheets_v4_service")
     @patch("google.oauth2.service_account.Credentials.from_service_account_file")
     def test_update_for_sheet_only_writes_question_mark_download_possible(
         self, mock_from_sa: MagicMock, mock_build: MagicMock
@@ -610,7 +610,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertTrue(title_col)
 
     @skip_if_no_google
-    @patch("publisher.GoogleSheetUpdater.build_sheets_v4_service")
+    @patch("publisher.inventory_sheet_updater_base.build_sheets_v4_service")
     @patch("google.oauth2.service_account.Credentials.from_service_account_file")
     def test_update_for_sheet_only_skips_claimed_when_disabled(
         self, mock_from_sa: MagicMock, mock_build: MagicMock
@@ -665,7 +665,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
         self.assertTrue(notes_col)
 
     @skip_if_no_google
-    @patch("publisher.GoogleSheetUpdater.build_sheets_v4_service")
+    @patch("publisher.inventory_sheet_updater_base.build_sheets_v4_service")
     @patch("google.oauth2.service_account.Credentials.from_service_account_file")
     def test_update_claimed_writes_username_only(
         self, mock_from_sa: MagicMock, mock_build: MagicMock

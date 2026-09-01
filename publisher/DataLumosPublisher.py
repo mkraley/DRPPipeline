@@ -333,9 +333,9 @@ class DataLumosPublisher:
         notes_value, status_value, download_possible = sheet_only
         include_metadata = download_possible == "?"
 
-        from publisher.GoogleSheetUpdater import GoogleSheetUpdater
+        from publisher.inventory_sheet_updater import get_inventory_sheet_updater
 
-        updater = GoogleSheetUpdater()
+        updater = get_inventory_sheet_updater()
 
         from publisher.sheet_only_status import should_write_claimed_for_sheet_only
 
@@ -361,9 +361,9 @@ class DataLumosPublisher:
         Other failures (e.g. API error): append warning and continue. If the source URL
         is not in the sheet, a new row is appended (see `GoogleSheetUpdater`).
         """
-        from publisher.GoogleSheetUpdater import GoogleSheetUpdater
+        from publisher.inventory_sheet_updater import get_inventory_sheet_updater
 
-        updater = GoogleSheetUpdater()
+        updater = get_inventory_sheet_updater()
 
         def _do_update() -> tuple[bool, Optional[str]]:
             return updater.update(

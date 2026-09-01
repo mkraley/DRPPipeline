@@ -105,7 +105,7 @@ class TestDataLumosPublisher(unittest.TestCase):
         mock_updater = MagicMock()
         mock_updater.update_for_sheet_only.return_value = (True, None)
 
-        with patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater", return_value=mock_updater), patch.object(
+        with patch("publisher.inventory_sheet_updater.get_inventory_sheet_updater", return_value=mock_updater), patch.object(
             Args, "google_sheet_id", "sheet1"
         ), patch.object(Args, "google_credentials", __file__):
             self.publisher.run(drpid)
@@ -129,7 +129,7 @@ class TestDataLumosPublisher(unittest.TestCase):
         mock_updater = MagicMock()
         mock_updater.update_for_sheet_only.return_value = (True, None)
 
-        with patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater", return_value=mock_updater), patch.object(
+        with patch("publisher.inventory_sheet_updater.get_inventory_sheet_updater", return_value=mock_updater), patch.object(
             Args, "google_sheet_id", "sheet1"
         ), patch.object(Args, "google_credentials", __file__):
             self.publisher.run(drpid)
@@ -161,7 +161,7 @@ class TestDataLumosPublisher(unittest.TestCase):
         mock_updater.update_for_sheet_only.return_value = (True, None)
         project = Storage.get(drpid)
 
-        with patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater", return_value=mock_updater), patch.object(
+        with patch("publisher.inventory_sheet_updater.get_inventory_sheet_updater", return_value=mock_updater), patch.object(
             Args, "google_sheet_id", "sheet1"
         ), patch.object(Args, "google_credentials", __file__):
             self.publisher.run(drpid)
@@ -194,7 +194,7 @@ class TestDataLumosPublisher(unittest.TestCase):
         mock_updater.update_for_sheet_only.return_value = (True, None)
         project = Storage.get(drpid)
 
-        with patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater", return_value=mock_updater), patch.object(
+        with patch("publisher.inventory_sheet_updater.get_inventory_sheet_updater", return_value=mock_updater), patch.object(
             Args, "google_sheet_id", "sheet1"
         ), patch.object(Args, "google_credentials", __file__):
             self.publisher.run(drpid)
@@ -219,7 +219,7 @@ class TestDataLumosPublisher(unittest.TestCase):
         mock_updater.update_for_sheet_only.return_value = (True, None)
         project = Storage.get(drpid)
 
-        with patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater", return_value=mock_updater), patch.object(
+        with patch("publisher.inventory_sheet_updater.get_inventory_sheet_updater", return_value=mock_updater), patch.object(
             Args, "google_sheet_id", "sheet1"
         ), patch.object(Args, "google_credentials", __file__):
             self.publisher.run(drpid)
@@ -244,7 +244,7 @@ class TestDataLumosPublisher(unittest.TestCase):
         mock_updater.update_for_sheet_only.return_value = (True, None)
         project = Storage.get(drpid)
 
-        with patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater", return_value=mock_updater), patch.object(
+        with patch("publisher.inventory_sheet_updater.get_inventory_sheet_updater", return_value=mock_updater), patch.object(
             Args, "google_sheet_id", "sheet1"
         ), patch.object(Args, "google_credentials", __file__):
             self.publisher.run(drpid)
@@ -491,7 +491,7 @@ class TestDataLumosPublisher(unittest.TestCase):
     @patch.object(
         DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None
     )
-    @patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater")
+    @patch("publisher.inventory_sheet_updater.get_inventory_sheet_updater")
     @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
     @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
     def test_run_sets_status_updated_inventory_when_sheet_update_succeeds(
@@ -526,7 +526,7 @@ class TestDataLumosPublisher(unittest.TestCase):
     @patch.object(
         DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None
     )
-    @patch("publisher.GoogleSheetUpdater.GoogleSheetUpdater")
+    @patch("publisher.inventory_sheet_updater.get_inventory_sheet_updater")
     @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
     @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
     def test_run_deletes_folder_after_updated_inventory(
