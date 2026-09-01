@@ -24,6 +24,7 @@ from utils.collector_status import (
     deferred_download_skip_note,
     download_budget_exhausted,
     large_file_skip_note,
+    pending_download_summary_note,
     would_exceed_download_budget,
 )
 from utils.Errors import record_error, record_warning
@@ -121,19 +122,22 @@ class BtsCollector(CollectorBase):
         self._save_catalog_pdf(drpid, page_downloader, folder_path, url)
 
         download_files: list[BtsDownloadFile] = parsed.get("_download_files", [])
-        status_notes, skipped_large = self._download_files(
+        size_cache: dict[str, int | None] = {}
+        status_notes, skipped_large, inventory_bytes, inventory_exts = self._download_files(
             drpid,
             page_downloader,
             folder_path,
             download_files,
+            size_cache,
         )
 
-        extensions, total_bytes, num_files = self._folder_inventory(folder_path)
+        extensions, _on_disk_bytes, _on_disk_files = self._folder_inventory(folder_path)
+        extensions.update(inventory_exts)
         self._enrich_extensions_from_archives(drpid, folder_path, extensions)
         if extensions:
             result["extensions"] = ", ".join(sorted(extensions))
-        result["num_files"] = num_files
-        result["file_size"] = format_file_size(total_bytes)
+        result["num_files"] = 1 + len(download_files)
+        result["file_size"] = format_file_size(inventory_bytes)
         data_types = infer_data_types(
             result.get("title", ""),
             result.get("summary", ""),
@@ -148,12 +152,12 @@ class BtsCollector(CollectorBase):
             result["status_notes"] = "\n".join(status_notes)
         result["_skipped_large_file"] = skipped_large
         if skipped_large:
-            self._write_aria2_cmd(drpid, folder_path, download_files)
+            self._write_aria2_cmd(drpid, folder_path, download_files, size_cache)
 
         Logger.info(
             "BTS collection complete for DRPID %s: %s files, %s",
             drpid,
-            num_files,
+            result["num_files"],
             result.get("file_size"),
         )
         return result
@@ -192,7 +196,8 @@ class BtsCollector(CollectorBase):
         page_downloader: UsfsPageDownloader,
         folder_path: Path,
         files: list[BtsDownloadFile],
-    ) -> tuple[list[str], bool]:
+        size_cache: dict[str, int | None],
+    ) -> tuple[list[str], bool, int, set[str]]:
         """
         Download main and supporting files via Playwright.
 
@@ -200,11 +205,14 @@ class BtsCollector(CollectorBase):
         remaining files in ``status_notes`` for ``upload_large_files``.
 
         Returns:
-            Tuple of status note lines and whether any large file was skipped.
+            Tuple of status note lines, whether any large file was skipped,
+            estimated total inventory bytes, and catalog file extensions.
         """
         notes: list[str] = []
         skipped_large = False
         downloaded_bytes = self._downloaded_bytes_on_disk(folder_path, files)
+        inventory_exts = self._catalog_file_extensions(files)
+        inventory_exts.add("pdf")
 
         for index, entry in enumerate(files):
             filename = self._destination_filename(entry)
@@ -213,23 +221,30 @@ class BtsCollector(CollectorBase):
                 Logger.info("Skipping already-downloaded: %s", filename)
                 continue
 
-            if would_exceed_download_budget(downloaded_bytes, entry.size_bytes):
-                notes.extend(self._defer_download_notes(files[index:]))
+            expected_bytes = self._expected_download_bytes(
+                page_downloader,
+                entry,
+                size_cache,
+            )
+
+            if would_exceed_download_budget(downloaded_bytes, expected_bytes):
+                notes.extend(
+                    self._defer_download_notes(page_downloader, files[index:], size_cache)
+                )
                 skipped_large = True
                 break
 
-            catalog_bytes = entry.size_bytes
-            if catalog_bytes is not None and catalog_bytes > MAX_DOWNLOAD_BYTES:
+            if expected_bytes is not None and expected_bytes > MAX_DOWNLOAD_BYTES:
                 skipped_large = True
-                notes.append(large_file_skip_note(filename, entry.url, catalog_bytes))
+                notes.append(large_file_skip_note(filename, entry.url, expected_bytes))
                 continue
 
-            if entry.size_bytes is not None:
+            if expected_bytes is not None:
                 Logger.info(
                     "Downloading %s file: %s (%s)",
                     "main" if entry.is_main else "supporting",
                     filename,
-                    format_file_size(entry.size_bytes),
+                    format_file_size(expected_bytes),
                 )
             else:
                 Logger.info(
@@ -247,11 +262,129 @@ class BtsCollector(CollectorBase):
             if download_budget_exhausted(downloaded_bytes):
                 remaining = files[index + 1 :]
                 if remaining:
-                    notes.extend(self._defer_download_notes(remaining))
+                    notes.extend(
+                        self._defer_download_notes(page_downloader, remaining, size_cache)
+                    )
                     skipped_large = True
                 break
 
-        return notes, skipped_large
+        summary_note = self._pending_download_summary_note(
+            page_downloader,
+            folder_path,
+            files,
+            size_cache,
+        )
+        if summary_note:
+            notes.append(summary_note)
+
+        inventory_bytes = self._catalog_inventory_bytes(
+            page_downloader,
+            folder_path,
+            files,
+            size_cache,
+        )
+        return notes, skipped_large, inventory_bytes, inventory_exts
+
+    def _expected_download_bytes(
+        self,
+        page_downloader: UsfsPageDownloader,
+        entry: BtsDownloadFile,
+        size_cache: dict[str, int | None] | None = None,
+    ) -> int | None:
+        """
+        Return catalog or probed Content-Length for a download candidate.
+
+        Supporting files on ROSA P often omit size in HTML; probe the file URL
+        when the catalog did not provide a byte count.
+        """
+        if size_cache is not None and entry.url in size_cache:
+            return size_cache[entry.url]
+        if entry.size_bytes is not None:
+            result = entry.size_bytes
+        else:
+            probed_bytes = page_downloader.fetch_content_length(entry.url)
+            if isinstance(probed_bytes, int) and probed_bytes >= 0:
+                result = probed_bytes
+            else:
+                result = None
+        if size_cache is not None:
+            size_cache[entry.url] = result
+        return result
+
+    def _catalog_file_extensions(self, files: list[BtsDownloadFile]) -> set[str]:
+        """Return extensions for catalog-listed download files."""
+        extensions: set[str] = set()
+        for entry in files:
+            suffix = Path(self._destination_filename(entry)).suffix
+            if suffix:
+                extensions.add(suffix.lstrip(".").lower())
+        return extensions
+
+    def _catalog_inventory_bytes(
+        self,
+        page_downloader: UsfsPageDownloader,
+        folder_path: Path,
+        files: list[BtsDownloadFile],
+        size_cache: dict[str, int | None],
+    ) -> int:
+        """
+        Estimate total project bytes including skipped and not-yet-downloaded files.
+
+        Uses on-disk sizes when present and catalog or probed sizes otherwise.
+        """
+        total_bytes = 0
+        catalog_pdf = folder_path / _CATALOG_PDF_NAME
+        if catalog_pdf.is_file():
+            total_bytes += catalog_pdf.stat().st_size
+
+        for entry in files:
+            dest = folder_path / self._destination_filename(entry)
+            if dest.is_file():
+                total_bytes += dest.stat().st_size
+                continue
+            expected_bytes = self._expected_download_bytes(
+                page_downloader,
+                entry,
+                size_cache,
+            )
+            if expected_bytes is not None:
+                total_bytes += expected_bytes
+        return total_bytes
+
+    def _pending_download_summary_note(
+        self,
+        page_downloader: UsfsPageDownloader,
+        folder_path: Path,
+        files: list[BtsDownloadFile],
+        size_cache: dict[str, int | None],
+    ) -> str:
+        """Build a status_notes summary for catalog files still missing on disk."""
+        pending_entries = [
+            entry
+            for entry in files
+            if not (folder_path / self._destination_filename(entry)).is_file()
+        ]
+        if not pending_entries:
+            return ""
+
+        pending_bytes = 0
+        has_unknown_sizes = False
+        for entry in pending_entries:
+            expected_bytes = self._expected_download_bytes(
+                page_downloader,
+                entry,
+                size_cache,
+            )
+            if expected_bytes is None:
+                has_unknown_sizes = True
+            else:
+                pending_bytes += expected_bytes
+
+        return pending_download_summary_note(
+            len(pending_entries),
+            pending_bytes,
+            has_unknown_sizes=has_unknown_sizes,
+        )
 
     def _downloaded_bytes_on_disk(
         self,
@@ -266,13 +399,23 @@ class BtsCollector(CollectorBase):
                 total_bytes += dest.stat().st_size
         return total_bytes
 
-    def _defer_download_notes(self, entries: list[BtsDownloadFile]) -> list[str]:
+    def _defer_download_notes(
+        self,
+        page_downloader: UsfsPageDownloader,
+        entries: list[BtsDownloadFile],
+        size_cache: dict[str, int | None],
+    ) -> list[str]:
         """Build status_notes lines for files not downloaded due to size limits."""
         notes: list[str] = []
         for entry in entries:
             filename = self._destination_filename(entry)
+            expected_bytes = self._expected_download_bytes(
+                page_downloader,
+                entry,
+                size_cache,
+            )
             notes.append(
-                deferred_download_skip_note(filename, entry.url, entry.size_bytes)
+                deferred_download_skip_note(filename, entry.url, expected_bytes)
             )
         return notes
 
@@ -281,6 +424,7 @@ class BtsCollector(CollectorBase):
         drpid: int,
         folder_path: Path,
         files: list[BtsDownloadFile],
+        size_cache: dict[str, int | None],
     ) -> None:
         """Export aria2 commands for catalog files still missing on disk."""
         from collectors.UsfsAria2Export import write_drpid_aria2_cmd
@@ -289,7 +433,7 @@ class BtsCollector(CollectorBase):
             (
                 self._destination_filename(entry),
                 entry.url,
-                entry.size_bytes,
+                size_cache.get(entry.url, entry.size_bytes),
             )
             for entry in files
             if not (folder_path / self._destination_filename(entry)).is_file()

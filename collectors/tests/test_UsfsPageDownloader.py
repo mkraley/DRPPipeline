@@ -31,6 +31,37 @@ class TestUsfsPageDownloader(unittest.TestCase):
         mock_close.assert_called_once()
         mock_ensure.assert_called_once()
 
+    @patch.object(UsfsPageDownloader, "_ensure_browser", return_value=True)
+    def test_fetch_content_length_returns_header_value(self, mock_ensure: MagicMock) -> None:
+        """HEAD response Content-Length is parsed as an integer."""
+        downloader = UsfsPageDownloader()
+        mock_page = MagicMock()
+        mock_response = MagicMock()
+        mock_response.ok = True
+        mock_response.headers = {"content-length": "4096"}
+        mock_page.request.head.return_value = mock_response
+        downloader._session.new_page = MagicMock(return_value=mock_page)
+
+        size = downloader.fetch_content_length(
+            "https://rosap.ntl.bts.gov/view/dot/54854/dot_54854_DS2.txt"
+        )
+
+        self.assertEqual(size, 4096)
+        mock_page.request.head.assert_called_once()
+        mock_page.close.assert_called_once()
+
+    @patch.object(UsfsPageDownloader, "_ensure_browser", return_value=False)
+    def test_fetch_content_length_returns_none_without_browser(
+        self, mock_ensure: MagicMock
+    ) -> None:
+        """Return None when Chromium is unavailable."""
+        downloader = UsfsPageDownloader()
+        self.assertIsNone(
+            downloader.fetch_content_length(
+                "https://rosap.ntl.bts.gov/view/dot/54854/dot_54854_DS2.txt"
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

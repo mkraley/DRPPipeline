@@ -53,11 +53,50 @@ def deferred_download_skip_note(
         Human-readable skip note for status_notes.
     """
     if size_bytes is not None:
-        return large_file_skip_note(filename, file_url, size_bytes)
+        from utils.file_utils import format_file_size
+
+        return (
+            f"Skipped download (>1GB): {filename} ({format_file_size(size_bytes)}) - "
+            f"download manually: {file_url}"
+        )
     return (
         f"Skipped download (>1GB): {filename} - "
         f"download manually: {file_url}"
     )
+
+
+def pending_download_summary_note(
+    file_count: int,
+    total_bytes: int,
+    *,
+    has_unknown_sizes: bool = False,
+) -> str:
+    """
+    Build a status_notes summary for files not yet downloaded.
+
+    Args:
+        file_count: Number of catalog files still missing on disk.
+        total_bytes: Sum of known expected sizes for pending files.
+        has_unknown_sizes: When True, at least one pending file has no known size.
+
+    Returns:
+        Human-readable summary line for status_notes.
+    """
+    from utils.file_utils import format_file_size
+
+    if file_count <= 0:
+        return ""
+    if total_bytes > 0 and has_unknown_sizes:
+        return (
+            f"Remaining downloads: {file_count} file(s), "
+            f"{format_file_size(total_bytes)}+ not yet downloaded (some sizes unknown)"
+        )
+    if total_bytes > 0:
+        return (
+            f"Remaining downloads: {file_count} file(s), "
+            f"{format_file_size(total_bytes)} not yet downloaded"
+        )
+    return f"Remaining downloads: {file_count} file(s) (total size unknown)"
 
 
 def download_budget_exhausted(downloaded_bytes: int) -> bool:

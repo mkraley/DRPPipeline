@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
 import unittest
 from pathlib import Path
@@ -70,11 +71,9 @@ class TestBtsCollector(unittest.TestCase):
 
         self.assertIn("shp", result.get("extensions", ""))
         self.assertIn("dbf", result.get("extensions", ""))
-        self.assertEqual(result.get("num_files"), len(list(folder.iterdir())))
+        self.assertGreaterEqual(result.get("num_files", 0), 1)
 
-        for path in folder.iterdir():
-            path.unlink()
-        folder.rmdir()
+        shutil.rmtree(folder, ignore_errors=True)
 
     @patch("collectors.BtsCollector.create_output_folder")
     @patch("collectors.BtsCollector.UsfsPageDownloader")
@@ -113,9 +112,51 @@ class TestBtsCollector(unittest.TestCase):
         self.assertGreaterEqual(result.get("num_files", 0), 1)
         self.assertIn("download_date", result)
 
-        for path in folder.iterdir():
-            path.unlink()
-        folder.rmdir()
+        shutil.rmtree(folder, ignore_errors=True)
+
+    @patch("collectors.BtsCollector.Logger")
+    def test_download_log_probes_size_for_supporting_files(
+        self, mock_logger: MagicMock
+    ) -> None:
+        """Supporting files without catalog size log probed Content-Length."""
+        page_downloader = MagicMock()
+        page_downloader.fetch_content_length.return_value = 2048
+
+        def _write_download(_url: str, dest: Path) -> tuple[int, bool]:
+            dest.write_bytes(b"x" * 128)
+            return 128, True
+
+        page_downloader.download_file.side_effect = _write_download
+        folder = Path(__file__).parent / "_tmp_bts_dl_probe"
+        folder.mkdir(exist_ok=True)
+        size_cache: dict[str, int | None] = {}
+        try:
+            from collectors.BtsMetadataExtractor import BtsDownloadFile
+
+            self.collector._download_files(
+                6,
+                page_downloader,
+                folder,
+                [
+                    BtsDownloadFile(
+                        label="README File",
+                        url="https://rosap.ntl.bts.gov/view/dot/54854/dot_54854_DS2.txt",
+                        filename="dot_54854_DS2.txt",
+                        size_bytes=None,
+                        is_main=False,
+                    )
+                ],
+                size_cache,
+            )
+            page_downloader.fetch_content_length.assert_called_once()
+            mock_logger.info.assert_any_call(
+                "Downloading %s file: %s (%s)",
+                "supporting",
+                "README_File.txt",
+                ANY,
+            )
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
 
     @patch("collectors.BtsCollector.Logger")
     def test_download_log_includes_expected_size(self, mock_logger: MagicMock) -> None:
@@ -129,6 +170,7 @@ class TestBtsCollector(unittest.TestCase):
         page_downloader.download_file.side_effect = _write_download
         folder = Path(__file__).parent / "_tmp_bts_dl_log"
         folder.mkdir(exist_ok=True)
+        size_cache: dict[str, int | None] = {}
         try:
             from collectors.BtsMetadataExtractor import BtsDownloadFile
 
@@ -145,6 +187,7 @@ class TestBtsCollector(unittest.TestCase):
                         is_main=True,
                     )
                 ],
+                size_cache,
             )
             mock_logger.info.assert_any_call(
                 "Downloading %s file: %s (%s)",
@@ -153,19 +196,18 @@ class TestBtsCollector(unittest.TestCase):
                 ANY,
             )
         finally:
-            for path in folder.iterdir():
-                path.unlink()
-            folder.rmdir()
+            shutil.rmtree(folder, ignore_errors=True)
 
     def test_skips_download_over_1gb(self) -> None:
         """Main files over 1 GB are skipped with a status note."""
         page_downloader = MagicMock()
         folder = Path(__file__).parent / "_tmp_bts_large"
         folder.mkdir(exist_ok=True)
+        size_cache: dict[str, int | None] = {}
         try:
             from collectors.BtsMetadataExtractor import BtsDownloadFile
 
-            notes, skipped_large = self.collector._download_files(
+            notes, skipped_large, inventory_bytes, _exts = self.collector._download_files(
                 6,
                 page_downloader,
                 folder,
@@ -178,20 +220,22 @@ class TestBtsCollector(unittest.TestCase):
                         is_main=True,
                     )
                 ],
+                size_cache,
             )
             page_downloader.download_file.assert_not_called()
             self.assertTrue(skipped_large)
             self.assertTrue(any("Skipped download (>1GB)" in note for note in notes))
+            self.assertTrue(any("Remaining downloads:" in note for note in notes))
+            self.assertGreater(inventory_bytes, MAX_DOWNLOAD_BYTES)
         finally:
-            for path in folder.iterdir():
-                path.unlink()
-            folder.rmdir()
+            shutil.rmtree(folder, ignore_errors=True)
 
     def test_stops_when_cumulative_download_exceeds_1gb(self) -> None:
         """Defer remaining files once cumulative downloads exceed the 1 GB budget."""
         page_downloader = MagicMock()
         folder = Path(__file__).parent / "_tmp_bts_cumulative"
         folder.mkdir(exist_ok=True)
+        size_cache: dict[str, int | None] = {}
         try:
             from collectors.BtsMetadataExtractor import BtsDownloadFile
 
@@ -206,8 +250,9 @@ class TestBtsCollector(unittest.TestCase):
                 return dest.stat().st_size, True
 
             page_downloader.download_file.side_effect = _fake_download
+            page_downloader.fetch_content_length.return_value = None
 
-            notes, skipped_large = self.collector._download_files(
+            notes, skipped_large, inventory_bytes, _exts = self.collector._download_files(
                 6,
                 page_downloader,
                 folder,
@@ -234,6 +279,7 @@ class TestBtsCollector(unittest.TestCase):
                         is_main=False,
                     ),
                 ],
+                size_cache,
             )
 
             self.assertTrue(skipped_large)
@@ -241,11 +287,12 @@ class TestBtsCollector(unittest.TestCase):
             self.assertFalse((folder / "second.zip").is_file())
             self.assertTrue(any("second.zip" in note for note in notes))
             self.assertTrue(any("third.zip" in note for note in notes))
+            self.assertTrue(any("500.0 MB" in note for note in notes))
+            self.assertTrue(any("Remaining downloads:" in note for note in notes))
             self.assertEqual(page_downloader.download_file.call_count, 1)
+            self.assertGreater(inventory_bytes, first_size)
         finally:
-            for path in folder.iterdir():
-                path.unlink()
-            folder.rmdir()
+            shutil.rmtree(folder, ignore_errors=True)
 
     @patch("collectors.CollectorBase.merge_result_to_storage")
     @patch("collectors.BtsCollector.UsfsPageDownloader")

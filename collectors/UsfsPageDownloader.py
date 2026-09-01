@@ -16,6 +16,7 @@ _SETTLE_MS = 3000
 _LOAD_TIMEOUT_MS = 35000
 _PRINT_TIMEOUT_MS = 90000
 _FILE_DOWNLOAD_TIMEOUT_MS = 3600 * 1000
+_CONTENT_LENGTH_TIMEOUT_MS = 30_000
 
 
 class UsfsPageDownloader:
@@ -80,6 +81,36 @@ class UsfsPageDownloader:
         except Exception as exc:
             Logger.error("Playwright download failed: %s - %s", url, exc)
             return 0, False
+        finally:
+            with suppress(Exception):
+                page.close()
+
+    def fetch_content_length(self, url: str) -> int | None:
+        """
+        Return Content-Length for a URL via Playwright when the server reports it.
+
+        Args:
+            url: File URL to probe.
+
+        Returns:
+            Size in bytes, or None when unavailable.
+        """
+        if not self._ensure_browser():
+            return None
+        page = self._session.new_page()
+        if page is None:
+            return None
+        try:
+            response = page.request.head(url, timeout=_CONTENT_LENGTH_TIMEOUT_MS)
+            if not response.ok:
+                return None
+            content_length = response.headers.get("content-length")
+            if not content_length:
+                return None
+            return int(content_length)
+        except (TypeError, ValueError, OSError) as exc:
+            Logger.debug("Content-Length probe failed for %s: %s", url, exc)
+            return None
         finally:
             with suppress(Exception):
                 page.close()

@@ -14,6 +14,7 @@ from utils.collector_status import (
     download_budget_exhausted,
     large_file_skip_note,
     merge_result_to_storage,
+    pending_download_summary_note,
     resolve_inventory_collected_status,
     resolve_standard_collected_status,
     would_exceed_download_budget,
@@ -35,6 +36,28 @@ class TestCollectorStatus(unittest.TestCase):
         note = deferred_download_skip_note("readme.txt", "https://example.com/readme.txt")
         self.assertIn("readme.txt", note)
         self.assertNotIn("readme.txt (", note)
+
+    def test_deferred_download_skip_note_with_size(self) -> None:
+        """Deferred notes include size when known."""
+        note = deferred_download_skip_note(
+            "readme.txt",
+            "https://example.com/readme.txt",
+            2048,
+        )
+        self.assertIn("readme.txt", note)
+        self.assertIn("2.0 KB", note)
+
+    def test_pending_download_summary_note(self) -> None:
+        """Pending summary reports count and remaining bytes."""
+        note = pending_download_summary_note(2, 3 * 1024**2)
+        self.assertIn("2 file(s)", note)
+        self.assertIn("3.0 MB", note)
+        self.assertIn("not yet downloaded", note)
+
+    def test_pending_download_summary_note_unknown_sizes(self) -> None:
+        """Pending summary notes when some sizes are unknown."""
+        note = pending_download_summary_note(2, 1024, has_unknown_sizes=True)
+        self.assertIn("some sizes unknown", note)
 
     def test_would_exceed_download_budget(self) -> None:
         """Cumulative budget blocks downloads that would exceed 1 GB."""
