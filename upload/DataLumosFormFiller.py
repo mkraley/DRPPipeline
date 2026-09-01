@@ -11,7 +11,9 @@ from typing import List, Optional, TYPE_CHECKING
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from utils.Logger import Logger
+from utils.datalumos_data_types import normalize_datalumos_data_types
 from utils.summary_html import prepare_summary_for_datalumos_upload
+from utils.temporal_utils import format_date_for_datalumos_upload
 from utils.title_utils import normalize_inventory_title
 
 if TYPE_CHECKING:
@@ -346,7 +348,11 @@ class DataLumosFormFiller:
         if _is_empty(start) and _is_empty(end):
             return
 
-        _debug_form_field("time_period", f"start={start!r} end={end!r}")
+        _debug_form_field(
+            "time_period",
+            f"start={format_date_for_datalumos_upload(start)!r} "
+            f"end={format_date_for_datalumos_upload(end)!r}",
+        )
 
         add_btn = self._page.locator(
             "#groupAttr1 > div:nth-child(1) > div:nth-child(3) > div:nth-child(1) > "
@@ -359,12 +365,12 @@ class DataLumosFormFiller:
         start_input = self._page.locator("#startDate")
         start_input.wait_for(state="visible", timeout=50000)
         self.wait_for_obscuring_elements()
-        start_input.fill(start or "")
+        start_input.fill(format_date_for_datalumos_upload(start))
         
         end_input = self._page.locator("#endDate")
         end_input.wait_for(state="visible", timeout=50000)
         self.wait_for_obscuring_elements()
-        end_input.fill(end or "")
+        end_input.fill(format_date_for_datalumos_upload(end))
         
         save_btn = self._page.locator(".save-dates")
         save_btn.wait_for(state="visible", timeout=50000)
@@ -388,13 +394,14 @@ class DataLumosFormFiller:
 
         ``data_type`` may be a single label or several labels separated by semicolons.
         After clicking edit, an editable-checklist appears with label+span options.
-        Clicks each label (not span) scoped to the checklist, then saves once.
+        Clicks each label scoped to the kindOfData field, then saves within that block.
         """
-        if _is_empty(data_type):
-            return
-
-        data_types = [part.strip() for part in re.split(r"\s*;\s*", data_type) if part.strip()]
+        data_types = normalize_datalumos_data_types(data_type)
         if not data_types:
+            if not _is_empty(data_type):
+                self._warn(
+                    f"Could not map data_types to DataLumos labels: {data_type!r}"
+                )
             return
 
         _debug_form_field("data_types (kindOfData)", "; ".join(data_types))
@@ -404,16 +411,50 @@ class DataLumosFormFiller:
         edit_btn.click()
         self.wait_for_obscuring_elements()
 
-        for label in data_types:
-            # Double-quote wrapper handles apostrophes; escape any internal double quotes
-            safe = label.replace('"', '\\"')
-            datatype_label = self._page.locator(
-                f'.editable-checklist label:has(span:has-text("{safe}"))'
-            )
-            datatype_label.click()
+        container = self._kind_of_data_edit_container()
+        checklist = container.locator(".editable-checklist")
+        checklist.wait_for(state="visible", timeout=50000)
 
-        save_btn = self._page.locator(".editable-submit")
+        for label in data_types:
+            self._select_data_type_option(checklist, label)
+
+        save_btn = container.locator("button.editable-submit")
+        save_btn.wait_for(state="visible", timeout=50000)
+        self.wait_for_obscuring_elements()
         save_btn.click()
+        self.wait_for_obscuring_elements()
+
+    def _kind_of_data_edit_container(self):
+        """Return the editable container for the open kindOfData checklist."""
+        container = self._page.locator(
+            ".editable-container:has(.editable-checklist)"
+        ).last
+        container.wait_for(state="visible", timeout=50000)
+        return container
+
+    def _select_data_type_option(self, checklist, label: str) -> None:
+        """
+        Select one kindOfData checklist option by its visible label text.
+
+        DataLumos renders each option as ``label > span``; clicking the label
+        toggles the checkbox. Falls back to ``check(force=True)`` when needed.
+        """
+        safe = label.replace("\\", "\\\\").replace('"', '\\"')
+        option_label = checklist.locator(
+            f'label:has(span:has-text("{safe}"))'
+        ).first
+        option_label.wait_for(state="visible", timeout=50000)
+        self.wait_for_obscuring_elements()
+        option_label.scroll_into_view_if_needed()
+        option_label.click()
+
+        checkbox = option_label.locator('input[type="checkbox"]')
+        if checkbox.count() > 0:
+            try:
+                if not checkbox.is_checked():
+                    checkbox.check(force=True)
+            except PlaywrightTimeoutError:
+                self._warn(f"Could not verify data type checkbox for {label!r}")
     
     def fill_collection_notes(self, notes: str, download_date: Optional[str] = None) -> None:
         """Fill the collection notes field, optionally appending download date."""

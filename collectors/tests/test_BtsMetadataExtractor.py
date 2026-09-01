@@ -13,6 +13,7 @@ from collectors.BtsMetadataExtractor import (
     _abstract_text,
     _temporal_range,
 )
+from utils.datalumos_data_types import DATA_TYPE_GIS, DATA_TYPE_OBSERVATIONAL
 from bs4 import BeautifulSoup
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "bts_detail_54854.html"
@@ -46,7 +47,7 @@ class TestBtsMetadataExtractor(unittest.TestCase):
         self.assertEqual(metadata["geographic_coverage"], "United States")
         self.assertIn("DOI:", metadata["collection_notes"])
         self.assertEqual(metadata["agency"], "Bureau of Transportation Statistics")
-        self.assertIn("GIS", metadata["data_types"])
+        self.assertIn(DATA_TYPE_GIS, metadata["data_types"])
 
     def test_abstract_preserves_paragraph_breaks(self) -> None:
         """Abstract text keeps paragraph breaks from ``<br/>`` separators."""
@@ -117,12 +118,17 @@ class TestBtsMetadataExtractor(unittest.TestCase):
             "Geographic Information Systems",
             "ZIP",
         )
-        self.assertEqual(result, "GIS")
+        self.assertEqual(result, DATA_TYPE_GIS)
 
     def test_infer_data_types_uses_archive_extensions(self) -> None:
         """Shapefile extensions inside archives infer GIS data type."""
         result = infer_data_types("", "", "", "ZIP", file_extensions={"shp", "dbf"})
-        self.assertEqual(result, "GIS")
+        self.assertEqual(result, DATA_TYPE_GIS)
+
+    def test_infer_data_types_maps_tabular_to_observational(self) -> None:
+        """Tabular signals map to the observational DataLumos label."""
+        result = infer_data_types("County statistics", "spreadsheet export", "", "CSV")
+        self.assertEqual(result, DATA_TYPE_OBSERVATIONAL)
 
 
 if __name__ == "__main__":

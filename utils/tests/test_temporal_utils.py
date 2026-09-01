@@ -5,6 +5,7 @@ from __future__ import annotations
 from utils.temporal_utils import (
     apply_temporal_inference,
     extract_dates_from_text,
+    format_date_for_datalumos_upload,
     infer_time_end_from_filenames,
     merge_and_pair_time_updates,
     pair_time_fields,
@@ -67,3 +68,9 @@ class TestTemporalUtils:
             {"time_end": ""},
         )
         assert paired == {"time_start": "2020", "time_end": "2020"}
+
+    def test_format_date_for_datalumos_upload_january_first(self) -> None:
+        """January 1 dates upload as year-only values."""
+        assert format_date_for_datalumos_upload("2024-01-01") == "2024"
+        assert format_date_for_datalumos_upload("2010-05-01") == "2010-05-01"
+        assert format_date_for_datalumos_upload("2020") == "2020"

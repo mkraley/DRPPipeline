@@ -245,18 +245,37 @@ class TestDataLumosFormFiller(unittest.TestCase):
     def test_fill_data_types_selects_multiple(self) -> None:
         """Test fill_data_types selects each semicolon-delimited checklist option."""
         mock_edit = MagicMock()
+        mock_container = MagicMock()
+        mock_checklist = MagicMock()
         mock_save = MagicMock()
-        mock_labels = [MagicMock(), MagicMock()]
+        mock_option_one = MagicMock()
+        mock_option_two = MagicMock()
+        mock_checkbox = MagicMock()
+        mock_checkbox.count.return_value = 0
+
+        def checklist_locator_side_effect(selector: str) -> MagicMock:
+            if "Observational data" in selector:
+                return mock_option_one
+            if "Geographic information system (GIS) data" in selector:
+                return mock_option_two
+            return MagicMock()
+
+        mock_option_one.first = mock_option_one
+        mock_option_two.first = mock_option_two
+        mock_option_one.locator.return_value = mock_checkbox
+        mock_option_two.locator.return_value = mock_checkbox
+        mock_checklist.locator.side_effect = checklist_locator_side_effect
+        mock_container.locator.side_effect = lambda selector: {
+            ".editable-checklist": mock_checklist,
+            "button.editable-submit": mock_save,
+        }[selector]
+        mock_container.last = mock_container
 
         def locator_side_effect(selector: str) -> MagicMock:
-            if "#disco_kindOfData_0" in selector:
+            if selector == "#disco_kindOfData_0 > span:nth-child(2)":
                 return mock_edit
-            if "editable-submit" in selector:
-                return mock_save
-            if "Observational data" in selector:
-                return mock_labels[0]
-            if "Geographic information system (GIS) data" in selector:
-                return mock_labels[1]
+            if ".editable-container:has(.editable-checklist)" in selector:
+                return mock_container
             return MagicMock()
 
         self.mock_page.locator.side_effect = locator_side_effect
@@ -267,9 +286,71 @@ class TestDataLumosFormFiller(unittest.TestCase):
             )
 
         mock_edit.click.assert_called_once()
-        mock_labels[0].click.assert_called_once()
-        mock_labels[1].click.assert_called_once()
+        mock_option_one.click.assert_called_once()
+        mock_option_two.click.assert_called_once()
         mock_save.click.assert_called_once()
+
+    def test_fill_data_types_normalizes_short_aliases(self) -> None:
+        """Short collector aliases are normalized before checklist selection."""
+        mock_edit = MagicMock()
+        mock_container = MagicMock()
+        mock_checklist = MagicMock()
+        mock_save = MagicMock()
+        mock_option = MagicMock()
+        mock_checkbox = MagicMock()
+        mock_checkbox.count.return_value = 0
+
+        mock_option.first = mock_option
+        mock_option.locator.return_value = mock_checkbox
+        mock_checklist.locator.return_value = mock_option
+        mock_container.locator.side_effect = lambda selector: {
+            ".editable-checklist": mock_checklist,
+            "button.editable-submit": mock_save,
+        }[selector]
+        mock_container.last = mock_container
+
+        def locator_side_effect(selector: str) -> MagicMock:
+            if selector == "#disco_kindOfData_0 > span:nth-child(2)":
+                return mock_edit
+            if ".editable-container:has(.editable-checklist)" in selector:
+                return mock_container
+            return MagicMock()
+
+        self.mock_page.locator.side_effect = locator_side_effect
+
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
+            self.form_filler.fill_data_types("GIS")
+
+        mock_checklist.locator.assert_called()
+        called_selector = mock_checklist.locator.call_args[0][0]
+        self.assertIn("Geographic information system (GIS) data", called_selector)
+        mock_option.click.assert_called_once()
+        mock_save.click.assert_called_once()
+
+    def test_fill_time_period_formats_january_first_as_year(self) -> None:
+        """January 1 dates are entered as year-only values in DataLumos."""
+        mock_add = MagicMock()
+        mock_start = MagicMock()
+        mock_end = MagicMock()
+        mock_save = MagicMock()
+
+        def locator_side_effect(selector: str) -> MagicMock:
+            if selector == "#startDate":
+                return mock_start
+            if selector == "#endDate":
+                return mock_end
+            if selector == ".save-dates":
+                return mock_save
+            return mock_add
+
+        self.mock_page.locator.side_effect = locator_side_effect
+
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
+            with unittest.mock.patch.object(self.form_filler._page.keyboard, "press"):
+                self.form_filler.fill_time_period("2004-01-01", "2026-01-01")
+
+        mock_start.fill.assert_called_once_with("2004")
+        mock_end.fill.assert_called_once_with("2026")
 
     def test_fill_collection_notes_skips_empty(self) -> None:
         """Test fill_collection_notes returns early when both empty."""

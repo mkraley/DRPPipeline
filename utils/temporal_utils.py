@@ -170,6 +170,30 @@ def merge_and_pair_time_updates(
     return pair_time_fields(str(start), str(end))
 
 
+_JANUARY_FIRST_RE = re.compile(r"^(\d{4})-01-01$")
+
+
+def format_date_for_datalumos_upload(value: str | None) -> str:
+    """
+    Format a stored temporal value for DataLumos upload controls.
+
+    January 1 placeholder dates are entered as year-only values.
+
+    Args:
+        value: Stored ``time_start`` or ``time_end`` value.
+
+    Returns:
+        Value suitable for the DataLumos time period form fields.
+    """
+    if not value:
+        return ""
+    raw = value.strip()
+    january_first = _JANUARY_FIRST_RE.match(raw)
+    if january_first:
+        return january_first.group(1)
+    return raw
+
+
 def _append_date(found: list[str], seen: set[str], raw: str) -> None:
     """Append a normalized date when it has not already been recorded."""
     normalized = normalize_temporal_date(raw)

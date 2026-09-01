@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup, Tag
 
 from collectors.UsfsMetadataExtractor import parse_human_size
 from sourcing.BtsCandidateFetcher import AGENCY, OFFICE
+from utils.datalumos_data_types import DATA_TYPE_GIS, DATA_TYPE_OBSERVATIONAL
 from utils.temporal_utils import pair_time_fields
 
 _BTS_HOST = "rosap.ntl.bts.gov"
@@ -207,15 +208,13 @@ def infer_data_types(
         {"shp", "shx", "dbf", "prj", "gpkg", "geojson", "kml", "kmz", "tif", "tiff"}
     )
     if any(term in blob for term in gis_terms) or normalized_exts & gis_extensions:
-        types.append("GIS")
+        types.append(DATA_TYPE_GIS)
     tabular_terms = ("tabular", "spreadsheet", "database", "databases")
     tabular_extensions = frozenset(
         {"csv", "xlsx", "xls", "tsv", "dta", "sas7bdat", "parquet", "json"}
     )
     if any(term in blob for term in tabular_terms) or normalized_exts & tabular_extensions:
-        types.append("tabular")
-    if not types and format_label.upper() == "ZIP":
-        types.append("other")
+        types.append(DATA_TYPE_OBSERVATIONAL)
     return "; ".join(types)
 
 
