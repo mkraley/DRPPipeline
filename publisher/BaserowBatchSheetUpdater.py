@@ -100,9 +100,11 @@ class BaserowBatchSheetUpdater(InventorySheetUpdaterBase):
             google_username=getattr(Args, "google_username", None),
         )
 
-    def _write_metadata_available(self) -> bool:
-        """Return whether publish updates should set Metadata available to yes."""
-        return bool(getattr(Args, "default_metadata_available", True))
+    def _metadata_available_value(self) -> str:
+        """Return ``yes`` or ``no`` for the Metadata available column on publish."""
+        if getattr(Args, "default_metadata_available", True):
+            return "yes"
+        return "no"
 
     def _resolve_metadata_for_row(
         self,
@@ -230,10 +232,10 @@ class BaserowBatchSheetUpdater(InventorySheetUpdaterBase):
         maintainers = (getattr(Args, "baserow_maintainers", None) or "DRP,DL").strip()
         self._append_cell(requests, sheet_name, row_number, column_map, "Maintainers", maintainers)
 
-        if self._write_metadata_available() and column_map.get("Metadata available"):
+        if column_map.get("Metadata available"):
             requests.append({
                 "range": f"{sheet_name}!{column_map['Metadata available']}{row_number}",
-                "values": [["yes"]],
+                "values": [[self._metadata_available_value()]],
             })
 
         if column_map.get("Nominated to EOT"):

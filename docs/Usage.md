@@ -361,7 +361,7 @@ If the config file does not exist, a warning is shown but the pipeline continues
 | `inventory_sheet_format` | — | yes | `data_inventories` | Sheet column layout: `data_inventories` (shared inventory tabs) or `baserow_batch` (Baserow batch import template) |
 | `baserow_maintainers` | — | yes | `DRP,DL` | Maintainers column value when `inventory_sheet_format` is `baserow_batch` |
 | `baserow_contact` | — | yes | — | Contact column email for `baserow_batch` (falls back to `google_username`) |
-| `default_metadata_available` | — | yes | `true` | When true, publish writes `yes` to Metadata available; set false for BTS |
+| `default_metadata_available` | — | yes | `true` | Publish writes `yes` to Metadata available when true, `no` when false |
 | `google_username` | — | yes | `mkraley` | Value for "Claimed" column in inventory |
 
 **Config-only:** Parameters without a CLI column can only be set in the config file (or use defaults).

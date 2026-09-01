@@ -187,6 +187,28 @@ class TestDataLumosFileUploader(unittest.TestCase):
         ):
             self.assertTrue(uploader._has_batch_upload_status(use_zip=False))
 
+    def test_wait_until_queued_count_logs_upload_progress(self) -> None:
+        """Per-file wait logs uploading file N of M with formatted size."""
+        uploader = DataLumosFileUploader(MagicMock(), upload_wait_timeout=2000)
+        with unittest.mock.patch.object(uploader, "_wait_for_obscuring_elements"), \
+             unittest.mock.patch.object(
+                 uploader, "_per_file_queue_signal_count", return_value=1
+             ), \
+             unittest.mock.patch.object(uploader._page, "wait_for_timeout"), \
+             unittest.mock.patch("upload.DataLumosFileUploader.Logger") as mock_logger:
+            uploader._wait_until_queued_count(
+                use_zip=False,
+                expected=1,
+                total_files=6,
+                file_size_bytes=1024 * 1024,
+            )
+        mock_logger.info.assert_any_call(
+            "uploading file %s of %s (%s)",
+            1,
+            6,
+            "1.0 MB",
+        )
+
     def test_wait_until_queued_count_accepts_batch_processing_message(self) -> None:
         uploader = DataLumosFileUploader(MagicMock(), upload_wait_timeout=2000)
         with unittest.mock.patch.object(uploader, "_wait_for_obscuring_elements"), \

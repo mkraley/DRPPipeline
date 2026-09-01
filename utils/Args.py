@@ -129,7 +129,7 @@ class Args(metaclass=ArgsMeta):
         "inventory_sheet_format": "data_inventories",  # data_inventories | baserow_batch
         "baserow_maintainers": "DRP,DL",  # Baserow Maintainers column on successful publish
         "baserow_contact": None,  # Baserow Contact column (email); falls back to google_username
-        "default_metadata_available": True,  # Write "yes" to Metadata available on publish
+        "default_metadata_available": True,  # Metadata available column: yes when true, no when false
         # PEM file path: optional; use behind TLS inspection when Google API fails SSL verify
         "ssl_ca_bundle": None,
         "google_username": "mkraley",  # Value for "Claimed" column

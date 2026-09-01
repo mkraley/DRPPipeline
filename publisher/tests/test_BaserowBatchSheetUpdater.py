@@ -102,8 +102,8 @@ class TestBaserowBatchSheetUpdater(unittest.TestCase):
         self.assertEqual(values_by_col["M"], "yes")
         self.assertEqual(values_by_col["N"], "mike@kraley.com")
 
-    def test_build_update_requests_skips_metadata_when_disabled(self) -> None:
-        """Metadata available is omitted when default_metadata_available is False."""
+    def test_build_update_requests_writes_no_metadata_when_disabled(self) -> None:
+        """Metadata available is no when default_metadata_available is False."""
         Args._config["default_metadata_available"] = False
         updater = BaserowBatchSheetUpdater()
         column_map = {
@@ -116,9 +116,9 @@ class TestBaserowBatchSheetUpdater(unittest.TestCase):
             "BTS", 2, column_map, "1", project, "mkraley"
         )
         metadata_writes = [
-            r for r in requests if r.get("values") == [["yes"]] and "L2" in r.get("range", "")
+            r for r in requests if "L2" in r.get("range", "")
         ]
-        self.assertEqual(metadata_writes, [])
+        self.assertEqual(metadata_writes[0]["values"], [["no"]])
 
     def test_build_sheet_only_requests_writes_notes(self) -> None:
         """Sheet-only paths write Notes like the data inventories updater."""
