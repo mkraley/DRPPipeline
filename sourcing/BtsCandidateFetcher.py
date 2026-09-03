@@ -16,8 +16,8 @@ from sourcing.BtsCatalogClient import BtsCatalogClient
 from utils.Args import Args
 from utils.Logger import Logger
 
-AGENCY = "Bureau of Transportation Statistics"
-OFFICE = "Department of Transportation"
+AGENCY = "Department of Transportation"
+OFFICE = "Bureau of Transportation Statistics"
 VIEW_URL_RE = re.compile(r"/view/dot/(\d+)/?$")
 DEFAULT_CATALOG_URL = (
     "https://rosap.ntl.bts.gov/cbrowse"

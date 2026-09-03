@@ -7,6 +7,10 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 from utils.file_utils import parse_file_size_to_bytes
+from utils.title_utils import normalize_inventory_title
+
+BASEROW_TITLE_MAX_LENGTH = 255
+_URL_COLON_PLACEHOLDER = "\x00URLCOLON\x00"
 
 
 def website_from_source_url(source_url: str) -> str:
@@ -28,15 +32,80 @@ def website_from_source_url(source_url: str) -> str:
     return host
 
 
+def replace_colons_in_baserow_title(title: str) -> str:
+    """
+    Replace colons in a Baserow dataset title with em dashes or hyphens.
+
+    Subtitle separators (``: ``) become an em dash. Remaining colons become
+    `` - ``, except URL schemes (``://``) which are left unchanged.
+
+    Args:
+        title: Title after catalog-suffix normalization.
+
+    Returns:
+        Title with colons replaced.
+    """
+    text = (title or "").strip()
+    if not text or ":" not in text:
+        return text
+    text = text.replace("://", _URL_COLON_PLACEHOLDER)
+    text = text.replace(": ", " — ")
+    text = text.replace(":", " - ")
+    text = text.replace(_URL_COLON_PLACEHOLDER, "://")
+    return " ".join(text.split())
+
+
+def _truncate_baserow_title(text: str, max_len: int) -> str:
+    """Truncate ``text`` at a word or punctuation boundary when longer than ``max_len``."""
+    if len(text) <= max_len:
+        return text
+    window = text[:max_len]
+    min_keep = int(max_len * 0.6)
+    for sep in (" — ", " – ", " - ", ", ", "; ", " "):
+        idx = window.rfind(sep)
+        if idx >= min_keep:
+            return window[:idx].rstrip(" ,;:-—–")
+    return window.rstrip()
+
+
+def format_baserow_dataset_title(title: str) -> tuple[str, str]:
+    """
+    Prepare a title for the Baserow ``Title for Datasets table`` column.
+
+    Applies catalog-suffix stripping, colon replacement, and a 255-character
+    limit. When truncated, the second return value is a note containing the
+    full original title for ``Notes for Datasets Table``.
+
+    Args:
+        title: Raw title from storage or the inventory sheet.
+
+    Returns:
+        ``(formatted_title, truncation_note)``. The note is empty when the
+        formatted title was not truncated.
+    """
+    original = normalize_inventory_title(title)
+    if not original:
+        return "", ""
+    formatted = replace_colons_in_baserow_title(original)
+    if len(formatted) <= BASEROW_TITLE_MAX_LENGTH:
+        return formatted, ""
+    truncated = _truncate_baserow_title(formatted, BASEROW_TITLE_MAX_LENGTH)
+    note = (
+        f"Full original title (truncated to {BASEROW_TITLE_MAX_LENGTH} "
+        f"characters): {original}"
+    )
+    return truncated, note
+
+
 def format_baserow_backup_title(title: str) -> str:
     """
     Format a dataset title for the Baserow Backups ``Dataset`` column.
 
-    Titles containing a comma or forward slash are wrapped in double quotes so
-    batch import matches the Datasets table name.
+    Copies the Datasets title. Titles containing a comma or forward slash are
+    wrapped in double quotes so batch import matches the Datasets table name.
 
     Args:
-        title: Normalized dataset title.
+        title: Formatted Datasets-table title (not yet quoted).
 
     Returns:
         Title safe for the Backups import column.
@@ -44,6 +113,8 @@ def format_baserow_backup_title(title: str) -> str:
     text = (title or "").strip()
     if not text:
         return ""
+    if text.startswith('"') and text.endswith('"'):
+        return text
     if "," in text or "/" in text:
         return f'"{text}"'
     return text
@@ -57,12 +128,12 @@ def format_baserow_file_extensions(extensions: str) -> str:
         extensions: Comma- or space-separated extensions from storage.
 
     Returns:
-        Lowercase extensions joined by commas without spaces.
+        Uppercase extensions joined by commas without spaces.
     """
     raw = (extensions or "").replace(",", " ")
     tokens: list[str] = []
     for part in raw.split():
-        token = part.strip().lstrip(".").lower()
+        token = part.strip().lstrip(".").upper()
         if token and token not in tokens:
             tokens.append(token)
     return ",".join(tokens)

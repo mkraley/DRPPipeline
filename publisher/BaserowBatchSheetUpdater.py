@@ -14,6 +14,7 @@ from utils.baserow_sheet_utils import (
     baserow_contact_value,
     baserow_organization,
     format_baserow_backup_title,
+    format_baserow_dataset_title,
     format_baserow_file_extensions,
     format_dataset_size_gb_jedec,
     website_from_source_url,
@@ -43,6 +44,7 @@ _OPTIONAL_COLUMNS = [
     "Metadata available",
     "Metadata URL",
     "Notes",
+    "Notes for Datasets Table",
     "Nominated to EOT",
     "Contact",
     "Admin notes",
@@ -72,6 +74,7 @@ class BaserowBatchSheetUpdater(InventorySheetUpdaterBase):
     def _optional_columns_sheet_only(self) -> List[str]:
         return [
             "Notes",
+            "Notes for Datasets Table",
             "Title for Datasets table",
             "Title for Backups table",
             "Organization",
@@ -361,7 +364,7 @@ class BaserowBatchSheetUpdater(InventorySheetUpdaterBase):
         office_to_write: str,
     ) -> None:
         """Append title, organization, agency, and website cells for Baserow format."""
-        title = normalize_inventory_title(title_to_write)
+        title, truncation_note = format_baserow_dataset_title(title_to_write)
         if title:
             self._append_cell(
                 requests,
@@ -379,6 +382,14 @@ class BaserowBatchSheetUpdater(InventorySheetUpdaterBase):
                 column_map,
                 "Title for Backups table",
                 backup_title,
+            )
+            self._append_cell(
+                requests,
+                sheet_name,
+                row_number,
+                column_map,
+                "Notes for Datasets Table",
+                truncation_note,
             )
 
         agency = (agency_to_write or "").strip()

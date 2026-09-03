@@ -35,8 +35,39 @@ class TestBaserowSheetUtils(unittest.TestCase):
         self.assertEqual(format_baserow_backup_title("Plain title"), "Plain title")
 
     def test_format_baserow_file_extensions(self) -> None:
-        """Extensions become lowercase comma-separated tokens without spaces."""
-        self.assertEqual(format_baserow_file_extensions("csv, zip PDF"), "csv,zip,pdf")
+        """Extensions become uppercase comma-separated tokens without spaces."""
+        self.assertEqual(format_baserow_file_extensions("csv, zip PDF"), "CSV,ZIP,PDF")
+
+    def test_replace_colons_preserves_url_scheme(self) -> None:
+        """URL schemes keep their colons."""
+        from utils.baserow_sheet_utils import replace_colons_in_baserow_title
+
+        self.assertEqual(
+            replace_colons_in_baserow_title("See https://example.com: docs"),
+            "See https://example.com — docs",
+        )
+
+    def test_format_baserow_dataset_title_truncates_and_notes(self) -> None:
+        """Titles over 255 characters are cut at a logical point with a note."""
+        from utils.baserow_sheet_utils import (
+            BASEROW_TITLE_MAX_LENGTH,
+            format_baserow_dataset_title,
+        )
+
+        original = ("Word " * 60).strip()
+        self.assertGreater(len(original), BASEROW_TITLE_MAX_LENGTH)
+        formatted, note = format_baserow_dataset_title(original)
+        self.assertLessEqual(len(formatted), BASEROW_TITLE_MAX_LENGTH)
+        self.assertTrue(formatted)
+        self.assertIn(original, note)
+        self.assertIn("truncated", note.lower())
+
+    def test_format_baserow_backup_title_quotes_slash(self) -> None:
+        """Titles with a forward slash are wrapped in double quotes."""
+        self.assertEqual(
+            format_baserow_backup_title("City/Airport Nomenclature"),
+            '"City/Airport Nomenclature"',
+        )
 
     def test_format_dataset_size_gb_jedec(self) -> None:
         """Byte counts convert to floating-point binary GB."""

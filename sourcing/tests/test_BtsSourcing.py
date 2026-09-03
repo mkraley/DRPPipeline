@@ -16,8 +16,8 @@ from utils.Logger import Logger
 SAMPLE_ROW = {
     "url": "https://rosap.ntl.bts.gov/view/dot/92758",
     "title": "Example Dataset",
-    "agency": "Bureau of Transportation Statistics",
-    "office": "Department of Transportation",
+    "agency": "Department of Transportation",
+    "office": "Bureau of Transportation Statistics",
     "record_id": "92758",
 }
 
@@ -60,8 +60,8 @@ class TestBtsSourcing(unittest.TestCase):
         projects = self.storage.list_eligible_projects("sourced", None)
         self.assertEqual(len(projects), 1)
         self.assertEqual(projects[0]["title"], "Example Dataset")
-        self.assertEqual(projects[0]["agency"], "Bureau of Transportation Statistics")
-        self.assertEqual(projects[0]["office"], "Department of Transportation")
+        self.assertEqual(projects[0]["agency"], "Department of Transportation")
+        self.assertEqual(projects[0]["office"], "Bureau of Transportation Statistics")
         self.assertIsNone(projects[0].get("summary"))
         self.assertIsNone(projects[0].get("num_files"))
         self.assertIsNone(projects[0].get("file_size"))

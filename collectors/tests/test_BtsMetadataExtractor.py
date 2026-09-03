@@ -46,7 +46,8 @@ class TestBtsMetadataExtractor(unittest.TestCase):
         self.assertEqual(metadata["time_end"], "2026-01-01")
         self.assertEqual(metadata["geographic_coverage"], "United States")
         self.assertIn("DOI:", metadata["collection_notes"])
-        self.assertEqual(metadata["agency"], "Bureau of Transportation Statistics")
+        self.assertEqual(metadata["agency"], "Department of Transportation")
+        self.assertEqual(metadata["office"], "Bureau of Transportation Statistics")
         self.assertIn(DATA_TYPE_GIS, metadata["data_types"])
 
     def test_abstract_preserves_paragraph_breaks(self) -> None:

@@ -96,7 +96,7 @@ class TestBaserowBatchSheetUpdater(unittest.TestCase):
             DOWNLOAD_LOCATION_TEMPLATE.format(workspace_id="239181", version="V1"),
         )
         self.assertEqual(values_by_col["I"], "1.0")
-        self.assertEqual(values_by_col["J"], "csv,zip")
+        self.assertEqual(values_by_col["J"], "CSV,ZIP")
         self.assertEqual(values_by_col["K"], "DRP,DL")
         self.assertEqual(values_by_col["L"], "yes")
         self.assertEqual(values_by_col["M"], "yes")
@@ -140,7 +140,7 @@ class TestBaserowBatchSheetUpdater(unittest.TestCase):
         self.assertEqual(contact_writes, [])
 
     def test_build_update_requests_quotes_backup_title(self) -> None:
-        """Backup title column quotes titles with commas."""
+        """Backup title column quotes titles with commas; dataset title is unquoted."""
         updater = BaserowBatchSheetUpdater()
         column_map = {
             "Title for Datasets table": "B",
@@ -156,8 +156,59 @@ class TestBaserowBatchSheetUpdater(unittest.TestCase):
             "u",
             title_to_write="Part A, Part B",
         )
-        backup = [r for r in requests if "C2" in r.get("range", "")]
-        self.assertEqual(backup[0]["values"], [['"Part A, Part B"']])
+        values_by_col = {}
+        for req in requests:
+            letter = req["range"].split("!")[1][0]
+            values_by_col[letter] = req["values"][0][0]
+        self.assertEqual(values_by_col["B"], "Part A, Part B")
+        self.assertEqual(values_by_col["C"], '"Part A, Part B"')
+
+    def test_build_update_requests_replaces_title_colons(self) -> None:
+        """Dataset titles replace colon-space with an em dash."""
+        updater = BaserowBatchSheetUpdater()
+        column_map = {
+            "Title for Datasets table": "B",
+            "Title for Backups table": "C",
+        }
+        project = {"source_url": "https://example.com/x", "file_size": "1"}
+        requests = updater._build_update_requests(
+            "BTS",
+            2,
+            column_map,
+            "1",
+            project,
+            "u",
+            title_to_write="National Transportation Atlas Databases: 2003",
+        )
+        values_by_col = {}
+        for req in requests:
+            letter = req["range"].split("!")[1][0]
+            values_by_col[letter] = req["values"][0][0]
+        expected = "National Transportation Atlas Databases — 2003"
+        self.assertEqual(values_by_col["B"], expected)
+        self.assertEqual(values_by_col["C"], expected)
+
+    def test_build_update_requests_writes_truncation_note(self) -> None:
+        """Over-length titles write the original into Notes for Datasets Table."""
+        updater = BaserowBatchSheetUpdater()
+        column_map = {
+            "Title for Datasets table": "B",
+            "Notes for Datasets Table": "Z",
+        }
+        long_title = ("Word " * 60).strip()
+        project = {"source_url": "https://example.com/x", "file_size": "1"}
+        requests = updater._build_update_requests(
+            "BTS",
+            2,
+            column_map,
+            "1",
+            project,
+            "u",
+            title_to_write=long_title,
+        )
+        notes = [r for r in requests if "Z2" in r.get("range", "")]
+        self.assertEqual(len(notes), 1)
+        self.assertIn(long_title, notes[0]["values"][0][0])
 
     @skip_if_no_google
     @patch("publisher.inventory_sheet_updater_base.build_sheets_v4_service")
