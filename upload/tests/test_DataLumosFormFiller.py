@@ -10,10 +10,13 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from utils.Args import Args
 from utils.Logger import Logger
+from utils.title_utils import (
+    prepare_datalumos_title,
+    truncate_title_for_datalumos,
+)
 from upload.DataLumosFormFiller import (
     DataLumosFormFiller,
     _is_empty,
-    truncate_title_for_datalumos,
 )
 
 
@@ -144,6 +147,73 @@ class TestDataLumosFormFiller(unittest.TestCase):
         mock_title.fill.assert_called_once_with("Test Project")
         mock_save_apply.click.assert_called_once()
         mock_continue.click.assert_called_once()
+
+    def test_prepare_datalumos_title_replaces_colons(self) -> None:
+        """prepare_datalumos_title applies colon→em dash before DL truncation."""
+        self.assertEqual(
+            prepare_datalumos_title("Atlas Databases: 2003"),
+            "Atlas Databases — 2003",
+        )
+
+    def test_update_project_title_skips_when_unchanged(self) -> None:
+        """update_project_title does not click Save when the field matches."""
+        mock_title = MagicMock()
+        mock_title.input_value.return_value = "Atlas Databases — 2003"
+        mock_edit = MagicMock()
+
+        def locator_side_effect(*args: object, **kwargs: object) -> MagicMock:
+            selector = args[0] if args else ""
+            if isinstance(selector, str) and "input#title" in selector:
+                return mock_title
+            if kwargs.get("has_text") == "Edit Project Header" or (
+                len(args) >= 1 and args[0] == "span"
+            ):
+                mock_edit.first = mock_edit
+                return mock_edit
+            return MagicMock()
+
+        self.mock_page.locator.side_effect = locator_side_effect
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
+            written, changed = self.form_filler.update_project_title(
+                "Atlas Databases: 2003"
+            )
+
+        self.assertEqual(written, "Atlas Databases — 2003")
+        self.assertFalse(changed)
+        mock_edit.click.assert_called_once()
+        mock_title.fill.assert_not_called()
+
+    def test_update_project_title_saves_when_changed(self) -> None:
+        """update_project_title opens header editor, fills, and Save & Apply."""
+        mock_title = MagicMock()
+        mock_title.input_value.return_value = "Atlas Databases: 2003"
+        mock_edit = MagicMock()
+        mock_save = MagicMock()
+
+        def locator_side_effect(*args: object, **kwargs: object) -> MagicMock:
+            selector = args[0] if args else ""
+            if isinstance(selector, str) and "input#title" in selector:
+                return mock_title
+            if isinstance(selector, str) and "button.save-project" in selector:
+                return mock_save
+            if kwargs.get("has_text") == "Edit Project Header" or (
+                len(args) >= 1 and args[0] == "span"
+            ):
+                mock_edit.first = mock_edit
+                return mock_edit
+            return MagicMock()
+
+        self.mock_page.locator.side_effect = locator_side_effect
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
+            written, changed = self.form_filler.update_project_title(
+                "Atlas Databases: 2003"
+            )
+
+        self.assertEqual(written, "Atlas Databases — 2003")
+        self.assertTrue(changed)
+        mock_edit.click.assert_called_once()
+        mock_title.fill.assert_called_once_with("Atlas Databases — 2003")
+        mock_save.click.assert_called_once()
 
     def test_fill_agency_skips_empty(self) -> None:
         """Test fill_agency skips empty values."""

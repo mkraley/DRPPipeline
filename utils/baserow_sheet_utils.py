@@ -74,7 +74,7 @@ def format_baserow_dataset_title(title: str) -> tuple[str, str]:
 
     Applies catalog-suffix stripping, colon replacement, and a 255-character
     limit. When truncated, the second return value is a note containing the
-    full original title for ``Notes for Datasets Table``.
+    full original title for the ``Notes`` column.
 
     Args:
         title: Raw title from storage or the inventory sheet.

@@ -364,7 +364,7 @@ If the config file does not exist, a warning is shown but the pipeline continues
 | `default_metadata_available` | — | yes | `true` | Publish writes `yes` to Metadata available when true, `no` when false |
 | `google_username` | — | yes | `mkraley` | Value for "Claimed" column in inventory |
 
-When `inventory_sheet_format` is `baserow_batch`, **File extensions** are written uppercase and comma-separated (no spaces). **Title for Datasets table** replaces colons (`: ` → em dash), is limited to 255 characters (overflow goes to **Notes for Datasets Table**), and **Title for Backups table** copies that value, wrapping it in double quotes when it contains a comma or `/`.
+When `inventory_sheet_format` is `baserow_batch`, **File extensions** are written uppercase and comma-separated (no spaces). **Title for Datasets table** replaces colons (`: ` → em dash), is limited to 255 characters (overflow goes to **Notes**), and **Title for Backups table** copies that value, wrapping it in double quotes when it contains a comma or `/`.
 
 **Config-only:** Parameters without a CLI column can only be set in the config file (or use defaults).
 

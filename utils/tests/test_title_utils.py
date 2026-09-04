@@ -2,7 +2,11 @@
 
 import unittest
 
-from utils.title_utils import normalize_inventory_title
+from utils.title_utils import (
+    normalize_inventory_title,
+    prepare_datalumos_title,
+    truncate_title_for_datalumos,
+)
 
 
 class TestNormalizeInventoryTitle(unittest.TestCase):
@@ -34,3 +38,18 @@ class TestNormalizeInventoryTitle(unittest.TestCase):
     def test_does_not_strip_embedded_pipe(self) -> None:
         raw = "Part A | Part B | Agency for Healthcare Research and Quality"
         self.assertEqual(normalize_inventory_title(raw), "Part A | Part B")
+
+
+class TestPrepareDatalumosTitle(unittest.TestCase):
+    """Tests for DataLumos title preparation helpers."""
+
+    def test_prepare_datalumos_title_replaces_colons(self) -> None:
+        """Colon-space separators become em dashes."""
+        self.assertEqual(
+            prepare_datalumos_title("Atlas Databases: 2003"),
+            "Atlas Databases — 2003",
+        )
+
+    def test_truncate_title_for_datalumos_unchanged_when_short(self) -> None:
+        """Short titles pass through."""
+        self.assertEqual(truncate_title_for_datalumos("Short"), "Short")

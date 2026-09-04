@@ -14,38 +14,23 @@ from utils.Logger import Logger
 from utils.datalumos_data_types import normalize_datalumos_data_types
 from utils.summary_html import prepare_summary_for_datalumos_upload
 from utils.temporal_utils import format_date_for_datalumos_upload
-from utils.title_utils import normalize_inventory_title
+from utils.title_utils import (
+    DATALUMOS_TITLE_MAX_LENGTH,
+    normalize_inventory_title,
+    prepare_datalumos_title,
+    truncate_title_for_datalumos,
+)
 
 if TYPE_CHECKING:
     from upload.UploadIssueReporter import UploadIssueReporter
 
-DATALUMOS_TITLE_MAX_LENGTH = 250
-
-
-def truncate_title_for_datalumos(title: str, max_len: int = DATALUMOS_TITLE_MAX_LENGTH) -> str:
-    """
-    Truncate a project title to DataLumos's length limit without breaking mid-word when possible.
-
-    Normalizes whitespace, then if still over ``max_len`` cuts at the last space in the
-    allowed span (when that keeps most of the title). Otherwise hard-truncates.
-    Appends an ellipsis when text was removed.
-    """
-    normalized = " ".join(normalize_inventory_title(title).split())
-    if len(normalized) <= max_len:
-        return normalized
-
-    suffix = "…"
-    if max_len <= len(suffix):
-        return normalized[:max_len]
-
-    cut_at = max_len - len(suffix)
-    candidate = normalized[:cut_at]
-    last_space = candidate.rfind(" ")
-    min_word_break = int(cut_at * 0.6)
-    if last_space >= min_word_break:
-        candidate = candidate[:last_space]
-
-    return candidate.rstrip(" ,;:-") + suffix
+# Re-export for existing imports.
+__all__ = [
+    "DATALUMOS_TITLE_MAX_LENGTH",
+    "DataLumosFormFiller",
+    "prepare_datalumos_title",
+    "truncate_title_for_datalumos",
+]
 
 
 def _is_empty(value: Optional[str]) -> bool:
@@ -143,8 +128,8 @@ class DataLumosFormFiller:
         Args:
             title: Project title text
         """
-        truncated = truncate_title_for_datalumos(title)
-        if len(truncated) < len(" ".join(title.split())):
+        truncated = prepare_datalumos_title(title)
+        if len(truncated) < len(" ".join(normalize_inventory_title(title).split())):
             self._warn(
                 f"Title truncated from {len(' '.join(title.split()))} to "
                 f"{len(truncated)} characters for DataLumos limit"
@@ -165,6 +150,49 @@ class DataLumosFormFiller:
         
         self.wait_for_obscuring_elements()
         self._page.wait_for_timeout(1000)
+
+    def update_project_title(self, title: str) -> tuple[str, bool]:
+        """
+        Update the title on an existing DataLumos project workspace page.
+
+        Clicks ``Edit Project Header``, fills ``#title``, and clicks
+        ``Save & Apply`` (``.save-project``). Does not click Continue To
+        Project Workspace (that button is for new projects).
+
+        Args:
+            title: Desired title from storage (colon rules applied here).
+
+        Returns:
+            ``(written_title, changed)`` where ``changed`` is False when the
+            page already had the desired title.
+        """
+        desired = prepare_datalumos_title(title)
+        self._open_project_header_editor()
+
+        title_input = self._page.locator("input#title[name='title']")
+        title_input.wait_for(state="visible", timeout=self._timeout)
+        current = (title_input.input_value() or "").strip()
+        if current == desired:
+            Logger.info("DataLumos title already up to date (%s chars)", len(desired))
+            return desired, False
+
+        _debug_form_field("title", desired)
+        title_input.fill(desired)
+
+        save_apply_btn = self._page.locator("button.save-project")
+        self.wait_for_obscuring_elements()
+        save_apply_btn.click()
+        self.wait_for_obscuring_elements()
+        self._page.wait_for_timeout(1000)
+        return desired, True
+
+    def _open_project_header_editor(self) -> None:
+        """Click Edit Project Header so the title input becomes visible."""
+        edit_header = self._page.locator("span", has_text="Edit Project Header").first
+        self.wait_for_obscuring_elements()
+        edit_header.wait_for(state="visible", timeout=self._timeout)
+        edit_header.click()
+        self.wait_for_obscuring_elements()
     
     def fill_agency(self, agencies: List[str]) -> None:
         """

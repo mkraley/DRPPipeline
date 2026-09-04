@@ -44,7 +44,6 @@ _OPTIONAL_COLUMNS = [
     "Metadata available",
     "Metadata URL",
     "Notes",
-    "Notes for Datasets Table",
     "Nominated to EOT",
     "Contact",
     "Admin notes",
@@ -74,7 +73,6 @@ class BaserowBatchSheetUpdater(InventorySheetUpdaterBase):
     def _optional_columns_sheet_only(self) -> List[str]:
         return [
             "Notes",
-            "Notes for Datasets Table",
             "Title for Datasets table",
             "Title for Backups table",
             "Organization",
@@ -388,7 +386,7 @@ class BaserowBatchSheetUpdater(InventorySheetUpdaterBase):
                 sheet_name,
                 row_number,
                 column_map,
-                "Notes for Datasets Table",
+                "Notes",
                 truncation_note,
             )
 

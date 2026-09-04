@@ -10,8 +10,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from collectors.UsfsMetadataExtractor import normalize_temporal_date
-
 _ISO_DATE_RE = re.compile(
     r"(?<!\d)((19|20)\d{2})[-_/](0[1-9]|1[0-2])[-_/](0[1-9]|[12]\d|3[01])(?!\d)"
 )
@@ -196,6 +194,8 @@ def format_date_for_datalumos_upload(value: str | None) -> str:
 
 def _append_date(found: list[str], seen: set[str], raw: str) -> None:
     """Append a normalized date when it has not already been recorded."""
+    from collectors.UsfsMetadataExtractor import normalize_temporal_date
+
     normalized = normalize_temporal_date(raw)
     if normalized and normalized not in seen:
         seen.add(normalized)

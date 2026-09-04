@@ -189,11 +189,11 @@ class TestBaserowBatchSheetUpdater(unittest.TestCase):
         self.assertEqual(values_by_col["C"], expected)
 
     def test_build_update_requests_writes_truncation_note(self) -> None:
-        """Over-length titles write the original into Notes for Datasets Table."""
+        """Over-length titles write the original into Notes."""
         updater = BaserowBatchSheetUpdater()
         column_map = {
             "Title for Datasets table": "B",
-            "Notes for Datasets Table": "Z",
+            "Notes": "Z",
         }
         long_title = ("Word " * 60).strip()
         project = {"source_url": "https://example.com/x", "file_size": "1"}
