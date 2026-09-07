@@ -17,6 +17,7 @@ from upload.UploadLargeFiles import (
     is_eligible_for_upload_large_files,
     planned_out_names,
     project_under_size_limit,
+    run_aria2_downloads,
 )
 from utils.Args import Args
 from utils.Logger import Logger
@@ -224,6 +225,42 @@ class TestUploadLargeFilesRun(unittest.TestCase):
         file_paths = mock_upload.call_args[0][2]
         self.assertEqual([p.name for p in file_paths], ["big.zip"])
         mock_storage.update_record.assert_called_with(7, {"status": STATUS_FINISH_WAIT})
+
+    def test_run_aria2_downloads_uses_chrome_ranges_for_rosap(self) -> None:
+        """ROSA P lines must use Chrome Range download, not aria2."""
+        with tempfile.TemporaryDirectory() as tmp:
+            dest_dir = Path(tmp) / "out"
+            dest_dir.mkdir()
+            line = (
+                'aria2c -c -x 8 -s 8 -j 1 --file-allocation=none --max-tries=0 '
+                '--retry-wait=10 --user-agent="Mozilla/5.0" '
+                f'-d "{dest_dir}" -o "file.zip" '
+                '"https://rosap.ntl.bts.gov/view/dot/1/file.zip"'
+            )
+
+            def _fake_chrome(_url: str, dest: Path) -> tuple[int, bool]:
+                dest.write_bytes(b"hello")
+                return 5, True
+
+            with patch(
+                "utils.ChromeRangeDownload.probe_content_length", return_value=5
+            ), patch(
+                "utils.ChromeRangeDownload.download_via_chrome_ranges",
+                side_effect=_fake_chrome,
+            ) as mock_chrome:
+                with patch(
+                    "collectors.UsfsAria2Export.run_aria2_cmd_line_with_retries"
+                ) as mock_aria2:
+                    ok, fail = run_aria2_downloads(
+                        1,
+                        [line],
+                        log_root=Path(tmp) / "logs",
+                    )
+            self.assertEqual(ok, 1)
+            self.assertEqual(fail, 0)
+            mock_aria2.assert_not_called()
+            mock_chrome.assert_called_once()
+            self.assertTrue((dest_dir / "file.zip").is_file())
 
 
 if __name__ == "__main__":

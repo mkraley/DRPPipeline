@@ -121,6 +121,51 @@ def out_name_from_aria2_cmd_line(cmd_line: str) -> Optional[str]:
     return None
 
 
+def aria2_cmd_download_parts(cmd_line: str) -> tuple[str, Path, str]:
+    """
+    Extract ``(url, destination_dir, out_name)`` from an exported aria2c line.
+
+    Args:
+        cmd_line: Full ``aria2c ...`` command from a ``.cmd`` batch file.
+
+    Returns:
+        Download URL, output directory, and output filename.
+    """
+    argv = parse_aria2_windows_cmd_line(cmd_line)
+    dir_path: Path | None = None
+    out_name: str | None = None
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token == "-d" and index + 1 < len(argv):
+            dir_path = Path(argv[index + 1])
+            index += 2
+            continue
+        if token == "-o" and index + 1 < len(argv):
+            out_name = argv[index + 1]
+            index += 2
+            continue
+        index += 1
+    url = argv[-1] if argv else ""
+    if not url.startswith("http"):
+        raise ValueError(f"Could not find download URL in aria2 command: {cmd_line[:80]!r}")
+    if dir_path is None or not out_name:
+        raise ValueError(f"Missing -d/-o in aria2 command: {cmd_line[:80]!r}")
+    return url, dir_path, out_name
+
+
+def requires_browser_download(url: str) -> bool:
+    """
+    Return True when aria2 cannot fetch the URL (use Chrome Range download).
+
+    ROSA P (BTS) returns 403 to non-browser TLS clients; long single-stream
+    browser downloads also truncate around 1 GB — use chunked Chrome Ranges.
+    """
+    from utils.ChromeRangeDownload import requires_chrome_range_download
+
+    return requires_chrome_range_download(url)
+
+
 def parse_aria2_windows_cmd_line(cmd_line: str) -> List[str]:
     """
     Parse a Windows ``aria2c`` command line from our ``.cmd`` export format.
@@ -215,6 +260,64 @@ def run_aria2_cmd_line_with_retries(
         if result.returncode == 0:
             return True, attempt
     return False, attempts
+
+
+def download_exported_cmd_line(
+    cmd_line: str,
+    *,
+    log_path: Path,
+    summary_interval: int = 0,
+    max_attempts: int = DEFAULT_ARIA2_MAX_ATTEMPTS,
+    page_downloader: object | None = None,
+) -> tuple[bool, int]:
+    """
+    Download one exported ``aria2c`` line via aria2 or Chrome Range chunks.
+
+    ROSA P (BTS) URLs return 403 to aria2 and truncate in a single browser
+    stream; they use Chrome-impersonated HTTP Range chunks.
+    ``page_downloader`` is unused for ROSA P (kept for call-site compatibility).
+
+    Args:
+        cmd_line: Exported ``aria2c`` command line.
+        log_path: Aria2 log file path (unused for ROSA P).
+        summary_interval: Aria2 console summary interval seconds.
+        max_attempts: Aria2 retry count.
+        page_downloader: Unused for ROSA P; ignored when present.
+
+    Returns:
+        ``(success, attempts_used)``.
+    """
+    from utils.ChromeRangeDownload import (
+        download_via_chrome_ranges,
+        probe_content_length,
+    )
+    from utils.Logger import Logger
+
+    url, dest_dir, out_name = aria2_cmd_download_parts(cmd_line)
+    if requires_browser_download(url):
+        dest = dest_dir / out_name
+        total = probe_content_length(url)
+        if dest.is_file() and total is not None and dest.stat().st_size == total:
+            Logger.info("Already complete on disk: %s", out_name)
+            return True, 0
+        Logger.info(
+            "Chrome Range download (ROSA P blocks aria2 / truncates long streams): %s",
+            out_name,
+        )
+        _bytes_written, ok = download_via_chrome_ranges(url, dest)
+        if not ok or not dest.is_file() or dest.stat().st_size <= 0:
+            return False, 1
+        if total is not None and dest.stat().st_size != total:
+            return False, 1
+        return True, 1
+
+    _ = page_downloader
+    return run_aria2_cmd_line_with_retries(
+        cmd_line,
+        log_path=log_path,
+        summary_interval=summary_interval,
+        max_attempts=max_attempts,
+    )
 
 
 def drpid_cmd_path(drpid: int, output_dir: Path | None = None) -> Path:

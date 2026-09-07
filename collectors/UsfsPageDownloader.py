@@ -53,10 +53,20 @@ class UsfsPageDownloader:
 
     def download_file(self, url: str, destination_path: Path) -> Tuple[int, bool]:
         """
-        Download a file via Playwright (uses the browser TLS stack).
+        Download a file via Playwright or Chrome Range chunks.
 
-        Falls back when ``requests``/curl cannot verify fs.usda.gov certificates.
+        ROSA P uses Chrome-impersonated Range downloads (Akamai blocks plain
+        HTTP and truncates long single-stream browser transfers). Other hosts
+        use Playwright when ``requests``/curl cannot verify certificates.
         """
+        from utils.ChromeRangeDownload import (
+            download_via_chrome_ranges,
+            requires_chrome_range_download,
+        )
+
+        if requires_chrome_range_download(url):
+            return download_via_chrome_ranges(url, destination_path)
+
         if not self._restart_browser():
             return 0, False
         page = self._session.new_page()
@@ -87,14 +97,18 @@ class UsfsPageDownloader:
 
     def fetch_content_length(self, url: str) -> int | None:
         """
-        Return Content-Length for a URL via Playwright when the server reports it.
+        Return Content-Length for a URL when the server reports it.
 
-        Args:
-            url: File URL to probe.
-
-        Returns:
-            Size in bytes, or None when unavailable.
+        ROSA P uses Chrome-impersonated HEAD (Playwright API requests get 403).
         """
+        from utils.ChromeRangeDownload import (
+            probe_content_length,
+            requires_chrome_range_download,
+        )
+
+        if requires_chrome_range_download(url):
+            return probe_content_length(url)
+
         if not self._ensure_browser():
             return None
         page = self._session.new_page()

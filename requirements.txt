@@ -13,8 +13,8 @@ markdownify>=0.13.0
 mcp[cli]>=1.0.0
 pytest>=8.0.0
 
-# Optional: improves catalog.data.gov fetch (Chrome TLS impersonation, may bypass AWS WAF)
-# curl_cffi>=0.6.0
+# Optional: improves catalog.data.gov / ROSA P fetch (Chrome TLS impersonation)
+curl_cffi>=0.6.0
 
 # Optional: for publisher Google Sheet update (master inventory)
 google-api-python-client>=2.100.0

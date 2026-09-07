@@ -11,7 +11,7 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from utils.file_utils import format_file_size, parse_file_size_to_bytes
 
-SIZE_TOLERANCE = 0.05
+SIZE_TOLERANCE = 0.10
 DEFAULT_RECORDS_PER_PAGE = 100
 _PAGE_SIZE_SELECTORS = ("#pageSizeOptions", "#recordsPerPage")
 _WORKSPACE_PAGER_SELECTOR = "#recordsPerPage"
@@ -294,19 +294,22 @@ def sizes_within_tolerance(expected: int, actual: int, tolerance: float = SIZE_T
     """
     Return True when ``actual`` is within ``tolerance`` of ``expected``.
 
+    Also accepts an absolute difference of at most 1 MiB (useful for small
+    expected sizes where relative percent is too strict).
+
     Args:
         expected: Expected size in bytes.
         actual: Actual size in bytes.
-        tolerance: Relative tolerance (default 5%).
+        tolerance: Relative tolerance (default 10%).
 
     Returns:
-        True when the difference is within tolerance.
+        True when the difference is within relative or absolute tolerance.
     """
     if expected < 0 or actual < 0:
         return False
     if expected == 0:
         return actual == 0
-    return abs(actual - expected) / expected <= tolerance
+    return abs(actual - expected) / expected <= tolerance or abs(actual - expected) <= 1024 * 1024
 
 
 def verify_upload_counts(

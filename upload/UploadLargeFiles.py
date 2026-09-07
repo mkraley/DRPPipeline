@@ -2,8 +2,8 @@
 Upload large files module.
 
 For projects at ``uploaded - large file`` (under 25 GB) or ``uploaded - expanded``
-(any size): download missing large publication files via aria2, then upload them
-to the existing DataLumos project.
+(any size): download missing large publication files (aria2, or Chrome Range
+chunks for ROSA P), then upload them to the existing DataLumos project.
 """
 
 from __future__ import annotations
@@ -16,11 +16,11 @@ from collectors.UsfsAria2Export import (
     DEFAULT_ARIA2_MAX_ATTEMPTS,
     DEFAULT_ARIA2_OUTPUT_DIR,
     MAX_DOWNLOAD_BYTES,
+    download_exported_cmd_line,
     drpid_cmd_path,
     entries_for_publication_files,
     out_name_from_aria2_cmd_line,
     parse_aria2c_lines_from_cmd_file,
-    run_aria2_cmd_line_with_retries,
     write_drpid_aria2_cmd,
 )
 from collectors.SkipNoteFiles import parse_skip_note_publication_files
@@ -174,7 +174,10 @@ def run_aria2_downloads(
     max_attempts: int = DEFAULT_ARIA2_MAX_ATTEMPTS,
 ) -> Tuple[int, int]:
     """
-    Run aria2 downloads for one DRPID.
+    Download files listed in exported aria2 command lines.
+
+    Uses Chrome Range chunks for ROSA P URLs (aria2 gets HTTP 403; long
+    browser streams truncate); aria2 otherwise.
 
     Returns:
         (ok_count, fail_count)
@@ -184,7 +187,6 @@ def run_aria2_downloads(
 
     ok_count = 0
     fail_count = 0
-
     for index, cmd_line in enumerate(aria2_lines, start=1):
         out_name = out_name_from_aria2_cmd_line(cmd_line) or f"download_{index}"
         log_path = log_path_for_download(log_root, drpid, out_name)
@@ -192,11 +194,12 @@ def run_aria2_downloads(
         if len(aria2_lines) > 1:
             Logger.info("[%s/%s] Downloading %s", index, len(aria2_lines), out_name)
 
-        ok, attempts = run_aria2_cmd_line_with_retries(
+        ok, attempts = download_exported_cmd_line(
             cmd_line,
             log_path=log_path,
             summary_interval=summary_interval,
             max_attempts=max_attempts,
+            page_downloader=None,
         )
         if ok:
             ok_count += 1
@@ -232,7 +235,7 @@ def run_aria2_downloads(
 
 class UploadLargeFiles:
     """
-    Download missing large USFS files and upload them to an existing DataLumos project.
+    Download missing large files and upload them to an existing DataLumos project.
 
     Prerequisites: ``uploaded - large file`` with ``file_size`` < 25 GB, or
     ``uploaded - expanded`` at any size; no errors
@@ -286,7 +289,8 @@ class UploadLargeFiles:
                 _, fail_count = run_aria2_downloads(drpid, aria2_lines, log_root=log_root)
                 if fail_count:
                     reporter.error(
-                        f"aria2 download failed for {fail_count} file(s); see logs under {log_root}"
+                        f"Large-file download failed for {fail_count} file(s); "
+                        f"see logs under {log_root}"
                     )
                     return
 

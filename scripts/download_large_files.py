@@ -1,10 +1,10 @@
 """
-Run aria2 large-file downloads for one or more DRPIDs with minimal console output.
+Run large-file downloads for one or more DRPIDs with minimal console output.
 
-Reads ``aria2_inputs/DRP######.cmd`` (exporting from the catalog automatically when
-missing), runs each ``aria2c`` line with in-place progress on one line (like native
-aria2), retries failed downloads up to three times (aria2 ``-c`` resumes partial
-files), and writes full detail to ``<base_output_dir>/logs/DRP######/``.
+Reads ``aria2_inputs/<prefix>######.cmd`` (exporting from the catalog automatically
+when missing). USFS-style hosts use aria2; ROSA P (BTS) URLs use Chrome-impersonated
+HTTP Range chunks because Akamai returns 403 to aria2 and truncates long browser
+streams around 1 GB.
 
 From repo root:
 
@@ -19,6 +19,7 @@ import re
 import sqlite3
 import sys
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
@@ -26,9 +27,9 @@ sys.path.insert(0, str(REPO_ROOT))
 from collectors.UsfsAria2Export import (  # noqa: E402
     DEFAULT_ARIA2_MAX_ATTEMPTS,
     DEFAULT_ARIA2_OUTPUT_DIR,
+    download_exported_cmd_line,
     out_name_from_aria2_cmd_line,
     parse_aria2c_lines_from_cmd_file,
-    run_aria2_cmd_line_with_retries,
 )
 from scripts.export_usfs_aria2_input import (  # noqa: E402
     ensure_drpid_aria2_cmd,
@@ -37,15 +38,45 @@ from scripts.export_usfs_aria2_input import (  # noqa: E402
     load_google_sheet_name,
 )
 from utils.file_utils import output_folder_name  # noqa: E402
+from utils.Logger import Logger  # noqa: E402
 from utils.url_utils import BROWSER_HEADERS  # noqa: E402
 
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config.json"
 DEFAULT_SUMMARY_INTERVAL = 0
 
 
-def log_path_for_download(log_root: Path, drpid: int, out_name: str) -> Path:
+def log_path_for_download(
+    log_root: Path,
+    drpid: int,
+    out_name: str,
+    *,
+    sheet_name: str = "DRP",
+) -> Path:
+    """Return the per-file log path under ``logs/<prefix>######/``."""
     safe = re.sub(r'[<>:"/\\|?*]', "_", out_name)
-    return log_root / output_folder_name(drpid) / f"{safe}.log"
+    return log_root / output_folder_name(drpid, prefix=sheet_name) / f"{safe}.log"
+
+
+def download_cmd_line(
+    cmd_line: str,
+    *,
+    log_path: Path,
+    summary_interval: int,
+    max_attempts: int,
+    page_downloader: Any | None,
+) -> tuple[bool, int]:
+    """
+    Download one exported command line via aria2 or Playwright.
+
+    Thin wrapper around :func:`download_exported_cmd_line` for the CLI script.
+    """
+    return download_exported_cmd_line(
+        cmd_line,
+        log_path=log_path,
+        summary_interval=summary_interval,
+        max_attempts=max_attempts,
+        page_downloader=page_downloader,
+    )
 
 
 def run_drpid(
@@ -62,6 +93,7 @@ def run_drpid(
     missing_only: bool,
     sheet_name: str = "DRP",
 ) -> int:
+    """Download all files listed in the DRPID's aria2 batch file."""
     cmd_path, _ = ensure_drpid_aria2_cmd(
         conn,
         drpid,
@@ -81,24 +113,26 @@ def run_drpid(
         print(f"DRP {drpid}: no aria2c commands in {cmd_path.name} (nothing to download).")
         return 0
 
-    log_dir = log_root / output_folder_name(drpid)
+    log_dir = log_root / output_folder_name(drpid, prefix=sheet_name)
     log_dir.mkdir(parents=True, exist_ok=True)
 
     ok_count = 0
     fail_count = 0
-
     for index, cmd_line in enumerate(aria2_lines, start=1):
         out_name = out_name_from_aria2_cmd_line(cmd_line) or f"download_{index}"
-        log_path = log_path_for_download(log_root, drpid, out_name)
+        log_path = log_path_for_download(
+            log_root, drpid, out_name, sheet_name=sheet_name
+        )
 
         if len(aria2_lines) > 1:
             print(f"[{index}/{len(aria2_lines)}] {out_name}", flush=True)
 
-        ok, attempts = run_aria2_cmd_line_with_retries(
+        ok, attempts = download_cmd_line(
             cmd_line,
             log_path=log_path,
             summary_interval=summary_interval,
             max_attempts=max_attempts,
+            page_downloader=None,
         )
         if ok:
             ok_count += 1
@@ -114,13 +148,20 @@ def run_drpid(
                 break
 
     if fail_count:
-        print(f"DRP {drpid}: {ok_count} ok, {fail_count} failed — logs in {log_dir}", flush=True)
+        print(
+            f"DRP {drpid}: {ok_count} ok, {fail_count} failed — logs in {log_dir}",
+            flush=True,
+        )
     return 1 if fail_count else 0
 
 
 def main() -> int:
+    """CLI entry for large-file downloads."""
     parser = argparse.ArgumentParser(
-        description="Download large USFS files for DRPID(s) using aria2_inputs/*.cmd"
+        description=(
+            "Download large files for DRPID(s) using aria2_inputs/*.cmd "
+            "(ROSA P uses Chrome Range chunks; reads config source for db/paths/prefix)"
+        )
     )
     parser.add_argument(
         "drpids",
@@ -178,6 +219,9 @@ def main() -> int:
 
     if args.max_retries < 1:
         parser.error("--max-retries must be at least 1")
+
+    # Shared download helper (ROSA P path) uses Logger.info/error.
+    Logger.initialize(log_level="INFO")
 
     base_output = load_base_output_dir(args.config)
     sheet_name = load_google_sheet_name(args.config)

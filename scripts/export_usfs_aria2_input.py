@@ -19,7 +19,7 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
@@ -48,14 +48,34 @@ from utils.url_utils import BROWSER_HEADERS, fetch_page_body  # noqa: E402
 DEFAULT_DB_PATH = REPO_ROOT / "usfs.db"
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config.json"
 DEFAULT_OUTPUT_DIR = DEFAULT_ARIA2_OUTPUT_DIR
+DEFAULT_BASE_OUTPUT_DIR = Path(r"C:\Documents\DataRescue\USFSData")
+
+
+def _load_flat_config(config_path: Path) -> Dict[str, Any]:
+    """
+    Load config.json and flatten the selected ``sources.<source>`` section.
+
+    Args:
+        config_path: Path to the pipeline config file.
+
+    Returns:
+        Flat config dict (empty when the file is missing).
+    """
+    if not config_path.is_file():
+        return {}
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return {}
+    from utils.Args import Args
+
+    return Args._resolve_config_layers(data)
 
 
 def load_google_sheet_name(config_path: Path) -> str:
-    """Return google_sheet_name from config, or DRP when unset."""
-    if config_path.is_file():
-        raw = json.loads(config_path.read_text(encoding="utf-8")).get("google_sheet_name")
-        if raw:
-            return str(raw).strip()
+    """Return google_sheet_name from flattened config, or DRP when unset."""
+    raw = _load_flat_config(config_path).get("google_sheet_name")
+    if raw:
+        return str(raw).strip()
     return "DRP"
 
 
@@ -72,18 +92,17 @@ def resolve_output_folder(
 
 
 def load_base_output_dir(config_path: Path) -> Path:
-    if config_path.is_file():
-        data = json.loads(config_path.read_text(encoding="utf-8"))
-        raw = data.get("base_output_dir")
-        if raw:
-            return Path(raw)
-    return Path(r"C:\Documents\DataRescue\USFSData")
+    """Return base_output_dir from flattened config (per-source aware)."""
+    raw = _load_flat_config(config_path).get("base_output_dir")
+    if raw:
+        return Path(raw)
+    return DEFAULT_BASE_OUTPUT_DIR
 
 
 def load_db_path(config_path: Path) -> Path:
-    if not config_path.is_file():
-        return DEFAULT_DB_PATH
-    raw = json.loads(config_path.read_text(encoding="utf-8")).get("db_path")
+    """Return db_path from flattened config (per-source aware)."""
+    flat = _load_flat_config(config_path)
+    raw = flat.get("db_path")
     if not raw:
         return DEFAULT_DB_PATH
     path = Path(raw)

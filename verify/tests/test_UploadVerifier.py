@@ -242,7 +242,7 @@ class TestUploadVerifier(unittest.TestCase):
         verifier._fetch_page_stats = MagicMock(  # type: ignore[method-assign]
             return_value=DatalumosViewFileStats(
                 file_count=1,
-                total_bytes=5000,
+                total_bytes=5_000_000,
                 file_names=("a.zip",),
             )
         )

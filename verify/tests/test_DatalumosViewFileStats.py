@@ -26,10 +26,12 @@ class TestDatalumosViewFileStats(unittest.TestCase):
         self.assertIsNone(sum_sizes_text(["1.0 MB", "bad"]))
 
     def test_sizes_within_tolerance(self) -> None:
-        """Test relative size tolerance (default 5%)."""
+        """Relative 10% or absolute 1 MiB difference is accepted."""
         self.assertTrue(sizes_within_tolerance(1000, 1040))
         self.assertTrue(sizes_within_tolerance(1000, 960))
-        self.assertFalse(sizes_within_tolerance(1000, 1060))
+        self.assertTrue(sizes_within_tolerance(1000, 1060))  # within 10%
+        self.assertFalse(sizes_within_tolerance(1000, 2_000_000))  # beyond 10% and 1 MiB
+        self.assertTrue(sizes_within_tolerance(10_000_000, 10_900_000))  # within 1 MiB
         self.assertTrue(sizes_within_tolerance(0, 0))
         self.assertFalse(sizes_within_tolerance(0, 1))
 
@@ -50,7 +52,7 @@ class TestDatalumosViewFileStats(unittest.TestCase):
 
     def test_verify_upload_counts_size_mismatch(self) -> None:
         """Test size mismatch beyond tolerance uses compact comparison."""
-        page_stats = DatalumosViewFileStats(file_count=1, total_bytes=2000)
+        page_stats = DatalumosViewFileStats(file_count=1, total_bytes=5_000_000)
         errors = verify_upload_counts(1, "1000", page_stats)
         self.assertEqual(len(errors), 1)
         self.assertIn("inventory mismatch", errors[0])

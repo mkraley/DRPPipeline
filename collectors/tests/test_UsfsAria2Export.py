@@ -1,13 +1,17 @@
 """Tests for collectors.UsfsAria2Export helpers."""
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from collectors.UsfsAria2Export import (
     Aria2Entry,
     MAX_DOWNLOAD_BYTES,
     aria2_argv_for_download,
+    aria2_cmd_download_parts,
+    download_exported_cmd_line,
     entries_for_publication_files,
     format_windows_command,
     format_windows_commands,
@@ -16,6 +20,7 @@ from collectors.UsfsAria2Export import (
     out_name_from_aria2_cmd_line,
     parse_aria2_windows_cmd_line,
     parse_aria2c_lines_from_cmd_text,
+    requires_browser_download,
     run_aria2_cmd_line_with_retries,
     write_drpid_aria2_cmd,
 )
@@ -45,6 +50,86 @@ class TestUsfsAria2Export(unittest.TestCase):
             max_connections_for_url("https://www.fs.usda.gov/rds/archive/products/RDS/x.zip"),
             4,
         )
+
+    def test_requires_browser_download_for_rosap(self) -> None:
+        """ROSA P hosts need Playwright; USDA product URLs do not."""
+        self.assertTrue(
+            requires_browser_download(
+                "https://rosap.ntl.bts.gov/view/dot/78551/dot_78551_DS1.zip"
+            )
+        )
+        self.assertFalse(
+            requires_browser_download(
+                "https://www.fs.usda.gov/rds/archive/products/RDS/x.zip"
+            )
+        )
+
+    def test_aria2_cmd_download_parts(self) -> None:
+        """Parse URL, -d, and -o from an exported aria2c line."""
+        line = (
+            'aria2c -c -x 8 -s 8 -j 1 --file-allocation=none --max-tries=0 '
+            '--retry-wait=10 --user-agent="Mozilla/5.0" '
+            '-d "C:\\DataRescue\\BTSData\\BTS000007" -o "dot_78551_DS1.zip" '
+            '"https://rosap.ntl.bts.gov/view/dot/78551/dot_78551_DS1.zip"'
+        )
+        url, dest_dir, out_name = aria2_cmd_download_parts(line)
+        self.assertEqual(url, "https://rosap.ntl.bts.gov/view/dot/78551/dot_78551_DS1.zip")
+        self.assertEqual(dest_dir, Path(r"C:\DataRescue\BTSData\BTS000007"))
+        self.assertEqual(out_name, "dot_78551_DS1.zip")
+
+    def test_download_exported_cmd_line_rosap_uses_chrome_ranges(self) -> None:
+        """ROSA P URLs call Chrome Range download instead of aria2."""
+        with tempfile.TemporaryDirectory() as tmp:
+            dest_dir = Path(tmp)
+            line = (
+                'aria2c -c -x 8 -s 8 -j 1 --file-allocation=none --max-tries=0 '
+                '--retry-wait=10 --user-agent="Mozilla/5.0" '
+                f'-d "{dest_dir}" -o "file.zip" '
+                '"https://rosap.ntl.bts.gov/view/dot/1/file.zip"'
+            )
+
+            def _fake_chrome(_url: str, dest: Path) -> tuple[int, bool]:
+                dest.write_bytes(b"data")
+                return 4, True
+
+            with patch(
+                "utils.ChromeRangeDownload.probe_content_length", return_value=4
+            ), patch(
+                "utils.ChromeRangeDownload.download_via_chrome_ranges",
+                side_effect=_fake_chrome,
+            ) as mock_chrome, patch(
+                "collectors.UsfsAria2Export.run_aria2_cmd_line_with_retries"
+            ) as mock_aria2:
+                ok, attempts = download_exported_cmd_line(
+                    line,
+                    log_path=dest_dir / "x.log",
+                    page_downloader=None,
+                )
+            self.assertTrue(ok)
+            self.assertEqual(attempts, 1)
+            mock_aria2.assert_not_called()
+            mock_chrome.assert_called_once()
+
+    def test_download_exported_cmd_line_non_rosap_uses_aria2(self) -> None:
+        """Non-ROSA P hosts keep aria2 retries."""
+        line = (
+            'aria2c -c -x 4 -s 4 -j 1 --file-allocation=none --max-tries=0 '
+            '--retry-wait=10 --user-agent="Mozilla/5.0" '
+            '-d "C:\\data" -o "big.zip" '
+            '"https://www.fs.usda.gov/rds/archive/products/RDS/big.zip"'
+        )
+        with patch(
+            "collectors.UsfsAria2Export.run_aria2_cmd_line_with_retries",
+            return_value=(True, 2),
+        ) as mock_aria2:
+            ok, attempts = download_exported_cmd_line(
+                line,
+                log_path=Path("x.log"),
+                page_downloader=None,
+            )
+        self.assertTrue(ok)
+        self.assertEqual(attempts, 2)
+        mock_aria2.assert_called_once()
 
     def test_is_usfs_catalog_maintenance_page(self) -> None:
         """Detect the USFS maintenance placeholder page."""
