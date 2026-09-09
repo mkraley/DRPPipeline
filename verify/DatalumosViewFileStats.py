@@ -40,7 +40,7 @@ def _find_page_size_select(page: Page) -> tuple[Optional[str], Optional[object]]
 def wait_for_workspace_file_table(
     page: Page,
     page_size: int = DEFAULT_RECORDS_PER_PAGE,
-    timeout: int = 15000,
+    timeout: int = 60000,
 ) -> None:
     """
     Wait for the workspace file table to list all records for the current page size.
@@ -60,7 +60,9 @@ def wait_for_workspace_file_table(
               const rows = document.querySelectorAll('table.table-hover tbody tr').length;
               const match = document.body.innerText.match(/Total of (\\d+) records/);
               if (!match) {
-                return rows > 10;
+                // Without a total, require more than the default page of 10 when
+                // a larger page size was requested; otherwise any rows are ok.
+                return pageSize <= 10 ? rows > 0 : rows > 10;
               }
               const total = parseInt(match[1], 10);
               const target = Math.min(total, pageSize);
@@ -70,7 +72,7 @@ def wait_for_workspace_file_table(
             timeout=timeout,
         )
     except PlaywrightTimeoutError:
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(2000)
 
 
 def _wait_after_page_size_change(
@@ -117,19 +119,21 @@ def set_records_per_page(page: Page, page_size: int = DEFAULT_RECORDS_PER_PAGE) 
     if select is None:
         return False
     desired = str(page_size)
-    if select.input_value() == desired:
-        return True
-    if active_selector == _WORKSPACE_PAGER_SELECTOR:
-        select.select_option(desired)
-        _wait_after_page_size_change(page, active_selector, page_size)
-        return True
-    try:
-        with page.expect_navigation(wait_until="domcontentloaded", timeout=120000):
+    already_set = select.input_value() == desired
+    if not already_set:
+        if active_selector == _WORKSPACE_PAGER_SELECTOR:
             select.select_option(desired)
-    except PlaywrightTimeoutError:
-        # Some responses may update without a full document navigation.
-        pass
-    _wait_after_page_size_change(page, active_selector, page_size)
+            _wait_after_page_size_change(page, active_selector, page_size)
+            return True
+        try:
+            with page.expect_navigation(wait_until="domcontentloaded", timeout=120000):
+                select.select_option(desired)
+        except PlaywrightTimeoutError:
+            # Some responses may update without a full document navigation.
+            pass
+    # Always wait for rows when on the workspace pager — even if the dropdown
+    # already shows 100, the table may still be on the default first page.
+    _wait_after_page_size_change(page, active_selector or "", page_size)
     return True
 
 

@@ -135,13 +135,25 @@ class TestDatalumosViewFileStats(unittest.TestCase):
         page.wait_for_load_state.assert_not_called()
 
     def test_set_records_per_page_already_set(self) -> None:
-        """When dropdown is already 100, do not re-select."""
+        """When dropdown is already 100, still wait for workspace rows to load."""
         page = MagicMock()
         select = MagicMock()
         select.input_value.return_value = "100"
-        page.query_selector.return_value = select
-        self.assertTrue(set_records_per_page(page))
-        select.select_option.assert_not_called()
+
+        def query_selector(selector: str) -> MagicMock | None:
+            if selector == "#pageSizeOptions":
+                return None
+            if selector == "#recordsPerPage":
+                return select
+            return None
+
+        page.query_selector.side_effect = query_selector
+        with patch(
+            "verify.DatalumosViewFileStats.wait_for_workspace_file_table"
+        ) as mock_wait:
+            self.assertTrue(set_records_per_page(page))
+            select.select_option.assert_not_called()
+            mock_wait.assert_called_once_with(page, page_size=100)
         page.wait_for_load_state.assert_not_called()
 
     def test_set_records_per_page_selects_100_on_view_page(self) -> None:

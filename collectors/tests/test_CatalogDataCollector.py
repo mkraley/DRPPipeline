@@ -227,15 +227,18 @@ class TestCatalogDataCollector(unittest.TestCase):
 
     @patch("collectors.PlaywrightSession.sync_playwright")
     @patch("collectors.CatalogDataCollector.fetch_url_head")
+    @patch("collectors.CatalogDataCollector.fetch_page_body")
     @patch("utils.url_utils.requests.get")
     def test_collect_resolves_catalog_resource_page(
         self,
         mock_get: Mock,
+        mock_fetch_page_body: Mock,
         mock_fetch_head: Mock,
         mock_playwright: Mock,
     ) -> None:
         """Test _collect resolves catalog.data.gov resource pages via #res_url."""
         mock_get.return_value = Mock(status_code=200)
+        mock_fetch_page_body.return_value = (200, "<html></html>", "text/html", False)
         mock_fetch_head.return_value = (200, "text/csv", None)
 
         mock_page, _, _ = setup_mock_playwright(mock_playwright)
@@ -273,15 +276,18 @@ class TestCatalogDataCollector(unittest.TestCase):
 
     @patch("collectors.PlaywrightSession.sync_playwright")
     @patch("collectors.CatalogDataCollector.fetch_url_head")
+    @patch("collectors.CatalogDataCollector.fetch_page_body")
     @patch("utils.url_utils.requests.get")
     def test_collect_catalog_resource_page_missing_res_url(
         self,
         mock_get: Mock,
+        mock_fetch_page_body: Mock,
         mock_fetch_head: Mock,
         mock_playwright: Mock,
     ) -> None:
         """Test catalog.data.gov resource page without #res_url is treated as 404."""
         mock_get.return_value = Mock(status_code=200)
+        mock_fetch_page_body.return_value = (200, "<html></html>", "text/html", False)
         mock_fetch_head.return_value = (200, "text/html", None)
 
         mock_page, _, _ = setup_mock_playwright(mock_playwright)
