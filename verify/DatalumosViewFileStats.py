@@ -16,6 +16,21 @@ DEFAULT_RECORDS_PER_PAGE = 100
 _PAGE_SIZE_SELECTORS = ("#pageSizeOptions", "#recordsPerPage")
 _WORKSPACE_PAGER_SELECTOR = "#recordsPerPage"
 
+# Wait until the workspace AJAX file table has loaded enough rows for the
+# selected page size. Exported for unit tests of the readiness condition.
+WORKSPACE_TABLE_READY_JS = """(pageSize) => {
+  const rows = document.querySelectorAll('table.table-hover tbody tr').length;
+  const match = document.body.innerText.match(/Total of (\\d+) records/);
+  if (!match) {
+    // Any visible rows mean the table has rendered. Requiring rows > 10 when
+    // pageSize is 100 hangs for the full timeout on small projects.
+    return rows > 0;
+  }
+  const total = parseInt(match[1], 10);
+  const target = Math.min(total, pageSize);
+  return rows >= target;
+}"""
+
 
 def _find_page_size_select(page: Page) -> tuple[Optional[str], Optional[object]]:
     """
@@ -56,18 +71,7 @@ def wait_for_workspace_file_table(
     """
     try:
         page.wait_for_function(
-            """(pageSize) => {
-              const rows = document.querySelectorAll('table.table-hover tbody tr').length;
-              const match = document.body.innerText.match(/Total of (\\d+) records/);
-              if (!match) {
-                // Without a total, require more than the default page of 10 when
-                // a larger page size was requested; otherwise any rows are ok.
-                return pageSize <= 10 ? rows > 0 : rows > 10;
-              }
-              const total = parseInt(match[1], 10);
-              const target = Math.min(total, pageSize);
-              return rows >= target;
-            }""",
+            WORKSPACE_TABLE_READY_JS,
             arg=page_size,
             timeout=timeout,
         )

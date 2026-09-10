@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from verify.DatalumosViewFileStats import (
     DatalumosViewFileStats,
+    WORKSPACE_TABLE_READY_JS,
     format_verify_comparison,
     format_verify_success_message,
     set_records_per_page,
@@ -125,6 +126,12 @@ class TestDatalumosViewFileStats(unittest.TestCase):
         page.evaluate.return_value = {"error": "page_not_found"}
         stats = DatalumosViewFileStats.from_page(page)
         self.assertEqual(stats.error, "page_not_found")
+
+    def test_workspace_table_ready_js_accepts_small_inventories(self) -> None:
+        """Without Total of N, any rows count as ready (not rows > 10)."""
+        self.assertIn("return rows > 0;", WORKSPACE_TABLE_READY_JS)
+        self.assertNotIn("pageSize <= 10 ? rows > 0 : rows > 10", WORKSPACE_TABLE_READY_JS)
+        self.assertIn("Total of", WORKSPACE_TABLE_READY_JS)
 
     def test_set_records_per_page_absent(self) -> None:
         """When the pager dropdown is missing, return False and do nothing."""

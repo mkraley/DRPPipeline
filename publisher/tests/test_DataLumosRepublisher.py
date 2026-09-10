@@ -73,6 +73,8 @@ class TestDataLumosRepublisher(unittest.TestCase):
         page.locator.assert_called_once_with(
             "button.btn-primary:has-text('Re-Publish Project')"
         )
+        btn.wait_for.assert_called_once()
+        btn.scroll_into_view_if_needed.assert_called_once()
         btn.click.assert_called_once()
 
     def test_prepare_review_page_fills_version_title(self) -> None:

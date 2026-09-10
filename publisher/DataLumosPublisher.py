@@ -20,6 +20,7 @@ from utils.project_folder_cleanup import (
     folder_path_can_be_cleared,
     try_delete_project_folder,
 )
+from publisher.PublishTermsDialog import PublishTermsDialog
 from publisher.sheet_only_status import resolve_sheet_only_config
 from publisher.WorkspaceFileStats import workspace_file_stats_from_page
 from verify.DatalumosViewFileStats import verify_upload_counts
@@ -64,7 +65,7 @@ class DataLumosPublisher:
     Implements ModuleProtocol.     For each eligible project (status="uploaded"),
     this module: authenticates, navigates to the project, verifies workspace
     file count/size against the database, runs the publish
-    workflow (Publish Project → review → Proceed to Publish → dialog →
+    workflow (Publish Project → review → Proceed to Publish → terms dialog →
     Publish Data → Back to Project), and updates Storage with published_url
     and status="published".
 
@@ -120,6 +121,11 @@ class DataLumosPublisher:
             from upload.DataLumosAuthenticator import wait_for_human_verification
             wait_for_human_verification(page, timeout=60000)
 
+            Logger.info(
+                "Checking workspace inventory against database for DRPID=%s "
+                "(file table scrape; may take a minute)",
+                drpid,
+            )
             gate_error = self._pre_publish_gate(page, project, drpid)
             if gate_error:
                 record_error(drpid, gate_error)
@@ -472,15 +478,18 @@ class DataLumosPublisher:
     def _publish_workspace(self, page: Page, drpid: int) -> tuple[bool, Optional[str]]:
         """
         Execute the publish workflow (from chiara_upload.publish_workspace).
-        Retry once after 5 seconds on failure.
+        Retry once after returning to the project workspace on failure.
 
         Returns:
             (True, None) on success, (False, error_message) on failure.
         """
+        project = Storage.get(drpid) or {}
+        workspace_id = get_field(project, "datalumos_id") or ""
+
         for attempt in range(2):
             if attempt > 0:
-                Logger.info("Publish workflow failed, retrying after 5 seconds...")
-                page.wait_for_timeout(5000)
+                Logger.info("Publish workflow failed, retrying after workspace reset...")
+                self._reset_to_project_workspace(page, workspace_id)
 
             try:
                 return self._run_publish_flow_once(page, drpid)
@@ -491,6 +500,25 @@ class DataLumosPublisher:
                     return False, error_msg
         return False, "Publish workflow failed after retry"
 
+    def _reset_to_project_workspace(self, page: Page, workspace_id: str) -> None:
+        """
+        Navigate back to the project workspace before a publish retry.
+
+        After a failed terms-dialog attempt the page is often still on
+        ``reviewPublish`` (or inside the modal), where ``Publish Project``
+        is not available.
+
+        Args:
+            page: Playwright page from the failed attempt.
+            workspace_id: DataLumos project id.
+        """
+        if not workspace_id:
+            page.wait_for_timeout(5000)
+            return
+        page.goto(self._project_url(workspace_id), wait_until="domcontentloaded")
+        page.wait_for_load_state("networkidle", timeout=120000)
+        self._wait_for_busy(page)
+
     def _click_publish_entry_button(self, page: Page) -> None:
         """
         Click the workspace button that starts the publish review flow.
@@ -498,7 +526,11 @@ class DataLumosPublisher:
         Args:
             page: Playwright page on the DataLumos project workspace.
         """
+        Logger.info("Waiting for Publish Project button on workspace")
         publish_btn = page.locator("button.btn-primary:has-text('Publish Project')")
+        publish_btn.wait_for(state="visible", timeout=int(Args.upload_timeout))
+        publish_btn.scroll_into_view_if_needed()
+        Logger.info("Clicking Publish Project")
         publish_btn.click()
 
     def _prepare_review_page(self, page: Page) -> None:
@@ -512,6 +544,32 @@ class DataLumosPublisher:
         """
         return
 
+    def _wait_for_review_page_ready(self, page: Page) -> None:
+        """
+        Wait until the review/publish page has loaded enough to Proceed safely.
+
+        Clicking Proceed before metadata hydrates can open a Terms dialog where
+        Publish Data stays disabled even though the fields look filled in the UI.
+
+        Args:
+            page: Playwright page on the reviewPublish URL.
+        """
+        self._wait_for_busy(page)
+        proceed_btn = page.locator(
+            "button.btn-primary:has-text('Proceed to Publish')"
+        )
+        proceed_btn.wait_for(state="visible", timeout=int(Args.upload_timeout))
+        try:
+            page.wait_for_load_state("networkidle", timeout=60000)
+        except PlaywrightTimeoutError:
+            Logger.warning(
+                "networkidle timed out on review page; continuing after settle"
+            )
+        # Extra settle for React metadata panels (agency, summary, etc.).
+        page.wait_for_timeout(2000)
+        self._wait_for_busy(page)
+        Logger.info("Review page ready for Proceed to Publish")
+
     def _run_publish_flow_once(self, page: Page, drpid: int) -> tuple[bool, Optional[str]]:
         """Run the publish flow once (no retry). Raises on failure."""
         timeout_ms = Args.upload_timeout
@@ -523,38 +581,35 @@ class DataLumosPublisher:
         # Step 2: Wait for review page (URL contains reviewPublish)
         try:
             page.wait_for_url(lambda url: "reviewPublish" in url, timeout=timeout_ms)
-            page.wait_for_timeout(1000)
         except PlaywrightTimeoutError:
             err_text = self._check_errormsg(page)
             if err_text:
                 raise RuntimeError(f"Error message on page: {err_text}")
             raise RuntimeError("Timeout waiting for review/publish page")
 
+        # Let review metadata finish hydrating before Proceed — clicking too
+        # early yields a Terms dialog with disabled Publish Data.
+        self._wait_for_review_page_ready(page)
+
         # Step 2b: Optional review fields (e.g. version title on re-publish)
         self._prepare_review_page(page)
 
         # Step 3: Click "Proceed to Publish"
         self._wait_for_busy(page)
+        Logger.info("Clicking Proceed to Publish")
         proceed_btn = page.locator("button.btn-primary:has-text('Proceed to Publish')")
+        proceed_btn.wait_for(state="visible", timeout=timeout_ms)
         proceed_btn.click()
         page.wait_for_timeout(1000)
 
-        # Step 4: Dialog – noDisclosure, sensitiveNo, depositAgree
+        # Step 4: Terms dialog (full disclosure form or short Publish Data only)
         self._wait_for_busy(page)
-        page.locator("#noDisclosure").click()
-        page.wait_for_timeout(500)
-        self._wait_for_busy(page)
-        page.locator("#sensitiveNo").click()
-        page.wait_for_timeout(500)
-        self._wait_for_busy(page)
-        page.locator("#depositAgree").click()
-        page.wait_for_timeout(500)
+        terms = PublishTermsDialog()
+        terms.complete(page)
 
         # Step 5: Click "Publish Data"
         self._wait_for_busy(page)
-        publish_data_btn = page.locator("button.btn-primary:has-text('Publish Data')")
-        publish_data_btn.click()
-        page.wait_for_timeout(2000)
+        terms.click_publish_data(page)
 
         # Step 6: Click "Back to Project"
         self._wait_for_busy(page)

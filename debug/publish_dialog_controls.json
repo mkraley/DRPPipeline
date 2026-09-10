@@ -1,0 +1,432 @@
+﻿[
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "button",
+    "cls": "navbar-toggle collapsed",
+    "text": "Toggle navigation",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "LABEL",
+    "id": null,
+    "name": null,
+    "type": null,
+    "cls": null,
+    "text": "Version Title (optional):",
+    "value": null,
+    "visible": true
+  },
+  {
+    "tag": "INPUT",
+    "id": "versionTitle",
+    "name": null,
+    "type": "text",
+    "cls": null,
+    "text": "",
+    "value": "",
+    "visible": true
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "submit",
+    "cls": "btn btn-default btn-sm",
+    "text": "Back To Workspace",
+    "value": "",
+    "visible": true
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "submit",
+    "cls": "btn btn-primary btn-sm",
+    "text": "Proceed to Publish",
+    "value": "",
+    "visible": true
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "submit",
+    "cls": "btn btn-sm",
+    "text": "",
+    "value": "",
+    "visible": true
+  },
+  {
+    "tag": "DIV",
+    "id": "deleteFileConfirmationModal",
+    "name": null,
+    "type": null,
+    "cls": "modal fade",
+    "text": "\u00d7CloseDelete FileDo you want to delete file undefined?Do Not DeleteDelete File",
+    "value": null,
+    "visible": false
+  },
+  {
+    "tag": "DIV",
+    "id": null,
+    "name": null,
+    "type": null,
+    "cls": "modal-dialog modal-vertical-centered",
+    "text": "\u00d7CloseDelete FileDo you want to delete file undefined?Do Not DeleteDelete File",
+    "value": null,
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "button",
+    "cls": "close",
+    "text": "\u00d7Close",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "button",
+    "cls": "btn btn-default",
+    "text": "Do Not Delete",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": "confirmationDialogYes",
+    "name": null,
+    "type": "button",
+    "cls": "btn btn-primary",
+    "text": "Delete File",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "DIV",
+    "id": "bulkDeleteConfirmationModal",
+    "name": null,
+    "type": null,
+    "cls": "modal fade",
+    "text": "\u00d7CloseDelete SelectionDo you want to delete selected resources?Do Not DeleteDelete Selected",
+    "value": null,
+    "visible": false
+  },
+  {
+    "tag": "DIV",
+    "id": null,
+    "name": null,
+    "type": null,
+    "cls": "modal-dialog modal-vertical-centered",
+    "text": "\u00d7CloseDelete SelectionDo you want to delete selected resources?Do Not DeleteDelete Selected",
+    "value": null,
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "button",
+    "cls": "close",
+    "text": "\u00d7Close",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "button",
+    "cls": "btn btn-default",
+    "text": "Do Not Delete",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": "confirmationDialogYes",
+    "name": null,
+    "type": "button",
+    "cls": "btn btn-primary",
+    "text": "Delete Selected",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": "expand-init",
+    "name": null,
+    "type": null,
+    "cls": "btn btn-sm btn-default",
+    "text": "Collapse All",
+    "value": "",
+    "visible": true
+  },
+  {
+    "tag": "DIV",
+    "id": "deleteDateRangeConfirmationDialog",
+    "name": null,
+    "type": null,
+    "cls": "modal fade",
+    "text": "\u00d7CloseDelete Date Range?Are you sure? Click yes to delete date range.NoYes",
+    "value": null,
+    "visible": false
+  },
+  {
+    "tag": "DIV",
+    "id": null,
+    "name": null,
+    "type": null,
+    "cls": "modal-dialog modal-vertical-centered",
+    "text": "\u00d7CloseDelete Date Range?Are you sure? Click yes to delete date range.NoYes",
+    "value": null,
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "button",
+    "cls": "close",
+    "text": "\u00d7Close",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "button",
+    "cls": "btn btn-default",
+    "text": "No",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": "confirmationDialogYes",
+    "name": null,
+    "type": "button",
+    "cls": "btn btn-primary",
+    "text": "Yes",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "DIV",
+    "id": "createPropertyDlg",
+    "name": null,
+    "type": null,
+    "cls": "modal fade",
+    "text": "\u00d7CloseAdd new propertyOntologypremisicpsrimetaowlntdiscopcdmrdfsniexsimodexmlnsxmldctermsfedoraconfigddi25mixfoafimagesvrdffedoranfoldpxsdcskosdcamorgdcatpavsch",
+    "value": null,
+    "visible": false
+  },
+  {
+    "tag": "DIV",
+    "id": null,
+    "name": null,
+    "type": null,
+    "cls": "modal-dialog modal-vertical-centered",
+    "text": "\u00d7CloseAdd new propertyOntologypremisicpsrimetaowlntdiscopcdmrdfsniexsimodexmlnsxmldctermsfedoraconfigddi25mixfoafimagesvrdffedoranfoldpxsdcskosdcamorgdcatpavsch",
+    "value": null,
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "button",
+    "cls": "close",
+    "text": "\u00d7Close",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "LABEL",
+    "id": null,
+    "name": null,
+    "type": null,
+    "cls": "col-sm-4 control-label",
+    "text": "Ontology",
+    "value": null,
+    "visible": false
+  },
+  {
+    "tag": "SELECT",
+    "id": "ontology",
+    "name": null,
+    "type": null,
+    "cls": "form-control input-sm",
+    "text": "premisicpsrimetaowlntdiscopcdmrdfsniexsimodexmlnsxmldctermsfedoraconfigddi25mixfoafimagesvrdffedoranfoldpxsdcskosdcamorgdcatpavschemaxsdoreciteproccito",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "LABEL",
+    "id": null,
+    "name": null,
+    "type": null,
+    "cls": "col-sm-4 control-label",
+    "text": "Term",
+    "value": null,
+    "visible": false
+  },
+  {
+    "tag": "INPUT",
+    "id": "ontologyTerm",
+    "name": null,
+    "type": "text",
+    "cls": "form-control input-sm",
+    "text": "",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "LABEL",
+    "id": null,
+    "name": null,
+    "type": null,
+    "cls": "col-sm-4 control-label",
+    "text": "Value",
+    "value": null,
+    "visible": false
+  },
+  {
+    "tag": "TEXTAREA",
+    "id": "newInput",
+    "name": null,
+    "type": null,
+    "cls": "form-control input-sm",
+    "text": "",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "button",
+    "cls": "btn btn-primary",
+    "text": "Apply",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "button",
+    "cls": "btn btn-default",
+    "text": "Close",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "DIV",
+    "id": "deleteCitationConfirmationDialog",
+    "name": null,
+    "type": null,
+    "cls": "modal fade",
+    "text": "\u00d7CloseDelete Citation?Are you sure? Click yes to delete citation.NoYes",
+    "value": null,
+    "visible": false
+  },
+  {
+    "tag": "DIV",
+    "id": null,
+    "name": null,
+    "type": null,
+    "cls": "modal-dialog modal-vertical-centered",
+    "text": "\u00d7CloseDelete Citation?Are you sure? Click yes to delete citation.NoYes",
+    "value": null,
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "button",
+    "cls": "close",
+    "text": "\u00d7Close",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "button",
+    "cls": "btn btn-default",
+    "text": "No",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "BUTTON",
+    "id": "confirmationDialogYes",
+    "name": null,
+    "type": "button",
+    "cls": "btn btn-primary",
+    "text": "Yes",
+    "value": "",
+    "visible": false
+  },
+  {
+    "tag": "DIV",
+    "id": "reviewTermsDialogId",
+    "name": null,
+    "type": null,
+    "cls": "modal fade in",
+    "text": "\u00d7\nClose\nTerms and Conditions\nOnce published, information about this data collection will remain permanently in the repository. If any information is incomplete ",
+    "value": null,
+    "visible": true
+  },
+  {
+    "tag": "DIV",
+    "id": null,
+    "name": null,
+    "type": null,
+    "cls": "modal-dialog reviewDialog",
+    "text": "\u00d7\nClose\nTerms and Conditions\nOnce published, information about this data collection will remain permanently in the repository. If any information is incomplete ",
+    "value": null,
+    "visible": true
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "button",
+    "cls": "close",
+    "text": "\u00d7\nClose",
+    "value": "",
+    "visible": true
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "button",
+    "cls": "btn btn-primary",
+    "text": "Publish Data",
+    "value": "",
+    "visible": true
+  },
+  {
+    "tag": "BUTTON",
+    "id": null,
+    "name": null,
+    "type": "button",
+    "cls": "btn btn-default",
+    "text": "close",
+    "value": "",
+    "visible": true
+  }
+]

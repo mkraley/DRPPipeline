@@ -1,0 +1,135 @@
+﻿id="reviewTermsDialogId" data-reactid=".2" style="display: block; padding-right: 15px;"><div class="modal-dialog reviewDialog" data-reactid=".2.0" style="width: 960px; height: 540px;"><div class="modal-content" data-reactid=".2.0.0"><div class="modal-header" data-reactid=".2.0.0.0"><button type="button" class="close" data-dismiss="modal" data-reactid=".2.0.0.0.0"><span aria-hidden="true" data-reactid=".2.0.0.0.0.0">×</span><span class="sr-only" data-reactid=".2.0.0.0.0.1">Close</span></button><h1 class="modal-title" data-reactid=".2.0.0.0.1">Terms and Conditions</h1></div><div class="modal-body" data-reactid=".2.0.0.1"><div class="alert alert-info" role="alert" data-reactid=".2.0.0.1.0">Once published, information about this data collection will remain permanently in the repository. If any information is incomplete or incorrect, please return to the previous screen to make the necessary changes.</div></div><div class="modal-footer" data-reactid=".2.0.0.2"><div class="pull-left" data-reactid=".2.0.0.2.0"><button type="button" disabled="" class="btn btn-primary" data-reactid=".2.0.0.2.0.0">Publish Data</button><button type="button" class="btn btn-default" data-dismiss="modal" data-reactid=".2.0.0.2.0.1">close</button></div><p class="requiredField required-field-message clearfix" data-reactid=".2.0.0.2.1">Please complete all required fields</p><div class="pull-left requiredField errorMessage" data-reactid=".2.0.0.2.2"></div></div><div id="fileUploadModalDialog" data-reactid=".2.0.0.3"></div></div></div></div></div><div id="StatusDialog" data-reactid=".0.1.2.1"></div><div id="busy" data-reactid=".0.1.2.2" class=""></div></div></div></div></div>
+		<div id="map"></div>
+	</div>
+	<script type="text/javascript">
+		var resPath = '/datalumos/252726';
+		var resType = 'project';
+		var jwtToken = 'eyJhbGciOiJIUzUxMiJ9.eyJsYXN0TmFtZSI6IktyYWxleSIsImRpc3BsYXlOYW1lIjpudWxsLCJpc3MiOiJJU1NVRVJfSUNQU1IiLCJmaXJzdE5hbWUiOiJNaWtlK0JUUyIsInNvY2lhbElkIjpudWxsLCJkdW9BdXRoIjpmYWxzZSwic3lzQXV0aElkIjoxNDMyODQ0LCJpZCI6MTQ5MDcxNywic3lzUHJvZmlsZVVybCI6bnVsbCwiZXhwIjoxNzg5MTUzMjkxLCJpY3BzclN0YWZmIjpmYWxzZSwiaWF0IjoxNzg5MDY2ODkxLCJlbWFpbCI6Im1rcmFsZXkrYnRzQGdtYWlsLmNvbSIsImNuc1N0YWZmIjpmYWxzZSwic29jaWFsSWRUeXBlIjpudWxsfQ.cyKd5M4h5P9mlJcK9Fbf_tjMqbWymWpT2IUtrQNHXK5al8K4i6-nlPgOlQDKVP58d16ItpYZqrF8nnQdGfoFfw';
+		$(document).ajaxSend(function(event, jqxhr, settings) {
+			jqxhr.setRequestHeader("Authorization", "Bearer " + jwtToken);
+		});
+		var bibliographyConfig = {
+				bibliographyServerUrl: 'https://bibliography.icpsr.umich.edu/bibliography',
+				editLinks: false,
+				addButton: false,
+				editButton: false,
+				deleteButton: false,
+				panelDisplay: true,
+				relationshipSort: false
+		};
+		var depositConfig = {
+			depositServerUrl : "https://deposit.icpsr.umich.edu/deposit",
+			workspaceUrl : "workspace",
+			reviewTermsUrl : "reviewTerms",
+			tenant : "datalumos",
+			homePath : "/datalumos"
+		};
+		var appUrl = "https://www.datalumos.org/datalumos";
+		ReactDOM.render(React.createElement(Reviewer, {
+			publishResource : {"resourcePath":"/datalumos/252726","versionLabel":null,"versionTitle":null,"license":null,"privacy":null,"type":"project","projectId":null,"projectTitle":null,"projectDescription":null,"metdataOrder":[],"fileObject":null,"depositAgreement":null,"disclosureRisk":null,"disclosureRiskQuestion":null,"disclosureRiskDescription":null,"sensitiveDataRisk":false,"sensitiveDataRiskQuestion":null,"delayedDissemination":false,"delayedDisseminationDate":null,"delayDisseminationQuestion":null,"accessible":null,"accessibleQuestion":null,"publicAccess":false,"publishStatus":"","creationDate":null,"modificationDate":null,"reviewTerms":null,"dcTitle":null,"dcCreators":[],"principalInvestigator":null,"delayedDisseminationDateStr":null,"versionContainerPath":null,"retracted":false,"retractionNotice":null,"dipId":null,"notesText":null,"isCopyrighted":null,"copyrightedDescription":null,"additionalInfo":null,"agreeType":null,"publicDomainDescription":null,"authorizedContact":{},"editing":false,"licenseId":null,"citation":null,"esignature":null},
+			isPublish : true,
+			patch : false,
+		}), document.getElementById('publish'));
+	</script>
+
+
+
+</div>
+
+</section>
+	
+			<div id="webcomponent">
+				<icpsr-rp-profile-update acxappbasepath="/datalumos">
+</icpsr-rp-profile-update></div>
+<footer class="container-fluid">
+<div class="row">
+	<div class="topFooterNav  clearfix">
+		<div class="container">
+			<div class="row">
+				<ul class="pull-right mb-0">
+					<li><a href="//www.icpsr.umich.edu/sites/datalumos/accessibility">Accessibility</a> &nbsp;|</li>
+					<li><a href="//www.icpsr.umich.edu/sites/datalumos/privacy">Privacy Policy</a> &nbsp;|</li>
+					<li><a href="//www.icpsr.umich.edu/sites/datalumos/about">About DataLumos</a> &nbsp;|</li>
+					<li><a href="//www.icpsr.umich.edu/sites/datalumos/tips">Tips for Using DataLumos</a> &nbsp;|</li>
+					<li><a href="//www.icpsr.umich.edu/sites/datalumos/faqs" target="">FAQs</a></li>
+				</ul>
+			</div>
+		</div>
+	</div>
+</div>
+<div class="row bottomFooter">
+	<div class="container">
+		<div class="row">
+			<div class="col-md-3">
+				<a href="https://www.icpsr.umich.edu/">
+					<img src="/datalumos/resources/images/icpsr-acronym-long-WHITE-CS6.9ef1b4b7.svg" alt="ICPSR - Institute for Social Research - University of Michigan">
+				</a>
+			</div>
+			<div class="col-md-9 text-right p-top">
+				© <span id="currentYear">2026</span>  <a href="http://www.umich.edu/~regents/">The Regents of the University of Michigan</a>. ICPSR is part of the<!-- --> <a href="http://www.isr.umich.edu/">Institute for Social Research</a> <!-- -->at the <a href="http://www.umich.edu/">University of Michigan</a>.
+			</div>	
+		</div>	
+	</div>
+</div>
+
+</footer>
+
+
+
+	<script type="text/javascript">
+		function signIn(providerId,callbackUrl){
+			window.location.href = "/datalumos/login";
+		}
+		function signOut(){
+			window.location.href = "/datalumos/logout";
+		}
+		var session = {};
+		
+			session.user = {};
+			session.user.firstName = "Mike+BTS";
+			session.user.lastName = "Kraley";
+		
+		var authUiPath = "https://researcherpassport.icpsr.umich.edu/profiles/self";
+		var props = { signIn: signIn, signOut: signOut, session: session, authUiPath: authUiPath, mode: null, dashboardUrl: "https://researcherpassport.icpsr.umich.edu/dashboard" }
+		ReactDOM.render(React.createElement(ArchonnexLoginDropdownReact14, props), document.getElementById('newLoginDropdown'));
+	</script>
+<script type="text/javascript">
+
+		function mfeLoadCallBack () {
+			if (!window.customElements.get("icpsr-rp-profile-update")) {
+				console.log("icpsr-rp-profile-update not yet addded to registry");
+				
+				const mfe = window.icpsrrp.get('RpProfileUpdate').then((factory) => {
+					console.log("preping the icpsr mfe factory");
+					return { default: factory() };
+				})
+			}
+		}
+		let mfeProps = {show: false};
+		
+		if(mfeProps.show) {
+			var script = document.createElement("script");
+			script.type = "text/javascript";
+			if (script.readyState) {  // only required for IE <9
+				script.onreadystatechange = function () {
+					if (script.readyState === "loaded" || script.readyState === "complete") {
+						script.onreadystatechange = null;
+						mfeLoadCallBack();
+					}
+				};
+			} else {  //Others
+				script.onload = function () {
+					mfeLoadCallBack();
+				};
+			}
+			//below is for local testing
+			// script.src = "http://localhost:3008/_next/static/chunks/mfe-rp-profile-update.js";
+			script.src = "https://researcherpassport.icpsr.umich.edu/_next/static/chunks/mfe-rp-profile-update.js";
+			document.getElementsByTagName("head")[0].appendChild(script);
+		}
+
+	</script>
+
+
+
+<div class="modal-backdrop fade in"></div></body></html>

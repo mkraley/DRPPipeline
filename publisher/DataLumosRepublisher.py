@@ -17,6 +17,7 @@ from playwright.sync_api import Page
 
 from publisher.DataLumosPublisher import VIEW_URL_TEMPLATE, DataLumosPublisher
 from storage import Storage
+from utils.Args import Args
 from utils.Logger import Logger
 
 REPUBLISH_VERSION_TITLE = "added missing file"
@@ -98,9 +99,13 @@ class DataLumosRepublisher(DataLumosPublisher):
         Args:
             page: Playwright page on the DataLumos project workspace.
         """
+        Logger.info("Waiting for Re-Publish Project button on workspace")
         republish_btn = page.locator(
             "button.btn-primary:has-text('Re-Publish Project')"
         )
+        republish_btn.wait_for(state="visible", timeout=int(Args.upload_timeout))
+        republish_btn.scroll_into_view_if_needed()
+        Logger.info("Clicking Re-Publish Project")
         republish_btn.click()
 
     def _prepare_review_page(self, page: Page) -> None:
