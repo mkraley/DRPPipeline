@@ -254,6 +254,63 @@ class InventorySheetUpdaterBase(ABC):
     ) -> List[Dict[str, Any]]:
         """Build batchUpdate cells for claim-only updates."""
 
+    def update_file_extensions(
+        self,
+        source_url: str,
+        extensions: str,
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Update only the File extensions column for the row matching ``source_url``.
+
+        Args:
+            source_url: Source URL to match in the URL column.
+            extensions: Comma-separated extension tokens (e.g. ``csv, zip``).
+
+        Returns:
+            ``(True, None)`` on success, ``(False, error_message)`` on failure.
+        """
+        column = self._file_extensions_column()
+        formatted = self._format_file_extensions_for_sheet(extensions)
+
+        def _build(
+            sheet_name: str,
+            row_number: int,
+            column_map: Dict[str, str],
+            append_new_row: bool,
+            source_url: str,
+            title_to_write: Optional[str],
+            agency_to_write: Optional[str],
+            office_to_write: Optional[str],
+            **kwargs: Any,
+        ) -> List[Dict[str, Any]]:
+            del append_new_row, source_url, title_to_write, agency_to_write, office_to_write
+            col_letter = column_map.get(column)
+            if not col_letter:
+                return []
+            return [
+                {
+                    "range": f"{sheet_name}!{col_letter}{row_number}",
+                    "values": [[formatted]],
+                }
+            ]
+
+        return self._update_row(
+            source_url=source_url,
+            required_columns=["URL", column],
+            optional_columns=[],
+            build_requests=_build,
+            log_suffix=" (file extensions only)",
+            project={},
+        )
+
+    @abstractmethod
+    def _file_extensions_column(self) -> str:
+        """Return the File extensions column header for this sheet format."""
+
+    @abstractmethod
+    def _format_file_extensions_for_sheet(self, extensions: str) -> str:
+        """Format extension tokens for the sheet cell value."""
+
     def _update_row(
         self,
         source_url: str,

@@ -76,6 +76,14 @@ class GoogleSheetUpdater(InventorySheetUpdaterBase):
     def _optional_columns_claimed(self) -> List[str]:
         return list(_OPTIONAL_METADATA_COLUMNS)
 
+    def _file_extensions_column(self) -> str:
+        """Return the data-inventories File extensions column header."""
+        return "File extensions of data uploads"
+
+    def _format_file_extensions_for_sheet(self, extensions: str) -> str:
+        """Pass through comma-separated extensions for the data inventories sheet."""
+        return (extensions or "").strip()
+
     def _resolve_metadata_for_row(
         self,
         service: Any,

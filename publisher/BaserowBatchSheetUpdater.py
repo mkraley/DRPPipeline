@@ -94,6 +94,14 @@ class BaserowBatchSheetUpdater(InventorySheetUpdaterBase):
             "Websites",
         ]
 
+    def _file_extensions_column(self) -> str:
+        """Return the Baserow File extensions column header."""
+        return "File extensions"
+
+    def _format_file_extensions_for_sheet(self, extensions: str) -> str:
+        """Format extensions as uppercase CSV for the Baserow sheet."""
+        return format_baserow_file_extensions(extensions)
+
     def _contact_value(self) -> str:
         """Return the configured Baserow Contact column value."""
         return baserow_contact_value(

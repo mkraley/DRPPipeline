@@ -5,6 +5,9 @@ Reads zip central directories and optionally recurses into nested archives
 under time, count, and depth budgets. Intended to enrich ``extensions``
 metadata only; callers should keep ``num_files`` and ``file_size`` as
 on-disk totals.
+
+BTS collection gates this behind ``Args.bts_scan_zip_extensions`` (default
+False): managers prefer reporting top-level uploaded / catalog extensions only.
 """
 
 from __future__ import annotations

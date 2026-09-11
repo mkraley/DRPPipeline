@@ -41,9 +41,10 @@ class TestBtsCollector(unittest.TestCase):
         mock_zip_scan: MagicMock,
         mock_create_folder: MagicMock,
     ) -> None:
-        """Zip member extensions augment metadata without changing file counts."""
+        """Zip member extensions augment metadata when the feature flag is on."""
         from utils.zip_extension_scan import ZipExtensionScanResult
 
+        Args._config["bts_scan_zip_extensions"] = True
         folder = Path(__file__).parent / "_tmp_bts_zip_ext"
         folder.mkdir(exist_ok=True)
         mock_create_folder.return_value = folder
@@ -69,10 +70,64 @@ class TestBtsCollector(unittest.TestCase):
             {"source_url": "https://rosap.ntl.bts.gov/view/dot/54854"},
         )
 
+        mock_zip_scan.assert_called_once()
         self.assertIn("shp", result.get("extensions", ""))
         self.assertIn("dbf", result.get("extensions", ""))
         self.assertGreaterEqual(result.get("num_files", 0), 1)
 
+        shutil.rmtree(folder, ignore_errors=True)
+
+    @patch("collectors.BtsCollector.record_error")
+    @patch("collectors.BtsCollector.record_warning")
+    @patch("collectors.BtsCollector.create_output_folder")
+    @patch("collectors.BtsCollector.scan_zip_extensions_in_folder")
+    @patch("collectors.BtsCollector.UsfsPageDownloader")
+    def test_collect_skips_zip_scan_by_default(
+        self,
+        mock_downloader_cls: MagicMock,
+        mock_zip_scan: MagicMock,
+        mock_create_folder: MagicMock,
+        _mock_warning: MagicMock,
+        _mock_error: MagicMock,
+    ) -> None:
+        """Default config reports top-level extensions only (no zip peek)."""
+        from utils.zip_extension_scan import ZipExtensionScanResult
+
+        Args._config["bts_scan_zip_extensions"] = False
+        folder = Path(__file__).parent / "_tmp_bts_zip_ext_off"
+        folder.mkdir(exist_ok=True)
+        mock_create_folder.return_value = folder
+        mock_zip_scan.return_value = ZipExtensionScanResult(
+            extensions={"shp", "dbf"},
+            archives_scanned=1,
+        )
+
+        page_downloader = MagicMock()
+        page_downloader.fetch_page_html.return_value = (
+            200,
+            _FIXTURE.read_text(encoding="utf-8"),
+            None,
+            False,
+        )
+        page_downloader.url_to_pdf.return_value = True
+
+        def _fake_download(_url: str, dest: Path) -> tuple[int, bool]:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"x" * 8)
+            return 8, True
+
+        page_downloader.download_file.side_effect = _fake_download
+        mock_downloader_cls.return_value = page_downloader
+        self.collector._page_downloader = page_downloader
+
+        result = self.collector._collect(
+            "https://rosap.ntl.bts.gov/view/dot/54854",
+            7,
+            {"source_url": "https://rosap.ntl.bts.gov/view/dot/54854"},
+        )
+
+        mock_zip_scan.assert_not_called()
+        self.assertNotIn("shp", result.get("extensions", ""))
         shutil.rmtree(folder, ignore_errors=True)
 
     @patch("collectors.BtsCollector.create_output_folder")

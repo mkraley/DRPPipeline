@@ -133,7 +133,8 @@ class BtsCollector(CollectorBase):
 
         extensions, _on_disk_bytes, _on_disk_files = self._folder_inventory(folder_path)
         extensions.update(inventory_exts)
-        self._enrich_extensions_from_archives(drpid, folder_path, extensions)
+        if bool(getattr(Args, "bts_scan_zip_extensions", False)):
+            self._enrich_extensions_from_archives(drpid, folder_path, extensions)
         if extensions:
             result["extensions"] = ", ".join(sorted(extensions))
         result["num_files"] = 1 + len(download_files)
@@ -481,6 +482,9 @@ class BtsCollector(CollectorBase):
     ) -> None:
         """
         Add member extensions from zip archives without changing file counts or sizes.
+
+        Kept for optional use when ``Args.bts_scan_zip_extensions`` is True.
+        Managers currently prefer top-level uploaded / catalog extensions only.
 
         Args:
             drpid: Project DRPID for warnings.
