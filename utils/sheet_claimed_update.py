@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 from utils.Args import Args
 from utils.Logger import Logger
 
-_SOURCES_SKIP_INVENTORY_CLAIMED = frozenset({"bts"})
+_SOURCES_SKIP_INVENTORY_CLAIMED = frozenset({"bts", "ssa"})
 
 
 def should_claim_inventory_sheet(source: str | None = None) -> bool:

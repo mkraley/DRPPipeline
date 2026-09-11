@@ -85,6 +85,8 @@ class Args(metaclass=ArgsMeta):
         "sourcing_mode": "unclaimed",  # Row filter: unclaimed (default), completed (Download Location filled), all
         "adc_request_delay": 0.1,  # Seconds between Figshare API calls during ADC sourcing
         "bts_request_delay": 0.1,  # Seconds between ROSA P catalog page fetches during BTS sourcing
+        "ssa_request_delay": 0.1,  # Seconds between GSA Catalog API pages during SSA sourcing
+        "gsa_api_key": None,  # api.data.gov key for SSA catalog sourcing (GSA Catalog API)
         # When True, BTS collector peeks inside zip archives for member extensions.
         # Default False: report only top-level uploaded / catalog-listed extensions.
         "bts_scan_zip_extensions": False,

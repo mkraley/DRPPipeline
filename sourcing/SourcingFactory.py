@@ -8,12 +8,14 @@ from typing import Type
 
 from sourcing.AdcSourcing import AdcSourcing
 from sourcing.BtsSourcing import BtsSourcing
+from sourcing.SsaSourcing import SsaSourcing
 from sourcing.SourcingBase import SourcingBase
 from sourcing.SpreadsheetSourcing import SpreadsheetSourcing
 from utils.Args import Args
 
 _ADC_SOURCE = "adc"
 _BTS_SOURCE = "bts"
+_SSA_SOURCE = "ssa"
 _SPREADSHEET_SOURCES = frozenset({"ahrq", "cdc", "cms", "dol", "usfs"})
 
 
@@ -25,7 +27,8 @@ def sourcing_class_for_source(source: str | None = None) -> Type[SourcingBase]:
         source: Source key from config; defaults to ``Args.source``.
 
     Returns:
-        ``AdcSourcing`` for ADC; ``SpreadsheetSourcing`` for sheet-based sources.
+        ``AdcSourcing``, ``BtsSourcing``, or ``SsaSourcing`` for API catalogs;
+        ``SpreadsheetSourcing`` for sheet-based sources.
     """
     key = (source if source is not None else getattr(Args, "source", None) or "")
     key = str(key).strip().lower()
@@ -33,12 +36,14 @@ def sourcing_class_for_source(source: str | None = None) -> Type[SourcingBase]:
         return AdcSourcing
     if key == _BTS_SOURCE:
         return BtsSourcing
+    if key == _SSA_SOURCE:
+        return SsaSourcing
     if key in _SPREADSHEET_SOURCES or not key:
         return SpreadsheetSourcing
     raise ValueError(
         f"Unknown source {key!r}. Known spreadsheet sources: "
         f"{', '.join(sorted(_SPREADSHEET_SOURCES))}; "
-        f"API sources: {_ADC_SOURCE!r}, {_BTS_SOURCE!r}."
+        f"API sources: {_ADC_SOURCE!r}, {_BTS_SOURCE!r}, {_SSA_SOURCE!r}."
     )
 
 

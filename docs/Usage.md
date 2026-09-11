@@ -352,6 +352,8 @@ If the config file does not exist, a warning is shown but the pipeline continues
 | `upload_headless` | — | yes | `false` | Run browser in headless mode for upload |
 | `upload_timeout` | — | yes | `60000` | Timeout in ms for upload operations |
 | `socrata_app_token` | — | yes | — | Optional Socrata API token (avoids 403 on direct download) |
+| `gsa_api_key` | — | yes | — | api.data.gov key for SSA catalog sourcing (GSA Catalog API). Get a free key at https://api.data.gov/signup/ |
+| `ssa_request_delay` | — | yes | `0.1` | Seconds between GSA Catalog API pages during SSA sourcing |
 | `gwda_your_name` | — | yes (required for GWDA) | `""` | Name for GWDA nomination (nominates URLs to U.S. Gov Web & Data Archive) |
 | `gwda_institution` | — | yes | `Data Rescue Project` | Institution for GWDA |
 | `gwda_email` | — | yes | (from `datalumos_username`) | Email for GWDA |

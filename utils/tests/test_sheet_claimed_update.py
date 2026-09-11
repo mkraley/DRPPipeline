@@ -31,6 +31,12 @@ class TestShouldClaimInventorySheet(unittest.TestCase):
         self.assertFalse(should_claim_inventory_sheet())
         self.assertFalse(should_claim_inventory_sheet("bts"))
 
+    def test_ssa_source_skips_claimed(self) -> None:
+        """SSA catalog sourcing does not write inventory Claimed."""
+        Args._config["source"] = "ssa"
+        self.assertFalse(should_claim_inventory_sheet())
+        self.assertFalse(should_claim_inventory_sheet("ssa"))
+
     def test_other_sources_claim(self) -> None:
         """Spreadsheet-sourced pipelines still write Claimed."""
         Args._config["source"] = "cdc"
