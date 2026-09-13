@@ -36,7 +36,7 @@ MODULES
 
 COMMON OPTIONS
   -c, --config PATH       Config file (default: ./config.json)
-  --source NAME           Override config ``source`` (selects sources.<name>)
+  --source NAME           Override config source (selects sources.<name>)
   -n, --num-rows INT      Max projects per batch
   --start INT             Only process projects with DRPID >= this value
   --ids LIST              Comma-delimited DRPIDs (ranges ok, e.g. 5,7,10-12);

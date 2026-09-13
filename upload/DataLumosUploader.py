@@ -20,6 +20,33 @@ STATUS_COLLECTED_LARGE_FILE = "collected - large file"
 STATUS_UPLOADED_LARGE_FILE = "uploaded - large file"
 
 
+def _agency_values_for_upload(agency: str, office: str) -> List[str]:
+    """
+    Build Government Agency field values for DataLumos upload.
+
+    When office equals agency (case-insensitive after strip), only agency is
+    returned so the form does not show a duplicate entry.
+
+    Args:
+        agency: Project agency name (may be empty).
+        office: Project office name (may be empty).
+
+    Returns:
+        Non-empty values to pass to ``fill_agency``, agency first then office.
+    """
+    agency_clean = (agency or "").strip()
+    office_clean = (office or "").strip()
+    if not agency_clean and not office_clean:
+        return []
+    if not office_clean:
+        return [agency_clean] if agency_clean else []
+    if not agency_clean:
+        return [office_clean]
+    if agency_clean.casefold() == office_clean.casefold():
+        return [agency_clean]
+    return [agency_clean, office_clean]
+
+
 def _success_status_after_upload(prior_status: str) -> str:
     """Map pre-upload status to post-upload status."""
     if prior_status == STATUS_COLLECTED_LARGE_FILE:
@@ -196,7 +223,10 @@ class DataLumosUploader:
 
         form_filler.expand_all_sections()
         
-        agencies = [f for f in [get_field(project, "agency"), get_field(project, "office")] if f]
+        agencies = _agency_values_for_upload(
+            get_field(project, "agency"),
+            get_field(project, "office"),
+        )
         if agencies:
             form_filler.fill_agency(agencies)
         

@@ -12,7 +12,11 @@ from storage import Storage
 from utils.Args import Args
 from utils.Logger import Logger
 
-from upload.DataLumosUploader import DataLumosUploader, _warn_if_num_files_mismatch
+from upload.DataLumosUploader import (
+    DataLumosUploader,
+    _agency_values_for_upload,
+    _warn_if_num_files_mismatch,
+)
 from upload.UploadIssueReporter import UploadIssueReporter
 
 
@@ -109,6 +113,33 @@ class TestDataLumosUploader(unittest.TestCase):
         project = {"title": "  x  ", "missing": None}
         self.assertEqual(get_field(project, "title"), "x")
         self.assertEqual(get_field(project, "missing"), "")
+
+    def test_agency_values_includes_both_when_different(self) -> None:
+        """Distinct agency and office are both uploaded."""
+        self.assertEqual(
+            _agency_values_for_upload("DOT", "BTS"),
+            ["DOT", "BTS"],
+        )
+
+    def test_agency_values_dedupes_when_office_matches_agency(self) -> None:
+        """Same agency and office yields a single Government Agency entry."""
+        self.assertEqual(
+            _agency_values_for_upload(
+                "Social Security Administration",
+                "Social Security Administration",
+            ),
+            ["Social Security Administration"],
+        )
+        self.assertEqual(
+            _agency_values_for_upload("SSA", "ssa"),
+            ["SSA"],
+        )
+
+    def test_agency_values_handles_blank_and_whitespace(self) -> None:
+        """Empty or whitespace-only fields are omitted."""
+        self.assertEqual(_agency_values_for_upload("", ""), [])
+        self.assertEqual(_agency_values_for_upload("  Agency  ", "  "), ["Agency"])
+        self.assertEqual(_agency_values_for_upload("", "Office"), ["Office"])
 
     @patch("upload.UploadIssueReporter.record_warning")
     def test_warn_if_num_files_mismatch_records_when_differs(
