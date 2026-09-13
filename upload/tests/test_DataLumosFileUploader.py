@@ -296,3 +296,39 @@ class TestDataLumosFileUploader(unittest.TestCase):
         uploader = DataLumosFileUploader(mock_page)
         uploader._close_modal(use_zip=False)
         close_btn.click.assert_not_called()
+
+    def test_close_modal_raises_when_still_visible_after_timeout(self) -> None:
+        """Stuck upload modal is a hard failure, not a warning."""
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+        mock_page = MagicMock()
+        modal = MagicMock()
+        modal.count.return_value = 1
+        modal.first.is_visible.return_value = True
+        close_btn = MagicMock()
+        close_btn.click.side_effect = PlaywrightTimeoutError("timeout")
+
+        def locator_side_effect(selector: str) -> MagicMock:
+            if selector == ".importFileModal":
+                return modal
+            return close_btn
+
+        mock_page.locator.side_effect = locator_side_effect
+        uploader = DataLumosFileUploader(mock_page)
+        with self.assertRaises(RuntimeError) as ctx:
+            uploader._close_modal(use_zip=False)
+        self.assertIn("close button", str(ctx.exception).lower())
+
+    def test_wait_for_obscuring_long_timeout_raises(self) -> None:
+        """Long busy-overlay waits abort file upload."""
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+        mock_page = MagicMock()
+        busy = MagicMock()
+        busy.count.return_value = 1
+        busy.first.wait_for.side_effect = PlaywrightTimeoutError("busy")
+        mock_page.locator.return_value = busy
+        uploader = DataLumosFileUploader(mock_page)
+        with self.assertRaises(RuntimeError) as ctx:
+            uploader._wait_for_obscuring_elements(max_wait_ms=60000)
+        self.assertIn("busy overlay", str(ctx.exception).lower())

@@ -6,7 +6,7 @@ including text inputs, WYSIWYG editors, dropdowns, and autocomplete fields.
 """
 
 import re
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, NoReturn, Optional, TYPE_CHECKING
 
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
@@ -75,38 +75,50 @@ class DataLumosFormFiller:
         Args:
             page: Playwright Page object
             timeout: Default timeout in milliseconds
-            reporter: When set, warnings are persisted to the project record
+            reporter: When set, non-fatal warnings (e.g. title truncation) are
+                persisted to the project record. Playwright action failures raise
+                and are recorded as errors by the uploader.
         """
         self._page = page
         self._timeout = timeout
         self._reporter = reporter
 
     def _warn(self, msg: str) -> None:
+        """Record a non-fatal warning (processing continues)."""
         if self._reporter is not None:
             self._reporter.warn(msg)
         else:
             Logger.warning(msg)
-    
+
+    def _fail(self, msg: str) -> NoReturn:
+        """Abort form filling for this project; uploader records an error."""
+        raise RuntimeError(msg)
+
     def wait_for_obscuring_elements(self) -> None:
         """
         Wait for any loading overlays or busy indicators to disappear.
-        
+
         Looks for elements with id="busy" and waits for them to become hidden.
+
+        Raises:
+            RuntimeError: If the busy overlay does not clear in time.
         """
         busy_locator = self._page.locator("#busy")
         try:
             if busy_locator.count() > 0:
                 busy_locator.first.wait_for(state="hidden", timeout=360000)  # 6 min
                 self._page.wait_for_timeout(500)
-        except PlaywrightTimeoutError:
-            self._warn("Timeout waiting for busy overlay to disappear")
-    
+        except PlaywrightTimeoutError as exc:
+            self._fail(f"Timeout waiting for busy overlay to disappear: {exc}")
+
     def expand_all_sections(self) -> None:
         """
         Expand all collapsible sections on the form.
 
         Clicks "Collapse All" then "Expand All" to ensure all sections are visible.
-        Non-fatal if the toggle is missing (DataLumos UI changes).
+
+        Raises:
+            RuntimeError: If ``#expand-init`` is missing or not clickable.
         """
         try:
             collapse_btn = self._page.locator("#expand-init > span:nth-child(2)")
@@ -118,8 +130,8 @@ class DataLumosFormFiller:
             self.wait_for_obscuring_elements()
             expand_btn.click(timeout=5000)
             self._page.wait_for_timeout(2000)
-        except PlaywrightTimeoutError:
-            self._warn("expand_all_sections: #expand-init not found, skipping")
+        except PlaywrightTimeoutError as exc:
+            self._fail(f"expand_all_sections: #expand-init not found: {exc}")
     
     def fill_title(self, title: str) -> None:
         """
@@ -288,15 +300,18 @@ class DataLumosFormFiller:
     def fill_keywords(self, keywords: List[str]) -> None:
         """
         Fill the subject terms/keywords field.
-        
+
         Uses select2 autocomplete - types each keyword and selects
         the matching suggestion.
+
+        Raises:
+            RuntimeError: If a keyword cannot be added (Playwright timeout).
         """
         for keyword in keywords:
             keyword = keyword.strip(" '")
             if len(keyword) <= 2:
                 continue
-            
+
             try:
                 self.wait_for_obscuring_elements()
                 _debug_form_field("keyword (subject term)", keyword)
@@ -304,14 +319,14 @@ class DataLumosFormFiller:
                 search_field.click()
                 search_field.fill(keyword)
                 self.wait_for_obscuring_elements()
-                
+
                 option = self._page.locator(
                     f"xpath=//li[contains(@class, 'select2-results__option') and text()='{keyword}']"
                 )
                 self.wait_for_obscuring_elements()
                 option.click()
-            except PlaywrightTimeoutError as e:
-                self._warn(f"Could not add keyword '{keyword}': {e}")
+            except PlaywrightTimeoutError as exc:
+                self._fail(f"Could not add keyword '{keyword}': {exc}")
     
     def _geographic_coverage_block(self):
         """Geographic coverage field container: label span, up two parent levels."""
@@ -369,7 +384,7 @@ class DataLumosFormFiller:
             try:
                 self._add_geographic_term(term)
             except PlaywrightTimeoutError as exc:
-                self._warn(f"Could not add geographic term '{term}': {exc}")
+                self._fail(f"Could not add geographic term '{term}': {exc}")
     
     def fill_time_period(self, start: Optional[str], end: Optional[str]) -> None:
         """Fill the time period fields."""
@@ -412,9 +427,10 @@ class DataLumosFormFiller:
         self._page.keyboard.press("Escape")
         try:
             self._page.locator(".modal.fade.in").wait_for(state="hidden", timeout=10000)
-        except PlaywrightTimeoutError:
-            self._warn("Time period modal still visible after Escape; continuing anyway")
-            self._page.wait_for_timeout(1000)
+        except PlaywrightTimeoutError as exc:
+            self._fail(
+                f"Time period modal still visible after Escape: {exc}"
+            )
 
     def fill_data_types(self, data_type: str) -> None:
         """
@@ -481,8 +497,8 @@ class DataLumosFormFiller:
             try:
                 if not checkbox.is_checked():
                     checkbox.check(force=True)
-            except PlaywrightTimeoutError:
-                self._warn(f"Could not verify data type checkbox for {label!r}")
+            except PlaywrightTimeoutError as exc:
+                self._fail(f"Could not verify data type checkbox for {label!r}: {exc}")
     
     def fill_collection_notes(self, notes: str, download_date: Optional[str] = None) -> None:
         """Fill the collection notes field, optionally appending download date."""

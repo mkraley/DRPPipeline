@@ -106,7 +106,7 @@ class DataLumosFileUploader:
             page: Playwright Page object
             timeout: Default timeout in milliseconds for UI actions
             upload_wait_timeout: Timeout in ms to wait for all files to be queued (default 10 min)
-            reporter: When set, warnings are persisted to the project record
+            reporter: Reserved for non-fatal upload notes (Playwright failures raise)
             skip_busy_wait_on_close: When True, close the modal after queue acceptance without
                 waiting for the busy overlay (large files may keep #busy visible while uploading)
         """
@@ -115,12 +115,6 @@ class DataLumosFileUploader:
         self._upload_wait_timeout = upload_wait_timeout
         self._reporter = reporter
         self._skip_busy_wait_on_close = skip_busy_wait_on_close
-
-    def _warn(self, msg: str) -> None:
-        if self._reporter is not None:
-            self._reporter.warn(msg)
-        else:
-            Logger.warning(msg)
 
     def upload_file_paths(self, files: List[Path]) -> None:
         """
@@ -280,8 +274,9 @@ class DataLumosFileUploader:
             if not self._import_modal_visible(use_zip):
                 Logger.info("Upload modal closed before close button was clicked")
                 return
-            self._warn("Upload modal close button was not clickable within 10s")
-            return
+            raise RuntimeError(
+                "Upload modal close button was not clickable within 10s"
+            ) from None
 
         if self._skip_busy_wait_on_close:
             Logger.info(
@@ -309,9 +304,10 @@ class DataLumosFileUploader:
                 self._page.wait_for_timeout(500)
         except PlaywrightTimeoutError:
             if max_wait_ms >= 60000:
-                self._warn("Timeout waiting for busy overlay to disappear")
-            else:
-                Logger.debug("Busy overlay still visible after %sms", max_wait_ms)
+                raise RuntimeError(
+                    "Timeout waiting for busy overlay to disappear"
+                ) from None
+            Logger.debug("Busy overlay still visible after %sms", max_wait_ms)
 
     def count_upload_batches(self, folder_path: str) -> int:
         """

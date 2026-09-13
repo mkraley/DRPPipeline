@@ -120,6 +120,17 @@ class TestDataLumosFormFiller(unittest.TestCase):
         mock_first.wait_for.assert_called_once_with(state="hidden", timeout=360000)
         self.mock_page.wait_for_timeout.assert_called_with(500)
 
+    def test_wait_for_obscuring_elements_timeout_raises(self) -> None:
+        """Busy overlay timeout aborts form filling."""
+        mock_busy = MagicMock()
+        mock_busy.count.return_value = 1
+        mock_busy.first.wait_for.side_effect = PlaywrightTimeoutError("busy")
+        self.mock_page.locator.return_value = mock_busy
+
+        with self.assertRaises(RuntimeError) as ctx:
+            self.form_filler.wait_for_obscuring_elements()
+        self.assertIn("busy overlay", str(ctx.exception).lower())
+
     def test_fill_title(self) -> None:
         """Test fill_title fills title, Save & Apply, then Continue To Project Workspace."""
         mock_title = MagicMock()
@@ -261,14 +272,16 @@ class TestDataLumosFormFiller(unittest.TestCase):
 
         self.mock_page.locator.assert_not_called()
 
-    def test_expand_all_sections_skips_missing_toggle(self) -> None:
-        """Test expand_all_sections is non-fatal when #expand-init is absent."""
+    def test_expand_all_sections_raises_when_toggle_missing(self) -> None:
+        """expand_all_sections aborts when #expand-init is not clickable."""
         mock_btn = MagicMock()
         mock_btn.click.side_effect = PlaywrightTimeoutError("missing")
         self.mock_page.locator.return_value = mock_btn
 
         with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
-            self.form_filler.expand_all_sections()
+            with self.assertRaises(RuntimeError) as ctx:
+                self.form_filler.expand_all_sections()
+        self.assertIn("#expand-init", str(ctx.exception))
 
     def test_geographic_coverage_block_uses_label_and_add_value(self) -> None:
         """Geographic add-value is found from the label span and title attribute."""
@@ -429,18 +442,27 @@ class TestDataLumosFormFiller(unittest.TestCase):
         
         self.mock_page.locator.assert_not_called()
 
-    def test_fill_keywords_persists_warning_via_reporter(self) -> None:
-        reporter = MagicMock()
-        form_filler = DataLumosFormFiller(self.mock_page, timeout=5000, reporter=reporter)
+    def test_fill_keywords_raises_on_playwright_timeout(self) -> None:
+        """Keyword add failures abort the project instead of warning."""
+        form_filler = DataLumosFormFiller(self.mock_page, timeout=5000)
         mock_search = MagicMock()
         mock_search.click.side_effect = PlaywrightTimeoutError("timeout")
         self.mock_page.locator.return_value = mock_search
 
         with unittest.mock.patch.object(form_filler, "wait_for_obscuring_elements"):
-            form_filler.fill_keywords(["Oregon"])
+            with self.assertRaises(RuntimeError) as ctx:
+                form_filler.fill_keywords(["Oregon"])
+        self.assertIn("Oregon", str(ctx.exception))
 
-        reporter.warn.assert_called_once()
-        self.assertIn("Oregon", reporter.warn.call_args[0][0])
+    def test_fill_geographic_coverage_raises_on_timeout(self) -> None:
+        """Geographic term add failures abort the project."""
+        with unittest.mock.patch.object(
+            self.form_filler, "_add_geographic_term",
+            side_effect=PlaywrightTimeoutError("geo"),
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                self.form_filler.fill_geographic_coverage("Oregon")
+        self.assertIn("Oregon", str(ctx.exception))
 
 
 class TestDataLumosUploaderHelpers(unittest.TestCase):
