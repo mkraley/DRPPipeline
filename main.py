@@ -36,6 +36,7 @@ MODULES
 
 COMMON OPTIONS
   -c, --config PATH       Config file (default: ./config.json)
+  --source NAME           Override config ``source`` (selects sources.<name>)
   -n, --num-rows INT      Max projects per batch
   --start INT             Only process projects with DRPID >= this value
   --ids LIST              Comma-delimited DRPIDs (ranges ok, e.g. 5,7,10-12);
@@ -95,6 +96,8 @@ def setup() -> None:
     # Log configuration info
     if Args.config_file:
         Logger.info(f"Using config file: {Args.config_file}")
+    if getattr(Args, "source", None):
+        Logger.info(f"Using source: {Args.source}")
     Logger.info(f"Log level: {log_level}")
 
 

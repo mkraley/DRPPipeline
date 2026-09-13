@@ -24,6 +24,13 @@ Config File Format:
             "usfs": {
                 "db_path": "usfs.db",
                 "base_output_dir": "C:\\\\DataRescue\\\\USFSData"
+            },
+            "ssa": {
+                "db_path": "ssa.db",
+                "base_output_dir": "C:\\\\DataRescue\\\\SSAData",
+                "inventory_sheet_format": "baserow_batch",
+                "baserow_contact": "mike@kraley.com",
+                "default_metadata_available": false
             }
         }
     }
@@ -41,7 +48,8 @@ Example usage:
     config_file = Args.config_file  # From --config or config file
 
 Note: Priority order (highest to lowest):
-    1. Command line arguments (from Typer)
+    1. Command line arguments (from Typer), including ``--source`` which selects
+       ``sources.<name>`` when the config file is loaded
     2. Config file values
     3. Default values (from defaults dict)
 """
@@ -177,7 +185,7 @@ class Args(metaclass=ArgsMeta):
         Initialize configuration from defaults, config file, and command line args.
         
         Priority order (highest to lowest):
-            1. Command line arguments
+            1. Command line arguments (including ``--source`` for source selection)
             2. Config file values
             3. Default values
         
@@ -203,7 +211,11 @@ class Args(metaclass=ArgsMeta):
             if not isinstance(config_path, Path):
                 config_path = Path(config_path)
             if config_path.exists():
-                cls._load_config_file(config_path)
+                # --source must apply during layer resolve so sources.<name> merges correctly
+                cls._load_config_file(
+                    config_path,
+                    source_override=parsed_args.get("source"),
+                )
             else:
                 # Warn if config file not found, but continue without it
                 print(f"Warning: Config file '{config_path}' not found. Using defaults and command line arguments only.",
@@ -228,10 +240,19 @@ class Args(metaclass=ArgsMeta):
         cls._initialized = True
 
     @classmethod
-    def initialize_from_config(cls, config_path: Optional[Path] = None) -> None:
+    def initialize_from_config(
+        cls,
+        config_path: Optional[Path] = None,
+        source: Optional[str] = None,
+    ) -> None:
         """
         Initialize from defaults and config file only (no CLI parsing).
         Use when the app is run without the Typer CLI (e.g. Flask, pytest).
+
+        Args:
+            config_path: Optional path to config JSON.
+            source: Optional source name overriding the config file ``source``
+                key (selects ``sources.<name>``).
         """
         if cls._initialized:
             return
@@ -241,7 +262,9 @@ class Args(metaclass=ArgsMeta):
         if not isinstance(config_path, Path):
             config_path = Path(config_path)
         if config_path.exists():
-            cls._load_config_file(config_path)
+            cls._load_config_file(config_path, source_override=source)
+        elif source:
+            cls._config["source"] = source
         gwda_email = cls._config.get("gwda_email") or cls._config.get("datalumos_username")
         cls._config["gwda_email"] = gwda_email
         if os.environ.get("DRP_STOP_FILE"):
@@ -263,6 +286,11 @@ class Args(metaclass=ArgsMeta):
             ctx: typer.Context,
             module: Optional[str] = typer.Argument(None, help="Module to run: setup, noop, sourcing, collector, interactive_collector, upload, publisher, republisher, cleanup_inprogress, help"),
             config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to configuration file (JSON format). Default: ./config.json"),
+            source: Optional[str] = typer.Option(
+                None,
+                "--source",
+                help="Override config source key (selects sources.<name> in config.json)",
+            ),
             log_level: Optional[str] = typer.Option(None, "--log-level", "-l", help="Set the logging level", case_sensitive=False),
             num_rows: Optional[int] = typer.Option(None, "--num-rows", "-n", help="Max projects or candidate URLs per batch; None = unlimited"),
             start_row: Optional[int] = typer.Option(None, "--start-row", help="Start at this 1-origin row (all rows, ORDER BY DRPID); skip earlier rows"),
@@ -313,6 +341,8 @@ class Args(metaclass=ArgsMeta):
             parsed_values["module"] = module
             if config is not None:
                 parsed_values["config"] = config
+            if source is not None:
+                parsed_values["source"] = source.strip()
             if log_level is not None:
                 parsed_values["log_level"] = log_level.upper()
             if num_rows is not None:
@@ -367,7 +397,11 @@ class Args(metaclass=ArgsMeta):
         return parsed_values
 
     @classmethod
-    def _resolve_config_layers(cls, config_file_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _resolve_config_layers(
+        cls,
+        config_file_data: Dict[str, Any],
+        source_override: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Flatten hierarchical config: globals plus the selected source section.
 
@@ -376,6 +410,8 @@ class Args(metaclass=ArgsMeta):
 
         Args:
             config_file_data: Raw JSON object from the config file.
+            source_override: Optional ``source`` name from ``--source`` that
+                replaces the config file's ``source`` key before merging.
 
         Returns:
             Flat key-value config ready to merge into ``_config``.
@@ -387,6 +423,9 @@ class Args(metaclass=ArgsMeta):
         flat: Dict[str, Any] = {
             key: value for key, value in config_file_data.items() if key != "sources"
         }
+        if source_override:
+            flat["source"] = source_override
+
         sources = config_file_data.get("sources")
         if not isinstance(sources, dict):
             return flat
@@ -411,12 +450,18 @@ class Args(metaclass=ArgsMeta):
         return flat
 
     @classmethod
-    def _load_config_file(cls, config_path: Path) -> None:
+    def _load_config_file(
+        cls,
+        config_path: Path,
+        source_override: Optional[str] = None,
+    ) -> None:
         """
         Load configuration from JSON file and merge into config.
         
         Args:
             config_path: Path to the JSON config file
+            source_override: Optional ``source`` name overriding the file value
+                when resolving ``sources.<name>``.
         """
         try:
             with open(config_path, "r", encoding="utf-8") as f:
@@ -425,7 +470,12 @@ class Args(metaclass=ArgsMeta):
                     raise ValueError(
                         f"Config file '{config_path}' must contain a JSON object"
                     )
-                cls._config.update(cls._resolve_config_layers(config_file_data))
+                cls._config.update(
+                    cls._resolve_config_layers(
+                        config_file_data,
+                        source_override=source_override,
+                    )
+                )
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON in config file '{config_path}': {e}")
         except ValueError:

@@ -1,0 +1,71 @@
+{
+    "source": "bts",
+    "gwda_your_name": "Michael Kraley",
+    "google_credentials": "C:\\Documents\\DataRescue\\datalumos-upload-65f3620f9a34.json",
+    "google_sheet_id": "1OYLn6NBWStOgPUTJfYpU0y0g4uY7roIPP4qC2YztgWY",
+    "google_username": "mkraley",
+    "sources": {
+        "adc": {
+            "base_output_dir": "C:\\DataRescue\\ADCData",
+            "datalumos_username": "mkraley+adc@gmail.com",
+            "datalumos_password": "#!LzD5aF5DShQ@m",
+            "google_sheet_name": "USDA",
+            "db_path": "adc.db",
+            "sourcing_url_prefix": "",
+            "globus_client_id": "00b47615-043d-4308-98c3-29c6ab6f1789",
+            "globus_refresh_token": "AgPvVd5Jaw5regp9EENgvGJY9Wz4pWzMOEJQbgJexdm4nNvWdGixUrbg7Jv29y6GrNxXdy0pwweXPw4apyGjxkVj9vyYX",
+            "globus_destination_endpoint_id": "<your GCP collection UUID>",
+            "globus_destination_base_path": "/~/"
+        },
+        "ahrq": {
+            "base_output_dir": "C:\\DataRescue\\AHRQData",
+            "datalumos_username": "mike+ahrq@kraley.com",
+            "datalumos_password": "mH&@Jm84LMnxTa3",
+            "google_sheet_name": "AHRQ",
+            "db_path": "ahrq.db",
+            "sourcing_url_prefix": ""
+        },
+        "cdc": {
+            "base_output_dir": "C:\\DataRescue\\CDCData",
+            "datalumos_username": "mike@kraley.com",
+            "datalumos_password": "cnDS5C?3m!kFkt7Q",
+            "google_sheet_name": "CDC",
+            "db_path": "cdc.db",
+            "sourcing_url_prefix": "https://catalog.data.gov/",
+            "socrata_app_token": "U4dtYnGT3NaL4c6DPyZ5U4siT"
+        },
+        "usfs": {
+            "base_output_dir": "C:\\DataRescue\\USFSData",
+            "datalumos_username": "mike@kraley.com",
+            "datalumos_password": "cnDS5C?3m!kFkt7Q",
+            "google_sheet_name": "USFS",
+            "db_path": "usfs.db",
+            "sourcing_url_prefix": ""
+        },
+        "bts": {
+            "base_output_dir": "C:\\DataRescue\\BTSData",
+            "datalumos_username": "mkraley+bts@gmail.com",
+            "datalumos_password": "LcSc?tz&@k83mbz",
+            "google_sheet_name": "BTS",
+            "db_path": "bts.db",
+            "sourcing_url_prefix": "https://rosap.ntl.bts.gov/",
+            "bts_catalog_url": "https://rosap.ntl.bts.gov/cbrowse?pid=dot%3A35533&parentId=dot%3A35533&sm_resource_type%5B%5D=Dataset",
+            "google_sheet_id": "1IfVbEkNZvvmDl5Y6PKD7pBXfHYlJGB_WXI04Uyogckc",
+            "inventory_sheet_format": "baserow_batch",
+            "baserow_contact": "mike@kraley.com",
+            "default_metadata_available": false
+        },
+        "ssa": {
+            "base_output_dir": "C:\\DataRescue\\SSAData",
+            "google_sheet_name": "SSA",
+            "db_path": "ssa.db",
+            "sourcing_url_prefix": "https://catalog.data.gov/",
+            "gsa_api_key": "DLjaEG3SuXWWrlgDAO40jZbi4fzRDHiihwoIa5df",
+            "datalumos_username": "mkraley+ssa@gmail.com",
+            "datalumos_password": "XeeFz?&YjxX5?nt",
+            "inventory_sheet_format": "baserow_batch",
+            "baserow_contact": "mike@kraley.com",
+            "default_metadata_available": false
+        }
+    }
+}

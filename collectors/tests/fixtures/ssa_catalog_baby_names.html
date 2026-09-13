@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org/",
+        "@type": "Dataset",
+        "name": "Baby Names from Social Security Card Applications - National Data",
+        "description": "The data (name, year of birth, sex, and number) are from a 100 percent sample of Social Security card applications for 1880 on.",
+        "dateModified": "2026-05-08",
+        "identifier": "US-GOV-SSA-338",
+        "keywords": ["Baby names", "SSA", "Social Security"],
+        "spatial": "United States",
+        "temporalCoverage": "1880/2025",
+        "distribution": [
+            {
+                "@type": "DataDownload",
+                "contentUrl": "https://www.ssa.gov/oact/babynames/index.html",
+                "encodingFormat": "text/html"
+            },
+            {
+                "@type": "DataDownload",
+                "contentUrl": "https://www.ssa.gov/oact/babynames/names.zip",
+                "encodingFormat": "application/zip",
+                "name": "National names"
+            }
+        ]
+    }
+    </script>
+</head>
+<body>
+    <h1>Baby Names from Social Security Card Applications - National Data</h1>
+    <p class="usa-prose">The data (name, year of birth, sex, and number) are from a 100 percent sample of Social Security card applications for 1880 on.</p>
+    <ul>
+        <li class="resources-list__item">
+            <p class="resources-list__name">Resource 1</p>
+            <div class="resources-list__format">HTML</div>
+            <a class="resources-list__btn" href="https://www.ssa.gov/oact/babynames/index.html">Download</a>
+        </li>
+        <li class="resources-list__item">
+            <p class="resources-list__name">Resource 2</p>
+            <div class="resources-list__format">ZIP</div>
+            <a class="resources-list__btn" href="https://www.ssa.gov/oact/babynames/names.zip">Download</a>
+        </li>
+    </ul>
+    <details>
+        <summary>
+            <h2 class="complete-metadata-heading">Complete Metadata</h2>
+        </summary>
+        <table class="metadata-table">
+            <tr>
+                <th scope="row">spatial</th>
+                <td>
+                    <pre class="json">[ { "@type" : "Location" , "prefLabel" : "United States" } ]</pre>
+                </td>
+            </tr>
+            <tr>
+                <th scope="row">temporal</th>
+                <td>
+                    <pre class="json">[ { "@type" : "PeriodOfTime" , "endDate" : "2025-12-31" , "startDate" : "1880-01-01" } ]</pre>
+                </td>
+            </tr>
+        </table>
+    </details>
+</body>
+</html>

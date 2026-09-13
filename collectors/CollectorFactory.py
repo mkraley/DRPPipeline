@@ -11,6 +11,7 @@ from collectors.BtsCollector import BtsCollector
 from collectors.CatalogDataCollector import CatalogDataCollector
 from collectors.CmsGovCollector import CmsGovCollector
 from collectors.SocrataCollector import SocrataCollector
+from collectors.SsaCollector import SsaCollector
 from collectors.UsfsCollector import UsfsCollector
 from utils.Args import Args
 
@@ -20,6 +21,7 @@ _SOURCE_COLLECTOR: dict[str, type] = {
     "bts": BtsCollector,
     "cdc": SocrataCollector,
     "cms": CmsGovCollector,
+    "ssa": SsaCollector,
     "usfs": UsfsCollector,
 }
 

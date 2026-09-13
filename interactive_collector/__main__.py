@@ -1,7 +1,7 @@
 """
 Run the Interactive Collector web app when the package is executed with -m.
 
-  python -m interactive_collector [--db-path ...] [--config ...]
+  python -m interactive_collector [--db-path ...] [--config ...] [--source ...]
 
 Uses Args like the rest of the pipeline; initializes Args and Logger when run standalone.
 """

@@ -368,6 +368,8 @@ If the config file does not exist, a warning is shown but the pipeline continues
 
 When `inventory_sheet_format` is `baserow_batch`, **File extensions** are written uppercase and comma-separated (no spaces). **Title for Datasets table** replaces colons (`: ` → em dash), is limited to 255 characters (overflow goes to **Notes**), and **Title for Backups table** copies that value, wrapping it in double quotes when it contains a comma or `/`.
 
+**New sources:** each new `sources.<name>` section (and configs created by `python main.py setup`) should include `inventory_sheet_format: baserow_batch`, `baserow_contact`, and `default_metadata_available: false`. Existing CDC/AHRQ-style sources keep the global `data_inventories` default unless they set these keys.
+
 **Config-only:** Parameters without a CLI column can only be set in the config file (or use defaults).
 
 ### Config file format
@@ -546,6 +548,7 @@ python scripts/tally_data_inventories/tally_claimed_all_tabs.py
 | **sourcing** | Fetches candidate URLs from the configured spreadsheet, checks duplicates, creates DB records (new rows append unless `delete_all_db_entries` is true in config and/or `--delete-all-db-entries` on the CLI). Requires `google_sheet_id`. Use `--sourcing-mode` to control which rows are selected (see below). |
 | **socrata_collector** | Collects data and metadata from Socrata-hosted pages (e.g. data.cdc.gov). Processes `status="sourced"`. |
 | **catalog_collector** | Collects download links from catalog.data.gov dataset pages. Processes `status="sourced"`. |
+| **collector** (SSA) | When `source` is `ssa`, harvests catalog.data.gov SSA dataset pages: expands Complete Metadata before saving a catalog PDF, prints HTML resources as PDFs named from the page `<title>`, and downloads non-HTML files using the URL basename (e.g. `names.zip`). Processes `status="sourced"`. |
 | **cms_collector** | Collects data from data.cms.gov API pages. Processes `status="sourced"`. |
 | **interactive_collector** | Flask app for manual collection; SPA at `/collector/`. Under active development; not managed by the orchestration MCP. |
 | **upload** | Uploads collected data to DataLumos. Requires `datalumos_username`, `datalumos_password`. Processes `status="collected"`. |

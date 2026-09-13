@@ -11,6 +11,7 @@ from sourcing.SsaCandidateFetcher import (
     catalog_url_from_slug,
     has_collectible_file,
     is_file_download,
+    is_html_url,
     is_public_dataset,
     slug_from_source_url,
 )
@@ -91,6 +92,12 @@ class TestSsaCollectibleFilters(unittest.TestCase):
             )
         )
         self.assertFalse(is_file_download({"format": "CSV", "accessURL": "https://x"}))
+
+    def test_is_html_url(self) -> None:
+        """HTML format labels and .html suffixes are landing pages."""
+        self.assertTrue(is_html_url("https://www.ssa.gov/x.html", "HTML"))
+        self.assertTrue(is_html_url("https://www.ssa.gov/policy/index.html"))
+        self.assertFalse(is_html_url("https://www.ssa.gov/names.zip", "ZIP"))
 
     def test_html_only_is_not_collectible(self) -> None:
         """Public HTML-only rows are skipped."""

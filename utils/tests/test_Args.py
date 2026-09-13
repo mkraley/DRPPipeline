@@ -387,6 +387,88 @@ class TestArgs(unittest.TestCase):
         finally:
             config_path.unlink()
 
+    def test_cli_source_overrides_config_source_section(self) -> None:
+        """``--source`` selects sources.<name> even when config says another source."""
+        import sys
+
+        config_data = {
+            "source": "adc",
+            "db_path": "global.db",
+            "sources": {
+                "adc": {"db_path": "adc.db"},
+                "usfs": {
+                    "db_path": "usfs.db",
+                    "base_output_dir": "C:\\DataRescue\\USFSData",
+                },
+            },
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(config_data, f)
+            config_path = Path(f.name)
+
+        try:
+            sys.argv = [
+                "test",
+                "noop",
+                "--config",
+                str(config_path),
+                "--source",
+                "usfs",
+            ]
+            Args.initialize()
+            self.assertEqual(Args.source, "usfs")
+            self.assertEqual(Args.db_path, "usfs.db")
+            self.assertEqual(str(Args.base_output_dir), "C:\\DataRescue\\USFSData")
+        finally:
+            config_path.unlink()
+
+    def test_initialize_from_config_source_override(self) -> None:
+        """``initialize_from_config(..., source=)`` merges the named source section."""
+        config_data = {
+            "source": "adc",
+            "sources": {
+                "adc": {"db_path": "adc.db"},
+                "ssa": {"db_path": "ssa.db"},
+            },
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(config_data, f)
+            config_path = Path(f.name)
+
+        try:
+            Args.initialize_from_config(config_path, source="ssa")
+            self.assertEqual(Args.source, "ssa")
+            self.assertEqual(Args.db_path, "ssa.db")
+        finally:
+            config_path.unlink()
+
+    def test_cli_source_unknown_raises(self) -> None:
+        """``--source`` with a name missing from sources raises ValueError."""
+        import sys
+
+        config_data = {
+            "source": "adc",
+            "sources": {"adc": {"db_path": "adc.db"}},
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(config_data, f)
+            config_path = Path(f.name)
+
+        try:
+            sys.argv = [
+                "test",
+                "noop",
+                "--config",
+                str(config_path),
+                "--source",
+                "missing",
+            ]
+            with self.assertRaises(ValueError) as ctx:
+                Args.initialize()
+            self.assertIn("missing", str(ctx.exception))
+        finally:
+            config_path.unlink()
+
 
 if __name__ == "__main__":
     unittest.main()

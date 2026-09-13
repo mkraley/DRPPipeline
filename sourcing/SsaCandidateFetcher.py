@@ -71,12 +71,31 @@ def is_file_download(distribution: dict[str, Any]) -> bool:
     if not url:
         return False
     fmt = str(distribution.get("format") or "").upper()
-    if fmt in HTML_FORMATS:
+    if is_html_url(url, fmt):
         return False
     if fmt in FILE_FORMATS:
         return True
     suffix = Path(urlparse(url).path).suffix.lower()
     return suffix in FILE_SUFFIXES
+
+
+def is_html_url(url: str, fmt: str = "") -> bool:
+    """
+    Return True when a resource is an HTML landing page.
+
+    Args:
+        url: Resource URL.
+        fmt: Catalog format token when present.
+
+    Returns:
+        True for HTML/HTM format labels or ``.html``/``.htm`` suffixes.
+    """
+    if not url.strip():
+        return False
+    if fmt.strip().upper() in HTML_FORMATS:
+        return True
+    suffix = Path(urlparse(url).path).suffix.lower()
+    return suffix in {".html", ".htm"}
 
 
 def is_public_dataset(result: dict[str, Any]) -> bool:

@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from utils.source_sheet_defaults import new_source_sheet_defaults
+
 
 # ── Terminal colors ────────────────────────────────────────────────────────────
 
@@ -140,6 +142,7 @@ def _setup_config() -> tuple[bool, Path]:
         "google_username":        guser,
         "gwda_your_name":         gwda_name,
     }
+    cfg.update(new_source_sheet_defaults())
     if url_prefix:
         cfg["sourcing_url_prefix"] = url_prefix
     if num_rows and num_rows.isdigit():
