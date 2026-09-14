@@ -703,3 +703,32 @@ class TestOrchestrator(unittest.TestCase):
 
         summary = [m for m in info_messages if "Orchestrator batch summary" in m][0]
         self.assertIn("completed=1", summary)
+
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
+    def test_keyboard_interrupt_still_logs_batch_summary(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
+    ) -> None:
+        """Ctrl-C during a project still emits the batch summary via finally."""
+        mock_storage = MagicMock()
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.list_eligible_projects.return_value = [
+            {"DRPID": 1, "source_url": "https://one.com"},
+            {"DRPID": 2, "source_url": "https://two.com"},
+        ]
+        mock_instance = MagicMock()
+        mock_instance.run.side_effect = KeyboardInterrupt()
+        mock_find_class.return_value = MagicMock(return_value=mock_instance)
+
+        info_messages: list[str] = []
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls), patch(
+            "orchestration.Orchestrator.Logger.info",
+            side_effect=lambda msg, *a, **k: info_messages.append(msg),
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                Orchestrator.run("collector")
+
+        summary = [m for m in info_messages if "Orchestrator batch summary" in m]
+        self.assertEqual(len(summary), 1)
+        # Interrupted mid-project is not counted as completed
+        self.assertIn("completed=0", summary[0])

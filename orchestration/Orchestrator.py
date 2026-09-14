@@ -632,6 +632,7 @@ class Orchestrator:
                         drpid = proj["DRPID"]
                         source_url = proj.get("source_url", "")
                         Logger.set_current_drpid(drpid)
+                        project_finished = False
                         try:
                             Logger.info(
                                 f"Orchestrator starting project module={module!r} "
@@ -643,38 +644,48 @@ class Orchestrator:
                             if retry:
                                 _finalize_retry_project(drpid)
                             _maybe_claim_inventory_sheet(drpid, module)
+                            project_finished = True
+                        except KeyboardInterrupt:
+                            raise
                         except Exception as exc:
                             record_error(
                                 drpid,
                                 f"Orchestrator module={module!r} DRPID={drpid} exception: {exc}",
                             )
+                            project_finished = True
                         finally:
-                            batch.note_project_finished()
-                            Logger.info(
-                                f"Orchestrator finished project module={module!r} "
-                                f"DRPID={drpid} ({idx}/{n_projects})"
-                            )
+                            if project_finished:
+                                batch.note_project_finished()
+                                Logger.info(
+                                    f"Orchestrator finished project module={module!r} "
+                                    f"DRPID={drpid} ({idx}/{n_projects})"
+                                )
                             Logger.clear_current_drpid()
                 else:
                     Logger.info(f"Orchestrator running with max_workers={max_workers}")
                     with ThreadPoolExecutor(max_workers=max_workers) as executor:
                         futures = {executor.submit(run_one, proj): proj for proj in projects}
                         done = 0
-                        for future in as_completed(futures):
-                            if _stop_requested():
-                                Logger.info("Orchestrator stopped by user (stop file)")
-                                # Shutdown cancels remaining futures
-                                executor.shutdown(wait=False, cancel_futures=True)
-                                return
-                            done += 1
-                            if n_projects <= 20 or done % 10 == 0 or done == n_projects:
-                                Logger.info(f"Orchestrator progress: {done}/{n_projects} projects")
-                            proj = futures[future]
-                            try:
-                                future.result()
-                            except Exception as exc:
-                                record_error(
-                                    proj["DRPID"],
-                                    f"Orchestrator module={module!r} worker exception: {exc}",
-                                )
+                        try:
+                            for future in as_completed(futures):
+                                if _stop_requested():
+                                    Logger.info("Orchestrator stopped by user (stop file)")
+                                    executor.shutdown(wait=False, cancel_futures=True)
+                                    return
+                                done += 1
+                                if n_projects <= 20 or done % 10 == 0 or done == n_projects:
+                                    Logger.info(
+                                        f"Orchestrator progress: {done}/{n_projects} projects"
+                                    )
+                                proj = futures[future]
+                                try:
+                                    future.result()
+                                except Exception as exc:
+                                    record_error(
+                                        proj["DRPID"],
+                                        f"Orchestrator module={module!r} worker exception: {exc}",
+                                    )
+                        except KeyboardInterrupt:
+                            executor.shutdown(wait=False, cancel_futures=True)
+                            raise
             return

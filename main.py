@@ -122,7 +122,30 @@ def main() -> None:
     Orchestrator.run(module)
 
 
-if __name__ == "__main__":
+def _report_keyboard_interrupt() -> None:
+    """
+    Log a short Ctrl-C notice without a traceback.
+
+    Batch summary (if a run was in progress) is already printed by the
+    orchestrator's ``_orchestration_batch`` finally block before this runs.
+    """
+    message = "^C pressed — stopping pipeline"
+    try:
+        if getattr(Logger, "_initialized", False):
+            Logger.info(message)
+            return
+    except Exception:
+        pass
+    print(message, file=sys.stderr)
+
+
+def entrypoint() -> None:
+    """
+    Process CLI entry with clean Ctrl-C handling.
+
+    On KeyboardInterrupt, the orchestrator batch summary (if any) has already
+    been logged; this prints a short ^C notice and exits with status 130.
+    """
     try:
         main()
     except SystemExit:
@@ -130,3 +153,10 @@ if __name__ == "__main__":
     except click.ClickException as e:
         print(e.format_message(), file=sys.stderr)
         sys.exit(e.exit_code)
+    except KeyboardInterrupt:
+        _report_keyboard_interrupt()
+        raise SystemExit(130) from None
+
+
+if __name__ == "__main__":
+    entrypoint()
