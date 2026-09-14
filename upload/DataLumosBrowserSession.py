@@ -5,6 +5,7 @@ Provides ensure_browser(), ensure_authenticated(), reauthenticate(), and close()
 using Args for config.
 """
 
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -113,7 +114,17 @@ class DataLumosBrowserSession:
         self.ensure_authenticated(reporter=reporter)
 
     def close(self) -> None:
-        """Close the browser and clean up resources."""
+        """
+        Close the browser and clean up resources.
+
+        During Ctrl-C (KeyboardInterrupt active), abandons Playwright handles
+        without awaiting in-flight page ops — graceful ``page.close()`` otherwise
+        leaves pending asyncio tasks that spam the console on exit.
+        """
+        if sys.exc_info()[0] is KeyboardInterrupt:
+            self._abandon()
+            return
+
         if self._page is not None:
             try:
                 self._page.close()
@@ -144,3 +155,18 @@ class DataLumosBrowserSession:
 
         self._authenticated = False
         Logger.debug("Browser resources cleaned up")
+
+    def _abandon(self) -> None:
+        """
+        Drop Playwright refs without awaiting interrupted page operations.
+
+        Avoids ``page.close()`` / ``playwright.stop()`` during Ctrl-C — those
+        leave pending asyncio tasks that log ERROR on interpreter shutdown.
+        Process exit (``os._exit`` from the Ctrl-C handler) reaps the browser.
+        """
+        self._page = None
+        self._context = None
+        self._browser = None
+        self._playwright = None
+        self._authenticated = False
+        Logger.debug("Browser resources abandoned after interrupt")

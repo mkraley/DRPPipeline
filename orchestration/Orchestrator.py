@@ -339,11 +339,16 @@ class _BatchStats:
     module: str
     counter: _BatchLevelCounter
     projects_completed: int = 0
+    started_at: float = field(default_factory=time.perf_counter)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def note_project_finished(self) -> None:
         with self._lock:
             self.projects_completed += 1
+
+    def elapsed_seconds(self) -> float:
+        """Wall time since this batch started."""
+        return time.perf_counter() - self.started_at
 
 
 def _format_duration(seconds: float) -> str:
@@ -354,6 +359,40 @@ def _format_duration(seconds: float) -> str:
         return f"{int(minutes)}m {secs:.1f}s"
     hours, minutes = divmod(minutes, 60)
     return f"{int(hours)}h {int(minutes)}m {secs:.1f}s"
+
+
+def _progress_timing_suffix(completed: int, total: int, elapsed: float) -> str:
+    """
+    Build ``avg_per_project=... eta=...`` for progress logs.
+
+    Average is wall-clock elapsed / completed. ETA is that average times the
+    number of projects not yet finished (``total - completed``).
+    """
+    if completed <= 0 or elapsed <= 0:
+        return "avg_per_project=n/a eta=n/a"
+    avg = elapsed / completed
+    remaining = max(0, total - completed)
+    return (
+        f"avg_per_project={_format_duration(avg)} "
+        f"eta={_format_duration(avg * remaining)}"
+    )
+
+
+def _log_orchestrator_progress(
+    batch: _BatchStats,
+    *,
+    display_index: int,
+    total: int,
+) -> None:
+    """Log batch progress with average time per project and ETA."""
+    timing = _progress_timing_suffix(
+        batch.projects_completed,
+        total,
+        batch.elapsed_seconds(),
+    )
+    Logger.info(
+        f"Orchestrator progress: {display_index}/{total} projects {timing}"
+    )
 
 
 def _log_batch_summary(stats: _BatchStats, elapsed: float) -> None:
@@ -628,7 +667,9 @@ class Orchestrator:
                         if _stop_requested():
                             Logger.info("Orchestrator stopped by user (stop file)")
                             return
-                        Logger.info(f"Orchestrator progress: {idx}/{n_projects} projects")
+                        _log_orchestrator_progress(
+                            batch, display_index=idx, total=n_projects
+                        )
                         drpid = proj["DRPID"]
                         source_url = proj.get("source_url", "")
                         Logger.set_current_drpid(drpid)
@@ -674,8 +715,8 @@ class Orchestrator:
                                     return
                                 done += 1
                                 if n_projects <= 20 or done % 10 == 0 or done == n_projects:
-                                    Logger.info(
-                                        f"Orchestrator progress: {done}/{n_projects} projects"
+                                    _log_orchestrator_progress(
+                                        batch, display_index=done, total=n_projects
                                     )
                                 proj = futures[future]
                                 try:

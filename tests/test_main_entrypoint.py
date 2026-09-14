@@ -11,8 +11,10 @@ class TestMainEntrypoint(unittest.TestCase):
 
     @patch.object(main_module, "main", side_effect=KeyboardInterrupt())
     @patch.object(main_module, "_report_keyboard_interrupt")
+    @patch.object(main_module.os, "_exit", side_effect=SystemExit(130))
     def test_entrypoint_exits_130_on_keyboard_interrupt(
         self,
+        mock_exit: MagicMock,
         mock_report: MagicMock,
         _mock_main: MagicMock,
     ) -> None:
@@ -20,6 +22,7 @@ class TestMainEntrypoint(unittest.TestCase):
             main_module.entrypoint()
         self.assertEqual(ctx.exception.code, 130)
         mock_report.assert_called_once_with()
+        mock_exit.assert_called_once_with(130)
 
     def test_report_keyboard_interrupt_logs_short_message(self) -> None:
         mock_logger = MagicMock()

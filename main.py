@@ -5,7 +5,9 @@ A modular pipeline for collecting data from various sources, e.g. government web
 and uploading to various repositories, e.g. DataLumos.
 """
 
+import os
 import sys
+import warnings
 
 import click
 
@@ -139,6 +141,35 @@ def _report_keyboard_interrupt() -> None:
     print(message, file=sys.stderr)
 
 
+def _silence_shutdown_noise() -> None:
+    """Suppress asyncio/Playwright teardown spam after Ctrl-C."""
+    try:
+        import logging
+
+        logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+    except Exception:
+        pass
+    warnings.filterwarnings("ignore", message=".*coroutine.*never awaited.*")
+    warnings.filterwarnings("ignore", category=ResourceWarning)
+
+
+def _exit_after_keyboard_interrupt() -> None:
+    """
+    Log ^C, flush logs, and exit immediately.
+
+    Uses ``os._exit`` so Playwright/asyncio destructors cannot print pending-task
+    errors after the summary and ^C notice.
+    """
+    _report_keyboard_interrupt()
+    _silence_shutdown_noise()
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except Exception:
+        pass
+    os._exit(130)
+
+
 def entrypoint() -> None:
     """
     Process CLI entry with clean Ctrl-C handling.
@@ -154,8 +185,7 @@ def entrypoint() -> None:
         print(e.format_message(), file=sys.stderr)
         sys.exit(e.exit_code)
     except KeyboardInterrupt:
-        _report_keyboard_interrupt()
-        raise SystemExit(130) from None
+        _exit_after_keyboard_interrupt()
 
 
 if __name__ == "__main__":

@@ -53,6 +53,29 @@ class TestDataLumosBrowserSession(unittest.TestCase):
 
         mock_auth_cls.assert_not_called()
 
+    def test_close_abandons_without_page_close_on_keyboard_interrupt(self) -> None:
+        """Ctrl-C path must not call page.close() (pending asyncio task spam)."""
+        session = DataLumosBrowserSession()
+        mock_page = MagicMock()
+        mock_browser = MagicMock()
+        session._page = mock_page
+        session._context = MagicMock()
+        session._browser = mock_browser
+        session._playwright = MagicMock()
+        session._authenticated = True
+
+        try:
+            raise KeyboardInterrupt()
+        except KeyboardInterrupt:
+            session.close()
+
+        mock_page.close.assert_not_called()
+        mock_browser.close.assert_not_called()
+        self.assertIsNone(session._page)
+        self.assertIsNone(session._browser)
+        self.assertIsNone(session._playwright)
+        self.assertFalse(session._authenticated)
+
 
 if __name__ == "__main__":
     unittest.main()

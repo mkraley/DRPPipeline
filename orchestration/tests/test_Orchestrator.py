@@ -4,6 +4,7 @@ Unit tests for Orchestrator.
 
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -16,8 +17,10 @@ from orchestration.Orchestrator import (
     _BatchLevelCounter,
     _format_duration,
     _log_batch_summary,
+    _log_orchestrator_progress,
     _maybe_claim_inventory_sheet,
     _merge_project_lists,
+    _progress_timing_suffix,
     _stop_requested,
     _BatchStats,
 )
@@ -615,6 +618,40 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(_format_duration(12.34), "12.3s")
         self.assertEqual(_format_duration(90.0), "1m 30.0s")
         self.assertEqual(_format_duration(3661.0), "1h 1m 1.0s")
+
+    def test_progress_timing_suffix_n_a_before_first_completion(self) -> None:
+        """No average/ETA until at least one project has finished."""
+        self.assertEqual(
+            _progress_timing_suffix(0, 10, 5.0),
+            "avg_per_project=n/a eta=n/a",
+        )
+
+    def test_progress_timing_suffix_avg_and_eta(self) -> None:
+        """ETA is average wall time times projects still remaining."""
+        # 4 done in 40s → 10s avg; 6 remaining → 60s ETA
+        self.assertEqual(
+            _progress_timing_suffix(4, 10, 40.0),
+            "avg_per_project=10.0s eta=1m 0.0s",
+        )
+
+    @patch("orchestration.Orchestrator.Logger")
+    def test_log_orchestrator_progress_includes_timing(
+        self, mock_logger: MagicMock
+    ) -> None:
+        """Progress log includes avg_per_project and eta fields."""
+        counter = _BatchLevelCounter()
+        batch = _BatchStats(
+            module="upload",
+            counter=counter,
+            projects_completed=2,
+            started_at=time.perf_counter() - 20.0,
+        )
+        _log_orchestrator_progress(batch, display_index=3, total=10)
+        msg = mock_logger.info.call_args[0][0]
+        self.assertIn("Orchestrator progress: 3/10 projects", msg)
+        self.assertIn("avg_per_project=", msg)
+        self.assertIn("eta=", msg)
+        self.assertNotIn("avg_per_project=n/a", msg)
 
     def test_batch_level_counter(self) -> None:
         """Test WARNING and ERROR records are counted."""
