@@ -113,25 +113,76 @@ class DataLumosFormFiller:
 
     def expand_all_sections(self) -> None:
         """
-        Expand all collapsible sections on the form.
+        Ensure metadata sections are expanded so form fields are interactable.
 
-        Clicks "Collapse All" then "Expand All" to ensure all sections are visible.
+        Always ends on ``Collapse All`` (sections open). When already expanded,
+        cycles collapse→expand so widgets such as Subject Terms select2 fully
+        initialize — skipping that cycle left ``.select2-search__field`` in the
+        DOM but not visible.
 
         Raises:
-            RuntimeError: If ``#expand-init`` is missing or not clickable.
+            RuntimeError: If the toggle never appears and the metadata form is
+                not usable either.
         """
+        toggle = self._page.locator("#expand-init")
         try:
-            collapse_btn = self._page.locator("#expand-init > span:nth-child(2)")
             self.wait_for_obscuring_elements()
-            collapse_btn.click(timeout=5000)
-            self._page.wait_for_timeout(2000)
-
-            expand_btn = self._page.locator("#expand-init > span:nth-child(2)")
-            self.wait_for_obscuring_elements()
-            expand_btn.click(timeout=5000)
-            self._page.wait_for_timeout(2000)
+            toggle.wait_for(state="visible", timeout=30000)
         except PlaywrightTimeoutError as exc:
+            if self._metadata_form_ready():
+                self._warn(
+                    "expand_all_sections: #expand-init not found; "
+                    "metadata form already visible, continuing"
+                )
+                return
             self._fail(f"expand_all_sections: #expand-init not found: {exc}")
+
+        try:
+            if self._sections_already_expanded(toggle):
+                self._click_expand_toggle(toggle)
+            if not self._sections_already_expanded(toggle):
+                self._click_expand_toggle(toggle)
+            if not self._sections_already_expanded(toggle):
+                self._click_expand_toggle(toggle, force=True)
+        except PlaywrightTimeoutError as exc:
+            if self._sections_already_expanded(toggle) or self._metadata_form_ready():
+                self._warn(
+                    "expand_all_sections: toggle click timed out but form looks "
+                    f"ready; continuing ({exc})"
+                )
+                return
+            self._fail(f"expand_all_sections: could not expand sections: {exc}")
+
+        if not self._sections_already_expanded(toggle) and not self._metadata_form_ready():
+            self._fail("expand_all_sections: sections still collapsed after toggle")
+
+    def _sections_already_expanded(self, toggle) -> bool:
+        """Return True when the toggle label indicates sections are open."""
+        try:
+            label = (toggle.inner_text(timeout=5000) or "").strip().casefold()
+        except PlaywrightTimeoutError:
+            return False
+        return "collapse" in label
+
+    def _click_expand_toggle(self, toggle, *, force: bool = False) -> None:
+        """Click ``#expand-init`` once (collapse or expand depending on state)."""
+        self.wait_for_obscuring_elements()
+        toggle.scroll_into_view_if_needed()
+        toggle.click(timeout=15000, force=force)
+        self._page.wait_for_timeout(1500)
+
+    def _metadata_form_ready(self) -> bool:
+        """Return True when core metadata containers are visible without expand."""
+        for selector in ("#groupAttr0", "#groupAttr1", "#edit-dcterms_description_0"):
+            try:
+                loc = self._page.locator(selector)
+                if loc.count() == 0:
+                    continue
+                if loc.first.is_visible(timeout=2000):
+                    return True
+            except PlaywrightTimeoutError:
+                continue
+        return False
     
     def fill_title(self, title: str) -> None:
         """
@@ -299,34 +350,98 @@ class DataLumosFormFiller:
     
     def fill_keywords(self, keywords: List[str]) -> None:
         """
-        Fill the subject terms/keywords field.
+        Fill the Subject Terms field via select2 autocomplete.
 
-        Uses select2 autocomplete - types each keyword and selects
-        the matching suggestion.
+        Opens the Subject Terms select2 (scoped under that label) so the search
+        input is visible, then types each keyword and selects the matching option.
 
         Raises:
             RuntimeError: If a keyword cannot be added (Playwright timeout).
         """
-        for keyword in keywords:
-            keyword = keyword.strip(" '")
-            if len(keyword) <= 2:
-                continue
+        terms = [k.strip(" '") for k in keywords if len(k.strip(" '")) > 2]
+        if not terms:
+            return
 
+        self._ensure_subject_terms_ready()
+        for keyword in terms:
             try:
-                self.wait_for_obscuring_elements()
-                _debug_form_field("keyword (subject term)", keyword)
-                search_field = self._page.locator(".select2-search__field")
-                search_field.click()
-                search_field.fill(keyword)
-                self.wait_for_obscuring_elements()
-
-                option = self._page.locator(
-                    f"xpath=//li[contains(@class, 'select2-results__option') and text()='{keyword}']"
-                )
-                self.wait_for_obscuring_elements()
-                option.click()
+                self._add_subject_term(keyword)
             except PlaywrightTimeoutError as exc:
                 self._fail(f"Could not add keyword '{keyword}': {exc}")
+
+    def _ensure_subject_terms_ready(self) -> None:
+        """Scroll Subject Terms into view and expand ``#groupAttr1`` if collapsed."""
+        self.wait_for_obscuring_elements()
+        panel = self._page.locator("#groupAttr1")
+        try:
+            panel.wait_for(state="attached", timeout=30000)
+        except PlaywrightTimeoutError as exc:
+            self._fail(f"Subject Terms panel #groupAttr1 not found: {exc}")
+
+        classes = (panel.get_attribute("class") or "").split()
+        collapsed = "collapse" in classes and "in" not in classes and "show" not in classes
+        if collapsed:
+            header = self._page.locator(
+                'a[href="#groupAttr1"], [data-target="#groupAttr1"]'
+            ).first
+            self.wait_for_obscuring_elements()
+            header.click(timeout=15000)
+            self._page.wait_for_timeout(500)
+
+        panel.scroll_into_view_if_needed()
+
+    def _subject_terms_container(self):
+        """Return the Subject Terms field container (label + select2)."""
+        return self._page.locator("div").filter(
+            has=self._page.locator("span").filter(
+                has_text=re.compile(r"^Subject Terms$", re.I)
+            )
+        ).first
+
+    def _add_subject_term(self, keyword: str) -> None:
+        """Open Subject Terms select2, type ``keyword``, and choose the option."""
+        self.wait_for_obscuring_elements()
+        _debug_form_field("keyword (subject term)", keyword)
+        container = self._subject_terms_container()
+        container.wait_for(state="visible", timeout=30000)
+        container.scroll_into_view_if_needed()
+
+        selection = container.locator(
+            ".select2-selection, .select2-selection--multiple, .select2-container"
+        ).first
+        try:
+            selection.click(timeout=15000)
+        except PlaywrightTimeoutError:
+            selection.click(timeout=15000, force=True)
+
+        search_field = self._visible_select2_search_field(container)
+        search_field.wait_for(state="visible", timeout=15000)
+        search_field.fill(keyword)
+        self.wait_for_obscuring_elements()
+
+        option = self._page.locator(
+            f"xpath=//li[contains(@class, 'select2-results__option') and "
+            f"normalize-space(text())='{keyword}']"
+        ).first
+        option.wait_for(state="visible", timeout=30000)
+        option.click(timeout=15000)
+
+    def _visible_select2_search_field(self, container):
+        """
+        Return the visible select2 search input for Subject Terms.
+
+        Prefer an open dropdown field; fall back to a visible field inside the
+        Subject Terms container (avoids hidden select2 inputs elsewhere on page).
+        """
+        open_field = self._page.locator(
+            ".select2-container--open .select2-search__field"
+        )
+        if open_field.count() > 0:
+            return open_field.first
+        scoped = container.locator(".select2-search__field")
+        if scoped.count() > 0:
+            return scoped.first
+        return self._page.locator(".select2-search__field:visible").first
     
     def _geographic_coverage_block(self):
         """Geographic coverage field container: label span, up two parent levels."""

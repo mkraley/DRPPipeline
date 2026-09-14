@@ -263,8 +263,12 @@ class TestDataLumosFormFiller(unittest.TestCase):
 
     def test_fill_keywords_skips_short(self) -> None:
         """Test fill_keywords skips keywords with 2 or fewer chars."""
-        with unittest.mock.patch.object(self.form_filler, 'wait_for_obscuring_elements'):
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"), \
+             unittest.mock.patch.object(self.form_filler, "_ensure_subject_terms_ready") as mock_ready, \
+             unittest.mock.patch.object(self.form_filler, "_add_subject_term") as mock_add:
             self.form_filler.fill_keywords(["ab", "a", "valid_keyword"])
+        mock_ready.assert_called_once()
+        mock_add.assert_called_once_with("valid_keyword")
 
     def test_fill_geographic_coverage_skips_empty(self) -> None:
         """Test fill_geographic_coverage returns early for empty input."""
@@ -273,15 +277,75 @@ class TestDataLumosFormFiller(unittest.TestCase):
         self.mock_page.locator.assert_not_called()
 
     def test_expand_all_sections_raises_when_toggle_missing(self) -> None:
-        """expand_all_sections aborts when #expand-init is not clickable."""
-        mock_btn = MagicMock()
-        mock_btn.click.side_effect = PlaywrightTimeoutError("missing")
-        self.mock_page.locator.return_value = mock_btn
+        """expand_all_sections aborts when toggle and form are both unavailable."""
+        mock_toggle = MagicMock()
+        mock_toggle.wait_for.side_effect = PlaywrightTimeoutError("missing")
+
+        def locator_side_effect(selector: str) -> MagicMock:
+            if selector == "#expand-init":
+                return mock_toggle
+            mock_other = MagicMock()
+            mock_other.count.return_value = 0
+            return mock_other
+
+        self.mock_page.locator.side_effect = locator_side_effect
 
         with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
             with self.assertRaises(RuntimeError) as ctx:
                 self.form_filler.expand_all_sections()
         self.assertIn("#expand-init", str(ctx.exception))
+
+    def test_expand_all_sections_cycles_when_already_expanded(self) -> None:
+        """Already-open sections still cycle collapse→expand to init select2."""
+        mock_toggle = MagicMock()
+        mock_toggle.inner_text.side_effect = [
+            " Collapse All",
+            " Expand All",
+            " Collapse All",
+            " Collapse All",
+        ]
+
+        self.mock_page.locator.return_value = mock_toggle
+
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
+            self.form_filler.expand_all_sections()
+
+        self.assertEqual(mock_toggle.click.call_count, 2)
+
+    def test_expand_all_sections_clicks_when_collapsed(self) -> None:
+        """When label is Expand All, click until sections show Collapse All."""
+        mock_toggle = MagicMock()
+        mock_toggle.inner_text.side_effect = [
+            " Expand All",
+            " Expand All",
+            " Collapse All",
+            " Collapse All",
+        ]
+
+        self.mock_page.locator.return_value = mock_toggle
+
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
+            self.form_filler.expand_all_sections()
+
+        mock_toggle.click.assert_called_once_with(timeout=15000, force=False)
+
+    def test_expand_all_sections_continues_when_form_ready_without_toggle(self) -> None:
+        """Missing toggle is non-fatal when metadata containers are already visible."""
+        mock_toggle = MagicMock()
+        mock_toggle.wait_for.side_effect = PlaywrightTimeoutError("missing")
+        mock_form = MagicMock()
+        mock_form.count.return_value = 1
+        mock_form.first.is_visible.return_value = True
+
+        def locator_side_effect(selector: str) -> MagicMock:
+            if selector == "#expand-init":
+                return mock_toggle
+            return mock_form
+
+        self.mock_page.locator.side_effect = locator_side_effect
+
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
+            self.form_filler.expand_all_sections()
 
     def test_geographic_coverage_block_uses_label_and_add_value(self) -> None:
         """Geographic add-value is found from the label span and title attribute."""
@@ -445,14 +509,42 @@ class TestDataLumosFormFiller(unittest.TestCase):
     def test_fill_keywords_raises_on_playwright_timeout(self) -> None:
         """Keyword add failures abort the project instead of warning."""
         form_filler = DataLumosFormFiller(self.mock_page, timeout=5000)
-        mock_search = MagicMock()
-        mock_search.click.side_effect = PlaywrightTimeoutError("timeout")
-        self.mock_page.locator.return_value = mock_search
 
-        with unittest.mock.patch.object(form_filler, "wait_for_obscuring_elements"):
+        with unittest.mock.patch.object(form_filler, "wait_for_obscuring_elements"), \
+             unittest.mock.patch.object(form_filler, "_ensure_subject_terms_ready"), \
+             unittest.mock.patch.object(
+                 form_filler,
+                 "_add_subject_term",
+                 side_effect=PlaywrightTimeoutError("timeout"),
+             ):
             with self.assertRaises(RuntimeError) as ctx:
                 form_filler.fill_keywords(["Oregon"])
         self.assertIn("Oregon", str(ctx.exception))
+
+    def test_fill_keywords_opens_select2_before_typing(self) -> None:
+        """Subject Terms select2 is opened so the search field becomes visible."""
+        form_filler = DataLumosFormFiller(self.mock_page, timeout=5000)
+        mock_container = MagicMock()
+        mock_selection = MagicMock()
+        mock_search = MagicMock()
+        mock_option = MagicMock()
+        mock_container.locator.return_value.first = mock_selection
+        mock_option.first = mock_option
+
+        with unittest.mock.patch.object(form_filler, "wait_for_obscuring_elements"), \
+             unittest.mock.patch.object(form_filler, "_ensure_subject_terms_ready"), \
+             unittest.mock.patch.object(
+                 form_filler, "_subject_terms_container", return_value=mock_container
+             ), \
+             unittest.mock.patch.object(
+                 form_filler, "_visible_select2_search_field", return_value=mock_search
+             ):
+            self.mock_page.locator.return_value = mock_option
+            form_filler.fill_keywords(["Oregon"])
+
+        mock_selection.click.assert_called()
+        mock_search.fill.assert_called_once_with("Oregon")
+        mock_option.click.assert_called_once_with(timeout=15000)
 
     def test_fill_geographic_coverage_raises_on_timeout(self) -> None:
         """Geographic term add failures abort the project."""
