@@ -309,6 +309,7 @@ class BaserowBatchSheetUpdater(InventorySheetUpdaterBase):
                 "range": f"{sheet_name}!{notes_col_letter}{row_number}",
                 "values": [[notes_value]],
             })
+            self._remember_header_column_added(sheet_id, sheet_name, "Notes")
 
         if write_claimed and column_map.get("Contact"):
             requests.append({

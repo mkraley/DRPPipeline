@@ -1,0 +1,12 @@
+top level is Collection Profile - ID 9688
+Profile contains Programs
+Progam contains Projects and Collections - and also may contain files - has metadata
+Projects contain products and Collections - has metadata
+A product may be
+  Data Package
+  Map
+  Assemblage
+  Tabular dataset
+  all of which may contain metadata and files/links. links may lead to other pages with metadata and files
+
+  Chrome doesn't seem to work so well. Edge is better.

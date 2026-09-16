@@ -7,8 +7,14 @@ those rows again (it only lists ``uploaded``).
 
 From repo root:
 
+  python scripts/retry_publisher_sheet.py
+  python scripts/retry_publisher_sheet.py 100-150
   python scripts/retry_publisher_sheet.py 101 102 103
+  python scripts/retry_publisher_sheet.py 5,7,10-12
   python scripts/retry_publisher_sheet.py --config other.json 42
+
+With no DRPIDs, processes every project with status ``published`` and an empty
+errors field.
 
 Requires ``datalumos_id``, ``source_url``, and the same Google Sheet config as
 the publisher module. On success, sets status to ``updated_inventory`` (same
@@ -20,18 +26,58 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import List, Sequence
 
 
-def main() -> int:
+def resolve_drpids(tokens: Sequence[str]) -> List[int]:
+    """
+    Resolve CLI DRPID tokens to a sorted unique list.
+
+    Tokens may be space-separated IDs/ranges that are joined into a comma list
+    for ``parse_drpid_ids`` (e.g. ``["100-150"]``, ``["101", "102"]``,
+    ``["5,7,10-12"]``).
+
+    Args:
+        tokens: Positional CLI arguments (may be empty).
+
+    Returns:
+        Sorted unique DRPIDs.
+
+    Raises:
+        ValueError: If tokens are non-empty but invalid.
+    """
+    from utils.drpid_list import parse_drpid_ids
+
+    if not tokens:
+        return []
+    return parse_drpid_ids(",".join(tokens))
+
+
+def published_drpids() -> List[int]:
+    """
+    Return DRPIDs for projects with status ``published`` and no errors.
+    """
+    from storage import Storage
+
+    projects = Storage.list_eligible_projects("published", None)
+    return [int(p["DRPID"]) for p in projects]
+
+
+def main(argv: Sequence[str] | None = None) -> int:
     root = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(
-        description="Run GoogleSheetUpdater only for given DRPIDs (no Playwright)."
+        description=(
+            "Run GoogleSheetUpdater for given DRPIDs (or all published). "
+            "No Playwright."
+        )
     )
     parser.add_argument(
         "drpids",
-        type=int,
-        nargs="+",
-        help="One or more DRPIDs to update in the sheet",
+        nargs="*",
+        help=(
+            "DRPIDs and/or ranges (e.g. 42 100-150 or 5,7,10-12). "
+            "If omitted, all projects with status published."
+        ),
     )
     parser.add_argument(
         "-c",
@@ -45,7 +91,7 @@ def main() -> int:
         action="store_true",
         help="After a successful sheet update, clear the project's errors field",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(list(argv) if argv is not None else None)
 
     if not args.config.is_file():
         print(f"ERROR: config not found: {args.config}", file=sys.stderr)
@@ -71,10 +117,23 @@ def main() -> int:
         )
         return 1
 
+    try:
+        drpids = resolve_drpids(args.drpids)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    if not drpids:
+        drpids = published_drpids()
+        if not drpids:
+            print("No projects with status published.")
+            return 0
+        print(f"No DRPIDs given; processing {len(drpids)} published project(s).")
+
     updater = get_inventory_sheet_updater()
     exit_code = 0
 
-    for drpid in args.drpids:
+    for drpid in drpids:
         project = Storage.get(drpid)
         if not project:
             print(f"DRPID={drpid}: SKIP — not in storage")
@@ -95,7 +154,8 @@ def main() -> int:
 
         if status not in ("published", "uploaded", "updated_inventory"):
             print(
-                f"DRPID={drpid}: WARN — status={status!r} (expected published, uploaded, or updated_inventory); continuing anyway"
+                f"DRPID={drpid}: WARN — status={status!r} "
+                f"(expected published, uploaded, or updated_inventory); continuing anyway"
             )
 
         ok, err = updater.update(source_url, workspace_id, project)

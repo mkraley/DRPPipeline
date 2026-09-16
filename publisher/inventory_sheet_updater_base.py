@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from utils.Args import Args
-from utils.google_sheets_service import build_sheets_v4_service
+from utils.google_sheets_service import build_sheets_v4_service, execute_sheets_request
 from utils.Logger import Logger
 
 try:
@@ -36,6 +36,50 @@ class InventorySheetUpdaterBase(ABC):
     Finds rows by exact URL match and appends when no row exists. Subclasses supply
     required column lists and request builders for their spreadsheet format.
     """
+
+    def __init__(self) -> None:
+        """Initialize per-instance caches to reduce Sheets read quota usage."""
+        self._header_row_cache: Dict[Tuple[str, str], List[str]] = {}
+        self._column_map_cache: Dict[Tuple[Any, ...], Dict[str, str]] = {}
+        self._url_column_cache: Dict[Tuple[str, str, str], List[List[str]]] = {}
+
+    def _invalidate_sheet_caches(self, sheet_id: str, sheet_name: str) -> None:
+        """Drop cached header/URL data for one worksheet tab."""
+        self._header_row_cache.pop((sheet_id, sheet_name), None)
+        keys = [
+            key
+            for key in self._column_map_cache
+            if len(key) >= 2 and key[0] == sheet_id and key[1] == sheet_name
+        ]
+        for key in keys:
+            del self._column_map_cache[key]
+        url_keys = [
+            key
+            for key in self._url_column_cache
+            if key[0] == sheet_id and key[1] == sheet_name
+        ]
+        for key in url_keys:
+            del self._url_column_cache[key]
+
+    def _remember_header_column_added(
+        self, sheet_id: str, sheet_name: str, column_name: str
+    ) -> None:
+        """
+        Update header cache after a new column header is written in-batch.
+
+        Clears column-map cache so the next mapping rebuild includes ``column_name``.
+        """
+        cache_key = (sheet_id, sheet_name)
+        header = self._header_row_cache.get(cache_key)
+        if header is not None:
+            header.append(column_name)
+        keys = [
+            key
+            for key in self._column_map_cache
+            if len(key) >= 2 and key[0] == sheet_id and key[1] == sheet_name
+        ]
+        for key in keys:
+            del self._column_map_cache[key]
 
     def update(
         self,
@@ -399,10 +443,18 @@ class InventorySheetUpdaterBase(ABC):
                 return False, "No data to update"
 
             body = {"valueInputOption": "USER_ENTERED", "data": update_requests}
-            service.spreadsheets().values().batchUpdate(
-                spreadsheetId=sheet_id,
-                body=body,
-            ).execute()
+            execute_sheets_request(
+                service.spreadsheets().values().batchUpdate(
+                    spreadsheetId=sheet_id,
+                    body=body,
+                ),
+                operation_label="Sheets batchUpdate",
+            )
+
+            if append_new:
+                self._remember_appended_url(
+                    sheet_id, sheet_name, url_col_letter, source_url.strip()
+                )
 
             action = "Appended" if append_new else "Updated"
             Logger.info(
@@ -429,20 +481,33 @@ class InventorySheetUpdaterBase(ABC):
             col_index //= 26
         return result
 
+    def _get_header_values(
+        self, service: Any, sheet_id: str, sheet_name: str
+    ) -> List[str]:
+        """Return the header row values, caching within this updater instance."""
+        cache_key = (sheet_id, sheet_name)
+        cached = self._header_row_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        range_name = f"{sheet_name}!1:1"
+        result = execute_sheets_request(
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=sheet_id, range=range_name),
+            operation_label="Sheets header read",
+        )
+        values = result.get("values", [])
+        header = list(values[0]) if values and values[0] else []
+        self._header_row_cache[cache_key] = header
+        return header
+
     def _get_next_column_letter(
         self, service: Any, sheet_id: str, sheet_name: str
     ) -> str:
         """Return the letter for the column after the last existing header column."""
-        range_name = f"{sheet_name}!1:1"
-        result = (
-            service.spreadsheets()
-            .values()
-            .get(spreadsheetId=sheet_id, range=range_name)
-            .execute()
-        )
-        values = result.get("values", [])
-        num_cols = len(values[0]) if values and values[0] else 0
-        return self._column_index_to_letter(num_cols + 1)
+        header = self._get_header_values(service, sheet_id, sheet_name)
+        return self._column_index_to_letter(len(header) + 1)
 
     def _get_column_mapping(
         self,
@@ -453,22 +518,26 @@ class InventorySheetUpdaterBase(ABC):
         optional_columns: Optional[List[str]] = None,
     ) -> Optional[Dict[str, str]]:
         """Read header row and map logical column names to letters."""
-        range_name = f"{sheet_name}!1:1"
-        result = (
-            service.spreadsheets()
-            .values()
-            .get(spreadsheetId=sheet_id, range=range_name)
-            .execute()
+        optional = optional_columns or []
+        map_key = (
+            sheet_id,
+            sheet_name,
+            tuple(required_columns),
+            tuple(optional),
         )
-        values = result.get("values", [])
-        if not values:
+        cached_map = self._column_map_cache.get(map_key)
+        if cached_map is not None:
+            return cached_map
+
+        values_row = self._get_header_values(service, sheet_id, sheet_name)
+        if not values_row:
             raise ValueError(
                 f"Sheet '{sheet_name}' has no header row (row 1 is empty). "
                 "Ensure the sheet has column headers in the first row."
             )
 
         column_map: Dict[str, str] = {}
-        for idx, col_name in enumerate(values[0]):
+        for idx, col_name in enumerate(values_row):
             if col_name and str(col_name).strip():
                 column_map[str(col_name).strip()] = self._column_index_to_letter(idx + 1)
 
@@ -500,7 +569,7 @@ class InventorySheetUpdaterBase(ABC):
                 f"Available: {list(column_map.keys())}"
             )
 
-        for opt in optional_columns or []:
+        for opt in optional:
             if opt in found_columns:
                 continue
             for col_name, col_letter in column_map.items():
@@ -516,7 +585,46 @@ class InventorySheetUpdaterBase(ABC):
                         found_columns[opt] = col_letter
                         break
 
+        self._column_map_cache[map_key] = found_columns
         return found_columns
+
+    def _get_url_column_values(
+        self,
+        service: Any,
+        sheet_id: str,
+        sheet_name: str,
+        url_column_letter: str,
+    ) -> List[List[str]]:
+        """Return URL column cell rows (from row 2), caching within this instance."""
+        cache_key = (sheet_id, sheet_name, url_column_letter)
+        cached = self._url_column_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        range_name = f"{sheet_name}!{url_column_letter}2:{url_column_letter}"
+        result = execute_sheets_request(
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=sheet_id, range=range_name),
+            operation_label="Sheets URL column read",
+        )
+        values = result.get("values", [])
+        self._url_column_cache[cache_key] = values
+        return values
+
+    def _remember_appended_url(
+        self,
+        sheet_id: str,
+        sheet_name: str,
+        url_column_letter: str,
+        source_url: str,
+    ) -> None:
+        """Keep the URL column cache in sync after appending a row."""
+        cache_key = (sheet_id, sheet_name, url_column_letter)
+        cached = self._url_column_cache.get(cache_key)
+        if cached is None:
+            return
+        cached.append([source_url])
 
     def _find_row_by_url(
         self,
@@ -527,14 +635,9 @@ class InventorySheetUpdaterBase(ABC):
         source_url: str,
     ) -> Optional[int]:
         """Return 1-based row number with an exact URL match, or None."""
-        range_name = f"{sheet_name}!{url_column_letter}2:{url_column_letter}"
-        result = (
-            service.spreadsheets()
-            .values()
-            .get(spreadsheetId=sheet_id, range=range_name)
-            .execute()
+        values = self._get_url_column_values(
+            service, sheet_id, sheet_name, url_column_letter
         )
-        values = result.get("values", [])
         source_clean = source_url.strip().lower()
         if not source_clean:
             return None
@@ -555,14 +658,9 @@ class InventorySheetUpdaterBase(ABC):
         url_column_letter: str,
     ) -> int:
         """Return the 1-based row number for a new URL row append."""
-        range_name = f"{sheet_name}!{url_column_letter}2:{url_column_letter}"
-        result = (
-            service.spreadsheets()
-            .values()
-            .get(spreadsheetId=sheet_id, range=range_name)
-            .execute()
+        values = self._get_url_column_values(
+            service, sheet_id, sheet_name, url_column_letter
         )
-        values = result.get("values", [])
         return 2 + len(values)
 
     def _read_cell_text(
@@ -575,11 +673,11 @@ class InventorySheetUpdaterBase(ABC):
     ) -> str:
         """Return trimmed string for a single cell, or empty if blank."""
         rng = f"{sheet_name}!{col_letter}{row_number}"
-        result = (
+        result = execute_sheets_request(
             service.spreadsheets()
             .values()
-            .get(spreadsheetId=sheet_id, range=rng)
-            .execute()
+            .get(spreadsheetId=sheet_id, range=rng),
+            operation_label="Sheets cell read",
         )
         values = result.get("values", [])
         if not values or not values[0]:
