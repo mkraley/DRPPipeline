@@ -144,7 +144,7 @@ class NpsSourcing(SourcingBase):
 
     def _storage_fields_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
         """Map a candidate row to Storage update fields."""
-        return {
+        fields: dict[str, Any] = {
             "title": row.get("title", ""),
             "agency": row.get("agency", ""),
             "office": row.get("office", ""),
@@ -153,6 +153,11 @@ class NpsSourcing(SourcingBase):
             "collection_notes": row.get("collection_notes", ""),
             "status": "sourced",
         }
+        for key in ("time_start", "time_end", "geographic_coverage"):
+            value = row.get(key)
+            if value:
+                fields[key] = value
+        return fields
 
     def _store_hierarchy(
         self,

@@ -136,3 +136,26 @@ def product_public_file_count(product: dict[str, Any]) -> int:
     if not is_public_downloadable_product(product):
         return 0
     return int(product.get("fileCount") or 0)
+
+
+def public_digital_files(profile: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return Digital File holdings that look anonymously downloadable."""
+    if not is_public_token(profile.get("visibility") or "Public"):
+        return []
+    files = profile.get("filesAndLinks") or []
+    if not isinstance(files, list):
+        return []
+    return [item for item in files if isinstance(item, dict) and is_public_digital_file(item)]
+
+
+def file_resource_id(item: dict[str, Any]) -> int | None:
+    """Return a DownloadFile / holding id from a filesAndLinks item."""
+    for key in ("fileId", "FileId", "resourceId", "ResourceId"):
+        value = item.get(key)
+        if value is None or value == "":
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    return None

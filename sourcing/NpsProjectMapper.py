@@ -4,10 +4,17 @@ Map IRMA Project profiles to DataLumos sourcing fields and hierarchy rows.
 
 from __future__ import annotations
 
-import html
-import re
 from typing import Any
 
+from sourcing.NpsProfileGeography import profile_geographic_coverage
+from sourcing.NpsProfileMetadata import (
+    AGENCY,
+    OFFICE,
+    profile_keywords,
+    profile_summary_html,
+    profile_temporal_fields,
+    profile_title,
+)
 from sourcing.NpsReferenceRules import (
     is_public_downloadable_product,
     product_public_file_count,
@@ -17,29 +24,16 @@ from sourcing.NpsReferenceRules import (
     reference_profile_url,
 )
 
-AGENCY = "National Park Service"
-OFFICE = "Inventory and Monitoring Division"
-
-
-def profile_title(profile: dict[str, Any]) -> str:
-    """Return bibliography title, falling back to a top-level title."""
-    bib = profile.get("bibliography") if isinstance(profile.get("bibliography"), dict) else {}
-    return str(bib.get("title") or profile.get("title") or "").strip()
-
-
-def profile_abstract(profile: dict[str, Any]) -> str:
-    """Return a plain-text abstract from bibliography HTML when present."""
-    bib = profile.get("bibliography") if isinstance(profile.get("bibliography"), dict) else {}
-    return _plain_text(str(bib.get("abstract") or ""))
-
-
-def profile_keywords(profile: dict[str, Any]) -> str:
-    """Join unique keyword strings from an IRMA keywords payload."""
-    names: list[str] = []
-    for item in _keyword_items(profile.get("keywords")):
-        if item and item not in names:
-            names.append(item)
-    return ", ".join(names)
+__all__ = [
+    "AGENCY",
+    "OFFICE",
+    "breadcrumb_text",
+    "build_candidate_row",
+    "profile_keywords",
+    "profile_title",
+    "public_products",
+    "storage_updates_from_profile",
+]
 
 
 def breadcrumb_text(
@@ -59,11 +53,6 @@ def breadcrumb_text(
     )
 
 
-def html_paragraphs(*parts: str) -> str:
-    """Wrap non-empty parts in ``<p>`` tags."""
-    return "".join(f"<p>{html.escape(part)}</p>" for part in parts if part.strip())
-
-
 def public_products(profile: dict[str, Any]) -> list[dict[str, Any]]:
     """Return Product summaries that have anonymously downloadable Digital Files."""
     return [
@@ -77,6 +66,29 @@ def project_public_file_total(profile: dict[str, Any]) -> int:
     """Sum public Digital Files on the Project and its public Products."""
     product_files = sum(product_public_file_count(product) for product in profile_products(profile))
     return project_direct_public_file_count(profile) + product_files
+
+
+def storage_updates_from_profile(
+    profile: dict[str, Any],
+    *,
+    filenames: list[str] | None = None,
+) -> dict[str, Any]:
+    """
+    Build Storage fields from an IRMA Project landing page.
+
+    Hierarchy breadcrumbs stay in ``collection_notes`` and are not included here.
+    """
+    fields: dict[str, Any] = {
+        "agency": AGENCY,
+        "office": OFFICE,
+        "summary": profile_summary_html(profile),
+        "keywords": profile_keywords(profile),
+    }
+    fields.update(profile_temporal_fields(profile, filenames=filenames))
+    coverage = profile_geographic_coverage(profile)
+    if coverage:
+        fields["geographic_coverage"] = coverage
+    return fields
 
 
 def build_candidate_row(
@@ -110,13 +122,9 @@ def build_candidate_row(
         project_id=project_id,
         project_title=title,
     )
-    return {
+    row: dict[str, Any] = {
         "url": reference_profile_url(project_id),
         "title": title,
-        "agency": AGENCY,
-        "office": OFFICE,
-        "summary": html_paragraphs(crumb, profile_abstract(profile)),
-        "keywords": profile_keywords(profile),
         "collection_notes": crumb,
         "record_id": str(project_id),
         "irma_project_id": project_id,
@@ -129,6 +137,8 @@ def build_candidate_row(
         "public_file_count": public_files,
         "products": products,
     }
+    row.update(storage_updates_from_profile(profile))
+    return row
 
 
 def _product_row(product: dict[str, Any]) -> dict[str, Any] | None:
@@ -146,29 +156,3 @@ def _product_row(product: dict[str, Any]) -> dict[str, Any] | None:
         "file_access": str(product.get("fileAccess") or ""),
         "public_file_count": product_public_file_count(product),
     }
-
-
-def _plain_text(raw: str) -> str:
-    """Strip tags and collapse whitespace from an IRMA abstract."""
-    text = re.sub(r"<[^>]+>", " ", raw)
-    return re.sub(r"\s+", " ", html.unescape(text)).strip()
-
-
-def _keyword_items(raw: Any) -> list[str]:
-    """Flatten IRMA keyword objects into strings."""
-    if isinstance(raw, dict):
-        nested = raw.get("keyword") or raw.get("keywords")
-        if nested is not None:
-            return _keyword_items(nested)
-        raw = list(raw.values())
-    if not isinstance(raw, list):
-        return []
-    names: list[str] = []
-    for item in raw:
-        if isinstance(item, str) and item.strip():
-            names.append(item.strip())
-        elif isinstance(item, dict):
-            name = item.get("keyword") or item.get("text") or item.get("value")
-            if name:
-                names.append(str(name).strip())
-    return names

@@ -12,6 +12,7 @@ from collectors.CatalogDataCollector import CatalogDataCollector
 from collectors.CmsGovCollector import CmsGovCollector
 from collectors.Collector import Collector
 from collectors.CollectorFactory import collector_class_for_source, create_collector
+from collectors.NpsCollector import NpsCollector
 from collectors.SocrataCollector import SocrataCollector
 from collectors.SsaCollector import SsaCollector
 from collectors.UsfsCollector import UsfsCollector
@@ -55,6 +56,10 @@ class TestCollectorFactory(unittest.TestCase):
     def test_ssa_source_returns_ssa_collector(self) -> None:
         """SSA source selects SsaCollector."""
         self.assertIs(collector_class_for_source("ssa"), SsaCollector)
+
+    def test_nps_source_returns_nps_collector(self) -> None:
+        """NPS source selects NpsCollector."""
+        self.assertIs(collector_class_for_source("nps"), NpsCollector)
 
     def test_ahrq_source_returns_catalog_collector(self) -> None:
         """AHRQ source selects CatalogDataCollector."""

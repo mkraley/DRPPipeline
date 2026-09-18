@@ -10,6 +10,7 @@ from collectors.AdcCollector import AdcCollector
 from collectors.BtsCollector import BtsCollector
 from collectors.CatalogDataCollector import CatalogDataCollector
 from collectors.CmsGovCollector import CmsGovCollector
+from collectors.NpsCollector import NpsCollector
 from collectors.SocrataCollector import SocrataCollector
 from collectors.SsaCollector import SsaCollector
 from collectors.UsfsCollector import UsfsCollector
@@ -21,6 +22,7 @@ _SOURCE_COLLECTOR: dict[str, type] = {
     "bts": BtsCollector,
     "cdc": SocrataCollector,
     "cms": CmsGovCollector,
+    "nps": NpsCollector,
     "ssa": SsaCollector,
     "usfs": UsfsCollector,
 }

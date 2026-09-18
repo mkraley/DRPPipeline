@@ -16,6 +16,8 @@ COLLECTION_GET_URL = "https://irma.nps.gov/DataStore/Collection/GetById/{}"
 COLLECTION_REFS_URL = (
     "https://irma.nps.gov/DataStore/Collection/GetCollectionReferencesForProfile"
 )
+HOLDINGS_URL = "https://irma.nps.gov/DataStore/Reference/GetHoldings"
+LOAD_DATA_TABLE_URL = "https://irma.nps.gov/DataStore/Reference/LoadDataTable"
 DEFAULT_TIMEOUT_SEC = 45
 _JSON_HEADERS = {
     "User-Agent": "Mozilla/5.0 DRPPipeline-NPS",
@@ -75,16 +77,47 @@ class NpsCatalogClient:
             )
         return [row for row in payload if isinstance(row, dict)]
 
+    def fetch_holdings(self, reference_id: int) -> list[dict[str, Any]]:
+        """
+        Return GetHoldings rows for one reference (sizes and DataTableCount).
+
+        Args:
+            reference_id: IRMA Project or Product id.
+        """
+        payload = self._get_json(HOLDINGS_URL, params={"referenceId": int(reference_id)})
+        if not isinstance(payload, list):
+            raise RuntimeError(f"IRMA GetHoldings {reference_id} returned a non-list")
+        return [row for row in payload if isinstance(row, dict)]
+
+    def fetch_data_table(self, reference_id: int, resource_id: int) -> list[dict[str, Any]]:
+        """
+        Return LoadDataTable column metadata for one holding.
+
+        Args:
+            reference_id: IRMA Product id.
+            resource_id: Holding / DownloadFile id.
+        """
+        payload = self._post_form(
+            LOAD_DATA_TABLE_URL,
+            {"referenceId": int(reference_id), "resourceId": int(resource_id)},
+        )
+        if not isinstance(payload, list):
+            raise RuntimeError(
+                f"IRMA LoadDataTable {reference_id}/{resource_id} returned a non-list"
+            )
+        return [row for row in payload if isinstance(row, dict)]
+
     def close(self) -> None:
         """No persistent resources; provided for fetcher symmetry."""
         return
 
-    def _get_json(self, url: str) -> Any:
+    def _get_json(self, url: str, params: dict[str, Any] | None = None) -> Any:
         """GET a JSON payload from IRMA."""
         try:
             response = requests.get(
                 url,
                 headers=_JSON_HEADERS,
+                params=params,
                 timeout=self._timeout_sec,
                 verify=requests_verify(),
             )

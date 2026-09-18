@@ -81,6 +81,35 @@ class TestNpsCatalogClient(unittest.TestCase):
             NpsCatalogClient().fetch_profile(1)
         self.assertIn("500", str(ctx.exception))
 
+    @patch("sourcing.NpsCatalogClient.requests.get")
+    def test_fetch_holdings_sends_reference_id(self, mock_get: MagicMock) -> None:
+        """GetHoldings uses the referenceId query parameter."""
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = [{"Id": 716591, "DataTableCount": 2}]
+        mock_get.return_value = response
+
+        rows = NpsCatalogClient().fetch_holdings(2308545)
+
+        self.assertEqual(rows[0]["Id"], 716591)
+        self.assertEqual(mock_get.call_args.kwargs["params"]["referenceId"], 2308545)
+
+    @patch("sourcing.NpsCatalogClient.requests.post")
+    def test_fetch_data_table_posts_ids(self, mock_post: MagicMock) -> None:
+        """LoadDataTable posts referenceId and resourceId."""
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = [{"ColumnName": "code"}]
+        mock_post.return_value = response
+
+        rows = NpsCatalogClient().fetch_data_table(2308545, 716591)
+
+        self.assertEqual(rows[0]["ColumnName"], "code")
+        self.assertEqual(
+            mock_post.call_args.kwargs["data"],
+            {"referenceId": 2308545, "resourceId": 716591},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

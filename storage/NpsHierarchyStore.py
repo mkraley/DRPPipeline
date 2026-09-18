@@ -149,32 +149,44 @@ class NpsHierarchyStore:
         self._connection.commit()
 
     def get_project(self, irma_project_id: int) -> dict[str, Any] | None:
-        """
-        Return one nps_projects row, or None.
-
-        Args:
-            irma_project_id: IRMA Project reference id.
-        """
-        cursor = self._connection.execute(
+        """Return one nps_projects row by IRMA Project id, or None."""
+        return self._fetchone_dict(
             "SELECT * FROM nps_projects WHERE irma_project_id = ?",
             (int(irma_project_id),),
         )
+
+    def get_project_by_drpid(self, drpid: int) -> dict[str, Any] | None:
+        """Return one nps_projects row by DRPID, or None."""
+        return self._fetchone_dict(
+            "SELECT * FROM nps_projects WHERE drpid = ?",
+            (int(drpid),),
+        )
+
+    def list_products(self, irma_project_id: int) -> list[dict[str, Any]]:
+        """Return product rows for one IRMA Project id."""
+        return self._fetchall_dicts(
+            "SELECT * FROM nps_products WHERE irma_project_id = ? ORDER BY irma_product_id",
+            (int(irma_project_id),),
+        )
+
+    def list_products_for_drpid(self, drpid: int) -> list[dict[str, Any]]:
+        """Return product rows for one Storage DRPID."""
+        return self._fetchall_dicts(
+            "SELECT * FROM nps_products WHERE drpid = ? ORDER BY irma_product_id",
+            (int(drpid),),
+        )
+
+    def _fetchone_dict(self, query: str, params: tuple[Any, ...]) -> dict[str, Any] | None:
+        """Run a SELECT and return one row as a dict."""
+        cursor = self._connection.execute(query, params)
         fetched = cursor.fetchone()
         if fetched is None:
             return None
         names = [item[0] for item in cursor.description]
         return dict(zip(names, fetched))
 
-    def list_products(self, irma_project_id: int) -> list[dict[str, Any]]:
-        """
-        Return product rows for one IRMA Project.
-
-        Args:
-            irma_project_id: Parent IRMA Project reference id.
-        """
-        cursor = self._connection.execute(
-            "SELECT * FROM nps_products WHERE irma_project_id = ? ORDER BY irma_product_id",
-            (int(irma_project_id),),
-        )
+    def _fetchall_dicts(self, query: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
+        """Run a SELECT and return all rows as dicts."""
+        cursor = self._connection.execute(query, params)
         names = [item[0] for item in cursor.description]
         return [dict(zip(names, row)) for row in cursor.fetchall()]

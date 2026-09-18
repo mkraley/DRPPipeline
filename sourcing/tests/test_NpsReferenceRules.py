@@ -91,6 +91,22 @@ class TestNpsReferenceRules(unittest.TestCase):
             0,
         )
 
+    def test_public_digital_files_skips_external_links(self) -> None:
+        """External Links are omitted from the downloadable file list."""
+        from sourcing.NpsReferenceRules import public_digital_files
+
+        files = public_digital_files(
+            {
+                "visibility": "Public",
+                "filesAndLinks": [
+                    {"resourceType": "Digital File", "url": "https://x/a.csv", "fileName": "a.csv"},
+                    {"resourceType": "External Link", "url": "https://example.com"},
+                ],
+            }
+        )
+        self.assertEqual(len(files), 1)
+        self.assertEqual(files[0]["fileName"], "a.csv")
+
 
 if __name__ == "__main__":
     unittest.main()

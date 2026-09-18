@@ -17,10 +17,13 @@ from utils.Logger import Logger
 SAMPLE_ROW = {
     "url": "https://irma.nps.gov/DataStore/Reference/Profile/1001",
     "title": "Keep Me",
-    "agency": "National Park Service",
-    "office": "Inventory and Monitoring Division",
-    "summary": "<p>Collection 9688: IMD Programs</p>",
+    "agency": "Department of the Interior",
+    "office": "National Park Service",
+    "summary": "<p>Counts of galax.</p>",
     "keywords": "plants",
+    "time_start": "2013",
+    "time_end": "2013",
+    "geographic_coverage": "North Carolina",
     "collection_notes": "Collection 9688: IMD Programs > Program 2310251: APHN > Project 1001: Keep Me",
     "record_id": "1001",
     "irma_project_id": 1001,
@@ -83,8 +86,12 @@ class TestNpsSourcing(unittest.TestCase):
         projects = self.storage.list_eligible_projects("sourced", None)
         self.assertEqual(len(projects), 1)
         self.assertEqual(projects[0]["title"], "Keep Me")
-        self.assertEqual(projects[0]["agency"], "National Park Service")
+        self.assertEqual(projects[0]["agency"], "Department of the Interior")
+        self.assertEqual(projects[0]["office"], "National Park Service")
+        self.assertEqual(projects[0]["time_start"], "2013")
+        self.assertEqual(projects[0]["geographic_coverage"], "North Carolina")
         self.assertIn("IMD Programs", projects[0]["collection_notes"])
+        self.assertNotIn("Collection 9688", projects[0]["summary"])
         store = NpsHierarchyStore.from_storage()
         hierarchy = store.get_project(1001)
         self.assertIsNotNone(hierarchy)

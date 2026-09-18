@@ -88,6 +88,11 @@ class TestNpsHierarchyStore(unittest.TestCase):
         self.assertEqual(project["program_title"], "APHN")
         products = self.store.list_products(1001)
         self.assertEqual(products[0]["irma_product_id"], 2001)
+        by_drpid = self.store.get_project_by_drpid(drpid)
+        self.assertIsNotNone(by_drpid)
+        assert by_drpid is not None
+        self.assertEqual(by_drpid["irma_project_id"], 1001)
+        self.assertEqual(len(self.store.list_products_for_drpid(drpid)), 1)
 
     def test_replace_products_drops_stale_rows(self) -> None:
         """Replacing products removes ids that are no longer listed."""
