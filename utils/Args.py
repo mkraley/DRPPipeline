@@ -95,6 +95,10 @@ class Args(metaclass=ArgsMeta):
         "bts_request_delay": 0.1,  # Seconds between ROSA P catalog page fetches during BTS sourcing
         "ssa_request_delay": 0.1,  # Seconds between GSA Catalog API pages during SSA sourcing
         "gsa_api_key": None,  # api.data.gov key for SSA catalog sourcing (GSA Catalog API)
+        "nps_collection_id": 9688,  # IRMA Collection of IMD Programs
+        "nps_program_id": 2310251,  # IRMA Program to source (APHN); 0 = all programs
+        "nps_request_delay": 0.1,  # Seconds between IRMA API calls during NPS sourcing
+        "nps_request_timeout": 45,  # Seconds per IRMA HTTP request
         # When True, BTS collector peeks inside zip archives for member extensions.
         # Default False: report only top-level uploaded / catalog-listed extensions.
         "bts_scan_zip_extensions": False,

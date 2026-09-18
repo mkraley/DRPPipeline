@@ -354,6 +354,10 @@ If the config file does not exist, a warning is shown but the pipeline continues
 | `socrata_app_token` | — | yes | — | Optional Socrata API token (avoids 403 on direct download) |
 | `gsa_api_key` | — | yes | — | api.data.gov key for SSA catalog sourcing (GSA Catalog API). Get a free key at https://api.data.gov/signup/ |
 | `ssa_request_delay` | — | yes | `0.1` | Seconds between GSA Catalog API pages during SSA sourcing |
+| `nps_collection_id` | — | yes | `9688` | IRMA Collection of Inventory and Monitoring Division Programs |
+| `nps_program_id` | — | yes | `2310251` | IRMA Program to source (APHN). Set to `0` to source every Program in the Collection |
+| `nps_request_delay` | — | yes | `0.1` | Seconds between IRMA API calls during NPS sourcing |
+| `nps_request_timeout` | — | yes | `45` | Seconds per IRMA HTTP request |
 | `gwda_your_name` | — | yes (required for GWDA) | `""` | Name for GWDA nomination (nominates URLs to U.S. Gov Web & Data Archive) |
 | `gwda_institution` | — | yes | `Data Rescue Project` | Institution for GWDA |
 | `gwda_email` | — | yes | (from `datalumos_username`) | Email for GWDA |
@@ -545,7 +549,7 @@ python scripts/tally_data_inventories/tally_claimed_all_tabs.py
 
 | Module | Purpose |
 |--------|---------|
-| **sourcing** | Fetches candidate URLs from the configured spreadsheet, checks duplicates, creates DB records (new rows append unless `delete_all_db_entries` is true in config and/or `--delete-all-db-entries` on the CLI). Requires `google_sheet_id`. Use `--sourcing-mode` to control which rows are selected (see below). |
+| **sourcing** | Fetches candidate URLs from the configured spreadsheet or catalog API, checks duplicates, creates DB records (new rows append unless `delete_all_db_entries` is true in config and/or `--delete-all-db-entries` on the CLI). Spreadsheet sourcing requires `google_sheet_id`. Use `--sourcing-mode` to control which sheet rows are selected (see below). When `source` is `nps`, walks IRMA Collection 9688 and sources one DataLumos project per unique IRMA Project with public Digital Files (default Program: APHN `2310251`). |
 | **socrata_collector** | Collects data and metadata from Socrata-hosted pages (e.g. data.cdc.gov). Processes `status="sourced"`. |
 | **catalog_collector** | Collects download links from catalog.data.gov dataset pages. Processes `status="sourced"`. |
 | **collector** (SSA) | When `source` is `ssa`, harvests catalog.data.gov SSA dataset pages: expands Complete Metadata before saving a catalog PDF, prints HTML resources as PDFs named from the page `<title>`, and downloads non-HTML files using the URL basename (e.g. `names.zip`). Processes `status="sourced"`. |

@@ -43,6 +43,8 @@ class TestArgs(unittest.TestCase):
         Args.initialize(config_file=Path("/tmp/nonexistent_drp_test_config.json"))
         self.assertEqual(Args.sourcing_url_column, "URL")
         self.assertIsNone(Args.num_rows)  # Default is None (unlimited)
+        self.assertEqual(Args.nps_collection_id, 9688)
+        self.assertEqual(Args.nps_program_id, 2310251)
 
     def test_initialize_uses_pytest_config_when_env_set(self) -> None:
         """Under pytest, Args.initialize loads DRP_PYTEST_CONFIG instead of config.json."""

@@ -179,6 +179,7 @@ class StorageSQLLite:
 
             self._add_missing_columns()
             self._reorder_projects_columns_if_needed()
+            self._ensure_nps_hierarchy_schema()
 
             self._initialized = True
             Logger.info(f"Storage initialized: {self._db_path}")
@@ -207,6 +208,25 @@ class StorageSQLLite:
             except sqlite3.OperationalError as exc:
                 if "duplicate column name" not in str(exc).lower():
                     raise
+
+    def _ensure_nps_hierarchy_schema(self) -> None:
+        """Create NPS Program/Project/Product tables when missing."""
+        from storage.NpsHierarchyStore import NpsHierarchyStore
+
+        assert self._connection is not None
+        NpsHierarchyStore.ensure_schema(self._connection)
+
+    def sqlite_connection(self) -> sqlite3.Connection:
+        """
+        Return the open SQLite connection.
+
+        Returns:
+            Live connection after ``initialize()``.
+        """
+        self._ensure_initialized()
+        if self._connection is None:
+            raise RuntimeError("Database connection is not available.")
+        return self._connection
 
     def _projects_column_names(self) -> list[str]:
         """Return current projects table column names in definition order."""
