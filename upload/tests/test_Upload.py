@@ -179,6 +179,17 @@ class TestDataLumosUploader(unittest.TestCase):
         assert record is not None
         self.assertIn("Upload batch count (3)", record.get("warnings") or "")
 
+    @patch("upload.UploadIssueReporter.record_warning")
+    def test_warn_if_num_files_mismatch_skips_zip_import(
+        self, mock_record_warning: MagicMock
+    ) -> None:
+        """ZIP uploads do not compare batch count to collected num_files."""
+        reporter = UploadIssueReporter(1)
+        _warn_if_num_files_mismatch(
+            reporter, {"num_files": 12}, 1, used_zip=True
+        )
+        mock_record_warning.assert_not_called()
+
     @patch("upload.DataLumosUploader.Storage")
     @patch.object(DataLumosUploader, "_upload_project", return_value="12345")
     def test_run_sets_uploaded_status(

@@ -271,7 +271,7 @@ class TestOrchestrator(unittest.TestCase):
     def test_run_publisher_lists_uploaded_and_sheet_only_statuses(
         self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
     ) -> None:
-        """Test run('publisher') lists uploaded plus sheet-only statuses and dedupes."""
+        """Test run('publisher') lists uploaded plus sheet-only statuses."""
         mock_storage = MagicMock()
         mock_storage_cls.initialize.return_value = mock_storage
         mock_storage_cls.get_instance.return_value = mock_storage

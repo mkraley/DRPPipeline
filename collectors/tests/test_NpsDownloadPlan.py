@@ -8,17 +8,28 @@ from collectors.NpsDownloadPlan import (
     planned_files_for_profile,
     product_folder_name,
     sidecar_filename,
+    unique_product_folder_name,
 )
 
 
 class TestNpsDownloadPlan(unittest.TestCase):
     """Tests for product folders and planned Digital Files."""
 
-    def test_product_folder_name_includes_id(self) -> None:
-        """Folder names start with the IRMA Product id."""
-        name = product_folder_name(663485, "Mammal inventory: Blue Ridge?")
-        self.assertTrue(name.startswith("663485_"))
+    def test_product_folder_name_uses_title_only(self) -> None:
+        """Folder names use the product title and omit the IRMA id."""
+        name = product_folder_name("Mammal inventory: Blue Ridge?")
+        self.assertNotIn("663485", name)
+        self.assertFalse(name[:1].isdigit())
         self.assertNotIn("?", name)
+        self.assertIn("Mammal", name)
+
+    def test_unique_product_folder_name_disambiguates(self) -> None:
+        """Duplicate titles get a numeric suffix instead of an IRMA id."""
+        used: set[str] = set()
+        first = unique_product_folder_name("Same Title", used)
+        second = unique_product_folder_name("Same Title", used)
+        self.assertNotEqual(first, second)
+        self.assertTrue(second.startswith(first))
 
     def test_sidecar_filename(self) -> None:
         """Sidecars sit next to the CSV they describe."""

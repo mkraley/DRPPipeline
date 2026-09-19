@@ -255,7 +255,8 @@ def run_module(
     dry_run=True (default): show which projects are eligible without running.
     dry_run=False: execute via subprocess and return captured log output.
 
-    Supported modules: noop, sourcing, collector, upload, publisher, cleanup_inprogress.
+    Supported modules: noop, sourcing, collector, upload,
+    publisher, cleanup_inprogress.
 
     Args:
         module:        Module name to run.
@@ -305,19 +306,29 @@ def run_module(
             try:
                 con = _connect()
                 try:
-                    q = (
-                        "SELECT DRPID, source_url, title FROM projects "
-                        "WHERE status = ? AND (errors IS NULL OR errors = '')"
-                    )
-                    params: list[Any] = [prereq]
-                    if start_drpid is not None:
-                        q += " AND DRPID >= ?"
-                        params.append(start_drpid)
-                    q += " ORDER BY DRPID ASC"
-                    if num_rows is not None:
-                        q += " LIMIT ?"
-                        params.append(num_rows)
-                    rows = con.execute(q, params).fetchall()
+                    statuses = [
+                        part.strip()
+                        for part in str(prereq or "").split("|")
+                        if part.strip()
+                    ]
+                    if not statuses:
+                        rows = []
+                    else:
+                        placeholders = ",".join("?" * len(statuses))
+                        q = (
+                            "SELECT DRPID, source_url, title FROM projects "
+                            f"WHERE status IN ({placeholders}) "
+                            "AND (errors IS NULL OR errors = '')"
+                        )
+                        params: list[Any] = list(statuses)
+                        if start_drpid is not None:
+                            q += " AND DRPID >= ?"
+                            params.append(start_drpid)
+                        q += " ORDER BY DRPID ASC"
+                        if num_rows is not None:
+                            q += " LIMIT ?"
+                            params.append(num_rows)
+                        rows = con.execute(q, params).fetchall()
                 finally:
                     con.close()
 

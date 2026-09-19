@@ -27,16 +27,27 @@ class NpsPlannedFile:
     reference_id: int | None = None
 
 
-def product_folder_name(product_id: int, title: str) -> str:
+def product_folder_name(title: str) -> str:
     """
-    Build a Windows-safe product subfolder name.
+    Build a Windows-safe product subfolder name from the product title.
 
     Args:
-        product_id: IRMA Product id.
-        title: Product title.
+        title: Product title (IRMA ids are not included).
     """
-    stem = sanitize_filename(title, max_length=80)
-    return sanitize_filename(f"{product_id}_{stem}", max_length=120)
+    return sanitize_filename(title, max_length=120)
+
+
+def unique_product_folder_name(title: str, used: set[str]) -> str:
+    """Return a product folder name that does not collide with ``used``."""
+    base = product_folder_name(title)
+    name = base
+    suffix = 2
+    used_folded = {item.casefold() for item in used}
+    while name.casefold() in used_folded:
+        name = sanitize_filename(f"{base}_{suffix}", max_length=120)
+        suffix += 1
+    used.add(name)
+    return name
 
 
 def sidecar_filename(data_filename: str) -> str:

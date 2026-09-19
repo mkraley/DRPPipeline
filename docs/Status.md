@@ -59,10 +59,10 @@ Projects enter at `sourced` via `sourcing` / `adc_sourcing`. Large-file and repa
 
 | Status | Meaning | Typical next step |
 |--------|---------|-------------------|
-| `uploaded` | Project created in DataLumos; files uploaded; `datalumos_id` set. | `publisher` |
+| `uploaded` | Project created in DataLumos; files uploaded; `datalumos_id` set. ZIP imports may still be unpacking. | `publisher` |
 | `uploaded - large file` | Base project uploaded after `collected - large file`; large files still need a second pass. Eligible for `upload_large_files` only when `file_size` is present and **&lt; 25 GB**. | `upload_large_files` → `finish wait` |
 | `uploaded - expanded` | Operator/process status for large-file upload at **any** `file_size` (no 25 GB cap). Not set automatically by the normal upload module. | `upload_large_files` → `finish wait` |
-| `finish wait` | Large-file download/upload finished; waiting for human/process before publish. | Manual: typically set to `uploaded` when ready for `publisher`. |
+| `finish wait` | Large-file download/upload finished; waiting for human/process before publish. | Manual: typically set to `uploaded` so `publisher` can run. |
 | `re-uploaded` | Missing files were repaired by `verify_upload` (re-download + re-upload to existing workspace). | `republisher` |
 
 ### Publish and inventory outcomes
@@ -104,7 +104,7 @@ To re-run a module against error statuses from the CLI, use ``--retry`` (selects
 | `adc_globus_survey` | `collected - external archive` (Globus) | *(survey only; does not advance to upload)* |
 | `upload` | `collected`, `collected - large file` | `uploaded` or `uploaded - large file` |
 | `upload_large_files` | `uploaded - large file` (&lt; 25 GB), `uploaded - expanded` (any size) | `finish wait` |
-| `publisher` | `uploaded`, plus sheet-only: `not_found`, `no_links`, `no dataset`, `gigantic upload`, `needs scripting`, `collector_hold - *` | `published` then `updated_inventory` (browser path); or `updated_*` (sheet-only path) |
+| `publisher` | `uploaded`. Plus sheet-only: `not_found`, `no_links`, `no dataset`, `gigantic upload`, `needs scripting`, `collector_hold - *` | `published` then `updated_inventory` (browser path); or `updated_*` (sheet-only path) |
 | `verify_upload` | `updated_inventory`, `updated_inventory-error` | Unchanged on match; `re-uploaded` on repair; `updated_inventory-error` on mismatch; retry success → `updated_inventory` |
 | `republisher` | `re-uploaded` | `updated_inventory` (V2 URL / republish note) |
 
@@ -198,7 +198,7 @@ stateDiagram-v2
 1. **Exact strings matter.** `collected` ≠ `collected - large file`. The orchestrator merges lists when a module intentionally accepts more than one status.
 2. **Errors block progress.** Clearing `errors` (and often rolling status back, e.g. to `sourced`) is required before most modules will see the project again.
 3. **`published` is often brief.** When Google Sheets is configured, `publisher` advances to `updated_inventory` in the same run after a successful sheet write.
-4. **`finish wait` is not auto-published.** After `upload_large_files`, an operator decides when the project should become `uploaded` for `publisher`.
+4. **`finish wait` is not auto-published.** After `upload_large_files`, an operator decides when the project should become `uploaded`. Then `publisher` can run.
 5. **`dupe_in_DL` and the `updated_*` terminal statuses** normally end the automated pipeline for that row.
 6. **Manual overrides** (`set_project_status`, SQL, MCP) are supported for recovery; prefer documenting why in `status_notes` / `warnings` when you do.
 

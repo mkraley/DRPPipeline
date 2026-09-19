@@ -25,7 +25,7 @@ def _product_profile() -> dict:
         "referenceType": "Unpublished Report",
         "visibility": "Public",
         "fileAccess": "Public",
-        "citation": "Britzke. 2007. Mammal inventory.",
+        "citation": "Britzke. 2007. Mammal inventory. https://doi.org/10.36967/663485",
         "bibliography": {
             "title": "Mammal inventory of selected parks",
             "abstract": "<p>Bat surveys.</p>",
@@ -70,6 +70,9 @@ class TestNpsLandingMetadata(unittest.TestCase):
         self.assertEqual(payload["units"][0]["code"], "BLRI")
         self.assertIn("North Carolina", payload["geographic_coverage"])
         self.assertEqual(payload["time_start"], "2007")
+        self.assertIn("Bat surveys.", payload["summary"])
+        self.assertEqual(payload["doi"], "10.36967/663485")
+        self.assertIn("10.36967/663485", payload["summary"])
         self.assertEqual(payload["files"][0]["file_name"], "report.pdf")
 
     def test_write_landing_metadata_utf8_json(self) -> None:

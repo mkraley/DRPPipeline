@@ -167,6 +167,10 @@ class DataLumosFileUploader:
             self._upload_via_upload_files(files)
         Logger.info("File upload completed and modal closed")
 
+    def uses_zip_import(self, folder_path: str) -> bool:
+        """Return True when this folder is uploaded via Import From Zip."""
+        return self._folder_has_subfolders(folder_path)
+
     def _folder_has_subfolders(self, folder_path: str) -> bool:
         """Return True if the folder contains any subdirectories."""
         folder = Path(folder_path)

@@ -8,6 +8,8 @@ from sourcing.NpsProfileMetadata import (
     AGENCY,
     OFFICE,
     irma_date,
+    merge_doi_notes,
+    profile_dois,
     profile_summary_html,
     profile_temporal_fields,
 )
@@ -54,6 +56,32 @@ class TestNpsProfileMetadata(unittest.TestCase):
             profile_temporal_fields(profile),
             {"time_start": "2007", "time_end": "2007"},
         )
+
+    def test_summary_includes_doi_from_citation(self) -> None:
+        """DOIs in IRMA citations become a labeled summary field."""
+        profile = {
+            "citation": (
+                "Hughes J. 2018. Protocol. National Park Service. "
+                "https://doi.org/10.36967/2258269"
+            ),
+            "bibliography": {"abstract": "<p>Protocol narrative.</p>"},
+        }
+        summary = profile_summary_html(profile)
+        self.assertIn("10.36967/2258269", summary)
+        self.assertIn("DOI", summary)
+
+    def test_profile_dois_ignores_orcid_and_dedupes(self) -> None:
+        """ORCID URLs are not treated as DOIs; duplicate DOIs are stored once."""
+        profile = {
+            "citation": (
+                '<a href="https://orcid.org/0000-0003-4438-7094">x</a> '
+                "https://doi.org/10.57830/2308545. https://doi.org/10.57830/2308545"
+            )
+        }
+        self.assertEqual(profile_dois(profile), ["10.57830/2308545"])
+        notes = merge_doi_notes("Collection 9688: IMD", ["10.57830/2308545"])
+        self.assertIn("DOI: 10.57830/2308545", notes)
+        self.assertIn("Collection 9688: IMD", notes)
 
     def test_summary_includes_landing_fields_not_hierarchy(self) -> None:
         """Summary captures leads, publisher, and notes without a breadcrumb."""

@@ -58,8 +58,15 @@ def _warn_if_num_files_mismatch(
     reporter: UploadIssueReporter,
     project: Dict[str, Any],
     upload_batches: int,
+    *,
+    used_zip: bool = False,
 ) -> None:
-    """Record a warning when collected ``num_files`` does not match upload batch count."""
+    """Record a warning when collected ``num_files`` does not match upload batch count.
+
+    Zip imports skip this check; publish later compares the full folder tree.
+    """
+    if used_zip:
+        return
     nf_raw = project.get("num_files")
     if nf_raw is None:
         return
@@ -71,8 +78,7 @@ def _warn_if_num_files_mismatch(
         return
     reporter.warn(
         f"Upload batch count ({upload_batches}) does not match "
-        f"num_files from collection ({expected_files}). "
-        "(Zip import counts as 1; num_files is top-level file count.)"
+        f"num_files from collection ({expected_files})."
     )
 
 
@@ -261,9 +267,14 @@ class DataLumosUploader:
             file_uploader = DataLumosFileUploader(
                 page, timeout=Args.upload_timeout, reporter=reporter
             )
-            upload_batches = file_uploader.count_upload_batches(folder_path)
+            used_zip = file_uploader.uses_zip_import(folder_path)
             file_uploader.upload_files(folder_path)
-            _warn_if_num_files_mismatch(reporter, project, upload_batches)
+            _warn_if_num_files_mismatch(
+                reporter,
+                project,
+                file_uploader.count_upload_batches(folder_path),
+                used_zip=used_zip,
+            )
 
         return workspace_id
     

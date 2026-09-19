@@ -127,7 +127,7 @@ requirements.txt       # add: mcp>=1.0.0
 | `catalog_collector` | `sourced` | `collected` | |
 | `cms_collector` | `sourced` | `collected` | |
 | `upload` | `collected` | `uploaded` | |
-| `publisher` | `uploaded` | `published` | Also processes `not_found` and `no_links` (sheet-only update); dry-run shows all three buckets. |
+| `publisher` | `uploaded` | `published` | Also processes `not_found` and `no_links` (sheet-only update). |
 | `cleanup_inprogress` | — | — | DataLumos only, no DB changes; `verify_module_run` will return an error for this module. |
 
 This list is not exhaustive — more collectors will be added over time. `interactive_collector` is **not** managed by MCP 1; it is under active development as a separate tool and runs as a Flask app, which is incompatible with the subprocess execution model used here.

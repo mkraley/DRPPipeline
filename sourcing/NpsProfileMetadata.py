@@ -21,6 +21,10 @@ _CONTACT_LABELS = {
     "Creator(s)": "Creators",
     "Contact(s)": "Contacts",
 }
+_DOI_RE = re.compile(
+    r"(?:https?://(?:dx\.)?doi\.org/)?(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)",
+    re.IGNORECASE,
+)
 
 
 def bibliography(profile: dict[str, Any]) -> dict[str, Any]:
@@ -123,12 +127,44 @@ def profile_purpose(profile: dict[str, Any]) -> str:
     return _plain_text(str(bibliography(profile).get("purpose") or ""))
 
 
+def profile_dois(profile: dict[str, Any]) -> list[str]:
+    """Return unique DOIs from citation, notes, and dedicated identifier fields."""
+    bib = bibliography(profile)
+    chunks = [
+        str(profile.get("citation") or ""),
+        str(profile.get("doi") or profile.get("DOI") or ""),
+        str(bib.get("doi") or bib.get("DOI") or ""),
+        profile_notes(profile),
+    ]
+    found: list[str] = []
+    for chunk in chunks:
+        for match in _DOI_RE.finditer(chunk):
+            doi = match.group(1).rstrip(").,;")
+            if doi and doi not in found:
+                found.append(doi)
+    return found
+
+
+def merge_doi_notes(existing: str, dois: list[str]) -> str:
+    """Append ``DOI:`` lines to collection notes without duplicating them."""
+    lines = [line for line in (existing or "").splitlines() if line.strip()]
+    joined = "\n".join(lines)
+    for doi in dois:
+        note = f"DOI: {doi}"
+        if note not in lines and doi not in joined:
+            lines.append(note)
+    return "\n".join(lines)
+
+
 def profile_summary_html(profile: dict[str, Any]) -> str:
     """Build a DataLumos summary from abstract plus landing-page details."""
     chunks = [_paragraph(profile_abstract(profile))]
     citation = str(profile.get("citation") or "").strip()
     if citation:
         chunks.append(_labeled("Citation", citation))
+    dois = profile_dois(profile)
+    if dois:
+        chunks.append(_labeled("DOI", "; ".join(dois)))
     for label, value in contact_groups(profile):
         chunks.append(_labeled(label, value))
     publisher = profile_publisher(profile)

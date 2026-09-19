@@ -111,6 +111,67 @@ class TestWorkspaceFileStats(unittest.TestCase):
             "domcontentloaded", timeout=120000
         )
 
+    @patch("publisher.WorkspaceFileStats.wait_for_workspace_file_table")
+    @patch("publisher.WorkspaceFileStats.set_records_per_page", return_value=True)
+    def test_workspace_file_stats_descends_into_folders(
+        self, mock_set_records: MagicMock, mock_wait: MagicMock
+    ) -> None:
+        """Folder rows are opened so nested files are counted."""
+        page = MagicMock()
+        page.evaluate.side_effect = [
+            {
+                "files": [
+                    {"name": "readme.pdf", "type": "File", "size": "1.0 KB"},
+                    {"name": "Mammal_inventory", "type": "Folder", "size": ""},
+                ],
+                "totalRecords": 2,
+            },
+            {
+                "files": [
+                    {"name": "report.pdf", "type": "File", "size": "1.0 KB"},
+                ],
+                "totalRecords": 1,
+            },
+        ]
+        stats = workspace_file_stats_from_page(page)
+        self.assertIsNone(stats.error)
+        self.assertEqual(stats.file_count, 2)
+        self.assertEqual(stats.total_bytes, 2048)
+        self.assertEqual(stats.file_names, ("readme.pdf", "report.pdf"))
+        page.go_back.assert_called_once()
+
+    @patch("publisher.WorkspaceFileStats.wait_for_workspace_file_table")
+    @patch("publisher.WorkspaceFileStats.set_records_per_page", return_value=True)
+    def test_workspace_file_stats_folder_icon_without_type(
+        self, mock_set_records: MagicMock, mock_wait: MagicMock
+    ) -> None:
+        """Folders identified by glyphicon-folder-open are still walked."""
+        page = MagicMock()
+        page.evaluate.side_effect = [
+            {
+                "files": [
+                    {"name": "readme.pdf", "type": "", "size": "1.0 KB", "isFolder": False},
+                    {
+                        "name": "Mammal_inventory",
+                        "type": "",
+                        "size": "",
+                        "isFolder": True,
+                    },
+                ],
+                "totalRecords": 2,
+            },
+            {
+                "files": [
+                    {"name": "report.pdf", "type": "", "size": "1.0 KB", "isFolder": False},
+                ],
+                "totalRecords": 1,
+            },
+        ]
+        stats = workspace_file_stats_from_page(page)
+        self.assertIsNone(stats.error)
+        self.assertEqual(stats.file_count, 2)
+        self.assertEqual(stats.file_names, ("readme.pdf", "report.pdf"))
+
 
 if __name__ == "__main__":
     unittest.main()

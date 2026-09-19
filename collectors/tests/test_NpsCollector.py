@@ -35,6 +35,9 @@ _PROJECT_PROFILE = {
 _PRODUCT_PROFILE = {
     "referenceId": 663485,
     "visibility": "Public",
+    "citation": (
+        "Britzke. 2007. Mammal inventory. https://doi.org/10.36967/663485"
+    ),
     "bibliography": {
         "title": "Mammal inventory",
         "notes": "Protocol revision.",
@@ -117,15 +120,20 @@ class TestNpsCollector(unittest.TestCase):
         self,
         _mock_sidecars: MagicMock,
     ) -> None:
-        """Public product files are planned into an id_title subfolder."""
+        """Public product files are planned into a title-only subfolder."""
         collector, _client, store, downloader = self._collector()
-        result = collector._collect(_PROJECT_URL, 2, {"title": "Mammal Inventory"})
+        result = collector._collect(
+            _PROJECT_URL,
+            2,
+            {"title": "Mammal Inventory", "collection_notes": "Collection 9688: IMD"},
+        )
         folder = Path(result["folder_path"])
         self.assertTrue(folder.is_dir())
         store.list_products_for_drpid.assert_called_once_with(2)
         files: list[NpsPlannedFile] = downloader.download_files.call_args.args[2]
         self.assertEqual(len(files), 1)
-        self.assertTrue(files[0].relative_dir.startswith("663485_"))
+        self.assertEqual(files[0].relative_dir, "Mammal_inventory")
+        self.assertNotIn("663485", files[0].relative_dir)
         self.assertEqual(files[0].filename, "report.pdf")
         self.assertTrue((folder / files[0].relative_dir / "report.pdf").is_file())
         self.assertTrue((folder / "project_metadata.json").is_file())
@@ -134,12 +142,15 @@ class TestNpsCollector(unittest.TestCase):
             (folder / files[0].relative_dir / "product_metadata.json").read_text(encoding="utf-8")
         )
         self.assertEqual(product_meta["notes"], "Protocol revision.")
+        self.assertEqual(product_meta["doi"], "10.36967/663485")
         self.assertIn("North Carolina", product_meta["geographic_coverage"])
         self.assertEqual(result["agency"], "Department of the Interior")
         self.assertEqual(result["office"], "National Park Service")
         self.assertEqual(result["time_start"], "2013")
         self.assertIn("Leads", result["summary"])
         self.assertNotIn("Collection ", result["summary"])
+        self.assertIn("DOI: 10.36967/663485", result["collection_notes"])
+        self.assertIn("Collection 9688: IMD", result["collection_notes"])
         self.assertIn("pdf", result.get("extensions", ""))
 
     @patch("collectors.NpsCollector.record_error")

@@ -22,7 +22,7 @@ from collectors.NpsDownloadPlan import (
     PROJECT_FILES_FOLDER,
     NpsPlannedFile,
     planned_files_for_profile,
-    product_folder_name,
+    unique_product_folder_name,
 )
 from collectors.NpsFileDownloader import NpsFileDownloader, count_files, folder_inventory
 from collectors.NpsLandingMetadata import (
@@ -32,6 +32,7 @@ from collectors.NpsLandingMetadata import (
 )
 from sourcing.NpsCatalogClient import NpsCatalogClient
 from sourcing.NpsProjectMapper import storage_updates_from_profile
+from sourcing.NpsProfileMetadata import merge_doi_notes, profile_dois
 from sourcing.NpsReferenceRules import irma_project_id_from_source_url
 from storage.NpsHierarchyStore import NpsHierarchyStore
 from utils.Args import Args
@@ -100,6 +101,12 @@ class NpsCollector(CollectorBase):
                     filenames=[entry.filename for entry in files],
                 )
             )
+        doi_notes = merge_doi_notes(
+            str(record.get("collection_notes") or ""),
+            self._dois_from_profiles(project_profile, product_profiles),
+        )
+        if doi_notes:
+            result["collection_notes"] = doi_notes
         Logger.info(
             "NPS collection complete for DRPID %s: %s files, %s",
             drpid,
@@ -117,18 +124,34 @@ class NpsCollector(CollectorBase):
         """Fetch profiles and build the download list for one Project."""
         planned: list[NpsPlannedFile] = []
         product_profiles: list[tuple[str, dict[str, Any]]] = []
+        used_folders: set[str] = set()
         project_profile = self._fetch_profile(drpid, project_id)
         if project_profile is not None:
             planned.extend(self._files_for_profile(drpid, project_profile, PROJECT_FILES_FOLDER))
         for product in store.list_products_for_drpid(drpid):
             product_id = int(product["irma_product_id"])
-            folder = product_folder_name(product_id, str(product.get("title") or product_id))
+            folder = unique_product_folder_name(str(product.get("title") or "product"), used_folders)
             profile = self._fetch_profile(drpid, product_id)
             if profile is None:
                 continue
             product_profiles.append((folder, profile))
             planned.extend(self._files_for_profile(drpid, profile, folder))
         return project_profile, product_profiles, planned
+
+    def _dois_from_profiles(
+        self,
+        project_profile: dict[str, Any] | None,
+        product_profiles: list[tuple[str, dict[str, Any]]],
+    ) -> list[str]:
+        """Collect unique DOIs from the Project and Product landing pages."""
+        dois: list[str] = []
+        profiles = [project_profile] if project_profile is not None else []
+        profiles.extend(profile for _folder, profile in product_profiles)
+        for profile in profiles:
+            for doi in profile_dois(profile):
+                if doi not in dois:
+                    dois.append(doi)
+        return dois
 
     def _write_landing_files(
         self,

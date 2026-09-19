@@ -62,14 +62,14 @@ class DataLumosPublisher:
     """
     Publisher module that publishes uploaded projects in DataLumos.
 
-    Implements ModuleProtocol.     For each eligible project (status="uploaded"),
-    this module: authenticates, navigates to the project, verifies workspace
-    file count/size against the database, runs the publish
-    workflow (Publish Project → review → Proceed to Publish → terms dialog →
-    Publish Data → Back to Project), and updates Storage with published_url
-    and status="published".
+    Implements ModuleProtocol. For each eligible project (status
+    ``uploaded``), this module: authenticates, navigates to the project, verifies
+    workspace file count/size against the database, runs the publish workflow
+    (Publish Project → review → Proceed to Publish → terms dialog → Publish
+    Data → Back to Project), and updates Storage with published_url and
+    status="published".
 
-    Prerequisites: status="upload" and no errors
+    Prerequisites: status ``uploaded`` (plus sheet-only statuses) and no errors
     Success status: status="published"; status="updated_inventory" after Google Sheet update (if configured).
     """
 
@@ -85,8 +85,9 @@ class DataLumosPublisher:
 
         Implements ModuleProtocol. Gets project from Storage. For sheet-only
         statuses (not_found, no_links, skip presets, collector_hold - reason):
-        updates Google Sheet only (no browser). For status uploaded: validates
-        datalumos_id, authenticates, runs publish flow, then updates sheet.
+        updates Google Sheet only (no browser). For uploaded: validates
+        datalumos_id, authenticates, runs publish
+        flow, then updates sheet.
 
         Args:
             drpid: The DRPID of the project to publish.

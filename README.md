@@ -35,7 +35,7 @@ See **[Status](docs/Status.md)** for every status value, what it means, and how 
 
 The code is broken up into a set of modules, each of which performs a step of the pipeline. There can be multiple modules for a given function, e.g. separate collectors for source websites that have different formatting.
 
-The work of the pipeline is coordinated amongst the modules via a SQLite database. The list of potential source URLs are obtained by the **sourcing** module. The  e.g. metadata and files, is then **collected**. The metadata itself is stored in the database; files are kept on local disk in a folder pointed to by a field in the database. Project contents are then **uploaded** to the repository. When all is complete, the project is **published** and the original source spreadsheet is **updated**.
+The work of the pipeline is coordinated amongst the modules via a SQLite database. The list of potential source URLs are obtained by the **sourcing** module. The  e.g. metadata and files, is then **collected**. The metadata itself is stored in the database; files are kept on local disk in a folder pointed to by a field in the database. Project contents are then **uploaded** to the repository. Folder metadata is filled after ZIP import. When all is complete, the project is **published** and the original source spreadsheet is **updated**.
 
 Not all modules need to be used. For example, data can be collected by other means, a spreadsheet that contains the structure can then be imported into a sqllite database and then uploaded and published.
 
