@@ -5,7 +5,11 @@ from __future__ import annotations
 import unittest
 
 from sourcing.NpsProfileMetadata import AGENCY, OFFICE
-from sourcing.NpsProjectMapper import build_candidate_row, profile_keywords
+from sourcing.NpsProjectMapper import (
+    build_candidate_row,
+    product_breadcrumb_text,
+    profile_keywords,
+)
 
 _NC_WKT = (
     "POLYGON ((-79.1 35.5, -78.5 35.5, -78.5 36.0, -79.1 36.0, -79.1 35.5))"
@@ -114,6 +118,21 @@ class TestNpsProjectMapper(unittest.TestCase):
         self.assertEqual(
             profile_keywords({"keywords": [{"keyword": "a"}, {"keyword": "a"}]}),
             "a",
+        )
+
+    def test_product_breadcrumb_appends_product_segment(self) -> None:
+        """Product JSON breadcrumbs extend the project hierarchy."""
+        project_crumb = (
+            "Collection 9688: IMD Programs > Program 2310251: APHN > "
+            "Project 2268446: APHN Galax Monitoring"
+        )
+        self.assertEqual(
+            product_breadcrumb_text(
+                project_crumb,
+                product_id=2001,
+                product_title="Galax Database",
+            ),
+            f"{project_crumb} > Product 2001: Galax Database",
         )
 
 

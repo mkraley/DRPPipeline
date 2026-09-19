@@ -27,6 +27,7 @@ from sourcing.NpsProfileMetadata import (
     profile_temporal_fields,
     profile_title,
 )
+from sourcing.NpsProjectMapper import product_breadcrumb_text
 from sourcing.NpsReferenceRules import (
     public_digital_files,
     reference_id_of,
@@ -37,7 +38,11 @@ PROJECT_METADATA_NAME = "project_metadata.json"
 PRODUCT_METADATA_NAME = "product_metadata.json"
 
 
-def landing_metadata_dict(profile: dict[str, Any]) -> dict[str, Any]:
+def landing_metadata_dict(
+    profile: dict[str, Any],
+    *,
+    breadcrumb: str = "",
+) -> dict[str, Any]:
     """Build a JSON-serializable dict from an IRMA Profile landing page."""
     bib = bibliography(profile)
     reference_id = reference_id_of(profile)
@@ -65,16 +70,65 @@ def landing_metadata_dict(profile: dict[str, Any]) -> dict[str, Any]:
         "visibility": str(profile.get("visibility") or ""),
         "file_access": str(profile.get("fileAccess") or ""),
         "files": _file_entries(profile),
+        "breadcrumb": (breadcrumb or "").strip(),
     }
     payload.update(times)
     return {key: value for key, value in payload.items() if value not in (None, "", [], {})}
 
 
-def write_landing_metadata(dest: Path, profile: dict[str, Any]) -> None:
+def write_landing_metadata(
+    dest: Path,
+    profile: dict[str, Any],
+    *,
+    breadcrumb: str = "",
+) -> None:
     """Write one landing-page metadata JSON file as UTF-8."""
     dest.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(landing_metadata_dict(profile), indent=2, ensure_ascii=False)
+    text = json.dumps(
+        landing_metadata_dict(profile, breadcrumb=breadcrumb),
+        indent=2,
+        ensure_ascii=False,
+    )
     dest.write_text(text + "\n", encoding="utf-8")
+
+
+def project_breadcrumb(
+    drpid: int,
+    record: dict[str, Any],
+    store: Any,
+) -> str:
+    """Return Collection > Program > Project breadcrumb for this DRPID."""
+    hierarchy = store.get_project_by_drpid(drpid)
+    if isinstance(hierarchy, dict):
+        crumb = str(hierarchy.get("breadcrumb") or "").strip()
+        if crumb:
+            return crumb
+    return str(record.get("collection_notes") or "").strip()
+
+
+def write_project_and_product_landing_files(
+    folder_path: Path,
+    project_profile: dict[str, Any] | None,
+    product_profiles: list[tuple[str, dict[str, Any]]],
+    project_crumb: str,
+) -> None:
+    """Write project- and product-level landing-page metadata JSON files."""
+    if project_profile is not None:
+        write_landing_metadata(
+            folder_path / PROJECT_METADATA_NAME,
+            project_profile,
+            breadcrumb=project_crumb,
+        )
+    for relative_dir, profile in product_profiles:
+        write_landing_metadata(
+            folder_path / relative_dir / PRODUCT_METADATA_NAME,
+            profile,
+            breadcrumb=product_breadcrumb_text(
+                project_crumb,
+                product_id=reference_id_of(profile),
+                product_title=profile_title(profile),
+            ),
+        )
 
 
 def _file_entries(profile: dict[str, Any]) -> list[dict[str, Any]]:

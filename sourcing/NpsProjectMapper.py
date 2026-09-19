@@ -29,6 +29,7 @@ __all__ = [
     "OFFICE",
     "breadcrumb_text",
     "build_candidate_row",
+    "product_breadcrumb_text",
     "profile_keywords",
     "profile_title",
     "public_products",
@@ -51,6 +52,24 @@ def breadcrumb_text(
         f"Program {program_id}: {program_title} > "
         f"Project {project_id}: {project_title}"
     )
+
+
+def product_breadcrumb_text(
+    project_crumb: str,
+    *,
+    product_id: int | None,
+    product_title: str,
+) -> str:
+    """Append a Product segment to a Collection > Program > Project breadcrumb."""
+    title = (product_title or "").strip()
+    if product_id is not None:
+        segment = f"Product {product_id}: {title}" if title else f"Product {product_id}"
+    else:
+        segment = title
+    crumb = (project_crumb or "").strip()
+    if crumb and segment:
+        return f"{crumb} > {segment}"
+    return crumb or segment
 
 
 def public_products(profile: dict[str, Any]) -> list[dict[str, Any]]:

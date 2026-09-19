@@ -98,6 +98,12 @@ class TestNpsCollector(unittest.TestCase):
         store.list_products_for_drpid.return_value = [
             {"irma_product_id": 663485, "title": "Mammal inventory"}
         ]
+        store.get_project_by_drpid.return_value = {
+            "breadcrumb": (
+                "Collection 9688: IMD Programs > Program 2310251: APHN > "
+                "Project 2306437: Mammal Inventory"
+            ),
+        }
         downloader = MagicMock()
 
         def _fake_download(_drpid: int, folder_path: Path, files: list[NpsPlannedFile]) -> tuple:
@@ -138,8 +144,22 @@ class TestNpsCollector(unittest.TestCase):
         self.assertTrue((folder / files[0].relative_dir / "report.pdf").is_file())
         self.assertTrue((folder / "project_metadata.json").is_file())
         self.assertTrue((folder / files[0].relative_dir / "product_metadata.json").is_file())
+        project_meta = json.loads(
+            (folder / "project_metadata.json").read_text(encoding="utf-8")
+        )
         product_meta = json.loads(
             (folder / files[0].relative_dir / "product_metadata.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            project_meta["breadcrumb"],
+            (
+                "Collection 9688: IMD Programs > Program 2310251: APHN > "
+                "Project 2306437: Mammal Inventory"
+            ),
+        )
+        self.assertIn("Product 663485: Mammal inventory", product_meta["breadcrumb"])
+        self.assertTrue(
+            product_meta["breadcrumb"].startswith(project_meta["breadcrumb"] + " > ")
         )
         self.assertEqual(product_meta["notes"], "Protocol revision.")
         self.assertEqual(product_meta["doi"], "10.36967/663485")

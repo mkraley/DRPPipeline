@@ -26,9 +26,8 @@ from collectors.NpsDownloadPlan import (
 )
 from collectors.NpsFileDownloader import NpsFileDownloader, count_files, folder_inventory
 from collectors.NpsLandingMetadata import (
-    PRODUCT_METADATA_NAME,
-    PROJECT_METADATA_NAME,
-    write_landing_metadata,
+    project_breadcrumb,
+    write_project_and_product_landing_files,
 )
 from sourcing.NpsCatalogClient import NpsCatalogClient
 from sourcing.NpsProjectMapper import storage_updates_from_profile
@@ -92,7 +91,12 @@ class NpsCollector(CollectorBase):
             drpid, folder_path, files
         )
         notes.extend(write_sidecars_for_files(drpid, folder_path, files, self._client))
-        self._write_landing_files(folder_path, project_profile, product_profiles)
+        write_project_and_product_landing_files(
+            folder_path,
+            project_profile,
+            product_profiles,
+            project_breadcrumb(drpid, record, store),
+        )
         result = self._inventory_result(record, folder_path, notes, skipped_large)
         if project_profile is not None:
             result.update(
@@ -152,18 +156,6 @@ class NpsCollector(CollectorBase):
                 if doi not in dois:
                     dois.append(doi)
         return dois
-
-    def _write_landing_files(
-        self,
-        folder_path: Path,
-        project_profile: dict[str, Any] | None,
-        product_profiles: list[tuple[str, dict[str, Any]]],
-    ) -> None:
-        """Write project- and product-level landing-page metadata JSON files."""
-        if project_profile is not None:
-            write_landing_metadata(folder_path / PROJECT_METADATA_NAME, project_profile)
-        for relative_dir, profile in product_profiles:
-            write_landing_metadata(folder_path / relative_dir / PRODUCT_METADATA_NAME, profile)
 
     def _files_for_profile(
         self,
