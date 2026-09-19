@@ -75,11 +75,10 @@ class TestNpsDataTableSidecar(unittest.TestCase):
             notes = write_sidecars_for_files(1, folder, files, client)
             sidecar = folder / "pkg" / "HUC_data_table_info.csv"
             self.assertTrue(sidecar.is_file())
-            folder_csv = folder / "pkg" / "data_table_info.csv"
-            self.assertTrue(folder_csv.is_file())
-            text = folder_csv.read_text(encoding="utf-8-sig")
-            self.assertIn("source_file", text)
-            self.assertIn("HUC.csv", text)
+            self.assertFalse((folder / "pkg" / "data_table_info.csv").is_file())
+            text = sidecar.read_text(encoding="utf-8-sig")
+            self.assertIn("column_name", text)
+            self.assertIn("code", text)
         self.assertEqual(notes, [])
         client.fetch_data_table.assert_called_once_with(2308545, 716591)
 
@@ -110,8 +109,12 @@ class TestNpsDataTableSidecar(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             write_sidecars_for_files(1, folder, files, client)
-            self.assertTrue((folder / "_project_files" / "data_table_info.csv").is_file())
-            self.assertTrue((folder / "pkg" / "data_table_info.csv").is_file())
+            self.assertTrue(
+                (folder / "_project_files" / "project_data_table_info.csv").is_file()
+            )
+            self.assertTrue((folder / "pkg" / "HUC_data_table_info.csv").is_file())
+            self.assertFalse((folder / "_project_files" / "data_table_info.csv").is_file())
+            self.assertFalse((folder / "pkg" / "data_table_info.csv").is_file())
 
 
 if __name__ == "__main__":

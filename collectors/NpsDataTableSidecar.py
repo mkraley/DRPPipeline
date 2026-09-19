@@ -14,9 +14,7 @@ from sourcing.NpsCatalogClient import NpsCatalogClient
 from utils.Errors import record_warning
 from utils.Logger import Logger
 
-FOLDER_TABLE_INFO_NAME = "data_table_info.csv"
 _SIDECAR_COLUMNS = ("column_name", "definition", "storage", "unit", "scales")
-_FOLDER_COLUMNS = ("source_file",) + _SIDECAR_COLUMNS
 
 
 def write_data_table_csv(dest: Path, rows: list[dict[str, Any]]) -> None:
@@ -35,16 +33,6 @@ def write_data_table_csv(dest: Path, rows: list[dict[str, Any]]) -> None:
             writer.writerow(_sidecar_cells(row))
 
 
-def write_folder_data_table_csv(dest: Path, rows: list[dict[str, str]]) -> None:
-    """Write combined Data Table Info for one project or product folder."""
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with dest.open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=_FOLDER_COLUMNS)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({column: row.get(column, "") for column in _FOLDER_COLUMNS})
-
-
 def write_sidecars_for_files(
     drpid: int,
     folder_path: Path,
@@ -52,7 +40,7 @@ def write_sidecars_for_files(
     client: NpsCatalogClient,
 ) -> list[str]:
     """
-    Fetch and write Data Table Info CSVs for holdings that have table metadata.
+    Fetch and write per-file Data Table Info CSVs for holdings with table metadata.
 
     Args:
         drpid: Project DRPID for warnings.
@@ -64,15 +52,13 @@ def write_sidecars_for_files(
         Status notes for failed sidecar fetches.
     """
     notes: list[str] = []
-    combined: dict[str, list[dict[str, str]]] = {}
     for entry in files:
-        if entry.data_table_count <= 0 or entry.resource_id is None:
+        request = _sidecar_request(folder_path, entry)
+        if request is None:
             continue
-        if entry.reference_id is None:
-            continue
-        dest = folder_path / entry.relative_dir / sidecar_filename(entry.filename)
+        dest, reference_id, resource_id = request
         try:
-            rows = client.fetch_data_table(entry.reference_id, entry.resource_id)
+            rows = client.fetch_data_table(reference_id, resource_id)
         except RuntimeError as exc:
             message = f"Data Table Info failed for {entry.filename}: {exc}"
             record_warning(drpid, message)
@@ -81,15 +67,21 @@ def write_sidecars_for_files(
         if not rows:
             continue
         write_data_table_csv(dest, rows)
-        folder_rows = combined.setdefault(entry.relative_dir, [])
-        for row in rows:
-            folder_rows.append({"source_file": entry.filename, **_sidecar_cells(row)})
         Logger.info("Wrote Data Table Info sidecar: %s", dest.name)
-    for relative_dir, folder_rows in combined.items():
-        dest = folder_path / relative_dir / FOLDER_TABLE_INFO_NAME
-        write_folder_data_table_csv(dest, folder_rows)
-        Logger.info("Wrote Data Table Info file: %s", dest)
     return notes
+
+
+def _sidecar_request(
+    folder_path: Path,
+    entry: NpsPlannedFile,
+) -> tuple[Path, int, int] | None:
+    """Return sidecar path and IRMA ids for a holding that has Data Table Info."""
+    if entry.data_table_count <= 0:
+        return None
+    if entry.resource_id is None or entry.reference_id is None:
+        return None
+    dest = folder_path / entry.relative_dir / sidecar_filename(entry.filename)
+    return dest, entry.reference_id, entry.resource_id
 
 
 def _sidecar_cells(row: dict[str, Any]) -> dict[str, str]:

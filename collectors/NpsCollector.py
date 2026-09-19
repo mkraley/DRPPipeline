@@ -98,6 +98,7 @@ class NpsCollector(CollectorBase):
             project_breadcrumb(drpid, record, store),
         )
         result = self._inventory_result(record, folder_path, notes, skipped_large)
+        store.update_public_file_count(drpid, int(result["num_files"]))
         if project_profile is not None:
             result.update(
                 storage_updates_from_profile(

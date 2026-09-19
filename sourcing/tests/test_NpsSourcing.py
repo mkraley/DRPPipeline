@@ -90,6 +90,7 @@ class TestNpsSourcing(unittest.TestCase):
         self.assertEqual(projects[0]["office"], "National Park Service")
         self.assertEqual(projects[0]["time_start"], "2013")
         self.assertEqual(projects[0]["geographic_coverage"], "North Carolina")
+        self.assertEqual(projects[0]["num_files"], 3)
         self.assertIn("IMD Programs", projects[0]["collection_notes"])
         self.assertNotIn("Collection 9688", projects[0]["summary"])
         store = NpsHierarchyStore.from_storage()

@@ -172,6 +172,8 @@ class TestNpsCollector(unittest.TestCase):
         self.assertIn("DOI: 10.36967/663485", result["collection_notes"])
         self.assertIn("Collection 9688: IMD", result["collection_notes"])
         self.assertIn("pdf", result.get("extensions", ""))
+        self.assertEqual(result["num_files"], 3)
+        store.update_public_file_count.assert_called_once_with(2, 3)
 
     @patch("collectors.NpsCollector.record_error")
     def test_collect_rejects_non_irma_url(self, mock_error: MagicMock) -> None:

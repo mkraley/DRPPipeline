@@ -157,6 +157,9 @@ class NpsSourcing(SourcingBase):
             value = row.get(key)
             if value:
                 fields[key] = value
+        public_files = row.get("public_file_count")
+        if public_files is not None and public_files != "":
+            fields["num_files"] = int(public_files)
         return fields
 
     def _store_hierarchy(

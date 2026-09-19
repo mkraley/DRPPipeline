@@ -15,11 +15,11 @@ from sourcing.NpsProfileMetadata import (
     profile_temporal_fields,
     profile_title,
 )
+from sourcing.NpsPublicFileCount import recursive_public_file_count
 from sourcing.NpsReferenceRules import (
     is_public_downloadable_product,
     product_public_file_count,
     profile_products,
-    project_direct_public_file_count,
     reference_id_of,
     reference_profile_url,
 )
@@ -82,9 +82,8 @@ def public_products(profile: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def project_public_file_total(profile: dict[str, Any]) -> int:
-    """Sum public Digital Files on the Project and its public Products."""
-    product_files = sum(product_public_file_count(product) for product in profile_products(profile))
-    return project_direct_public_file_count(profile) + product_files
+    """Sum public Digital Files on the Project and all public descendant Products."""
+    return recursive_public_file_count(profile)
 
 
 def storage_updates_from_profile(

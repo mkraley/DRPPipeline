@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from collectors.NpsDownloadPlan import NpsPlannedFile
-from collectors.NpsFileDownloader import NpsFileDownloader, _looks_like_html
+from collectors.NpsFileDownloader import NpsFileDownloader, _looks_like_html, count_files
 from utils.Args import Args
 from utils.Logger import Logger
 
@@ -82,6 +82,17 @@ class TestNpsFileDownloader(unittest.TestCase):
             NpsFileDownloader().download_files(7, folder, [entry])
             self.assertFalse((folder / "_project_files" / "secret.csv").exists())
         mock_error.assert_called()
+
+    def test_count_files_includes_nested_folders(self) -> None:
+        """num_files inventory counts regular files under product subfolders."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "project_metadata.json").write_text("{}", encoding="utf-8")
+            nested = root / "pkg"
+            nested.mkdir()
+            (nested / "report.pdf").write_bytes(b"%PDF-1.4")
+            (nested / "product_metadata.json").write_text("{}", encoding="utf-8")
+            self.assertEqual(count_files(root), 3)
 
 
 if __name__ == "__main__":

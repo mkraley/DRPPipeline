@@ -12,6 +12,7 @@ from sourcing.NpsReferenceRules import (
     product_public_file_count,
     profile_children,
     project_direct_public_file_count,
+    public_digital_files,
     reference_id_of,
     reference_profile_url,
 )
@@ -106,6 +107,18 @@ class TestNpsReferenceRules(unittest.TestCase):
         )
         self.assertEqual(len(files), 1)
         self.assertEqual(files[0]["fileName"], "a.csv")
+
+    def test_project_direct_files_count_linked_resources(self) -> None:
+        """linkedResources entries are counted like filesAndLinks."""
+        files = [{"resourceType": "Digital File", "url": "https://x/a.zip"}]
+        self.assertEqual(
+            project_direct_public_file_count(
+                {"visibility": "Public", "linkedResources": files}
+            ),
+            1,
+        )
+        listed = public_digital_files({"visibility": "Public", "linkedResources": files})
+        self.assertEqual(len(listed), 1)
 
 
 if __name__ == "__main__":

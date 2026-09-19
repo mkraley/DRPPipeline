@@ -176,6 +176,14 @@ class NpsHierarchyStore:
             (int(drpid),),
         )
 
+    def update_public_file_count(self, drpid: int, public_file_count: int) -> None:
+        """Set nps_projects.public_file_count to the recursive collected file total."""
+        self._connection.execute(
+            "UPDATE nps_projects SET public_file_count = ? WHERE drpid = ?",
+            (int(public_file_count), int(drpid)),
+        )
+        self._connection.commit()
+
     def _fetchone_dict(self, query: str, params: tuple[Any, ...]) -> dict[str, Any] | None:
         """Run a SELECT and return one row as a dict."""
         cursor = self._connection.execute(query, params)

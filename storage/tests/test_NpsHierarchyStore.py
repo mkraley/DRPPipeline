@@ -94,6 +94,27 @@ class TestNpsHierarchyStore(unittest.TestCase):
         self.assertEqual(by_drpid["irma_project_id"], 1001)
         self.assertEqual(len(self.store.list_products_for_drpid(drpid)), 1)
 
+    def test_update_public_file_count_matches_collected_total(self) -> None:
+        """Collected recursive file totals are written back to nps_projects."""
+        drpid = self.storage.create_record(
+            "https://irma.nps.gov/DataStore/Reference/Profile/1001"
+        )
+        self.store.upsert_project(
+            {
+                "irma_project_id": 1001,
+                "drpid": drpid,
+                "irma_collection_id": 9688,
+                "irma_program_id": 2310251,
+                "public_file_count": 3,
+                "product_count": 1,
+            }
+        )
+        self.store.update_public_file_count(drpid, 6)
+        project = self.store.get_project_by_drpid(drpid)
+        self.assertIsNotNone(project)
+        assert project is not None
+        self.assertEqual(project["public_file_count"], 6)
+
     def test_replace_products_drops_stale_rows(self) -> None:
         """Replacing products removes ids that are no longer listed."""
         drpid = self.storage.create_record(

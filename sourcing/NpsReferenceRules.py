@@ -101,6 +101,15 @@ def reference_id_of(row: dict[str, Any]) -> int | None:
     return None
 
 
+def file_link_items(profile: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return filesAndLinks or linkedResources entries from a profile."""
+    for key in ("filesAndLinks", "linkedResources", "LinkedResources"):
+        raw = profile.get(key)
+        if isinstance(raw, list) and raw:
+            return [item for item in raw if isinstance(item, dict)]
+    return []
+
+
 def is_public_digital_file(item: dict[str, Any]) -> bool:
     """Return True for an anonymously downloadable Digital File link."""
     if str(item.get("resourceType") or "") != DIGITAL_FILE_TYPE:
@@ -113,28 +122,30 @@ def is_public_digital_file(item: dict[str, Any]) -> bool:
 
 
 def project_direct_public_file_count(profile: dict[str, Any]) -> int:
-    """Count public Digital Files attached to the Project record itself."""
+    """Count public Digital Files attached to this reference itself."""
     if not is_public_token(profile.get("visibility")):
         return 0
-    files = profile.get("filesAndLinks") or []
-    if not isinstance(files, list):
-        return 0
-    return sum(1 for item in files if isinstance(item, dict) and is_public_digital_file(item))
+    return sum(1 for item in file_link_items(profile) if is_public_digital_file(item))
 
 
 def is_public_downloadable_product(product: dict[str, Any]) -> bool:
     """Return True when a Product lists public Digital Files for anonymous download."""
-    return (
-        int(product.get("fileCount") or 0) > 0
-        and is_public_token(product.get("fileAccess"))
-        and is_public_token(product.get("visibility"))
-    )
+    if not is_public_token(product.get("visibility")):
+        return False
+    if not is_public_token(product.get("fileAccess")):
+        return False
+    if project_direct_public_file_count(product) > 0:
+        return True
+    return int(product.get("fileCount") or 0) > 0
 
 
 def product_public_file_count(product: dict[str, Any]) -> int:
     """Return public file count for a Product summary, or 0 when restricted."""
     if not is_public_downloadable_product(product):
         return 0
+    listed = project_direct_public_file_count(product)
+    if listed:
+        return listed
     return int(product.get("fileCount") or 0)
 
 
@@ -142,10 +153,7 @@ def public_digital_files(profile: dict[str, Any]) -> list[dict[str, Any]]:
     """Return Digital File holdings that look anonymously downloadable."""
     if not is_public_token(profile.get("visibility") or "Public"):
         return []
-    files = profile.get("filesAndLinks") or []
-    if not isinstance(files, list):
-        return []
-    return [item for item in files if isinstance(item, dict) and is_public_digital_file(item)]
+    return [item for item in file_link_items(profile) if is_public_digital_file(item)]
 
 
 def file_resource_id(item: dict[str, Any]) -> int | None:
