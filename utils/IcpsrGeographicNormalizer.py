@@ -53,8 +53,9 @@ _EXTRA_ALIASES: dict[str, str] = {
 _US_COUNTRY_CANONICAL = "United States"
 _US_COUNTRY_TERMS = frozenset({"United States", "United States of America"})
 
-# Bbox spans larger than this (degrees) are treated as national/regional, not site-level.
-_LOCAL_BBOX_MAX_SPAN_DEG = 4.0
+# Above this span with many state hits, prefer United States over a long state list.
+_REGIONAL_BBOX_MAX_STATES = 8
+_REGIONAL_BBOX_MAX_SPAN_DEG = 20.0
 
 # US states and DC: approximate bounding boxes (decimal degrees).
 _US_STATE_BBOX: dict[str, tuple[float, float, float, float]] = {
@@ -252,14 +253,6 @@ def _bbox_spans(bbox: dict[str, float]) -> tuple[float, float]:
     return abs(north - south), abs(east - west)
 
 
-def _is_local_scale_bbox(bbox: dict[str, float]) -> bool:
-    lat_span, lon_span = _bbox_spans(bbox)
-    return (
-        lat_span <= _LOCAL_BBOX_MAX_SPAN_DEG
-        and lon_span <= _LOCAL_BBOX_MAX_SPAN_DEG
-    )
-
-
 def _canonicalize_us_country_term(term: str) -> str:
     if term in _US_COUNTRY_TERMS:
         return _US_COUNTRY_CANONICAL
@@ -297,6 +290,42 @@ def _state_from_bbox(lat: float, lon: float) -> str | None:
         if lat_min <= lat <= lat_max and lon_min <= lon <= lon_max:
             return state
     return None
+
+
+def _bboxes_overlap(
+    west: float,
+    east: float,
+    south: float,
+    north: float,
+    lat_min: float,
+    lat_max: float,
+    lon_min: float,
+    lon_max: float,
+) -> bool:
+    """Return True when two axis-aligned boxes overlap."""
+    return not (east < lon_min or west > lon_max or north < lat_min or south > lat_max)
+
+
+def _states_intersecting_bbox(bbox: dict[str, float]) -> list[str]:
+    """Return US state names whose approximate boxes intersect ``bbox``."""
+    try:
+        west = float(bbox["west"])
+        east = float(bbox["east"])
+        south = float(bbox["south"])
+        north = float(bbox["north"])
+    except (KeyError, TypeError, ValueError):
+        return []
+    states: list[str] = []
+    for state, (lat_min, lat_max, lon_min, lon_max) in _US_STATE_BBOX.items():
+        if _bboxes_overlap(west, east, south, north, lat_min, lat_max, lon_min, lon_max):
+            states.append(state)
+    return states
+
+
+def _bbox_is_continental_scale(bbox: dict[str, float]) -> bool:
+    """True when a bbox is too large to treat as a short list of states."""
+    lat_span, lon_span = _bbox_spans(bbox)
+    return lat_span > _REGIONAL_BBOX_MAX_SPAN_DEG or lon_span > _REGIONAL_BBOX_MAX_SPAN_DEG
 
 
 def _should_skip_extent(description: str) -> bool:
@@ -431,13 +460,11 @@ def normalize_geographic_metadata(
             _add_match(matches, seen, match.term, match.confidence, match.source)
 
     bbox_dict = bounding_box or {}
-    if bbox_dict:
+    if bbox_dict and not _has_us_state_match(matches):
         national_us = _indicates_national_us_coverage(
             extent, place_keywords, matches, thesaurus
         )
-        local_bbox = _is_local_scale_bbox(bbox_dict)
-
-        if national_us or not local_bbox:
+        if national_us or _bbox_is_continental_scale(bbox_dict):
             if not _has_us_country_match(matches):
                 _add_match(
                     matches,
@@ -447,25 +474,29 @@ def normalize_geographic_metadata(
                     "national_coverage" if national_us else "bounding_box",
                 )
         else:
-            center = _bbox_center(bbox_dict)
-            if center:
-                lat, lon = center
-                state = _state_from_bbox(lat, lon)
-                if state and not _has_us_country_match(matches):
+            intersecting = _states_intersecting_bbox(bbox_dict)
+            if (
+                intersecting
+                and len(intersecting) <= _REGIONAL_BBOX_MAX_STATES
+                and not _has_us_country_match(matches)
+            ):
+                for state in intersecting:
                     _add_match(matches, seen, state, "medium", "bounding_box")
-                elif (
-                    18.0 <= lat <= 72.0
-                    and -180.0 <= lon <= -66.0
-                    and not _has_us_state_match(matches)
-                    and not _has_us_country_match(matches)
-                ):
-                    _add_match(
-                        matches,
-                        seen,
-                        _US_COUNTRY_CANONICAL,
-                        "medium",
-                        "bounding_box",
-                    )
+            elif not _has_us_country_match(matches):
+                center = _bbox_center(bbox_dict)
+                if center:
+                    lat, lon = center
+                    state = _state_from_bbox(lat, lon)
+                    if state:
+                        _add_match(matches, seen, state, "medium", "bounding_box")
+                    elif 18.0 <= lat <= 72.0 and -180.0 <= lon <= -66.0:
+                        _add_match(
+                            matches,
+                            seen,
+                            _US_COUNTRY_CANONICAL,
+                            "medium",
+                            "bounding_box",
+                        )
 
     for match in matches:
         if match.confidence == "low":

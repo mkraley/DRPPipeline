@@ -172,6 +172,23 @@ class TestIcpsrGeographicNormalizer:
         )
         assert result.geographic_coverage == "Colorado"
 
+    def test_regional_bbox_lists_intersecting_states(
+        self, thesaurus: IcpsrGeographicThesaurus
+    ) -> None:
+        """Multi-state park-scale bboxes should not collapse to United States."""
+        result = normalize_geographic_metadata(
+            bounding_box={
+                "west": -84.0,
+                "east": -79.0,
+                "north": 37.5,
+                "south": 35.5,
+            },
+            thesaurus=thesaurus,
+        )
+        assert "United States" not in result.geographic_coverage
+        assert "North Carolina" in result.geographic_coverage
+        assert "Virginia" in result.geographic_coverage
+
     def test_us_state_match_skips_city_ner(self, thesaurus: IcpsrGeographicThesaurus) -> None:
         result = normalize_geographic_metadata(
             geographic_extent_description=(

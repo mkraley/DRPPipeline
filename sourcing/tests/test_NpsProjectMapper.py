@@ -100,7 +100,9 @@ class TestNpsProjectMapper(unittest.TestCase):
         self.assertEqual(row["keywords"], "plants, galax")
         self.assertEqual(row["time_start"], "2013")
         self.assertEqual(row["time_end"], "2013")
-        self.assertIn("North Carolina", row["geographic_coverage"])
+        self.assertIn("Tennessee", row["geographic_coverage"])
+        self.assertIn("Kentucky", row["geographic_coverage"])
+        self.assertNotIn("United States", row["geographic_coverage"])
 
     def test_build_candidate_row_skips_projects_without_public_files(self) -> None:
         """Restricted-only products do not create a sourcing row."""
