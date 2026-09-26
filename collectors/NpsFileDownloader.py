@@ -91,6 +91,7 @@ class NpsFileDownloader:
                 headers=_DOWNLOAD_HEADERS,
                 timeout_sec=max(30, timeout_ms // 1000),
                 resume=True,
+                progress_interval_mb=10.0,
             )
         except Exception as exc:
             record_error(drpid, f"Download failed: {entry.filename} - {entry.url} ({exc})")

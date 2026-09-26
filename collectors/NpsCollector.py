@@ -22,6 +22,7 @@ from collectors.NpsDataTableSidecar import write_sidecars_for_files
 from collectors.NpsDownloadPlan import (
     PROJECT_FILES_FOLDER,
     NpsPlannedFile,
+    drop_duplicate_planned_files,
     fit_planned_files,
     planned_files_for_profile,
     unique_product_folder_name,
@@ -185,6 +186,7 @@ class NpsCollector(CollectorBase):
                 title,
                 product_id,
             )
+            Logger.info("NPS DRPID %s: fetching product profile %s", drpid, product_id)
             profile = self._fetch_profile(drpid, product_id)
             if profile is None:
                 continue
@@ -227,11 +229,14 @@ class NpsCollector(CollectorBase):
         if profile is None:
             return [], [], False, relative_dir
         planned = self._files_for_profile(drpid, profile, relative_dir)
+        planned, dup_notes = drop_duplicate_planned_files(planned)
+        rename_notes.extend(dup_notes)
         planned, path_notes, dir_renames = fit_planned_files(folder_path, planned)
         rename_notes.extend(path_notes)
         relative_dir = dir_renames.get(relative_dir, relative_dir)
         if not planned:
             return [], [], False, relative_dir
+        self._log_planned_files(drpid, relative_dir, planned)
         notes, skipped, _bytes, _exts = self._file_downloader.download_files(
             drpid, folder_path, planned
         )
@@ -264,6 +269,7 @@ class NpsCollector(CollectorBase):
         holdings: list[dict[str, Any]] = []
         if reference_id is not None:
             self._pause()
+            Logger.info("NPS DRPID %s: fetching holdings for %s", drpid, reference_id)
             try:
                 holdings = self._client.fetch_holdings(int(reference_id))
             except RuntimeError as exc:
@@ -347,6 +353,25 @@ class NpsCollector(CollectorBase):
         if notes:
             result["status_notes"] = "\n".join(notes)
         return result
+
+    def _log_planned_files(
+        self,
+        drpid: int,
+        relative_dir: str,
+        files: list[NpsPlannedFile],
+    ) -> None:
+        """Log filenames and sizes before the first byte is requested."""
+        summary = ", ".join(
+            f"{entry.filename} ({format_file_size(entry.size_bytes or 0)})"
+            for entry in files
+        )
+        Logger.info(
+            "NPS DRPID %s: %s file(s) in %s: %s",
+            drpid,
+            len(files),
+            relative_dir or ".",
+            summary,
+        )
 
     def _pause(self) -> None:
         """Sleep between IRMA requests when a delay is configured."""

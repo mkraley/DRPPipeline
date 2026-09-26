@@ -241,6 +241,56 @@ class TestNpsCollector(unittest.TestCase):
         self.assertTrue(any("collecting IRMA Project" in message for message in messages))
         self.assertTrue(any("fetching project profile" in message for message in messages))
         self.assertTrue(any("product 1/1" in message for message in messages))
+        self.assertTrue(any("fetching product profile" in message for message in messages))
+        self.assertTrue(any("file(s) in" in message for message in messages))
+
+    @patch("collectors.NpsCollector.write_sidecars_for_files", return_value=[])
+    def test_collect_skips_duplicate_same_name_and_size(
+        self,
+        _mock_sidecars: MagicMock,
+    ) -> None:
+        """Two holdings of the same PDF are downloaded once."""
+        collector, client, _store, downloader = self._collector()
+        client.fetch_profile.side_effect = lambda rid: {
+            2306437: _PROJECT_PROFILE,
+            663485: {
+                **_PRODUCT_PROFILE,
+                "filesAndLinks": [
+                    {
+                        "fileId": 420690,
+                        "resourceType": "Digital File",
+                        "url": "https://irma.nps.gov/DataStore/DownloadFile/420690",
+                        "fileName": "WRST_Vasc_Flora_Inv_2007lowres.pdf",
+                    },
+                    {
+                        "fileId": 450286,
+                        "resourceType": "Digital File",
+                        "url": "https://irma.nps.gov/DataStore/DownloadFile/450286",
+                        "fileName": "WRST_Vasc_Flora_Inv_2007lowres.pdf",
+                    },
+                ],
+            },
+        }[rid]
+        client.fetch_holdings.return_value = [
+            {
+                "Id": 420690,
+                "Url": "https://irma.nps.gov/DataStore/DownloadFile/420690",
+                "FileDescription": "WRST_Vasc_Flora_Inv_2007lowres.pdf",
+                "FileSize": 71915109,
+                "DataTableCount": 0,
+            },
+            {
+                "Id": 450286,
+                "Url": "https://irma.nps.gov/DataStore/DownloadFile/450286",
+                "FileDescription": "WRST_Vasc_Flora_Inv_2007lowres.pdf",
+                "FileSize": 71915109,
+                "DataTableCount": 0,
+            },
+        ]
+        collector._collect(_PROJECT_URL, 2, {"title": "Mammal Inventory"})
+        product_files: list[NpsPlannedFile] = downloader.download_files.call_args.args[2]
+        self.assertEqual(len(product_files), 1)
+        self.assertEqual(product_files[0].filename, "WRST_Vasc_Flora_Inv_2007lowres.pdf")
 
     @patch("collectors.NpsCollector.record_error")
     def test_collect_rejects_non_irma_url(self, mock_error: MagicMock) -> None:

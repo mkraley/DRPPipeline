@@ -18,6 +18,7 @@ PRODUCT_FOLDER_MAX_LENGTH = 80
 MAX_WINDOWS_PATH_LENGTH = 259
 _MIN_FILENAME_LENGTH = 20
 _FULL_NAME_MAX_LENGTH = 500
+_MAX_NAME_SUFFIX = 9999
 
 
 @dataclass(frozen=True)
@@ -169,6 +170,35 @@ def fit_planned_files(
     return fitted, notes, dir_renames
 
 
+def drop_duplicate_planned_files(
+    files: list[NpsPlannedFile],
+) -> tuple[list[NpsPlannedFile], list[str]]:
+    """
+    Drop IRMA holdings that are the same Digital File listed more than once.
+
+    Matches on resource id, download URL, or the same filename plus byte size.
+    Same-name files with different sizes are kept for later ``_unique_filename``.
+    """
+    kept: list[NpsPlannedFile] = []
+    notes: list[str] = []
+    seen_ids: set[int] = set()
+    seen_urls: set[str] = set()
+    seen_name_size: set[tuple[str, int]] = set()
+    for entry in files:
+        reason = _duplicate_skip_note(entry, seen_ids, seen_urls, seen_name_size)
+        if reason:
+            notes.append(reason)
+            continue
+        kept.append(entry)
+        if entry.resource_id is not None:
+            seen_ids.add(entry.resource_id)
+        if entry.url:
+            seen_urls.add(entry.url.strip())
+        if entry.size_bytes is not None:
+            seen_name_size.add((entry.filename.casefold(), entry.size_bytes))
+    return kept, notes
+
+
 def apply_relative_dir_renames(
     product_profiles: list[tuple[str, dict[str, Any]]],
     dir_renames: dict[str, str],
@@ -232,18 +262,48 @@ def _dest_length(folder_path: Path, relative_dir: str, filename: str) -> int:
 
 def _unique_filename(filename: str, used: set[str]) -> str:
     """Disambiguate filenames that collide after truncation."""
-    if filename.casefold() not in {item.casefold() for item in used}:
+    used_folded = {item.casefold() for item in used}
+    if filename.casefold() not in used_folded:
         used.add(filename)
         return filename
     stem, extension = filename.rsplit(".", 1) if "." in filename else (filename, "")
-    suffix = 2
-    while True:
-        candidate = f"{stem}_{suffix}.{extension}" if extension else f"{stem}_{suffix}"
-        candidate = sanitize_filename(candidate, max_length=max(len(filename), _MIN_FILENAME_LENGTH))
-        if candidate.casefold() not in {item.casefold() for item in used}:
+    limit = max(len(filename), _MIN_FILENAME_LENGTH)
+    for suffix in range(2, _MAX_NAME_SUFFIX + 1):
+        candidate = _suffixed_filename(stem, extension, suffix, limit)
+        if candidate.casefold() not in used_folded:
             used.add(candidate)
             return candidate
-        suffix += 1
+    raise RuntimeError(f"Cannot disambiguate filename: {filename}")
+
+
+def _suffixed_filename(stem: str, extension: str, suffix: int, limit: int) -> str:
+    """Build ``stem_N.ext`` that still fits ``limit`` after truncation."""
+    tail = f"_{suffix}.{extension}" if extension else f"_{suffix}"
+    trimmed = stem[: max(1, limit - len(tail))]
+    return sanitize_filename(trimmed + tail, max_length=limit)
+
+
+def _duplicate_skip_note(
+    entry: NpsPlannedFile,
+    seen_ids: set[int],
+    seen_urls: set[str],
+    seen_name_size: set[tuple[str, int]],
+) -> str:
+    """Return a collection-note line when ``entry`` duplicates an earlier file."""
+    if entry.resource_id is not None and entry.resource_id in seen_ids:
+        return f"Skipped duplicate file: {entry.filename} (resource {entry.resource_id})"
+    url = entry.url.strip()
+    if url and url in seen_urls:
+        return f"Skipped duplicate file: {entry.filename} ({url})"
+    if entry.size_bytes is None:
+        return ""
+    key = (entry.filename.casefold(), entry.size_bytes)
+    if key not in seen_name_size:
+        return ""
+    return (
+        f"Skipped duplicate file: {entry.filename} "
+        f"(same name and size as an earlier holding)"
+    )
 
 
 def _index_holdings(

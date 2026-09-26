@@ -9,6 +9,7 @@ from pathlib import Path
 from collectors.NpsDownloadPlan import (
     PRODUCT_FOLDER_MAX_LENGTH,
     NpsPlannedFile,
+    drop_duplicate_planned_files,
     fit_planned_files,
     planned_files_for_profile,
     product_folder_name,
@@ -147,6 +148,118 @@ class TestNpsDownloadPlan(unittest.TestCase):
             dest = fake_base / fitted[0].relative_dir / fitted[0].filename
             self.assertLessEqual(len(str(dest)), 259)
             self.assertTrue(fitted[0].filename.lower().endswith(".pdf"))
+
+    def test_drop_duplicate_same_name_and_size(self) -> None:
+        """IRMA sometimes lists the same PDF twice with different DownloadFile ids."""
+        files = [
+            NpsPlannedFile(
+                url="https://irma.nps.gov/DataStore/DownloadFile/420690",
+                filename="WRST_Vasc_Flora_Inv_2007lowres.pdf",
+                relative_dir="flora",
+                size_bytes=71915109,
+                resource_id=420690,
+            ),
+            NpsPlannedFile(
+                url="https://irma.nps.gov/DataStore/DownloadFile/450286",
+                filename="WRST_Vasc_Flora_Inv_2007lowres.pdf",
+                relative_dir="flora",
+                size_bytes=71915109,
+                resource_id=450286,
+            ),
+        ]
+        kept, notes = drop_duplicate_planned_files(files)
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0].resource_id, 420690)
+        self.assertEqual(len(notes), 1)
+        self.assertIn("Skipped duplicate file", notes[0])
+        self.assertIn("WRST_Vasc_Flora_Inv_2007lowres.pdf", notes[0])
+
+    def test_drop_duplicate_keeps_same_name_different_size(self) -> None:
+        """Same filename with different sizes are distinct files."""
+        files = [
+            NpsPlannedFile(
+                url="https://example.com/a",
+                filename="report.pdf",
+                relative_dir="p",
+                size_bytes=100,
+                resource_id=1,
+            ),
+            NpsPlannedFile(
+                url="https://example.com/b",
+                filename="report.pdf",
+                relative_dir="p",
+                size_bytes=200,
+                resource_id=2,
+            ),
+        ]
+        kept, notes = drop_duplicate_planned_files(files)
+        self.assertEqual(len(kept), 2)
+        self.assertEqual(notes, [])
+
+    def test_fit_planned_files_uniquifies_same_name(self) -> None:
+        """Colliding names in one folder get a numeric suffix."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder_path = Path(tmp) / "NPS000032"
+            folder_path.mkdir()
+            files = [
+                NpsPlannedFile(
+                    url="https://example.com/a",
+                    filename="report.pdf",
+                    relative_dir="product",
+                    size_bytes=100,
+                ),
+                NpsPlannedFile(
+                    url="https://example.com/b",
+                    filename="report.pdf",
+                    relative_dir="product",
+                    size_bytes=200,
+                ),
+            ]
+            fitted, _notes, _renames = fit_planned_files(folder_path, files)
+            names = [entry.filename for entry in fitted]
+            self.assertEqual(len(set(names)), 2)
+            self.assertIn("report.pdf", names)
+            self.assertTrue(any(name.startswith("report_2") for name in names))
+
+    def test_planned_files_for_profile_keeps_duplicate_holdings(self) -> None:
+        """Planning lists both holdings; the collector drops exact duplicates."""
+        profile = {
+            "referenceId": 2166497,
+            "visibility": "Public",
+            "filesAndLinks": [
+                {
+                    "fileId": 420690,
+                    "resourceType": "Digital File",
+                    "url": "https://irma.nps.gov/DataStore/DownloadFile/420690",
+                    "fileName": "WRST_Vasc_Flora_Inv_2007lowres.pdf",
+                },
+                {
+                    "fileId": 450286,
+                    "resourceType": "Digital File",
+                    "url": "https://irma.nps.gov/DataStore/DownloadFile/450286",
+                    "fileName": "WRST_Vasc_Flora_Inv_2007lowres.pdf",
+                },
+            ],
+        }
+        holdings = [
+            {
+                "Id": 420690,
+                "Url": "https://irma.nps.gov/DataStore/DownloadFile/420690",
+                "FileDescription": "WRST_Vasc_Flora_Inv_2007lowres.pdf",
+                "FileSize": 71915109,
+            },
+            {
+                "Id": 450286,
+                "Url": "https://irma.nps.gov/DataStore/DownloadFile/450286",
+                "FileDescription": "WRST_Vasc_Flora_Inv_2007lowres.pdf",
+                "FileSize": 71915109,
+            },
+        ]
+        planned = planned_files_for_profile(profile, "flora", holdings)
+        self.assertEqual(len(planned), 2)
+        self.assertEqual({entry.filename for entry in planned}, {"WRST_Vasc_Flora_Inv_2007lowres.pdf"})
+        kept, _notes = drop_duplicate_planned_files(planned)
+        self.assertEqual(len(kept), 1)
 
 
 if __name__ == "__main__":
