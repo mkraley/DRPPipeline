@@ -38,6 +38,37 @@ def _is_empty(value: Optional[str]) -> bool:
     return not value or value.strip() == ""
 
 
+_NPS_AFFILIATION_ALIASES = frozenset(
+    {
+        "nps",
+        "national park service",
+        "u.s. national park service",
+        "us national park service",
+        "united states national park service",
+    }
+)
+_NPS_AFFILIATION_FULL = (
+    "United States Department of the Interior. National Park Service"
+)
+
+
+def normalize_person_affiliation(affiliation: str) -> str:
+    """
+    Expand short agency names to DataLumos organization labels for Person affiliation.
+
+    ``National Park Service`` / ``NPS`` become the full Interior.NPS form used by
+    DataLumos autocomplete.
+    """
+    cleaned = (affiliation or "").strip()
+    if not cleaned:
+        return ""
+    if cleaned.casefold() in _NPS_AFFILIATION_ALIASES:
+        return _NPS_AFFILIATION_FULL
+    if cleaned.casefold() == _NPS_AFFILIATION_FULL.casefold():
+        return _NPS_AFFILIATION_FULL
+    return cleaned
+
+
 def _debug_form_field(name: str, value: Optional[str] = None, *, n_chars: Optional[int] = None) -> None:
     """Log a single form field at DEBUG as it is filled (value may be long HTML)."""
     if n_chars is not None:
@@ -268,37 +299,102 @@ class DataLumosFormFiller:
         Args:
             agencies: List of agency/office names to add (e.g. [agency, office])
         """
-        add_value_selector = (
-            "#groupAttr0 > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > "
-            "a:nth-child(3) > span:nth-child(3)"
-        )
-        
         for value in agencies:
             if _is_empty(value):
                 continue
-            
             value = value.strip()
             if value == 'CDC':
                 value = 'United States Department of Health and Human Services. Centers for Disease Control and Prevention'
             _debug_form_field("agency_or_office", value)
-            add_btn = self._page.locator(add_value_selector)
-            self.wait_for_obscuring_elements()
-            add_btn.click()
-            
-            # Element: <a href="#org" role="tab">Organization/Agency</a> - use href (role="tab" not "link")
-            agency_tab = self._page.locator('a[href="#org"]')
-            self.wait_for_obscuring_elements()
-            agency_tab.click()
-            
-            org_field = self._page.locator("#orgName")
-            org_field.fill(value)
+            self._add_organization_agency(value)
+
+    def fill_principal_investigators(self, people: List[dict]) -> None:
+        """
+        Add Principal Investigator people on the Person tab of add-value.
+
+        Stays on the default Person tab. Fills first name, last name, and
+        affiliation when present, then saves.
+
+        Args:
+            people: Dicts with ``first_name``, ``last_name``, ``affiliation``.
+        """
+        for person in people:
+            if not isinstance(person, dict):
+                continue
+            first = str(person.get("first_name") or "").strip()
+            last = str(person.get("last_name") or "").strip()
+            affiliation = normalize_person_affiliation(
+                str(person.get("affiliation") or "")
+            )
+            if not first and not last and not affiliation:
+                continue
+            _debug_form_field(
+                "principal_investigator",
+                f"{first} {last} ({affiliation})".strip(),
+            )
+            self._add_person_investigator(first, last, affiliation)
+
+    def _open_agency_add_value_modal(self) -> None:
+        """Click add value on Government Agency/Principal Investigator(s)."""
+        add_value_selector = (
+            "#groupAttr0 > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > "
+            "a:nth-child(3) > span:nth-child(3)"
+        )
+        add_btn = self._page.locator(add_value_selector)
+        self.wait_for_obscuring_elements()
+        add_btn.click()
+
+    def _add_organization_agency(self, value: str) -> None:
+        """Add one Organization/Agency entry via the add-value modal."""
+        self._open_agency_add_value_modal()
+        agency_tab = self._page.locator('a[href="#org"]')
+        self.wait_for_obscuring_elements()
+        agency_tab.click()
+        org_field = self._page.locator("#orgName")
+        org_field.fill(value)
+        self._page.wait_for_timeout(500)
+        self._dismiss_autocomplete_dropdown()
+        self.wait_for_obscuring_elements()
+        self._page.locator(".save-org").click()
+
+    def _add_person_investigator(
+        self,
+        first_name: str,
+        last_name: str,
+        affiliation: str,
+    ) -> None:
+        """Add one Person entry via the add-value modal (Person tab)."""
+        self._open_agency_add_value_modal()
+        # Modal defaults to Person; click the tab so we never stay on Organization.
+        person_tab = self._page.locator('a[href="#person"]')
+        self.wait_for_obscuring_elements()
+        person_tab.click()
+        if first_name:
+            self._page.locator("#personFirstName").fill(first_name)
+        if last_name:
+            self._page.locator("#personLastName").fill(last_name)
+        if affiliation:
+            self._page.locator("#personOrgName").fill(affiliation)
             self._page.wait_for_timeout(500)
-            
-            self._dismiss_autocomplete_dropdown()
-            
-            self.wait_for_obscuring_elements()
-            submit_btn = self._page.locator(".save-org")
-            submit_btn.click()
+            self._dismiss_person_org_autocomplete()
+        self._page.wait_for_timeout(300)
+        self.wait_for_obscuring_elements()
+        self._page.locator(".save-pi").click()
+
+    def _dismiss_person_org_autocomplete(self) -> None:
+        """Dismiss affiliation autocomplete so Save & Apply is clickable."""
+        try:
+            label = self._page.locator("label[for='personOrgName']")
+            if label.is_visible(timeout=1000):
+                label.click()
+        except PlaywrightTimeoutError:
+            try:
+                header = self._page.locator(".modal-header, .modal-title").first
+                if header.is_visible(timeout=1000):
+                    header.click()
+            except PlaywrightTimeoutError:
+                self._page.keyboard.press("Escape")
+        self._page.wait_for_timeout(300)
     
     def _dismiss_autocomplete_dropdown(self) -> None:
         """Dismiss any open autocomplete dropdown."""

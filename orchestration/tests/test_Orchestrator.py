@@ -663,6 +663,25 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(counter.warnings, 1)
         self.assertEqual(counter.errors, 1)
 
+    def test_batch_level_counter_dedupes_per_project(self) -> None:
+        """Multiple ERROR/WARNING lines for one DRPID count as one each."""
+        import logging
+
+        counter = _BatchLevelCounter()
+        for message in ("first fail", "second fail", "third fail"):
+            record = logging.LogRecord("x", logging.ERROR, "", 0, message, (), None)
+            record.drpid = 9
+            counter.filter(record)
+        warn = logging.LogRecord("x", logging.WARNING, "", 0, "soft", (), None)
+        warn.drpid = 9
+        counter.filter(warn)
+        counter.filter(warn)
+        other = logging.LogRecord("x", logging.ERROR, "", 0, "other project", (), None)
+        other.drpid = 10
+        counter.filter(other)
+        self.assertEqual(counter.errors, 2)
+        self.assertEqual(counter.warnings, 1)
+
     @patch("orchestration.Orchestrator.Logger")
     def test_log_batch_summary(self, mock_logger: MagicMock) -> None:
         """Test batch summary log line includes counts and timing."""

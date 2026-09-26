@@ -45,7 +45,7 @@ _MODULES: dict[str, dict[str, Optional[str]]] = {
 
 # Fields that can be updated via update_project (not protected)
 _UPDATABLE_FIELDS = {
-    "title", "agency", "office", "summary", "keywords",
+    "title", "agency", "office", "principal_investigators", "summary", "keywords",
     "time_start", "time_end", "data_types", "extensions",
     "download_date", "collection_notes", "file_size", "num_files", "downloads", "status_notes",
 }
@@ -528,7 +528,7 @@ def update_project(drpid: int, fields: dict[str, Any], dry_run: bool = True) -> 
     """
     Update metadata fields on a project. Returns a diff of old vs new values.
 
-    Updatable fields: title, agency, office, summary, keywords, time_start,
+    Updatable fields: title, agency, office, principal_investigators, summary, keywords, time_start,
     time_end, data_types, extensions, download_date, collection_notes,
     file_size, status_notes.
 

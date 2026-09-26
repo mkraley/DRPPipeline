@@ -2,8 +2,7 @@
 Choose ICPSR subject terms from source-document aboutness.
 
 Terms are preferred labels from thesaurus 10001 only. Place names, agencies,
-and form or genre words are left to other access points. The same source
-concept always maps to the same term.
+and form or genre words are left to other access points.
 """
 
 from __future__ import annotations
@@ -16,7 +15,6 @@ from utils.IcpsrSubjectThesaurus import IcpsrSubjectThesaurus
 
 MAX_TERMS = 10
 
-# Narrower term -> broader term. Keep the narrower label when both match.
 _BROADER_OF: dict[str, str] = {
     "wildlife": "natural resources",
     "environmental degradation": "natural environment",
@@ -25,7 +23,6 @@ _BROADER_OF: dict[str, str] = {
     "population decrease": "population",
 }
 
-# Specific topics first. Later terms are dropped first when the list exceeds MAX_TERMS.
 _PRIORITY: tuple[str, ...] = (
     "endangered species",
     "wildlife",
@@ -40,7 +37,6 @@ _PRIORITY: tuple[str, ...] = (
     "national parks",
 )
 
-# Direct hits that are too generic or the wrong sense for these source texts.
 _BLOCKED_DIRECT: frozenset[str] = frozenset(
     {
         "community",
@@ -82,10 +78,7 @@ _RULES: tuple[_ConceptRule, ...] = (
         re.compile(r"\b(endangered species|threatened species|\bCITES\b)\b", re.I),
         "endangered species",
     ),
-    _ConceptRule(
-        re.compile(r"\b(mammals?|bats?|rodents?|mussels?|wildlife)\b", re.I),
-        "wildlife",
-    ),
+    _ConceptRule(re.compile(r"\b(mammals?|bats?|rodents?|mussels?|wildlife)\b", re.I), "wildlife"),
     _ConceptRule(
         re.compile(r"\b(population\s+(decline|decrease)|declin\w+|decrease in)\b", re.I),
         "population decrease",
@@ -103,10 +96,7 @@ _RULES: tuple[_ConceptRule, ...] = (
         "natural environment",
     ),
     _ConceptRule(
-        re.compile(
-            r"\b(national parks?|parkway|national river|wild and scenic)\b",
-            re.I,
-        ),
+        re.compile(r"\b(national parks?|parkway|national river|wild and scenic)\b", re.I),
         "national parks",
     ),
 )
@@ -158,10 +148,15 @@ class SubjectKeywordGenerator:
             if not _phrase_is_indexable(term):
                 continue
             pattern = re.compile(r"\b" + re.escape(term) + r"\b", re.I)
-            title_hit = pattern.search(title) is not None
-            if title_hit or len(pattern.findall(body)) >= 2:
+            if pattern.search(title) or len(pattern.findall(body)) >= 2:
                 found.add(term)
         return found
+
+
+def aboutness_text(abstract: str, keywords: str = "", extra: str = "") -> str:
+    """Join abstract, supplied keywords, and extra source text with tags removed."""
+    raw = " ".join(part for part in (abstract, keywords, extra) if part)
+    return _SPACE_RE.sub(" ", unescape(_TAG_RE.sub(" ", raw))).strip()
 
 
 def _phrase_is_indexable(term: str) -> bool:
@@ -169,12 +164,6 @@ def _phrase_is_indexable(term: str) -> bool:
     if term.lower() in _BLOCKED_DIRECT or len(term) < 4:
         return False
     return " " in term
-
-
-def aboutness_text(abstract: str, keywords: str, extra: str = "") -> str:
-    """Join abstract, supplied keywords, and extra source text with tags removed."""
-    raw = " ".join(part for part in (abstract, keywords, extra) if part)
-    return _SPACE_RE.sub(" ", unescape(_TAG_RE.sub(" ", raw))).strip()
 
 
 def _drop_broader(chosen: set[str]) -> set[str]:
@@ -191,6 +180,4 @@ def _sort_terms(chosen: set[str]) -> list[str]:
 
 def _cap(terms: list[str]) -> list[str]:
     """Keep at most MAX_TERMS, dropping the lowest-priority terms first."""
-    if len(terms) <= MAX_TERMS:
-        return terms
     return terms[:MAX_TERMS]

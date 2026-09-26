@@ -106,10 +106,15 @@ class TestNpsCollector(unittest.TestCase):
         }
         downloader = MagicMock()
 
-        def _fake_download(_drpid: int, folder_path: Path, files: list[NpsPlannedFile]) -> tuple:
-            dest = folder_path / files[0].relative_dir / files[0].filename
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(b"%PDF-1.4")
+        def _fake_download(
+            _drpid: int, folder_path: Path, files: list[NpsPlannedFile]
+        ) -> tuple:
+            if not files:
+                return [], False, 0, set()
+            for entry in files:
+                dest = folder_path / entry.relative_dir / entry.filename
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(b"%PDF-1.4")
             return [], False, 8, {"pdf"}
 
         downloader.download_files.side_effect = _fake_download
@@ -174,6 +179,68 @@ class TestNpsCollector(unittest.TestCase):
         self.assertIn("pdf", result.get("extensions", ""))
         self.assertEqual(result["num_files"], 3)
         store.update_public_file_count.assert_called_once_with(2, 3)
+
+    @patch("collectors.NpsCollector.write_sidecars_for_files", return_value=[])
+    def test_collect_downloads_one_product_at_a_time(
+        self,
+        _mock_sidecars: MagicMock,
+    ) -> None:
+        """Each Product is downloaded before the next Product profile is fetched."""
+        collector, client, store, downloader = self._collector()
+        second = dict(_PRODUCT_PROFILE)
+        second["referenceId"] = 663486
+        second["filesAndLinks"] = [
+            {
+                "fileId": 147165,
+                "resourceType": "Digital File",
+                "url": "https://irma.nps.gov/DataStore/DownloadFile/147165",
+                "fileName": "table.csv",
+            }
+        ]
+        client.fetch_profile.side_effect = lambda rid: {
+            2306437: _PROJECT_PROFILE,
+            663485: _PRODUCT_PROFILE,
+            663486: second,
+        }[rid]
+        store.list_products_for_drpid.return_value = [
+            {"irma_product_id": 663485, "title": "Mammal inventory"},
+            {"irma_product_id": 663486, "title": "Mammal tables"},
+        ]
+        fetch_order: list[int] = []
+
+        def _download(drpid: int, folder_path: Path, files: list[NpsPlannedFile]) -> tuple:
+            fetch_order.append(int(client.fetch_profile.call_args.args[0]))
+            for entry in files:
+                dest = folder_path / entry.relative_dir / entry.filename
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(b"data")
+            return [], False, 4, {"pdf"}
+
+        downloader.download_files.side_effect = _download
+        collector._collect(_PROJECT_URL, 2, {"title": "Mammal Inventory"})
+        self.assertEqual(downloader.download_files.call_count, 2)
+        self.assertEqual(fetch_order, [663485, 663486])
+        first_files: list[NpsPlannedFile] = downloader.download_files.call_args_list[0].args[2]
+        second_files: list[NpsPlannedFile] = downloader.download_files.call_args_list[1].args[2]
+        self.assertEqual(first_files[0].filename, "report.pdf")
+        self.assertEqual(second_files[0].filename, "table.csv")
+
+    @patch("collectors.NpsCollector.write_sidecars_for_files", return_value=[])
+    @patch("collectors.NpsCollector.Logger")
+    def test_collect_logs_each_product(
+        self,
+        mock_logger: MagicMock,
+        _mock_sidecars: MagicMock,
+    ) -> None:
+        """Product-by-product collection is logged before each download."""
+        collector, _client, _store, _downloader = self._collector()
+        collector._collect(_PROJECT_URL, 2, {"title": "Mammal Inventory"})
+        messages = [
+            call.args[0] % call.args[1:] for call in mock_logger.info.call_args_list
+        ]
+        self.assertTrue(any("collecting IRMA Project" in message for message in messages))
+        self.assertTrue(any("fetching project profile" in message for message in messages))
+        self.assertTrue(any("product 1/1" in message for message in messages))
 
     @patch("collectors.NpsCollector.record_error")
     def test_collect_rejects_non_irma_url(self, mock_error: MagicMock) -> None:

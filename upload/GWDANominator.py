@@ -54,8 +54,7 @@ class GWDANominator:
         email = Args.gwda_email
         if not email or not str(email).strip():
             return False, (
-                "GWDA nomination requires email "
-                "(set gwda_email or datalumos_username in config)"
+                "GWDA nomination requires email (set gwda_email in config)"
             )
 
         your_name = Args.gwda_your_name

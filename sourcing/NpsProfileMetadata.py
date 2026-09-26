@@ -9,6 +9,7 @@ import re
 from typing import Any
 
 from collectors.UsfsMetadataExtractor import normalize_temporal_date
+from utils.PrincipalInvestigators import investigators_from_irma_contacts, serialize_investigators
 from utils.temporal_utils import apply_temporal_inference
 
 AGENCY = "Department of the Interior"
@@ -115,6 +116,28 @@ def contact_records(profile: dict[str, Any]) -> list[dict[str, Any]]:
 def contact_groups(profile: dict[str, Any]) -> list[tuple[str, str]]:
     """Return (label, formatted people) pairs from bibliography contacts."""
     return [(str(item["role"]), "; ".join(item["people"])) for item in contact_records(profile)]
+
+
+def profile_principal_investigators(profile: dict[str, Any]) -> str:
+    """
+    Return Lead(s) from Core Info as JSON for the Storage column.
+
+    Only the IRMA ``Lead(s)`` contact group is used (Principal Investigators).
+    """
+    raw = bibliography(profile).get("contacts") or []
+    if not isinstance(raw, list):
+        return ""
+    leads: list[dict[str, Any]] = []
+    for group in raw:
+        if not isinstance(group, dict):
+            continue
+        contact_type = str(group.get("contactType") or "").strip()
+        if contact_type not in ("Lead(s)", "Leads", "Lead"):
+            continue
+        for item in group.get("contacts") or []:
+            if isinstance(item, dict):
+                leads.append(item)
+    return serialize_investigators(investigators_from_irma_contacts(leads))
 
 
 def profile_notes(profile: dict[str, Any]) -> str:

@@ -22,6 +22,7 @@ from utils.download_with_progress import download_via_url
 from utils.file_utils import format_file_size
 
 _HTML_MARKERS = (b"<html", b"<!doctype html")
+_HTML_EXTENSIONS = frozenset({".html", ".htm", ".xhtml"})
 _DOWNLOAD_HEADERS = {
     "User-Agent": "Mozilla/5.0 DRPPipeline-NPS",
     "Accept": "*/*",
@@ -40,6 +41,9 @@ class NpsFileDownloader:
         """
         Download planned files until the cumulative 1 GB budget is reached.
 
+        Existing files already on disk under ``folder_path`` count toward the
+        budget so sequential Product batches share one project-wide limit.
+
         Args:
             drpid: Project DRPID.
             folder_path: Project output folder.
@@ -50,11 +54,10 @@ class NpsFileDownloader:
         """
         notes: list[str] = []
         skipped_large = False
-        downloaded_bytes = 0
+        downloaded_bytes, _exts = folder_inventory(folder_path)
         for index, entry in enumerate(files):
             dest = folder_path / entry.relative_dir / entry.filename
             if dest.is_file():
-                downloaded_bytes += dest.stat().st_size
                 continue
             expected = entry.size_bytes
             if would_exceed_download_budget(downloaded_bytes, expected):
@@ -161,7 +164,14 @@ def _pending_summary_notes(
 
 
 def _looks_like_html(path: Path) -> bool:
-    """Return True when a downloaded body is an HTML login or error page."""
+    """
+    Return True when a downloaded body looks like an HTML login/error page.
+
+    Legitimate ``.html`` / ``.htm`` Digital Files are kept; only unexpected HTML
+    bodies (e.g. a CSV URL that returned a sign-in page) are rejected.
+    """
+    if path.suffix.lower() in _HTML_EXTENSIONS:
+        return False
     try:
         size = path.stat().st_size
         head = path.read_bytes()[:800].lower()

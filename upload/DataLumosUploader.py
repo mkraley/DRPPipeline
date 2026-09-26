@@ -13,6 +13,7 @@ from storage import Storage
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from upload.UploadIssueReporter import UploadIssueReporter
 from utils.Args import Args
+from utils.PrincipalInvestigators import deserialize_investigators
 from utils.project_utils import get_field
 from utils.Logger import Logger
 
@@ -235,6 +236,11 @@ class DataLumosUploader:
         )
         if agencies:
             form_filler.fill_agency(agencies)
+        investigators = deserialize_investigators(
+            get_field(project, "principal_investigators")
+        )
+        if investigators:
+            form_filler.fill_principal_investigators(investigators)
         
         form_filler.fill_summary(get_field(project, "summary"))
         form_filler.fill_original_url(get_field(project, "source_url"))

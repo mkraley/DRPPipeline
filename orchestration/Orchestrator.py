@@ -20,7 +20,7 @@ from typing import Any, Dict, Iterator, Optional
 from storage import Storage
 from utils.Args import Args
 from utils.Errors import derive_error_status, is_error_status, record_crash, record_error
-from utils.Logger import Logger
+from utils.Logger import Logger, _get_current_drpid
 
 
 # Batch modules that collect data from source URLs (not upload/publish/verify).
@@ -316,22 +316,68 @@ def _stop_requested() -> bool:
     return path.exists()
 
 
+def _log_record_drpid(record: logging.LogRecord) -> Optional[int]:
+    """
+    Resolve the project DRPID associated with a log record.
+
+    Prefers an explicit integer ``record.drpid``, then the thread-local
+    current DRPID, then a formatted ``[123] `` string from ``_DrpidFilter``.
+    """
+    raw = getattr(record, "drpid", None)
+    if isinstance(raw, int):
+        return raw
+    current = _get_current_drpid()
+    if current is not None:
+        return int(current)
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text.startswith("[") and text.endswith("]"):
+            inner = text[1:-1].strip()
+            if inner.isdigit():
+                return int(inner)
+    return None
+
+
 class _BatchLevelCounter(logging.Filter):
-    """Count WARNING and ERROR log records during an orchestration batch."""
+    """
+    Count WARNING and ERROR log records during an orchestration batch.
+
+    At most one error and one warning are counted per project DRPID so a
+    single project with many failed files does not inflate the batch totals.
+    Records with no project context are still counted individually.
+    """
 
     def __init__(self) -> None:
         super().__init__()
         self.errors = 0
         self.warnings = 0
+        self._error_drpids: set[int] = set()
+        self._warning_drpids: set[int] = set()
         self._lock = threading.Lock()
 
     def filter(self, record: logging.LogRecord) -> bool:
         with self._lock:
             if record.levelno >= logging.ERROR:
-                self.errors += 1
+                self._note_issue(record, self._error_drpids, "errors")
             elif record.levelno >= logging.WARNING:
-                self.warnings += 1
+                self._note_issue(record, self._warning_drpids, "warnings")
         return True
+
+    def _note_issue(
+        self,
+        record: logging.LogRecord,
+        seen: set[int],
+        attr_name: str,
+    ) -> None:
+        """Increment the named counter at most once per project DRPID."""
+        drpid = _log_record_drpid(record)
+        if drpid is None:
+            setattr(self, attr_name, getattr(self, attr_name) + 1)
+            return
+        if drpid in seen:
+            return
+        seen.add(drpid)
+        setattr(self, attr_name, getattr(self, attr_name) + 1)
 
 
 @dataclass

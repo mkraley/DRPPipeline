@@ -6,11 +6,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from sourcing.NpsProfileGeography import profile_geographic_coverage
+from sourcing.NpsProfileGeography import (
+    profile_geographic_coverage,
+    profile_short_unit_names,
+)
 from sourcing.NpsProfileMetadata import (
     AGENCY,
     OFFICE,
+    profile_abstract,
     profile_keywords,
+    profile_principal_investigators,
     profile_summary_html,
     profile_temporal_fields,
     profile_title,
@@ -23,12 +28,15 @@ from sourcing.NpsReferenceRules import (
     reference_id_of,
     reference_profile_url,
 )
+from utils.CollectionKeywordGenerator import CollectionKeywordGenerator
+from utils.SubjectKeywordGenerator import aboutness_text
 
 __all__ = [
     "AGENCY",
     "OFFICE",
     "breadcrumb_text",
     "build_candidate_row",
+    "keywords_from_profile",
     "product_breadcrumb_text",
     "profile_keywords",
     "profile_title",
@@ -86,6 +94,29 @@ def project_public_file_total(profile: dict[str, Any]) -> int:
     return recursive_public_file_count(profile)
 
 
+def keywords_from_profile(
+    profile: dict[str, Any],
+    *,
+    generator: CollectionKeywordGenerator | None = None,
+) -> str:
+    """
+    Build collection keywords from an IRMA profile.
+
+    Overrides source keywords with generated free-form terms, a few ICPSR
+    labels, and short unit names.
+    """
+    title = profile_title(profile)
+    source_keywords = profile_keywords(profile)
+    text = aboutness_text(profile_abstract(profile), source_keywords)
+    active = generator or CollectionKeywordGenerator()
+    return active.format_keywords(
+        title=title,
+        aboutness=text,
+        source_keywords=source_keywords,
+        unit_names=profile_short_unit_names(profile),
+    )
+
+
 def storage_updates_from_profile(
     profile: dict[str, Any],
     *,
@@ -100,8 +131,11 @@ def storage_updates_from_profile(
         "agency": AGENCY,
         "office": OFFICE,
         "summary": profile_summary_html(profile),
-        "keywords": profile_keywords(profile),
+        "keywords": keywords_from_profile(profile),
     }
+    investigators = profile_principal_investigators(profile)
+    if investigators:
+        fields["principal_investigators"] = investigators
     fields.update(profile_temporal_fields(profile, filenames=filenames))
     coverage = profile_geographic_coverage(profile)
     if coverage:

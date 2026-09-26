@@ -3,6 +3,7 @@ National Park Service collector for DRP Pipeline.
 
 Downloads public IRMA Digital Files for one sourced Project. Products become
 subfolders; Data Table Info and landing-page JSON are written beside files.
+Each Product is fetched and downloaded before the next one starts.
 Run via orchestrator when ``Args.source`` is ``nps``::
 
     python main.py collector --source nps
@@ -21,18 +22,21 @@ from collectors.NpsDataTableSidecar import write_sidecars_for_files
 from collectors.NpsDownloadPlan import (
     PROJECT_FILES_FOLDER,
     NpsPlannedFile,
+    fit_planned_files,
     planned_files_for_profile,
     unique_product_folder_name,
 )
 from collectors.NpsFileDownloader import NpsFileDownloader, count_files, folder_inventory
 from collectors.NpsLandingMetadata import (
+    PRODUCT_METADATA_NAME,
+    PROJECT_METADATA_NAME,
     project_breadcrumb,
-    write_project_and_product_landing_files,
+    write_landing_metadata,
 )
 from sourcing.NpsCatalogClient import NpsCatalogClient
-from sourcing.NpsProjectMapper import storage_updates_from_profile
-from sourcing.NpsProfileMetadata import merge_doi_notes, profile_dois
-from sourcing.NpsReferenceRules import irma_project_id_from_source_url
+from sourcing.NpsProjectMapper import product_breadcrumb_text, storage_updates_from_profile
+from sourcing.NpsProfileMetadata import merge_doi_notes, profile_dois, profile_title
+from sourcing.NpsReferenceRules import irma_project_id_from_source_url, reference_id_of
 from storage.NpsHierarchyStore import NpsHierarchyStore
 from utils.Args import Args
 from utils.Errors import record_error, record_warning
@@ -40,8 +44,22 @@ from utils.Logger import Logger
 from utils.file_utils import format_file_size
 
 
+def _merge_collection_notes(
+    existing: str,
+    rename_notes: list[str],
+    dois: list[str],
+) -> str:
+    """Combine sourcing notes, shortened-path originals, and DOI lines."""
+    parts = [line for line in (existing or "").splitlines() if line.strip()]
+    for note in rename_notes:
+        cleaned = note.strip()
+        if cleaned and cleaned not in parts:
+            parts.append(cleaned)
+    return merge_doi_notes("\n".join(parts), dois)
+
+
 class NpsCollector(CollectorBase):
-    """Collect public Digital Files for one IRMA Project."""
+    """Collect public Digital Files for one IRMA Project, one Product at a time."""
 
     _storage_status_mode = "inventory"
 
@@ -53,15 +71,7 @@ class NpsCollector(CollectorBase):
         file_downloader: NpsFileDownloader | None = None,
         request_delay: float | None = None,
     ) -> None:
-        """
-        Initialize the collector.
-
-        Args:
-            client: IRMA client (created when omitted).
-            hierarchy_store: Program/Product tables (created when omitted).
-            file_downloader: Digital File downloader (created when omitted).
-            request_delay: Seconds between IRMA calls.
-        """
+        """Initialize IRMA client, hierarchy store, and downloader."""
         self._client = client or NpsCatalogClient()
         self._hierarchy_store = hierarchy_store
         self._file_downloader = file_downloader or NpsFileDownloader()
@@ -83,65 +93,150 @@ class NpsCollector(CollectorBase):
         if folder_path is None:
             return {}
         store = self._hierarchy_store or NpsHierarchyStore.from_storage()
-        project_profile, product_profiles, files = self._gather(drpid, project_id, store)
-        if not files:
-            record_error(drpid, "No public Digital Files found for this IRMA Project")
-            return {"folder_path": str(folder_path)}
-        notes, skipped_large, _bytes, _exts = self._file_downloader.download_files(
-            drpid, folder_path, files
-        )
-        notes.extend(write_sidecars_for_files(drpid, folder_path, files, self._client))
-        write_project_and_product_landing_files(
-            folder_path,
-            project_profile,
-            product_profiles,
-            project_breadcrumb(drpid, record, store),
-        )
-        result = self._inventory_result(record, folder_path, notes, skipped_large)
-        store.update_public_file_count(drpid, int(result["num_files"]))
-        if project_profile is not None:
-            result.update(
-                storage_updates_from_profile(
-                    project_profile,
-                    filenames=[entry.filename for entry in files],
-                )
-            )
-        doi_notes = merge_doi_notes(
-            str(record.get("collection_notes") or ""),
-            self._dois_from_profiles(project_profile, product_profiles),
-        )
-        if doi_notes:
-            result["collection_notes"] = doi_notes
+        products = store.list_products_for_drpid(drpid)
         Logger.info(
-            "NPS collection complete for DRPID %s: %s files, %s",
+            "NPS DRPID %s: collecting IRMA Project %s (%s products)",
             drpid,
-            result.get("num_files"),
-            result.get("file_size"),
+            project_id,
+            len(products),
         )
-        return result
+        return self._collect_contents(
+            drpid, project_id, products, folder_path, record, store
+        )
 
-    def _gather(
+    def _collect_contents(
         self,
         drpid: int,
         project_id: int,
+        products: list[dict[str, Any]],
+        folder_path: Path,
+        record: dict[str, Any],
         store: NpsHierarchyStore,
-    ) -> tuple[dict[str, Any] | None, list[tuple[str, dict[str, Any]]], list[NpsPlannedFile]]:
-        """Fetch profiles and build the download list for one Project."""
-        planned: list[NpsPlannedFile] = []
+    ) -> dict[str, Any]:
+        """Fetch and download project files, then each Product in turn."""
+        rename_notes: list[str] = []
+        notes: list[str] = []
+        all_files: list[NpsPlannedFile] = []
         product_profiles: list[tuple[str, dict[str, Any]]] = []
-        used_folders: set[str] = set()
+        crumb = project_breadcrumb(drpid, record, store)
+        Logger.info("NPS DRPID %s: fetching project profile %s", drpid, project_id)
         project_profile = self._fetch_profile(drpid, project_id)
+        files, batch_notes, skipped, _dir = self._ingest_profile(
+            drpid, folder_path, project_profile, PROJECT_FILES_FOLDER, rename_notes
+        )
+        all_files.extend(files)
+        notes.extend(batch_notes)
         if project_profile is not None:
-            planned.extend(self._files_for_profile(drpid, project_profile, PROJECT_FILES_FOLDER))
-        for product in store.list_products_for_drpid(drpid):
+            write_landing_metadata(
+                folder_path / PROJECT_METADATA_NAME,
+                project_profile,
+                breadcrumb=crumb,
+            )
+        if not skipped:
+            skipped = self._collect_products(
+                drpid,
+                products,
+                folder_path,
+                crumb,
+                rename_notes,
+                notes,
+                all_files,
+                product_profiles,
+            )
+        if not all_files:
+            record_error(drpid, "No public Digital Files found for this IRMA Project")
+            return {"folder_path": str(folder_path)}
+        return self._finish_result(
+            drpid,
+            record,
+            folder_path,
+            store,
+            project_profile,
+            product_profiles,
+            all_files,
+            notes,
+            skipped,
+            rename_notes,
+        )
+
+    def _collect_products(
+        self,
+        drpid: int,
+        products: list[dict[str, Any]],
+        folder_path: Path,
+        crumb: str,
+        rename_notes: list[str],
+        notes: list[str],
+        all_files: list[NpsPlannedFile],
+        product_profiles: list[tuple[str, dict[str, Any]]],
+    ) -> bool:
+        """Fetch, download, and write metadata for each Product sequentially."""
+        used_folders: set[str] = set()
+        total = len(products)
+        for index, product in enumerate(products, 1):
             product_id = int(product["irma_product_id"])
-            folder = unique_product_folder_name(str(product.get("title") or "product"), used_folders)
+            title = str(product.get("title") or "product")
+            folder = unique_product_folder_name(title, used_folders, rename_notes)
+            Logger.info(
+                "NPS DRPID %s: product %s/%s %s (IRMA %s)",
+                drpid,
+                index,
+                total,
+                title,
+                product_id,
+            )
             profile = self._fetch_profile(drpid, product_id)
             if profile is None:
                 continue
+            files, batch_notes, skipped, folder = self._ingest_profile(
+                drpid, folder_path, profile, folder, rename_notes
+            )
+            all_files.extend(files)
+            notes.extend(batch_notes)
             product_profiles.append((folder, profile))
-            planned.extend(self._files_for_profile(drpid, profile, folder))
-        return project_profile, product_profiles, planned
+            write_landing_metadata(
+                folder_path / folder / PRODUCT_METADATA_NAME,
+                profile,
+                breadcrumb=product_breadcrumb_text(
+                    crumb,
+                    product_id=reference_id_of(profile),
+                    product_title=profile_title(profile),
+                ),
+            )
+            if skipped:
+                leftover = total - index
+                if leftover:
+                    Logger.info(
+                        "NPS DRPID %s: stopping after product %s/%s (download budget)",
+                        drpid,
+                        index,
+                        total,
+                    )
+                return True
+        return False
+
+    def _ingest_profile(
+        self,
+        drpid: int,
+        folder_path: Path,
+        profile: dict[str, Any] | None,
+        relative_dir: str,
+        rename_notes: list[str],
+    ) -> tuple[list[NpsPlannedFile], list[str], bool, str]:
+        """Plan, download, and write sidecars for one Project or Product profile."""
+        if profile is None:
+            return [], [], False, relative_dir
+        planned = self._files_for_profile(drpid, profile, relative_dir)
+        planned, path_notes, dir_renames = fit_planned_files(folder_path, planned)
+        rename_notes.extend(path_notes)
+        relative_dir = dir_renames.get(relative_dir, relative_dir)
+        if not planned:
+            return [], [], False, relative_dir
+        notes, skipped, _bytes, _exts = self._file_downloader.download_files(
+            drpid, folder_path, planned
+        )
+        notes.extend(write_sidecars_for_files(drpid, folder_path, planned, self._client))
+        return planned, notes, skipped, relative_dir
 
     def _dois_from_profiles(
         self,
@@ -183,6 +278,44 @@ class NpsCollector(CollectorBase):
         except RuntimeError as exc:
             record_warning(drpid, f"IRMA Profile {reference_id} failed: {exc}")
             return None
+
+    def _finish_result(
+        self,
+        drpid: int,
+        record: dict[str, Any],
+        folder_path: Path,
+        store: NpsHierarchyStore,
+        project_profile: dict[str, Any] | None,
+        product_profiles: list[tuple[str, dict[str, Any]]],
+        files: list[NpsPlannedFile],
+        notes: list[str],
+        skipped_large: bool,
+        rename_notes: list[str],
+    ) -> dict[str, Any]:
+        """Write inventory fields after all Products have been processed."""
+        result = self._inventory_result(record, folder_path, notes, skipped_large)
+        store.update_public_file_count(drpid, int(result["num_files"]))
+        if project_profile is not None:
+            result.update(
+                storage_updates_from_profile(
+                    project_profile,
+                    filenames=[entry.filename for entry in files],
+                )
+            )
+        collection_notes = _merge_collection_notes(
+            str(record.get("collection_notes") or ""),
+            rename_notes,
+            self._dois_from_profiles(project_profile, product_profiles),
+        )
+        if collection_notes:
+            result["collection_notes"] = collection_notes
+        Logger.info(
+            "NPS collection complete for DRPID %s: %s files, %s",
+            drpid,
+            result.get("num_files"),
+            result.get("file_size"),
+        )
+        return result
 
     def _inventory_result(
         self,

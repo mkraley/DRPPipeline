@@ -10,6 +10,7 @@ from sourcing.NpsProfileMetadata import (
     irma_date,
     merge_doi_notes,
     profile_dois,
+    profile_principal_investigators,
     profile_summary_html,
     profile_temporal_fields,
 )
@@ -107,6 +108,45 @@ class TestNpsProfileMetadata(unittest.TestCase):
         self.assertIn("National Park Service", summary)
         self.assertIn("Notes", summary)
         self.assertNotIn("Collection ", summary)
+
+    def test_profile_principal_investigators_uses_leads_only(self) -> None:
+        """Only Lead(s) become principal_investigators JSON."""
+        profile = {
+            "bibliography": {
+                "contacts": [
+                    {
+                        "contactType": "Lead(s)",
+                        "contacts": [
+                            {
+                                "firstName": "Brian",
+                                "primaryName": "Witcher",
+                                "affiliation": "National Park Service",
+                            },
+                            {
+                                "firstName": "Evan",
+                                "primaryName": "Raskin",
+                                "affiliation": "National Park Service",
+                            },
+                        ],
+                    },
+                    {
+                        "contactType": "Steward(s)",
+                        "contacts": [
+                            {
+                                "firstName": "Ann",
+                                "primaryName": "Lee",
+                                "affiliation": "APHN",
+                            }
+                        ],
+                    },
+                ]
+            }
+        }
+        encoded = profile_principal_investigators(profile)
+        self.assertIn("Brian", encoded)
+        self.assertIn("Witcher", encoded)
+        self.assertIn("Evan", encoded)
+        self.assertNotIn("Lee", encoded)
 
 
 if __name__ == "__main__":

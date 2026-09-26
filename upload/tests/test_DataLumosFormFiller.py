@@ -17,6 +17,7 @@ from utils.title_utils import (
 from upload.DataLumosFormFiller import (
     DataLumosFormFiller,
     _is_empty,
+    normalize_person_affiliation,
 )
 
 
@@ -232,6 +233,61 @@ class TestDataLumosFormFiller(unittest.TestCase):
             self.form_filler.fill_agency(["", "  ", "valid"])
         
         self.mock_page.locator.assert_called()
+
+    def test_normalize_person_affiliation_expands_nps(self) -> None:
+        """Short NPS labels expand to the DataLumos Interior.NPS form."""
+        full = "United States Department of the Interior. National Park Service"
+        self.assertEqual(normalize_person_affiliation("National Park Service"), full)
+        self.assertEqual(normalize_person_affiliation("NPS"), full)
+        self.assertEqual(normalize_person_affiliation("nps"), full)
+        self.assertEqual(normalize_person_affiliation("Some University"), "Some University")
+        self.assertEqual(normalize_person_affiliation(""), "")
+
+    def test_fill_principal_investigators_uses_person_tab(self) -> None:
+        """People stay on the Person tab and fill name/affiliation fields."""
+        mock_add = MagicMock()
+        mock_person_tab = MagicMock()
+        mock_first = MagicMock()
+        mock_last = MagicMock()
+        mock_aff = MagicMock()
+        mock_save = MagicMock()
+
+        def locator_side_effect(selector: str) -> MagicMock:
+            if "groupAttr0" in selector:
+                return mock_add
+            if 'href="#person"' in selector:
+                return mock_person_tab
+            if selector == "#personFirstName":
+                return mock_first
+            if selector == "#personLastName":
+                return mock_last
+            if selector == "#personOrgName":
+                return mock_aff
+            if selector == ".save-pi":
+                return mock_save
+            return MagicMock()
+
+        self.mock_page.locator.side_effect = locator_side_effect
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"), \
+             unittest.mock.patch.object(self.form_filler, "_dismiss_person_org_autocomplete"):
+            self.form_filler.fill_principal_investigators(
+                [
+                    {
+                        "first_name": "Brian",
+                        "last_name": "Witcher",
+                        "affiliation": "National Park Service",
+                    }
+                ]
+            )
+
+        mock_add.click.assert_called_once()
+        mock_person_tab.click.assert_called_once()
+        mock_first.fill.assert_called_once_with("Brian")
+        mock_last.fill.assert_called_once_with("Witcher")
+        mock_aff.fill.assert_called_once_with(
+            "United States Department of the Interior. National Park Service"
+        )
+        mock_save.click.assert_called_once()
 
     def test_fill_summary_skips_empty(self) -> None:
         """Test fill_summary returns early for empty input."""

@@ -4,7 +4,8 @@ Build NPS download destinations: product folders and public Digital Files.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
 from sourcing.NpsReferenceRules import file_resource_id, public_digital_files
@@ -12,6 +13,11 @@ from utils.file_utils import sanitize_filename
 
 PROJECT_FILES_FOLDER = "_project_files"
 SIDECAR_SUFFIX = "_data_table_info.csv"
+PRODUCT_FOLDER_MAX_LENGTH = 80
+# Win32 MAX_PATH is 260 including the trailing NUL, so usable length is 259.
+MAX_WINDOWS_PATH_LENGTH = 259
+_MIN_FILENAME_LENGTH = 20
+_FULL_NAME_MAX_LENGTH = 500
 
 
 @dataclass(frozen=True)
@@ -25,6 +31,7 @@ class NpsPlannedFile:
     resource_id: int | None = None
     data_table_count: int = 0
     reference_id: int | None = None
+    original_filename: str = ""
 
 
 def product_folder_name(title: str) -> str:
@@ -34,19 +41,32 @@ def product_folder_name(title: str) -> str:
     Args:
         title: Product title (IRMA ids are not included).
     """
-    return sanitize_filename(title, max_length=120)
+    return sanitize_filename(title, max_length=PRODUCT_FOLDER_MAX_LENGTH)
 
 
-def unique_product_folder_name(title: str, used: set[str]) -> str:
-    """Return a product folder name that does not collide with ``used``."""
-    base = product_folder_name(title)
+def unique_product_folder_name(
+    title: str,
+    used: set[str],
+    notes: list[str] | None = None,
+) -> str:
+    """
+    Return a product folder name that does not collide with ``used``.
+
+    When the title is shortened to fit ``PRODUCT_FOLDER_MAX_LENGTH``, appends a
+    collection-note line with the original title when ``notes`` is provided.
+    """
+    original = " ".join(str(title or "product").split()).strip() or "product"
+    full = sanitize_filename(original, max_length=_FULL_NAME_MAX_LENGTH)
+    base = product_folder_name(original)
     name = base
     suffix = 2
     used_folded = {item.casefold() for item in used}
     while name.casefold() in used_folded:
-        name = sanitize_filename(f"{base}_{suffix}", max_length=120)
+        name = sanitize_filename(f"{base}_{suffix}", max_length=PRODUCT_FOLDER_MAX_LENGTH)
         suffix += 1
     used.add(name)
+    if notes is not None and full != name:
+        notes.append(f"Original product folder: {original} -> {name}")
     return name
 
 
@@ -74,7 +94,8 @@ def planned_files_for_profile(
     planned: list[NpsPlannedFile] = []
     for item in public_digital_files(profile):
         url = str(item.get("url") or "").strip()
-        filename = sanitize_filename(str(item.get("fileName") or item.get("FileName") or "") or url.rsplit("/", 1)[-1])
+        raw_name = str(item.get("fileName") or item.get("FileName") or "") or url.rsplit("/", 1)[-1]
+        filename = sanitize_filename(raw_name)
         resource_id = file_resource_id(item)
         holding = _matching_holding(resource_id, url, holdings_by_id, holdings_by_url)
         size_bytes = _optional_int(item.get("fileSize") or item.get("FileSize"))
@@ -84,7 +105,8 @@ def planned_files_for_profile(
             size_bytes = size_bytes or _optional_int(holding.get("FileSize"))
             table_count = int(holding.get("DataTableCount") or 0)
             url = str(holding.get("Url") or url)
-            filename = sanitize_filename(str(holding.get("FileDescription") or filename))
+            raw_name = str(holding.get("FileDescription") or raw_name)
+            filename = sanitize_filename(raw_name)
         if not url or filename in {"Untitled", ""}:
             continue
         planned.append(
@@ -96,9 +118,132 @@ def planned_files_for_profile(
                 resource_id=resource_id,
                 data_table_count=table_count,
                 reference_id=int(reference_id) if reference_id is not None else None,
+                original_filename=raw_name.strip(),
             )
         )
     return planned
+
+
+def fit_planned_files(
+    folder_path: Path,
+    files: list[NpsPlannedFile],
+    *,
+    max_path_length: int = MAX_WINDOWS_PATH_LENGTH,
+) -> tuple[list[NpsPlannedFile], list[str], dict[str, str]]:
+    """
+    Shorten relative dirs and filenames so each destination fits Windows MAX_PATH.
+
+    Prefers truncating the filename (preserving extension). When that is not
+    enough, shortens ``relative_dir``. Returns updated planned files,
+    collection-note lines for renamed originals, and a map of old→new
+    relative directories.
+    """
+    notes: list[str] = []
+    fitted: list[NpsPlannedFile] = []
+    used_by_dir: dict[str, set[str]] = {}
+    dir_renames: dict[str, str] = {}
+    for entry in files:
+        relative_dir, filename, entry_notes = _fit_one_dest(
+            folder_path,
+            entry.relative_dir,
+            entry.filename,
+            max_path_length=max_path_length,
+        )
+        notes.extend(entry_notes)
+        if entry.relative_dir and relative_dir != entry.relative_dir:
+            dir_renames[entry.relative_dir] = relative_dir
+        original = (entry.original_filename or entry.filename).strip()
+        full_safe = sanitize_filename(original, max_length=_FULL_NAME_MAX_LENGTH) if original else ""
+        if full_safe and full_safe != filename:
+            note = f"Original file: {original} -> {filename}"
+            if note not in notes:
+                notes.append(note)
+        filename = _unique_filename(filename, used_by_dir.setdefault(relative_dir, set()))
+        fitted.append(
+            replace(
+                entry,
+                relative_dir=relative_dir,
+                filename=filename,
+            )
+        )
+    return fitted, notes, dir_renames
+
+
+def apply_relative_dir_renames(
+    product_profiles: list[tuple[str, dict[str, Any]]],
+    dir_renames: dict[str, str],
+) -> list[tuple[str, dict[str, Any]]]:
+    """Remap product landing folders when path fitting shortens relative dirs."""
+    if not dir_renames:
+        return product_profiles
+    return [(dir_renames.get(folder, folder), profile) for folder, profile in product_profiles]
+
+
+def _fit_one_dest(
+    folder_path: Path,
+    relative_dir: str,
+    filename: str,
+    *,
+    max_path_length: int,
+) -> tuple[str, str, list[str]]:
+    """Shorten one relative dir / filename pair to fit under ``max_path_length``."""
+    notes: list[str] = []
+    relative_dir = relative_dir.strip().strip("\\/")
+    filename = sanitize_filename(filename)
+    if _dest_length(folder_path, relative_dir, filename) <= max_path_length:
+        return relative_dir, filename, notes
+
+    filename_budget = _filename_budget(folder_path, relative_dir, max_path_length)
+    if filename_budget < _MIN_FILENAME_LENGTH and relative_dir:
+        folder_budget = max(
+            8,
+            max_path_length
+            - len(str(folder_path))
+            - 1
+            - _MIN_FILENAME_LENGTH
+            - 1,
+        )
+        shortened_dir = sanitize_filename(relative_dir, max_length=folder_budget)
+        if shortened_dir != relative_dir:
+            notes.append(f"Original product folder: {relative_dir} -> {shortened_dir}")
+            relative_dir = shortened_dir
+        filename_budget = _filename_budget(folder_path, relative_dir, max_path_length)
+
+    shortened = sanitize_filename(
+        filename,
+        max_length=max(_MIN_FILENAME_LENGTH, filename_budget),
+    )
+    return relative_dir, shortened, notes
+
+
+def _filename_budget(folder_path: Path, relative_dir: str, max_path_length: int) -> int:
+    """Characters available for the basename under ``max_path_length``."""
+    parent = folder_path / relative_dir if relative_dir else folder_path
+    # +1 for the path separator before the filename
+    return max_path_length - len(str(parent)) - 1
+
+
+def _dest_length(folder_path: Path, relative_dir: str, filename: str) -> int:
+    """Length of the absolute destination path string."""
+    if relative_dir:
+        return len(str(folder_path / relative_dir / filename))
+    return len(str(folder_path / filename))
+
+
+def _unique_filename(filename: str, used: set[str]) -> str:
+    """Disambiguate filenames that collide after truncation."""
+    if filename.casefold() not in {item.casefold() for item in used}:
+        used.add(filename)
+        return filename
+    stem, extension = filename.rsplit(".", 1) if "." in filename else (filename, "")
+    suffix = 2
+    while True:
+        candidate = f"{stem}_{suffix}.{extension}" if extension else f"{stem}_{suffix}"
+        candidate = sanitize_filename(candidate, max_length=max(len(filename), _MIN_FILENAME_LENGTH))
+        if candidate.casefold() not in {item.casefold() for item in used}:
+            used.add(candidate)
+            return candidate
+        suffix += 1
 
 
 def _index_holdings(

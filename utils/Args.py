@@ -138,7 +138,7 @@ class Args(metaclass=ArgsMeta):
         # GWDA nomination (before DataLumos upload; gwda_your_name required in config)
         "gwda_your_name": "",
         "gwda_institution": "Data Rescue Project",
-        "gwda_email": None,  # Uses datalumos_username if not set
+        "gwda_email": None,  # Set in config.json (not the per-source DataLumos login)
         # Sourcing + Publisher: Google Sheet (same sheet used for candidate URLs and inventory updates)
         "google_sheet_id": None,  # Google Sheet ID from URL; set in config for sourcing and/or publisher
         "google_credentials": None,  # Path to service account JSON; required for publisher sheet updates
@@ -233,10 +233,6 @@ class Args(metaclass=ArgsMeta):
         if "config" in cls._config and cls._config["config"] is not None:
             cls._config["config_file"] = str(cls._config["config"])
 
-        # gwda_email fallback: use datalumos_username if gwda_email not set
-        gwda_email = cls._config.get("gwda_email") or cls._config.get("datalumos_username")
-        cls._config["gwda_email"] = gwda_email
-
         # stop_file from environment (set by API when running pipeline from GUI so orchestrator can check for stop request)
         if os.environ.get("DRP_STOP_FILE"):
             cls._config["stop_file"] = os.environ["DRP_STOP_FILE"]
@@ -269,8 +265,6 @@ class Args(metaclass=ArgsMeta):
             cls._load_config_file(config_path, source_override=source)
         elif source:
             cls._config["source"] = source
-        gwda_email = cls._config.get("gwda_email") or cls._config.get("datalumos_username")
-        cls._config["gwda_email"] = gwda_email
         if os.environ.get("DRP_STOP_FILE"):
             cls._config["stop_file"] = os.environ["DRP_STOP_FILE"]
         cls._initialized = True

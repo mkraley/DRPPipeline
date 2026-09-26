@@ -45,6 +45,7 @@ class StorageSQLLite:
         ("title", "TEXT"),
         ("agency", "TEXT"),
         ("office", "TEXT"),
+        ("principal_investigators", "TEXT"),
         ("summary", "TEXT"),
         ("keywords", "TEXT"),
         ("time_start", "TEXT"),
@@ -198,6 +199,7 @@ class StorageSQLLite:
             ("num_files", "INTEGER"),
             ("downloads", "INTEGER"),
             ("geographic_coverage", "TEXT"),
+            ("principal_investigators", "TEXT"),
         ]
         for column, col_type in migrations:
             try:

@@ -193,6 +193,7 @@ def get_collector_interface() -> str:
       title           TEXT      Dataset title
       agency          TEXT      Sponsoring agency
       office          TEXT      Sub-office/department
+      principal_investigators TEXT  JSON list of Lead/PI people
       summary         TEXT      Dataset description
       keywords        TEXT      Comma-separated tags
       time_start      TEXT      Temporal coverage start (ISO date or year)

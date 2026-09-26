@@ -46,6 +46,43 @@ class TestArgs(unittest.TestCase):
         self.assertEqual(Args.nps_collection_id, 9688)
         self.assertEqual(Args.nps_program_id, 2310251)
 
+    def test_gwda_email_comes_from_config_not_datalumos_username(self) -> None:
+        """GWDA email is read from config and does not fall back to DataLumos login."""
+        import sys
+
+        sys.argv = ["test", "noop"]
+        config_data = {
+            "datalumos_username": "mkraley+nps@gmail.com",
+            "gwda_email": "mike@kraley.com",
+            "log_level": "WARNING",
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as handle:
+            json.dump(config_data, handle)
+            config_path = Path(handle.name)
+        try:
+            Args.initialize(config_file=config_path)
+            self.assertEqual(Args.gwda_email, "mike@kraley.com")
+        finally:
+            config_path.unlink()
+
+    def test_gwda_email_absent_does_not_use_datalumos_username(self) -> None:
+        """Missing gwda_email stays unset even when datalumos_username is present."""
+        import sys
+
+        sys.argv = ["test", "noop"]
+        config_data = {
+            "datalumos_username": "mkraley+nps@gmail.com",
+            "log_level": "WARNING",
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as handle:
+            json.dump(config_data, handle)
+            config_path = Path(handle.name)
+        try:
+            Args.initialize(config_file=config_path)
+            self.assertIsNone(Args.gwda_email)
+        finally:
+            config_path.unlink()
+
     def test_initialize_uses_pytest_config_when_env_set(self) -> None:
         """Under pytest, Args.initialize loads DRP_PYTEST_CONFIG instead of config.json."""
         import os
