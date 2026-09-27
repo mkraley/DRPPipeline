@@ -11,6 +11,8 @@ from collectors.NpsDownloadPlan import (
     NpsPlannedFile,
     drop_duplicate_planned_files,
     fit_planned_files,
+    flatten_legacy_project_files,
+    planned_file_dest,
     planned_files_for_profile,
     product_folder_name,
     sidecar_filename,
@@ -58,6 +60,24 @@ class TestNpsDownloadPlan(unittest.TestCase):
         self.assertIn(name, notes[0])
         self.assertIn("Original product folder:", notes[0])
 
+    def test_unique_product_folder_name_truncation_collision(self) -> None:
+        """Long titles that collide after the 80-char cap get a suffix that still fits."""
+        used: set[str] = set()
+        first = unique_product_folder_name(
+            "Dynamic disequilibrium: recent widespread increases in "
+            "vegetation cover on subarctic floodplains of Alaska",
+            used,
+        )
+        second = unique_product_folder_name(
+            "Dynamic disequilibrium: Recent widespread increases in "
+            "vegetation cover on subarctic floodplains of Alaska",
+            used,
+        )
+        self.assertLessEqual(len(first), PRODUCT_FOLDER_MAX_LENGTH)
+        self.assertLessEqual(len(second), PRODUCT_FOLDER_MAX_LENGTH)
+        self.assertNotEqual(first.casefold(), second.casefold())
+        self.assertTrue(second.endswith("_2"))
+
     def test_sidecar_filename(self) -> None:
         """Sidecars sit next to the CSV they describe."""
         self.assertEqual(sidecar_filename("HUC.csv"), "HUC_data_table_info.csv")
@@ -96,6 +116,39 @@ class TestNpsDownloadPlan(unittest.TestCase):
         self.assertEqual(planned[0].size_bytes, 100)
         self.assertEqual(planned[0].data_table_count, 2)
         self.assertEqual(planned[0].relative_dir, "2308545_pkg")
+        root_planned = planned_files_for_profile(profile, "", holdings)
+        self.assertEqual(root_planned[0].relative_dir, "")
+
+    def test_planned_file_dest_project_root(self) -> None:
+        """Empty relative_dir writes next to project_metadata.json."""
+        folder = Path(r"C:\DataRescue\NPSData\NPS000137")
+        dest = planned_file_dest(folder, "", "notes.pdf")
+        self.assertEqual(dest, folder / "notes.pdf")
+        nested = planned_file_dest(folder, "pkg", "notes.pdf")
+        self.assertEqual(nested, folder / "pkg" / "notes.pdf")
+
+    def test_flatten_legacy_project_files_moves_to_root(self) -> None:
+        """Existing _project_files contents are lifted to the NPS folder root."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            legacy = folder / "_project_files"
+            legacy.mkdir()
+            (legacy / "notes.pdf").write_bytes(b"%PDF")
+            (folder / "already.txt").write_text("keep", encoding="utf-8")
+            (legacy / "already.txt").write_text("dup", encoding="utf-8")
+            flatten_legacy_project_files(folder)
+            self.assertTrue((folder / "notes.pdf").is_file())
+            self.assertFalse(legacy.is_dir())
+            self.assertEqual((folder / "already.txt").read_text(encoding="utf-8"), "keep")
+            self.assertFalse((folder / "_project_files").exists())
+
+    def test_flatten_legacy_skips_missing_folder(self) -> None:
+        """Projects without _project_files are unchanged."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "project_metadata.json").write_text("{}", encoding="utf-8")
+            flatten_legacy_project_files(folder)
+            self.assertTrue((folder / "project_metadata.json").is_file())
 
     def test_fit_planned_files_shortens_for_max_path(self) -> None:
         """Long folder+file destinations are truncated to fit Windows MAX_PATH."""

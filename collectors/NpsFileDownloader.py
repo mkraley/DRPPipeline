@@ -6,9 +6,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from collectors.NpsDownloadPlan import NpsPlannedFile
+from collectors.NpsDownloadPlan import NpsPlannedFile, planned_file_dest
+from collectors.NpsHtmlDownloadCheck import unexpected_html_message, response_meta
 from utils.Args import Args
-from utils.Errors import record_error
+from utils.Errors import record_error, record_warning
 from utils.Logger import Logger
 from utils.collector_status import (
     MAX_DOWNLOAD_BYTES,
@@ -21,11 +22,9 @@ from utils.collector_status import (
 from utils.download_with_progress import download_via_url
 from utils.file_utils import format_file_size
 
-_HTML_MARKERS = (b"<html", b"<!doctype html")
-_HTML_EXTENSIONS = frozenset({".html", ".htm", ".xhtml"})
 _DOWNLOAD_HEADERS = {
-    "User-Agent": "Mozilla/5.0 DRPPipeline-NPS",
     "Accept": "*/*",
+    "Referer": "https://irma.nps.gov/",
 }
 
 
@@ -56,7 +55,7 @@ class NpsFileDownloader:
         skipped_large = False
         downloaded_bytes, _exts = folder_inventory(folder_path)
         for index, entry in enumerate(files):
-            dest = folder_path / entry.relative_dir / entry.filename
+            dest = planned_file_dest(folder_path, entry.relative_dir, entry.filename)
             if dest.is_file():
                 continue
             expected = entry.size_bytes
@@ -80,10 +79,11 @@ class NpsFileDownloader:
         return notes, skipped_large, total_bytes, extensions
 
     def _download_one(self, drpid: int, dest: Path, entry: NpsPlannedFile) -> bool:
-        """Download one file and reject HTML login pages."""
+        """Download one file and reject HTML app/error pages."""
         dest.parent.mkdir(parents=True, exist_ok=True)
         timeout_ms = int(getattr(Args, "download_timeout_ms", 30 * 60 * 1000) or 30 * 60 * 1000)
         Logger.info("Downloading %s (%s)", entry.filename, format_file_size(entry.size_bytes or 0))
+        meta: dict[str, object] = {}
         try:
             _written, success = download_via_url(
                 entry.url,
@@ -92,6 +92,7 @@ class NpsFileDownloader:
                 timeout_sec=max(30, timeout_ms // 1000),
                 resume=True,
                 progress_interval_mb=10.0,
+                on_response=lambda response: meta.update(response_meta(response)),
             )
         except Exception as exc:
             record_error(drpid, f"Download failed: {entry.filename} - {entry.url} ({exc})")
@@ -99,12 +100,17 @@ class NpsFileDownloader:
         if not success or not dest.is_file():
             record_error(drpid, f"Download failed: {entry.filename} - {entry.url}")
             return False
-        if _looks_like_html(dest):
+        html_note = unexpected_html_message(
+            dest,
+            filename=entry.filename,
+            url=entry.url,
+            status_code=int(meta["status_code"]) if meta.get("status_code") is not None else None,
+            content_type=str(meta.get("content_type") or ""),
+            final_url=str(meta.get("final_url") or ""),
+        )
+        if html_note:
             dest.unlink(missing_ok=True)
-            record_error(
-                drpid,
-                f"Download returned HTML (likely restricted): {entry.filename} - {entry.url}",
-            )
+            record_warning(drpid, html_note)
             return False
         Logger.info("Downloaded: %s", entry.filename)
         return True
@@ -151,7 +157,9 @@ def _pending_summary_notes(
     pending = [
         entry
         for entry in files
-        if not (folder_path / entry.relative_dir / entry.filename).is_file()
+        if not planned_file_dest(
+            folder_path, entry.relative_dir, entry.filename
+        ).is_file()
     ]
     if not pending:
         return []
@@ -162,22 +170,3 @@ def _pending_summary_notes(
             has_unknown_sizes=any(entry.size_bytes is None for entry in pending),
         )
     ]
-
-
-def _looks_like_html(path: Path) -> bool:
-    """
-    Return True when a downloaded body looks like an HTML login/error page.
-
-    Legitimate ``.html`` / ``.htm`` Digital Files are kept; only unexpected HTML
-    bodies (e.g. a CSV URL that returned a sign-in page) are rejected.
-    """
-    if path.suffix.lower() in _HTML_EXTENSIONS:
-        return False
-    try:
-        size = path.stat().st_size
-        head = path.read_bytes()[:800].lower()
-    except OSError:
-        return False
-    if size > 200_000:
-        return False
-    return any(marker in head for marker in _HTML_MARKERS)

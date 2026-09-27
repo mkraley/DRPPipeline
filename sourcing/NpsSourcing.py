@@ -27,8 +27,9 @@ class NpsSourcing(SourcingBase):
     Source NPS IRMA Projects into Storage from Collection 9688.
 
     Default ``nps_program_id`` is APHN (2310251). Set it to 0 to source
-    every Program in the Collection. Already-sourced IRMA Project ids
-    are skipped before insert.
+    every Program in the Collection. Already-sourced IRMA Project ids are
+    skipped before insert. Projects whose Products are already stored under
+    another Project are skipped.
     """
 
     def __init__(
@@ -81,6 +82,7 @@ class NpsSourcing(SourcingBase):
         inserted = 0
         skipped_dupes = 0
         failed = 0
+        skipped_shared = 0
         assigned_ids: list[int] = []
         Logger.info(
             "NPS sourcing: %s downloadable project(s) in catalog, %s already sourced, "
@@ -91,16 +93,29 @@ class NpsSourcing(SourcingBase):
             len(batch_rows),
             Args.num_rows,
         )
+        claimed_products = store.list_claimed_product_ids()
         for index, row in enumerate(batch_rows, 1):
             source_url = row["url"]
             try:
                 if self.is_duplicate_in_storage(source_url, checker):
                     skipped_dupes += 1
                     continue
+                if not _has_unclaimed_products(row, claimed_products):
+                    skipped_shared += 1
+                    Logger.info(
+                        "NPS sourcing: skip Project %s (products already sourced)",
+                        row.get("irma_project_id"),
+                    )
+                    continue
                 new_drpid = Storage.create_record(source_url)
                 assigned_ids.append(new_drpid)
                 Storage.update_record(new_drpid, self._storage_fields_from_row(row))
                 self._store_hierarchy(store, new_drpid, row)
+                claimed_products.update(
+                    int(product["irma_product_id"])
+                    for product in (row.get("products") or [])
+                    if product.get("irma_product_id") is not None
+                )
                 inserted += 1
             except Exception as exc:
                 failed += 1
@@ -111,11 +126,12 @@ class NpsSourcing(SourcingBase):
         remaining = len(pending_rows) - len(batch_rows)
         Logger.info(
             "NPS sourcing complete: %s inserted%s, %s failed, %s duplicate(s) skipped, "
-            "%s pending for next batch",
+            "%s shared-product project(s) skipped, %s pending for next batch",
             inserted,
             self.format_id_range(assigned_ids),
             failed,
             skipped_dupes,
+            skipped_shared,
             remaining,
         )
 
@@ -188,3 +204,17 @@ class NpsSourcing(SourcingBase):
         for product in row.get("products") or []:
             products.append({**product, "drpid": drpid})
         store.replace_products(project_id, products)
+
+
+def _has_unclaimed_products(row: dict[str, Any], claimed: set[int]) -> bool:
+    """Return True when the Project has Products not already stored elsewhere."""
+    products = row.get("products") or []
+    if not products:
+        return True
+    for product in products:
+        product_id = product.get("irma_product_id")
+        if product_id is None or product_id == "":
+            return True
+        if int(product_id) not in claimed:
+            return True
+    return False

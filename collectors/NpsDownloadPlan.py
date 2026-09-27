@@ -11,7 +11,9 @@ from typing import Any
 from sourcing.NpsReferenceRules import file_resource_id, public_digital_files
 from utils.file_utils import sanitize_filename
 
-PROJECT_FILES_FOLDER = "_project_files"
+# Project-level Digital Files sit in the NPS000xxx folder, not a subfolder.
+PROJECT_FILES_FOLDER = ""
+LEGACY_PROJECT_FILES_FOLDER = "_project_files"
 SIDECAR_SUFFIX = "_data_table_info.csv"
 PRODUCT_FOLDER_MAX_LENGTH = 80
 # Win32 MAX_PATH is 260 including the trailing NUL, so usable length is 259.
@@ -58,17 +60,47 @@ def unique_product_folder_name(
     """
     original = " ".join(str(title or "product").split()).strip() or "product"
     full = sanitize_filename(original, max_length=_FULL_NAME_MAX_LENGTH)
-    base = product_folder_name(original)
-    name = base
-    suffix = 2
-    used_folded = {item.casefold() for item in used}
-    while name.casefold() in used_folded:
-        name = sanitize_filename(f"{base}_{suffix}", max_length=PRODUCT_FOLDER_MAX_LENGTH)
-        suffix += 1
-    used.add(name)
+    name = _unique_folder_name(product_folder_name(original), used)
     if notes is not None and full != name:
         notes.append(f"Original product folder: {original} -> {name}")
     return name
+
+
+def _unique_folder_name(base: str, used: set[str]) -> str:
+    """Append ``_N`` when ``base`` already exists, keeping the name within the cap."""
+    used_folded = {item.casefold() for item in used}
+    if base.casefold() not in used_folded:
+        used.add(base)
+        return base
+    for suffix in range(2, _MAX_NAME_SUFFIX + 1):
+        candidate = _suffixed_filename(base, "", suffix, PRODUCT_FOLDER_MAX_LENGTH)
+        if candidate.casefold() not in used_folded:
+            used.add(candidate)
+            return candidate
+    raise RuntimeError(f"Cannot disambiguate product folder: {base}")
+
+
+def planned_file_dest(folder_path: Path, relative_dir: str, filename: str) -> Path:
+    """Return the on-disk path for a planned file (empty dir is project root)."""
+    if relative_dir:
+        return folder_path / relative_dir / filename
+    return folder_path / filename
+
+
+def flatten_legacy_project_files(folder_path: Path) -> None:
+    """Move leftover ``_project_files`` contents to the project root and remove it."""
+    legacy = folder_path / LEGACY_PROJECT_FILES_FOLDER
+    if not legacy.is_dir():
+        return
+    for path in list(legacy.iterdir()):
+        dest = folder_path / path.name
+        if dest.exists():
+            if path.is_file() and dest.is_file():
+                path.unlink()
+            continue
+        path.rename(dest)
+    if not any(legacy.iterdir()):
+        legacy.rmdir()
 
 
 def sidecar_filename(data_filename: str) -> str:
@@ -87,7 +119,7 @@ def planned_files_for_profile(
 
     Args:
         profile: IRMA Profile JSON.
-        relative_dir: Subfolder under the project output folder.
+        relative_dir: Subfolder under the project output folder; empty is root.
         holdings: Optional GetHoldings rows for size and DataTableCount.
     """
     holdings_by_id, holdings_by_url = _index_holdings(holdings or [])

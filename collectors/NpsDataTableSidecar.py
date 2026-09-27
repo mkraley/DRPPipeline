@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from collectors.NpsDownloadPlan import NpsPlannedFile, sidecar_filename
+from collectors.NpsDownloadPlan import NpsPlannedFile, planned_file_dest, sidecar_filename
 from sourcing.NpsCatalogClient import NpsCatalogClient
 from utils.Errors import record_warning
 from utils.Logger import Logger
@@ -80,7 +80,9 @@ def _sidecar_request(
         return None
     if entry.resource_id is None or entry.reference_id is None:
         return None
-    dest = folder_path / entry.relative_dir / sidecar_filename(entry.filename)
+    dest = planned_file_dest(
+        folder_path, entry.relative_dir, sidecar_filename(entry.filename)
+    )
     return dest, entry.reference_id, entry.resource_id
 
 

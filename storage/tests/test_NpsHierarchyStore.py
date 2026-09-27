@@ -141,6 +141,46 @@ class TestNpsHierarchyStore(unittest.TestCase):
         titles = [row["title"] for row in self.store.list_products(1001)]
         self.assertEqual(titles, ["New"])
 
+    def test_shared_product_insert_is_ignored(self) -> None:
+        """A Product already stored under another Project is not duplicated."""
+        first = self.storage.create_record(
+            "https://irma.nps.gov/DataStore/Reference/Profile/1001"
+        )
+        second = self.storage.create_record(
+            "https://irma.nps.gov/DataStore/Reference/Profile/1002"
+        )
+        self.store.upsert_project(
+            {
+                "irma_project_id": 1001,
+                "drpid": first,
+                "irma_collection_id": 9688,
+                "irma_program_id": 1,
+                "product_count": 1,
+            }
+        )
+        self.store.replace_products(
+            1001,
+            [{"irma_product_id": 2001, "drpid": first, "title": "Shared"}],
+        )
+        self.store.upsert_project(
+            {
+                "irma_project_id": 1002,
+                "drpid": second,
+                "irma_collection_id": 9688,
+                "irma_program_id": 1,
+                "product_count": 1,
+            }
+        )
+        self.store.replace_products(
+            1002,
+            [{"irma_product_id": 2001, "drpid": second, "title": "Shared"}],
+        )
+        self.assertEqual(self.store.list_claimed_product_ids(), {2001})
+        self.assertEqual(self.store.list_drpids_missing_products(), [second])
+        self.store.delete_for_drpid(second)
+        self.assertIsNone(self.store.get_project_by_drpid(second))
+        self.assertEqual(len(self.store.list_products_for_drpid(first)), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

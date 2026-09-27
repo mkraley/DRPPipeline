@@ -189,6 +189,22 @@ class TestIcpsrGeographicNormalizer:
         assert "North Carolina" in result.geographic_coverage
         assert "Virginia" in result.geographic_coverage
 
+    def test_alaska_scale_bbox_maps_to_alaska(
+        self, thesaurus: IcpsrGeographicThesaurus
+    ) -> None:
+        """Large Alaska IRMA boxes exceed span limits but intersect only Alaska."""
+        result = normalize_geographic_metadata(
+            bounding_box={
+                "west": -174.0,
+                "east": -145.4,
+                "north": 71.3,
+                "south": 58.5,
+            },
+            thesaurus=thesaurus,
+        )
+        assert result.geographic_coverage == "Alaska"
+        assert "United States" not in result.geographic_coverage
+
     def test_us_state_match_skips_city_ner(self, thesaurus: IcpsrGeographicThesaurus) -> None:
         result = normalize_geographic_metadata(
             geographic_extent_description=(

@@ -11,11 +11,18 @@ from utils.IcpsrGeographicNormalizer import normalize_geographic_metadata
 
 _WKT_POINT_RE = re.compile(r"(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)")
 
-# Park units only. Inventory & Monitoring networks (APHN, etc.) are not places.
+# Park units only. Inventory & Monitoring networks (APHN, ARCN, etc.) are not places.
 _NPS_UNIT_STATES: dict[str, tuple[str, ...]] = {
+    # Appalachian Highlands Network
     "BLRI": ("North Carolina", "Virginia"),
     "BISO": ("Kentucky", "Tennessee"),
     "OBRI": ("Tennessee",),
+    # Arctic Network (Alaska)
+    "BELA": ("Alaska",),
+    "CAKR": ("Alaska",),
+    "GAAR": ("Alaska",),
+    "KOVA": ("Alaska",),
+    "NOAT": ("Alaska",),
 }
 
 # NPS System designation suffixes (longest first). Based on NPS park-unit
@@ -185,12 +192,19 @@ def profile_bounding_box(profile: dict[str, Any]) -> dict[str, float] | None:
 
 
 def profile_geographic_coverage(profile: dict[str, Any]) -> str:
-    """Map Units and Geography polygons to ICPSR geographic coverage."""
+    """
+    Map Units and Geography polygons to ICPSR geographic coverage.
+
+    Known park unit codes take precedence. When they yield state terms, the
+    IRMA bounding box is ignored so network-wide Alaska/CONUS polygons do not
+    collapse coverage to ``United States``.
+    """
     names = profile_unit_names(profile)
     states = profile_states_from_units(profile)
+    bounding_box = None if states else profile_bounding_box(profile)
     geo = normalize_geographic_metadata(
         geographic_extent_description="; ".join(names),
         place_keywords=states + names,
-        bounding_box=profile_bounding_box(profile),
+        bounding_box=bounding_box,
     )
     return geo.geographic_coverage

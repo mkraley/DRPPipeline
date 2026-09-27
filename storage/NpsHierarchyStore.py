@@ -148,6 +148,40 @@ class NpsHierarchyStore:
             )
         self._connection.commit()
 
+    def list_claimed_product_ids(self) -> set[int]:
+        """Return IRMA Product ids already stored under any Project."""
+        cursor = self._connection.execute("SELECT irma_product_id FROM nps_products")
+        return {int(row[0]) for row in cursor.fetchall()}
+
+    def list_drpids_missing_products(self) -> list[int]:
+        """
+        Return DRPIDs that list Products but own none.
+
+        Those rows lost every Product to ``INSERT OR IGNORE`` because the
+        Product was already stored under an earlier Project.
+        """
+        cursor = self._connection.execute(
+            """
+            SELECT drpid FROM nps_projects
+            WHERE product_count > 0
+              AND drpid NOT IN (SELECT DISTINCT drpid FROM nps_products)
+            ORDER BY drpid
+            """
+        )
+        return [int(row[0]) for row in cursor.fetchall()]
+
+    def delete_for_drpid(self, drpid: int) -> None:
+        """Delete hierarchy rows for one Storage DRPID."""
+        self._connection.execute(
+            "DELETE FROM nps_products WHERE drpid = ?",
+            (int(drpid),),
+        )
+        self._connection.execute(
+            "DELETE FROM nps_projects WHERE drpid = ?",
+            (int(drpid),),
+        )
+        self._connection.commit()
+
     def get_project(self, irma_project_id: int) -> dict[str, Any] | None:
         """Return one nps_projects row by IRMA Project id, or None."""
         return self._fetchone_dict(

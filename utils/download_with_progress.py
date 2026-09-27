@@ -41,6 +41,7 @@ def download_via_url(
     resume: bool = True,
     timeout_sec: Optional[int] = None,
     session: Optional[requests.Session] = None,
+    on_response: Optional[Callable[[Any], None]] = None,
 ) -> Tuple[int, bool]:
     """
     Download url to destination_path with optional progress and resume.
@@ -55,6 +56,7 @@ def download_via_url(
         resume: If True and file exists, try to resume with Range header.
         timeout_sec: Per-read timeout; None = no timeout.
         session: Optional requests.Session (uses requests.get if None).
+        on_response: Optional callback with the live ``requests.Response``.
 
     Returns:
         (bytes_written, success).
@@ -90,6 +92,9 @@ def download_via_url(
     except requests.RequestException as e:
         Logger.error("Download request failed: %s", e)
         return (0, False)
+
+    if on_response is not None:
+        on_response(resp)
 
     # If we requested Range but got 200, server doesn't support resume; write from 0
     if start_byte > 0 and resp.status_code == 200:

@@ -464,7 +464,17 @@ def normalize_geographic_metadata(
         national_us = _indicates_national_us_coverage(
             extent, place_keywords, matches, thesaurus
         )
-        if national_us or _bbox_is_continental_scale(bbox_dict):
+        intersecting = _states_intersecting_bbox(bbox_dict)
+        # Prefer a short intersecting-state list over "continental" United States.
+        # Alaska-scale IRMA boxes exceed the span threshold but still hit only Alaska.
+        if (
+            intersecting
+            and len(intersecting) <= _REGIONAL_BBOX_MAX_STATES
+            and not national_us
+        ):
+            for state in intersecting:
+                _add_match(matches, seen, state, "medium", "bounding_box")
+        elif national_us or _bbox_is_continental_scale(bbox_dict):
             if not _has_us_country_match(matches):
                 _add_match(
                     matches,
@@ -474,29 +484,20 @@ def normalize_geographic_metadata(
                     "national_coverage" if national_us else "bounding_box",
                 )
         else:
-            intersecting = _states_intersecting_bbox(bbox_dict)
-            if (
-                intersecting
-                and len(intersecting) <= _REGIONAL_BBOX_MAX_STATES
-                and not _has_us_country_match(matches)
-            ):
-                for state in intersecting:
+            center = _bbox_center(bbox_dict)
+            if center:
+                lat, lon = center
+                state = _state_from_bbox(lat, lon)
+                if state:
                     _add_match(matches, seen, state, "medium", "bounding_box")
-            elif not _has_us_country_match(matches):
-                center = _bbox_center(bbox_dict)
-                if center:
-                    lat, lon = center
-                    state = _state_from_bbox(lat, lon)
-                    if state:
-                        _add_match(matches, seen, state, "medium", "bounding_box")
-                    elif 18.0 <= lat <= 72.0 and -180.0 <= lon <= -66.0:
-                        _add_match(
-                            matches,
-                            seen,
-                            _US_COUNTRY_CANONICAL,
-                            "medium",
-                            "bounding_box",
-                        )
+                elif 18.0 <= lat <= 72.0 and -180.0 <= lon <= -66.0:
+                    _add_match(
+                        matches,
+                        seen,
+                        _US_COUNTRY_CANONICAL,
+                        "medium",
+                        "bounding_box",
+                    )
 
     for match in matches:
         if match.confidence == "low":

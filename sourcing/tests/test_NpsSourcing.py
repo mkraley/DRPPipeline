@@ -127,6 +127,29 @@ class TestNpsSourcing(unittest.TestCase):
         titles = {row["title"] for row in self.storage.list_eligible_projects("sourced", None)}
         self.assertEqual(titles, {"Second"})
 
+    @patch("sourcing.NpsSourcing.DuplicateChecker")
+    def test_run_skips_projects_whose_products_are_already_stored(
+        self,
+        mock_checker_cls: MagicMock,
+    ) -> None:
+        """A later Project that only repeats already-sourced Products is omitted."""
+        mock_checker_cls.return_value.exists_in_storage.return_value = False
+        shared = {
+            **SAMPLE_ROW,
+            "url": "https://irma.nps.gov/DataStore/Reference/Profile/1002",
+            "record_id": "1002",
+            "irma_project_id": 1002,
+            "title": "Shared Products Only",
+            "products": list(SAMPLE_ROW["products"]),
+        }
+        fetcher = MagicMock()
+        fetcher.list_project_rows.return_value = [dict(SAMPLE_ROW), shared]
+
+        NpsSourcing(fetcher=fetcher).run(-1)
+
+        titles = {row["title"] for row in self.storage.list_eligible_projects("sourced", None)}
+        self.assertEqual(titles, {"Keep Me"})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -83,7 +83,7 @@ class TestNpsDataTableSidecar(unittest.TestCase):
         client.fetch_data_table.assert_called_once_with(2308545, 716591)
 
     def test_write_sidecars_at_project_and_product_folders(self) -> None:
-        """Data Table Info is written in both _project_files and product folders."""
+        """Data Table Info is written at the project root and in product folders."""
         client = MagicMock()
         client.fetch_data_table.return_value = [
             {"ColumnName": "code", "Definition": "id", "Storage": "string"}
@@ -92,7 +92,7 @@ class TestNpsDataTableSidecar(unittest.TestCase):
             NpsPlannedFile(
                 url="https://irma.nps.gov/DataStore/DownloadFile/1",
                 filename="project.csv",
-                relative_dir="_project_files",
+                relative_dir="",
                 resource_id=1,
                 data_table_count=1,
                 reference_id=2306437,
@@ -109,12 +109,11 @@ class TestNpsDataTableSidecar(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             write_sidecars_for_files(1, folder, files, client)
-            self.assertTrue(
-                (folder / "_project_files" / "project_data_table_info.csv").is_file()
-            )
+            self.assertTrue((folder / "project_data_table_info.csv").is_file())
             self.assertTrue((folder / "pkg" / "HUC_data_table_info.csv").is_file())
-            self.assertFalse((folder / "_project_files" / "data_table_info.csv").is_file())
+            self.assertFalse((folder / "data_table_info.csv").is_file())
             self.assertFalse((folder / "pkg" / "data_table_info.csv").is_file())
+            self.assertFalse((folder / "_project_files").exists())
 
 
 if __name__ == "__main__":

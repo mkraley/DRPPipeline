@@ -2,7 +2,7 @@
 National Park Service collector for DRP Pipeline.
 
 Downloads public IRMA Digital Files for one sourced Project. Products become
-subfolders; Data Table Info and landing-page JSON are written beside files.
+subfolders; project-level files and Data Table Info sit in the NPS folder root.
 Each Product is fetched and downloaded before the next one starts.
 Run via orchestrator when ``Args.source`` is ``nps``::
 
@@ -24,6 +24,7 @@ from collectors.NpsDownloadPlan import (
     NpsPlannedFile,
     drop_duplicate_planned_files,
     fit_planned_files,
+    flatten_legacy_project_files,
     planned_files_for_profile,
     unique_product_folder_name,
 )
@@ -90,7 +91,7 @@ class NpsCollector(CollectorBase):
         if project_id is None:
             record_error(drpid, f"Not an IRMA Profile URL: {url}")
             return {}
-        folder_path = self.create_project_folder(drpid)
+        folder_path = self.create_project_folder(drpid, recreate=False)
         if folder_path is None:
             return {}
         store = self._hierarchy_store or NpsHierarchyStore.from_storage()
@@ -115,6 +116,7 @@ class NpsCollector(CollectorBase):
         store: NpsHierarchyStore,
     ) -> dict[str, Any]:
         """Fetch and download project files, then each Product in turn."""
+        flatten_legacy_project_files(folder_path)
         rename_notes: list[str] = []
         notes: list[str] = []
         all_files: list[NpsPlannedFile] = []
@@ -172,12 +174,13 @@ class NpsCollector(CollectorBase):
         product_profiles: list[tuple[str, dict[str, Any]]],
     ) -> bool:
         """Fetch, download, and write metadata for each Product sequentially."""
-        used_folders: set[str] = set()
+        used_folders = {
+            path.name for path in folder_path.iterdir() if path.is_file()
+        }
         total = len(products)
         for index, product in enumerate(products, 1):
             product_id = int(product["irma_product_id"])
             title = str(product.get("title") or "product")
-            folder = unique_product_folder_name(title, used_folders, rename_notes)
             Logger.info(
                 "NPS DRPID %s: product %s/%s %s (IRMA %s)",
                 drpid,
@@ -186,6 +189,7 @@ class NpsCollector(CollectorBase):
                 title,
                 product_id,
             )
+            folder = unique_product_folder_name(title, used_folders, rename_notes)
             Logger.info("NPS DRPID %s: fetching product profile %s", drpid, product_id)
             profile = self._fetch_profile(drpid, product_id)
             if profile is None:

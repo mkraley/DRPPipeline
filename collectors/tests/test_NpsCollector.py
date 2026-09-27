@@ -10,9 +10,10 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from collectors.NpsCollector import NpsCollector
-from collectors.NpsDownloadPlan import NpsPlannedFile
+from collectors.NpsDownloadPlan import NpsPlannedFile, planned_file_dest
 from utils.Args import Args
 from utils.Logger import Logger
+from utils.file_utils import output_folder_name
 
 _PROJECT_URL = "https://irma.nps.gov/DataStore/Reference/Profile/2306437"
 _PROJECT_PROFILE = {
@@ -112,7 +113,7 @@ class TestNpsCollector(unittest.TestCase):
             if not files:
                 return [], False, 0, set()
             for entry in files:
-                dest = folder_path / entry.relative_dir / entry.filename
+                dest = planned_file_dest(folder_path, entry.relative_dir, entry.filename)
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(b"%PDF-1.4")
             return [], False, 8, {"pdf"}
@@ -211,7 +212,7 @@ class TestNpsCollector(unittest.TestCase):
         def _download(drpid: int, folder_path: Path, files: list[NpsPlannedFile]) -> tuple:
             fetch_order.append(int(client.fetch_profile.call_args.args[0]))
             for entry in files:
-                dest = folder_path / entry.relative_dir / entry.filename
+                dest = planned_file_dest(folder_path, entry.relative_dir, entry.filename)
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(b"data")
             return [], False, 4, {"pdf"}
@@ -291,6 +292,52 @@ class TestNpsCollector(unittest.TestCase):
         product_files: list[NpsPlannedFile] = downloader.download_files.call_args.args[2]
         self.assertEqual(len(product_files), 1)
         self.assertEqual(product_files[0].filename, "WRST_Vasc_Flora_Inv_2007lowres.pdf")
+
+    @patch("collectors.NpsCollector.write_sidecars_for_files", return_value=[])
+    def test_collect_puts_project_level_files_at_root(
+        self,
+        _mock_sidecars: MagicMock,
+    ) -> None:
+        """IRMA Project Digital Files land in the NPS folder, not _project_files."""
+        collector, client, _store, downloader = self._collector()
+        project = dict(_PROJECT_PROFILE)
+        project["filesAndLinks"] = [
+            {
+                "fileId": 99,
+                "resourceType": "Digital File",
+                "url": "https://irma.nps.gov/DataStore/DownloadFile/99",
+                "fileName": "project_notes.pdf",
+            }
+        ]
+        client.fetch_profile.side_effect = lambda rid: {
+            2306437: project,
+            663485: _PRODUCT_PROFILE,
+        }[rid]
+        result = collector._collect(
+            _PROJECT_URL, 2, {"title": "Mammal Inventory", "collection_notes": ""}
+        )
+        folder = Path(result["folder_path"])
+        project_batch: list[NpsPlannedFile] = downloader.download_files.call_args_list[0].args[2]
+        self.assertEqual(project_batch[0].relative_dir, "")
+        self.assertEqual(project_batch[0].filename, "project_notes.pdf")
+        self.assertTrue((folder / "project_notes.pdf").is_file())
+        self.assertFalse((folder / "_project_files").exists())
+        self.assertTrue((folder / "project_metadata.json").is_file())
+
+    @patch("collectors.NpsCollector.write_sidecars_for_files", return_value=[])
+    def test_collect_flattens_legacy_project_files(
+        self,
+        _mock_sidecars: MagicMock,
+    ) -> None:
+        """A leftover _project_files folder is emptied into the NPS folder root."""
+        collector, _client, _store, _downloader = self._collector()
+        folder = self.temp_dir / output_folder_name(2)
+        legacy = folder / "_project_files"
+        legacy.mkdir(parents=True)
+        (legacy / "old_notes.pdf").write_bytes(b"%PDF")
+        collector._collect(_PROJECT_URL, 2, {"title": "Mammal Inventory"})
+        self.assertTrue((folder / "old_notes.pdf").is_file())
+        self.assertFalse(legacy.exists())
 
     @patch("collectors.NpsCollector.record_error")
     def test_collect_rejects_non_irma_url(self, mock_error: MagicMock) -> None:

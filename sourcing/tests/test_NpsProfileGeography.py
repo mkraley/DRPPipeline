@@ -96,6 +96,28 @@ class TestNpsProfileGeography(unittest.TestCase):
         }
         self.assertEqual(profile_states_from_units(profile), [])
 
+    def test_arctic_park_units_map_to_alaska_despite_wide_bbox(self) -> None:
+        """Arctic Network park codes yield Alaska; network-wide bbox is ignored."""
+        profile = {
+            "units": [
+                {"unitCode": "ARCN", "unitName": "Arctic Network"},
+                {"unitCode": "BELA", "unitName": "Bering Land Bridge National Preserve"},
+                {"unitCode": "CAKR", "unitName": "Cape Krusenstern National Monument"},
+            ],
+            "boundingBoxes": [
+                {
+                    "wkt": (
+                        "POLYGON (("
+                        "-174 58.5, -145.4 58.5, -145.4 71.3, -174 71.3, -174 58.5"
+                        "))"
+                    )
+                }
+            ],
+        }
+        coverage = profile_geographic_coverage(profile)
+        self.assertEqual(coverage, "Alaska")
+        self.assertNotIn("United States", coverage)
+
     def test_short_unit_name_strips_designation_suffixes(self) -> None:
         """NPS designation phrases are removed; the place stem remains."""
         cases = {
