@@ -28,7 +28,12 @@ from collectors.NpsDownloadPlan import (
     planned_files_for_profile,
     unique_product_folder_name,
 )
-from collectors.NpsFileDownloader import NpsFileDownloader, count_files, folder_inventory
+from collectors.NpsFileDownloader import (
+    NpsFileDownloader,
+    count_files,
+    folder_inventory,
+    projected_folder_bytes,
+)
 from collectors.NpsLandingMetadata import (
     PRODUCT_METADATA_NAME,
     PROJECT_METADATA_NAME,
@@ -135,6 +140,7 @@ class NpsCollector(CollectorBase):
                 project_profile,
                 breadcrumb=crumb,
             )
+        pending_files: list[NpsPlannedFile] = []
         if not skipped:
             skipped = self._collect_products(
                 drpid,
@@ -145,8 +151,11 @@ class NpsCollector(CollectorBase):
                 notes,
                 all_files,
                 product_profiles,
+                pending_files,
             )
-        if not all_files:
+        elif products:
+            self._append_product_sizes(drpid, products, pending_files)
+        if not all_files and not pending_files:
             record_error(drpid, "No public Digital Files found for this IRMA Project")
             return {"folder_path": str(folder_path)}
         return self._finish_result(
@@ -160,6 +169,7 @@ class NpsCollector(CollectorBase):
             notes,
             skipped,
             rename_notes,
+            pending_files,
         )
 
     def _collect_products(
@@ -172,6 +182,7 @@ class NpsCollector(CollectorBase):
         notes: list[str],
         all_files: list[NpsPlannedFile],
         product_profiles: list[tuple[str, dict[str, Any]]],
+        pending_files: list[NpsPlannedFile],
     ) -> bool:
         """Fetch, download, and write metadata for each Product sequentially."""
         used_folders = {
@@ -210,16 +221,47 @@ class NpsCollector(CollectorBase):
                 ),
             )
             if skipped:
-                leftover = total - index
+                leftover = products[index:]
                 if leftover:
                     Logger.info(
-                        "NPS DRPID %s: stopping after product %s/%s (download budget)",
+                        "NPS DRPID %s: download budget reached at product %s/%s; "
+                        "sizing %s remaining product(s)",
                         drpid,
                         index,
                         total,
+                        len(leftover),
                     )
+                    self._append_product_sizes(drpid, leftover, pending_files)
                 return True
         return False
+
+    def _append_product_sizes(
+        self,
+        drpid: int,
+        products: list[dict[str, Any]],
+        pending_files: list[NpsPlannedFile],
+    ) -> None:
+        """Plan remaining Products so their catalog sizes count toward file_size."""
+        total = len(products)
+        for index, product in enumerate(products, 1):
+            product_id = int(product["irma_product_id"])
+            Logger.info(
+                "NPS DRPID %s: sizing product %s/%s (IRMA %s)",
+                drpid,
+                index,
+                total,
+                product_id,
+            )
+            pending_files.extend(self._plan_product_files(drpid, product_id))
+
+    def _plan_product_files(self, drpid: int, product_id: int) -> list[NpsPlannedFile]:
+        """Return planned Digital Files for one Product without downloading them."""
+        profile = self._fetch_profile(drpid, product_id)
+        if profile is None:
+            return []
+        planned = self._files_for_profile(drpid, profile, "")
+        planned, _notes = drop_duplicate_planned_files(planned)
+        return planned
 
     def _ingest_profile(
         self,
@@ -301,9 +343,15 @@ class NpsCollector(CollectorBase):
         notes: list[str],
         skipped_large: bool,
         rename_notes: list[str],
+        pending_files: list[NpsPlannedFile] | None = None,
     ) -> dict[str, Any]:
         """Write inventory fields after all Products have been processed."""
-        result = self._inventory_result(record, folder_path, notes, skipped_large)
+        sized = list(files)
+        if pending_files:
+            sized.extend(pending_files)
+        result = self._inventory_result(
+            record, folder_path, notes, skipped_large, sized
+        )
         store.update_public_file_count(drpid, int(result["num_files"]))
         if project_profile is not None:
             result.update(
@@ -333,9 +381,11 @@ class NpsCollector(CollectorBase):
         folder_path: Path,
         notes: list[str],
         skipped_large: bool,
+        files: list[NpsPlannedFile],
     ) -> dict[str, Any]:
-        """Fill inventory fields from on-disk files and sourced metadata."""
-        total_bytes, extensions = folder_inventory(folder_path)
+        """Fill inventory fields from on-disk files plus undownloaded catalog sizes."""
+        _on_disk, extensions = folder_inventory(folder_path)
+        total_bytes = projected_folder_bytes(folder_path, files)
         result: dict[str, Any] = {
             "folder_path": str(folder_path),
             "download_date": date.today().isoformat(),

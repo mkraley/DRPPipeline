@@ -13,7 +13,7 @@ from collectors.NpsCollector import NpsCollector
 from collectors.NpsDownloadPlan import NpsPlannedFile, planned_file_dest
 from utils.Args import Args
 from utils.Logger import Logger
-from utils.file_utils import output_folder_name
+from utils.file_utils import output_folder_name, parse_file_size_to_bytes
 
 _PROJECT_URL = "https://irma.nps.gov/DataStore/Reference/Profile/2306437"
 _PROJECT_PROFILE = {
@@ -338,6 +338,75 @@ class TestNpsCollector(unittest.TestCase):
         collector._collect(_PROJECT_URL, 2, {"title": "Mammal Inventory"})
         self.assertTrue((folder / "old_notes.pdf").is_file())
         self.assertFalse(legacy.exists())
+
+    @patch("collectors.NpsCollector.write_sidecars_for_files", return_value=[])
+    def test_file_size_includes_deferred_and_remaining_products(
+        self,
+        _mock_sidecars: MagicMock,
+    ) -> None:
+        """Projected file_size adds catalog sizes for files left undownloaded."""
+        collector, client, store, downloader = self._collector()
+        later = {
+            "referenceId": 663486,
+            "visibility": "Public",
+            "bibliography": {"title": "Later tables"},
+            "filesAndLinks": [
+                {
+                    "fileId": 9,
+                    "resourceType": "Digital File",
+                    "url": "https://irma.nps.gov/DataStore/DownloadFile/9",
+                    "fileName": "later.zip",
+                }
+            ],
+        }
+        client.fetch_profile.side_effect = lambda rid: {
+            2306437: _PROJECT_PROFILE,
+            663485: _PRODUCT_PROFILE,
+            663486: later,
+        }[rid]
+
+        def _holdings(reference_id: int) -> list:
+            if reference_id == 663485:
+                return [
+                    {
+                        "Id": 147164,
+                        "Url": "https://irma.nps.gov/DataStore/DownloadFile/147164",
+                        "FileDescription": "report.pdf",
+                        "FileSize": 5_000_000,
+                        "DataTableCount": 0,
+                    }
+                ]
+            if reference_id == 663486:
+                return [
+                    {
+                        "Id": 9,
+                        "Url": "https://irma.nps.gov/DataStore/DownloadFile/9",
+                        "FileDescription": "later.zip",
+                        "FileSize": 7_000_000,
+                        "DataTableCount": 0,
+                    }
+                ]
+            return []
+
+        client.fetch_holdings.side_effect = _holdings
+        store.list_products_for_drpid.return_value = [
+            {"irma_product_id": 663485, "title": "Mammal inventory"},
+            {"irma_product_id": 663486, "title": "Later tables"},
+        ]
+
+        def _skip(
+            _drpid: int, _folder: Path, _files: list[NpsPlannedFile]
+        ) -> tuple:
+            return ["Skipped download (>1GB): report.pdf"], True, 0, set()
+
+        downloader.download_files.side_effect = _skip
+        result = collector._collect(_PROJECT_URL, 2, {"title": "Mammal Inventory"})
+        projected = parse_file_size_to_bytes(result["file_size"])
+        self.assertIn(result["file_size"], {"11.4 MB", "11.5 MB"})
+        self.assertGreaterEqual(projected or 0, 11_000_000)
+        self.assertEqual(downloader.download_files.call_count, 1)
+        fetched = [call.args[0] for call in client.fetch_profile.call_args_list]
+        self.assertIn(663486, fetched)
 
     @patch("collectors.NpsCollector.record_error")
     def test_collect_rejects_non_irma_url(self, mock_error: MagicMock) -> None:

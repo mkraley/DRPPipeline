@@ -131,6 +131,27 @@ def folder_inventory(folder_path: Path) -> tuple[int, set[str]]:
     return total_bytes, extensions
 
 
+def projected_folder_bytes(folder_path: Path, files: list[NpsPlannedFile]) -> int:
+    """
+    Return on-disk bytes plus catalog sizes for planned files not on disk.
+
+    A file already present anywhere under ``folder_path`` counts once, at its
+    downloaded size. Missing files add ``size_bytes`` when IRMA reported one.
+    """
+    on_disk, _extensions = folder_inventory(folder_path)
+    present = {
+        path.name.casefold()
+        for path in folder_path.rglob("*")
+        if path.is_file()
+    } if folder_path.is_dir() else set()
+    pending = sum(
+        int(entry.size_bytes or 0)
+        for entry in files
+        if entry.filename.casefold() not in present
+    )
+    return on_disk + pending
+
+
 def count_files(folder_path: Path) -> int:
     """Return the recursive regular-file count under a project folder."""
     if not folder_path.is_dir():

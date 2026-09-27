@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from collectors.NpsDownloadPlan import NpsPlannedFile
-from collectors.NpsFileDownloader import NpsFileDownloader, count_files
+from collectors.NpsFileDownloader import NpsFileDownloader, count_files, projected_folder_bytes
 from utils.Args import Args
 from utils.Logger import Logger
 
@@ -177,6 +177,27 @@ class TestNpsFileDownloader(unittest.TestCase):
             (nested / "report.pdf").write_bytes(b"%PDF-1.4")
             (nested / "product_metadata.json").write_text("{}", encoding="utf-8")
             self.assertEqual(count_files(root), 3)
+
+    def test_projected_folder_bytes_adds_missing_catalog_sizes(self) -> None:
+        """file_size includes catalog bytes for files that were not downloaded."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "have.pdf").write_bytes(b"x" * 10)
+            files = [
+                NpsPlannedFile(
+                    url="https://example.com/have",
+                    filename="have.pdf",
+                    relative_dir="",
+                    size_bytes=999,
+                ),
+                NpsPlannedFile(
+                    url="https://example.com/miss",
+                    filename="miss.zip",
+                    relative_dir="pkg",
+                    size_bytes=50,
+                ),
+            ]
+            self.assertEqual(projected_folder_bytes(root, files), 60)
 
 
 if __name__ == "__main__":
