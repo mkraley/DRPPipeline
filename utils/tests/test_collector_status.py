@@ -47,6 +47,16 @@ class TestCollectorStatus(unittest.TestCase):
         self.assertIn("readme.txt", note)
         self.assertIn("2.0 KB", note)
 
+    def test_deferred_download_skip_note_includes_subfolder(self) -> None:
+        """Product files name the subfolder between the size and the URL."""
+        note = deferred_download_skip_note(
+            "later.zip",
+            "https://irma.nps.gov/DataStore/DownloadFile/9",
+            1024,
+            relative_dir="Later_tables",
+        )
+        self.assertIn("later.zip (1.0 KB) in Later_tables - ", note)
+
     def test_pending_download_summary_note(self) -> None:
         """Pending summary reports count and remaining bytes."""
         note = pending_download_summary_note(2, 3 * 1024**2)

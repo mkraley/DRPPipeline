@@ -326,16 +326,22 @@ def drpid_cmd_path(drpid: int, output_dir: Path | None = None) -> Path:
     return out_dir / f"{output_folder_name(drpid)}.cmd"
 
 
-def format_windows_command(entry: Aria2Entry, user_agent: str) -> str:
+def format_windows_command(
+    entry: Aria2Entry,
+    user_agent: str,
+    *,
+    referer: str | None = None,
+) -> str:
     """One complete aria2c command line for cmd.exe (copy-paste or .cmd batch)."""
     conn = entry.max_connections
     ua = _cmd_quote(user_agent)
     dest_dir = _cmd_quote(str(entry.dir_path))
     out_name = _cmd_quote(entry.out_name)
     url = _cmd_quote(entry.url)
+    referer_flag = f"--referer={referer} " if referer else ""
     return (
         f"aria2c -c -x {conn} -s {conn} -j 1 --file-allocation=none "
-        f"--max-tries=0 --retry-wait=10 --user-agent={ua} "
+        f"--max-tries=0 --retry-wait=10 {referer_flag}--user-agent={ua} "
         f"-d {dest_dir} -o {out_name} {url}"
     )
 
@@ -345,6 +351,8 @@ def format_windows_commands(
     user_agent: str,
     *,
     drpid: int | None = None,
+    referer: str | None = None,
+    comment: str | None = None,
 ) -> str:
     """Format entries as a runnable Windows .cmd batch file."""
     entry_list = list(entries)
@@ -353,12 +361,12 @@ def format_windows_commands(
 
     lines = ["@echo off", "setlocal"]
     if drpid is not None:
-        lines.append(f"REM DRPID {drpid} — large USFS publication downloads")
+        lines.append(comment or f"REM DRPID {drpid} — large USFS publication downloads")
     lines.append("")
 
     for entry in entry_list:
         lines.append(f"echo Downloading {entry.out_name} ...")
-        lines.append(format_windows_command(entry, user_agent))
+        lines.append(format_windows_command(entry, user_agent, referer=referer))
         lines.append("if errorlevel 1 exit /b 1")
         lines.append("")
 
@@ -395,4 +403,37 @@ def write_drpid_aria2_cmd(
     out_path = out_dir / f"{output_folder_name(drpid)}.cmd"
     ua = user_agent or BROWSER_HEADERS["User-Agent"]
     out_path.write_text(format_windows_commands(entries, ua, drpid=drpid), encoding="utf-8")
+    return out_path
+
+
+def write_aria2_entries(
+    drpid: int,
+    entries: Sequence[Aria2Entry],
+    *,
+    output_dir: Path | None = None,
+    user_agent: str | None = None,
+    referer: str | None = None,
+    comment: str | None = None,
+) -> Path | None:
+    """
+    Write ``{prefix}######.cmd`` for the given aria2 entries.
+
+    Returns the path written, or None when ``entries`` is empty.
+    """
+    if not entries:
+        return None
+    out_dir = output_dir or DEFAULT_ARIA2_OUTPUT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{output_folder_name(drpid)}.cmd"
+    ua = user_agent or BROWSER_HEADERS["User-Agent"]
+    out_path.write_text(
+        format_windows_commands(
+            entries,
+            ua,
+            drpid=drpid,
+            referer=referer,
+            comment=comment,
+        ),
+        encoding="utf-8",
+    )
     return out_path

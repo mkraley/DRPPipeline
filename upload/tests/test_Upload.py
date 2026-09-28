@@ -190,6 +190,19 @@ class TestDataLumosUploader(unittest.TestCase):
         )
         mock_record_warning.assert_not_called()
 
+    @patch("upload.UploadIssueReporter.record_warning")
+    def test_warn_if_num_files_mismatch_skips_large_file_partial_upload(
+        self, mock_record_warning: MagicMock
+    ) -> None:
+        """Large-file num_files includes catalog files that were not downloaded."""
+        reporter = UploadIssueReporter(426)
+        _warn_if_num_files_mismatch(
+            reporter,
+            {"num_files": 4, "status": "collected - large file"},
+            1,
+        )
+        mock_record_warning.assert_not_called()
+
     @patch("upload.DataLumosUploader.Storage")
     @patch.object(DataLumosUploader, "_upload_project", return_value="12345")
     def test_run_sets_uploaded_status(

@@ -7,7 +7,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from utils.Args import Args
 from utils.Logger import Logger
@@ -21,6 +21,7 @@ from orchestration.Orchestrator import (
     _maybe_claim_inventory_sheet,
     _merge_project_lists,
     _progress_timing_suffix,
+    _projects_in_status_order,
     _stop_requested,
     _BatchStats,
 )
@@ -397,24 +398,84 @@ class TestOrchestrator(unittest.TestCase):
     def test_run_upload_lists_collected_and_large_file(
         self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
     ) -> None:
-        """Test run('upload') includes both collected and collected - large file."""
+        """Upload runs collected - large file projects before collected ones."""
         mock_storage = MagicMock()
         mock_storage_cls.initialize.return_value = mock_storage
         mock_storage_cls.get_instance.return_value = mock_storage
-        mock_storage_cls.list_eligible_projects.side_effect = [
-            [{"DRPID": 1, "source_url": "https://a.com"}],
-            [{"DRPID": 2, "source_url": "https://b.com"}],
-        ]
+
+        def _eligible(status: str, *_args: object, **_kwargs: object) -> list:
+            if status == "collected - large file":
+                return [{"DRPID": 30, "source_url": "https://large.example"}]
+            if status == "collected":
+                return [
+                    {"DRPID": 4, "source_url": "https://small.example"},
+                    {"DRPID": 8, "source_url": "https://small2.example"},
+                ]
+            return []
+
+        mock_storage_cls.list_eligible_projects.side_effect = _eligible
         mock_upload_instance = MagicMock()
         mock_find_class.return_value = MagicMock(return_value=mock_upload_instance)
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
             Orchestrator.run("upload")
-        self.assertEqual(mock_storage_cls.list_eligible_projects.call_count, 2)
-        mock_storage_cls.list_eligible_projects.assert_any_call("collected", None, None, None)
-        mock_storage_cls.list_eligible_projects.assert_any_call(
-            "collected - large file", None, None, None
+        mock_upload_instance.run.assert_has_calls([call(30), call(4), call(8)])
+        self.assertEqual(mock_upload_instance.run.call_count, 3)
+
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
+    def test_run_upload_num_rows_prefers_large_file(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
+    ) -> None:
+        """num_rows fills collected - large file before any collected project."""
+        mock_storage = MagicMock()
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.get_instance.return_value = mock_storage
+        mock_storage_cls.list_eligible_projects.return_value = [
+            {"DRPID": 30, "source_url": "https://large.example"}
+        ]
+        mock_upload_instance = MagicMock()
+        mock_find_class.return_value = MagicMock(return_value=mock_upload_instance)
+        with (
+            patch("orchestration.Orchestrator.Storage", mock_storage_cls),
+            patch.object(Args, "num_rows", 1),
+        ):
+            Orchestrator.run("upload")
+        mock_storage_cls.list_eligible_projects.assert_called_once_with(
+            "collected - large file", 1, None, None
         )
-        self.assertEqual(mock_upload_instance.run.call_count, 2)
+        mock_upload_instance.run.assert_called_once_with(30)
+
+    def test_projects_in_status_order_keeps_groups(self) -> None:
+        """Status groups stay in the given order and DRPID order inside a group."""
+        calls: list[str] = []
+
+        def _list(
+            status: str,
+            num_rows: int | None = None,
+            **_kwargs: object,
+        ) -> list:
+            calls.append(status)
+            if status == "collected - large file":
+                rows = [{"DRPID": 9}, {"DRPID": 2}]
+            else:
+                rows = [{"DRPID": 1}, {"DRPID": 8}]
+            if num_rows is not None:
+                return rows[:num_rows]
+            return rows
+
+        with patch(
+            "orchestration.Orchestrator._list_by_base_status",
+            side_effect=_list,
+        ):
+            ordered = _projects_in_status_order(
+                ["collected - large file", "collected"],
+                num_rows=3,
+                start_row=None,
+                start_drpid=None,
+                retry=False,
+            )
+        self.assertEqual([p["DRPID"] for p in ordered], [9, 2, 1])
+        self.assertEqual(calls, ["collected - large file", "collected"])
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")

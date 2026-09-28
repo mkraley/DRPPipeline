@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 
 from sourcing.NpsProfileMetadata import (
@@ -147,6 +148,34 @@ class TestNpsProfileMetadata(unittest.TestCase):
         self.assertIn("Witcher", encoded)
         self.assertIn("Evan", encoded)
         self.assertNotIn("Lee", encoded)
+
+    def test_profile_principal_investigators_parses_comma_lead(self) -> None:
+        """A lead stored as one affiliation string splits into name and org."""
+        profile = {
+            "bibliography": {
+                "contacts": [
+                    {
+                        "contactType": "Lead(s)",
+                        "contacts": [
+                            {
+                                "firstName": "",
+                                "primaryName": "",
+                                "affiliation": (
+                                    "Pete Biggam, National Park Service, Soils Program Manager"
+                                ),
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+        people = json.loads(profile_principal_investigators(profile))
+        self.assertEqual(people[0]["first_name"], "Pete")
+        self.assertEqual(people[0]["last_name"], "Biggam")
+        self.assertEqual(
+            people[0]["affiliation"],
+            "National Park Service, Soils Program Manager",
+        )
 
 
 if __name__ == "__main__":

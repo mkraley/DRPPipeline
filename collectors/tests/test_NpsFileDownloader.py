@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from collectors.NpsDownloadPlan import NpsPlannedFile
-from collectors.NpsFileDownloader import NpsFileDownloader, count_files, projected_folder_bytes
+from collectors.NpsFileDownloader import NpsFileDownloader, count_files, projected_file_count, projected_folder_bytes
 from utils.Args import Args
 from utils.Logger import Logger
 
@@ -198,6 +198,7 @@ class TestNpsFileDownloader(unittest.TestCase):
                 ),
             ]
             self.assertEqual(projected_folder_bytes(root, files), 60)
+            self.assertEqual(projected_file_count(root, files), 2)
 
 
 if __name__ == "__main__":

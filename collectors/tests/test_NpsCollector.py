@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from collectors.NpsCollector import NpsCollector
 from collectors.NpsDownloadPlan import NpsPlannedFile, planned_file_dest
+from collectors.NpsFileDownloader import count_files
 from utils.Args import Args
 from utils.Logger import Logger
 from utils.file_utils import output_folder_name, parse_file_size_to_bytes
@@ -340,8 +341,10 @@ class TestNpsCollector(unittest.TestCase):
         self.assertFalse(legacy.exists())
 
     @patch("collectors.NpsCollector.write_sidecars_for_files", return_value=[])
+    @patch("collectors.NpsAria2Export.write_nps_aria2_cmd")
     def test_file_size_includes_deferred_and_remaining_products(
         self,
+        write_aria2: MagicMock,
         _mock_sidecars: MagicMock,
     ) -> None:
         """Projected file_size adds catalog sizes for files left undownloaded."""
@@ -407,6 +410,18 @@ class TestNpsCollector(unittest.TestCase):
         self.assertEqual(downloader.download_files.call_count, 1)
         fetched = [call.args[0] for call in client.fetch_profile.call_args_list]
         self.assertIn(663486, fetched)
+        notes = result.get("status_notes") or ""
+        self.assertIn("later.zip", notes)
+        self.assertIn(" in ", notes)
+        self.assertIn("Remaining downloads:", notes)
+        self.assertNotIn("2 file(s), 42.2 MB", notes)
+        captured = write_aria2.call_args
+        self.assertIsNotNone(captured)
+        planned = captured.args[2]
+        later = next(entry for entry in planned if entry.filename == "later.zip")
+        self.assertTrue(later.relative_dir)
+        on_disk = count_files(Path(result["folder_path"]))
+        self.assertEqual(result["num_files"], on_disk + 2)
 
     @patch("collectors.NpsCollector.record_error")
     def test_collect_rejects_non_irma_url(self, mock_error: MagicMock) -> None:

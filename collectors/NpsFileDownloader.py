@@ -65,7 +65,14 @@ class NpsFileDownloader:
                 break
             if expected is not None and expected > MAX_DOWNLOAD_BYTES:
                 skipped_large = True
-                notes.append(large_file_skip_note(entry.filename, entry.url, expected))
+                notes.append(
+                    large_file_skip_note(
+                        entry.filename,
+                        entry.url,
+                        expected,
+                        relative_dir=entry.relative_dir,
+                    )
+                )
                 continue
             if not self._download_one(drpid, dest, entry):
                 continue
@@ -131,6 +138,17 @@ def folder_inventory(folder_path: Path) -> tuple[int, set[str]]:
     return total_bytes, extensions
 
 
+def _present_names(folder_path: Path) -> set[str]:
+    """Return case-folded file names anywhere under a project folder."""
+    if not folder_path.is_dir():
+        return set()
+    return {
+        path.name.casefold()
+        for path in folder_path.rglob("*")
+        if path.is_file()
+    }
+
+
 def projected_folder_bytes(folder_path: Path, files: list[NpsPlannedFile]) -> int:
     """
     Return on-disk bytes plus catalog sizes for planned files not on disk.
@@ -139,11 +157,7 @@ def projected_folder_bytes(folder_path: Path, files: list[NpsPlannedFile]) -> in
     downloaded size. Missing files add ``size_bytes`` when IRMA reported one.
     """
     on_disk, _extensions = folder_inventory(folder_path)
-    present = {
-        path.name.casefold()
-        for path in folder_path.rglob("*")
-        if path.is_file()
-    } if folder_path.is_dir() else set()
+    present = _present_names(folder_path)
     pending = sum(
         int(entry.size_bytes or 0)
         for entry in files
@@ -159,12 +173,48 @@ def count_files(folder_path: Path) -> int:
     return sum(1 for path in folder_path.rglob("*") if path.is_file())
 
 
+def projected_file_count(folder_path: Path, files: list[NpsPlannedFile]) -> int:
+    """Return on-disk files plus planned catalog files that are not on disk yet."""
+    present = _present_names(folder_path)
+    missing = sum(1 for entry in files if entry.filename.casefold() not in present)
+    return len(present) + missing
+
+
 def _defer_notes(files: list[NpsPlannedFile]) -> list[str]:
     """Build skip notes for files not downloaded because of the 1 GB budget."""
     return [
-        deferred_download_skip_note(entry.filename, entry.url, entry.size_bytes)
+        deferred_download_skip_note(
+            entry.filename,
+            entry.url,
+            entry.size_bytes,
+            relative_dir=entry.relative_dir,
+        )
         for entry in files
     ]
+
+
+def notes_with_remaining_summary(
+    notes: list[str],
+    folder_path: Path,
+    files: list[NpsPlannedFile],
+) -> list[str]:
+    """Replace any batch summary with one line covering every file still missing."""
+    kept = [line for line in notes if not line.startswith("Remaining downloads:")]
+    pending = [
+        entry
+        for entry in files
+        if not planned_file_dest(folder_path, entry.relative_dir, entry.filename).is_file()
+    ]
+    if not pending:
+        return kept
+    summary = pending_download_summary_note(
+        len(pending),
+        sum(entry.size_bytes or 0 for entry in pending),
+        has_unknown_sizes=any(entry.size_bytes is None for entry in pending),
+    )
+    if summary:
+        kept.append(summary)
+    return kept
 
 
 def _pending_summary_notes(

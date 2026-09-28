@@ -55,6 +55,12 @@ def _success_status_after_upload(prior_status: str) -> str:
     return "uploaded"
 
 
+def _is_large_file_status(status: str) -> bool:
+    """Return True for collected/uploaded large-file statuses, spaced or compact."""
+    compact = status.casefold().replace(" ", "").replace("-", "")
+    return "largefile" in compact
+
+
 def _warn_if_num_files_mismatch(
     reporter: UploadIssueReporter,
     project: Dict[str, Any],
@@ -65,8 +71,10 @@ def _warn_if_num_files_mismatch(
     """Record a warning when collected ``num_files`` does not match upload batch count.
 
     Zip imports skip this check; publish later compares the full folder tree.
+    Large-file projects also skip it: ``num_files`` includes catalog files that
+    were not downloaded, and the upload sends only what is on disk.
     """
-    if used_zip:
+    if used_zip or _is_large_file_status(str(project.get("status") or "")):
         return
     nf_raw = project.get("num_files")
     if nf_raw is None:

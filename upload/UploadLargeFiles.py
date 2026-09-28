@@ -23,7 +23,6 @@ from collectors.UsfsAria2Export import (
     parse_aria2c_lines_from_cmd_file,
     write_drpid_aria2_cmd,
 )
-from collectors.SkipNoteFiles import parse_skip_note_publication_files
 from collectors.UsfsMetadataExtractor import parse_data_access_links
 from storage import Storage
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
@@ -145,9 +144,23 @@ def ensure_aria2_cmd(drpid: int, project: Dict[str, Any]) -> Tuple[Path, List[st
     publication_files = links.get("publication_files", [])
     from_skip_notes = False
     if not publication_files:
-        publication_files = parse_skip_note_publication_files(
-            get_field(project, "status_notes")
-        )
+        from collectors.NpsAria2Export import write_nps_aria2_cmd_from_notes
+        from collectors.SkipNoteFiles import parse_skip_note_download_targets
+
+        targets = parse_skip_note_download_targets(get_field(project, "status_notes"))
+        if _skip_targets_need_subfolders(targets):
+            write_nps_aria2_cmd_from_notes(
+                drpid,
+                folder,
+                get_field(project, "status_notes"),
+                output_dir=DEFAULT_ARIA2_OUTPUT_DIR,
+            )
+            if not cmd_path.is_file():
+                return cmd_path, []
+            return cmd_path, parse_aria2c_lines_from_cmd_file(cmd_path)
+        publication_files = [
+            (name, url, size_bytes) for name, url, size_bytes, _folder in targets
+        ]
         from_skip_notes = bool(publication_files)
 
     write_drpid_aria2_cmd(
@@ -162,6 +175,16 @@ def ensure_aria2_cmd(drpid: int, project: Dict[str, Any]) -> Tuple[Path, List[st
     if not cmd_path.is_file():
         return cmd_path, []
     return cmd_path, parse_aria2c_lines_from_cmd_file(cmd_path)
+
+
+def _skip_targets_need_subfolders(
+    targets: list[tuple[str, str, int | None, str]],
+) -> bool:
+    """Return True when skip notes name a subfolder or an IRMA download URL."""
+    for _name, url, _size, folder in targets:
+        if folder or "irma.nps.gov" in url.lower():
+            return True
+    return False
 
 
 def run_aria2_downloads(

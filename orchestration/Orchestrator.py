@@ -234,6 +234,42 @@ def _merge_project_lists(
     return projects
 
 
+def _projects_in_status_order(
+    statuses: list[str],
+    *,
+    num_rows: Optional[int],
+    start_row: Optional[int],
+    start_drpid: Optional[int],
+    retry: bool,
+) -> list[Dict[str, Any]]:
+    """
+    List projects by status priority, DRPID order within each status.
+
+    Earlier statuses are exhausted before the next status is considered.
+    ``num_rows`` applies to the combined sequence.
+    """
+    projects: list[Dict[str, Any]] = []
+    seen: set[int] = set()
+    for status in statuses:
+        remaining = None if num_rows is None else num_rows - len(projects)
+        if remaining is not None and remaining <= 0:
+            break
+        batch = _list_by_base_status(
+            status,
+            num_rows=remaining,
+            start_row=start_row,
+            start_drpid=start_drpid,
+            retry=retry,
+        )
+        for proj in batch:
+            drpid = proj["DRPID"]
+            if drpid in seen:
+                continue
+            seen.add(drpid)
+            projects.append(proj)
+    return projects
+
+
 def _list_by_base_status(
     base_status: str,
     *,
@@ -581,12 +617,12 @@ class Orchestrator:
                     None if ids else num_rows,
                 )
             elif module == "upload":
-                projects = _merge_project_lists(
-                    [
-                        _list_by_base_status("collected", **list_kwargs),
-                        _list_by_base_status("collected - large file", **list_kwargs),
-                    ],
-                    None if ids else num_rows,
+                projects = _projects_in_status_order(
+                    ["collected - large file", "collected"],
+                    num_rows=None if ids else num_rows,
+                    start_row=None if ids else start_row,
+                    start_drpid=None if ids else start_drpid,
+                    retry=retry,
                 )
             elif module == "upload_large_files":
                 from upload.UploadLargeFiles import is_eligible_for_upload_large_files

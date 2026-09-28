@@ -102,7 +102,7 @@ To re-run a module against error statuses from the CLI, use ``--retry`` (selects
 | `*_collector` / `interactive_collector` | `sourced` | Usually `collected`; ADC/USFS may use `collected - large file` or `collected - external archive`; interactive may set `no_links` / skip presets |
 | `adc_globus_collector` | `collected - external archive` (Globus URL in `status_notes`) | `collected` |
 | `adc_globus_survey` | `collected - external archive` (Globus) | *(survey only; does not advance to upload)* |
-| `upload` | `collected`, `collected - large file` | `uploaded` or `uploaded - large file` |
+| `upload` | `collected - large file` first, then `collected` (DRPID order within each) | `uploaded` or `uploaded - large file` |
 | `upload_large_files` | `uploaded - large file` (&lt; 25 GB), `uploaded - expanded` (any size) | `finish wait` |
 | `publisher` | `uploaded`. Plus sheet-only: `not_found`, `no_links`, `no dataset`, `gigantic upload`, `needs scripting`, `collector_hold - *` | `published` then `updated_inventory` (browser path); or `updated_*` (sheet-only path) |
 | `verify_upload` | `updated_inventory`, `updated_inventory-error` | Unchanged on match; `re-uploaded` on repair; `updated_inventory-error` on mismatch; retry success → `updated_inventory` |

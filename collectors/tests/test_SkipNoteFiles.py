@@ -58,6 +58,18 @@ class TestParseSkipNotePublicationFiles(unittest.TestCase):
         self.assertEqual(files[0][0], "README_File.txt")
         self.assertIsNone(files[0][2])
 
+    def test_parses_product_subfolder(self) -> None:
+        """An ``in <folder>`` clause is the product subfolder for aria2."""
+        from collectors.SkipNoteFiles import parse_skip_note_download_targets
+
+        notes = (
+            "Skipped download (>1GB): later.zip (7.0 MB) in Later_tables - "
+            "download manually: https://irma.nps.gov/DataStore/DownloadFile/9"
+        )
+        targets = parse_skip_note_download_targets(notes)
+        self.assertEqual(targets[0][0], "later.zip")
+        self.assertEqual(targets[0][3], "Later_tables")
+
 
 if __name__ == "__main__":
     unittest.main()

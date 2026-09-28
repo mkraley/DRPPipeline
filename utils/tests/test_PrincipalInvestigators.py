@@ -101,3 +101,76 @@ class TestPrincipalInvestigators:
         assert len(people) == 2
         assert people[0]["last_name"] == "Witcher"
         assert people[1]["first_name"] == "Evan"
+
+    def test_comma_lead_splits_name_and_affiliation(self) -> None:
+        """'First Last, org, role' is a person plus affiliation, not one blob."""
+        raw = [
+            {
+                "first_name": "",
+                "last_name": "",
+                "affiliation": "Pete Biggam, National Park Service, Soils Program Manager",
+            }
+        ]
+        assert investigators_from_irma_contacts(raw) == [
+            {
+                "first_name": "Pete",
+                "last_name": "Biggam",
+                "affiliation": "National Park Service, Soils Program Manager",
+            }
+        ]
+
+    def test_parenthetical_and_bare_names(self) -> None:
+        encoded = serialize_investigators(
+            [
+                {"affiliation": "Jason Kenworthy (NPS GRD)"},
+                {"affiliation": "Jennifer Bailard"},
+            ]
+        )
+        people = deserialize_investigators(encoded)
+        assert people[0] == {
+            "first_name": "Jason",
+            "last_name": "Kenworthy",
+            "affiliation": "NPS GRD",
+        }
+        assert people[1] == {
+            "first_name": "Jennifer",
+            "last_name": "Bailard",
+            "affiliation": "",
+        }
+
+    def test_organization_is_not_a_principal_investigator(self) -> None:
+        """An organization or company lead is omitted, not stored without a name."""
+        for text in (
+            "Sonoran Desert Network",
+            "DJ&A, P.C.",
+            "Wildlife Specialists, LLC",
+            "Siskiyou BioSurvey LLC",
+            "Park Ecologist",
+        ):
+            assert deserialize_investigators(
+                serialize_investigators([{"affiliation": text}])
+            ) == []
+            assert investigators_from_irma_contacts([{"affiliation": text}]) == []
+
+    def test_named_investigator_is_kept_when_affiliation_has_a_person(self) -> None:
+        people = deserialize_investigators(
+            '[{"first_name": "", "last_name": "", "affiliation": '
+            '"Dean Tucker, National Park Service, Water Resources Division"}]'
+        )
+        assert people[0]["first_name"] == "Dean"
+        assert people[0]["last_name"] == "Tucker"
+
+    def test_mixed_org_and_person_keeps_only_the_person(self) -> None:
+        """An organization stored beside a named lead is not itself an investigator."""
+        raw = (
+            '[{"first_name": "", "last_name": "Sonoran Desert Network", "affiliation": ""},'
+            ' {"first_name": "Jennifer", "last_name": "Bailard", "affiliation": ""}]'
+        )
+        people = deserialize_investigators(raw)
+        assert people == [
+            {
+                "first_name": "Jennifer",
+                "last_name": "Bailard",
+                "affiliation": "Sonoran Desert Network",
+            }
+        ]

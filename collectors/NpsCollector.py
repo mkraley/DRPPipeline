@@ -25,13 +25,15 @@ from collectors.NpsDownloadPlan import (
     drop_duplicate_planned_files,
     fit_planned_files,
     flatten_legacy_project_files,
+    planned_file_dest,
     planned_files_for_profile,
     unique_product_folder_name,
 )
 from collectors.NpsFileDownloader import (
     NpsFileDownloader,
-    count_files,
     folder_inventory,
+    notes_with_remaining_summary,
+    projected_file_count,
     projected_folder_bytes,
 )
 from collectors.NpsLandingMetadata import (
@@ -48,6 +50,7 @@ from storage.NpsHierarchyStore import NpsHierarchyStore
 from utils.Args import Args
 from utils.Errors import record_error, record_warning
 from utils.Logger import Logger
+from utils.collector_status import deferred_download_skip_note
 from utils.file_utils import format_file_size
 
 
@@ -63,6 +66,23 @@ def _merge_collection_notes(
         if cleaned and cleaned not in parts:
             parts.append(cleaned)
     return merge_doi_notes("\n".join(parts), dois)
+
+
+def _skip_notes_for_missing(folder_path: Path, files: list[NpsPlannedFile]) -> list[str]:
+    """Skip notes for planned files that are not already on disk."""
+    notes: list[str] = []
+    for entry in files:
+        if planned_file_dest(folder_path, entry.relative_dir, entry.filename).is_file():
+            continue
+        notes.append(
+            deferred_download_skip_note(
+                entry.filename,
+                entry.url,
+                entry.size_bytes,
+                relative_dir=entry.relative_dir,
+            )
+        )
+    return notes
 
 
 class NpsCollector(CollectorBase):
@@ -154,7 +174,16 @@ class NpsCollector(CollectorBase):
                 pending_files,
             )
         elif products:
-            self._append_product_sizes(drpid, products, pending_files)
+            used_folders = {path.name for path in folder_path.iterdir() if path.is_file()}
+            self._append_product_sizes(
+                drpid,
+                products,
+                pending_files,
+                folder_path,
+                used_folders,
+                rename_notes,
+                notes,
+            )
         if not all_files and not pending_files:
             record_error(drpid, "No public Digital Files found for this IRMA Project")
             return {"folder_path": str(folder_path)}
@@ -231,7 +260,15 @@ class NpsCollector(CollectorBase):
                         total,
                         len(leftover),
                     )
-                    self._append_product_sizes(drpid, leftover, pending_files)
+                    self._append_product_sizes(
+                        drpid,
+                        leftover,
+                        pending_files,
+                        folder_path,
+                        used_folders,
+                        rename_notes,
+                        notes,
+                    )
                 return True
         return False
 
@@ -240,8 +277,12 @@ class NpsCollector(CollectorBase):
         drpid: int,
         products: list[dict[str, Any]],
         pending_files: list[NpsPlannedFile],
+        folder_path: Path,
+        used_folders: set[str],
+        rename_notes: list[str],
+        notes: list[str],
     ) -> None:
-        """Plan remaining Products so their catalog sizes count toward file_size."""
+        """Plan remaining Products and record a skip note for each missing file."""
         total = len(products)
         for index, product in enumerate(products, 1):
             product_id = int(product["irma_product_id"])
@@ -252,14 +293,41 @@ class NpsCollector(CollectorBase):
                 total,
                 product_id,
             )
-            pending_files.extend(self._plan_product_files(drpid, product_id))
+            planned = self._plan_remaining_product(
+                drpid, product, folder_path, used_folders, rename_notes
+            )
+            pending_files.extend(planned)
+            notes.extend(_skip_notes_for_missing(folder_path, planned))
 
-    def _plan_product_files(self, drpid: int, product_id: int) -> list[NpsPlannedFile]:
+    def _plan_remaining_product(
+        self,
+        drpid: int,
+        product: dict[str, Any],
+        folder_path: Path,
+        used_folders: set[str],
+        rename_notes: list[str],
+    ) -> list[NpsPlannedFile]:
+        """Assign a product folder and return its planned files without downloading."""
+        title = str(product.get("title") or "product")
+        folder = unique_product_folder_name(title, used_folders, rename_notes)
+        planned = self._plan_product_files(drpid, int(product["irma_product_id"]), folder)
+        planned, dup_notes = drop_duplicate_planned_files(planned)
+        rename_notes.extend(dup_notes)
+        planned, path_notes, _renames = fit_planned_files(folder_path, planned)
+        rename_notes.extend(path_notes)
+        return planned
+
+    def _plan_product_files(
+        self,
+        drpid: int,
+        product_id: int,
+        relative_dir: str = "",
+    ) -> list[NpsPlannedFile]:
         """Return planned Digital Files for one Product without downloading them."""
         profile = self._fetch_profile(drpid, product_id)
         if profile is None:
             return []
-        planned = self._files_for_profile(drpid, profile, "")
+        planned = self._files_for_profile(drpid, profile, relative_dir)
         planned, _notes = drop_duplicate_planned_files(planned)
         return planned
 
@@ -349,6 +417,9 @@ class NpsCollector(CollectorBase):
         sized = list(files)
         if pending_files:
             sized.extend(pending_files)
+        notes = notes_with_remaining_summary(notes, folder_path, sized)
+        if skipped_large:
+            self._write_aria2_cmd(drpid, folder_path, sized)
         result = self._inventory_result(
             record, folder_path, notes, skipped_large, sized
         )
@@ -375,6 +446,19 @@ class NpsCollector(CollectorBase):
         )
         return result
 
+    def _write_aria2_cmd(
+        self,
+        drpid: int,
+        folder_path: Path,
+        files: list[NpsPlannedFile],
+    ) -> None:
+        """Write aria2 commands that download missing files into product folders."""
+        from collectors.NpsAria2Export import write_nps_aria2_cmd
+
+        cmd_path = write_nps_aria2_cmd(drpid, folder_path, files)
+        if cmd_path:
+            Logger.info("Wrote aria2 download commands for DRPID %s: %s", drpid, cmd_path)
+
     def _inventory_result(
         self,
         record: dict[str, Any],
@@ -389,7 +473,7 @@ class NpsCollector(CollectorBase):
         result: dict[str, Any] = {
             "folder_path": str(folder_path),
             "download_date": date.today().isoformat(),
-            "num_files": count_files(folder_path),
+            "num_files": projected_file_count(folder_path, files),
             "file_size": format_file_size(total_bytes),
             "_skipped_large_file": skipped_large,
         }

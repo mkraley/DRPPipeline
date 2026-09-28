@@ -49,6 +49,15 @@ class _FakeResponse:
         return None
 
 
+def _curl_cffi_installed() -> bool:
+    """Return True when the optional curl_cffi package can be imported."""
+    try:
+        import curl_cffi.const  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 class TestChromeRangeDownload(unittest.TestCase):
     """Unit tests for Chrome-impersonated Range downloads."""
 
@@ -104,6 +113,7 @@ class TestChromeRangeDownload(unittest.TestCase):
         self.assertEqual(size, 2024010110)
         session.head.assert_not_called()
 
+    @unittest.skipUnless(_curl_cffi_installed(), "curl_cffi is not installed")
     def test_chrome_session_forces_http_1_1(self) -> None:
         """ROSA P sessions must disable HTTP/2 to avoid PROTOCOL_ERROR."""
         from curl_cffi.const import CurlHttpVersion

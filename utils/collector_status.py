@@ -16,7 +16,13 @@ STATUS_NOT_FOUND = "not_found"
 MAX_DOWNLOAD_BYTES = 1 * 1024**3
 
 
-def large_file_skip_note(filename: str, file_url: str, size_bytes: int) -> str:
+def large_file_skip_note(
+    filename: str,
+    file_url: str,
+    size_bytes: int,
+    *,
+    relative_dir: str = "",
+) -> str:
     """
     Build a status_notes line for a file skipped due to size.
 
@@ -24,6 +30,7 @@ def large_file_skip_note(filename: str, file_url: str, size_bytes: int) -> str:
         filename: Catalog or download filename.
         file_url: Manual download URL.
         size_bytes: Catalog-reported size in bytes.
+        relative_dir: Product subfolder under the project folder, when set.
 
     Returns:
         Human-readable skip note for status_notes.
@@ -31,7 +38,8 @@ def large_file_skip_note(filename: str, file_url: str, size_bytes: int) -> str:
     from utils.file_utils import format_file_size
 
     return (
-        f"Skipped download (>1GB): {filename} ({format_file_size(size_bytes)}) - "
+        f"Skipped download (>1GB): {filename} ({format_file_size(size_bytes)})"
+        f"{_skip_note_folder(relative_dir)} - "
         f"download manually: {file_url}"
     )
 
@@ -40,6 +48,8 @@ def deferred_download_skip_note(
     filename: str,
     file_url: str,
     size_bytes: int | None = None,
+    *,
+    relative_dir: str = "",
 ) -> str:
     """
     Build a status_notes line for a deferred download (individual or cumulative limit).
@@ -48,21 +58,31 @@ def deferred_download_skip_note(
         filename: Catalog or download filename.
         file_url: Manual download URL.
         size_bytes: Catalog-reported size in bytes, when known.
+        relative_dir: Product subfolder under the project folder, when set.
 
     Returns:
         Human-readable skip note for status_notes.
     """
+    folder = _skip_note_folder(relative_dir)
     if size_bytes is not None:
         from utils.file_utils import format_file_size
 
         return (
-            f"Skipped download (>1GB): {filename} ({format_file_size(size_bytes)}) - "
-            f"download manually: {file_url}"
+            f"Skipped download (>1GB): {filename} ({format_file_size(size_bytes)})"
+            f"{folder} - download manually: {file_url}"
         )
     return (
-        f"Skipped download (>1GB): {filename} - "
+        f"Skipped download (>1GB): {filename}{folder} - "
         f"download manually: {file_url}"
     )
+
+
+def _skip_note_folder(relative_dir: str) -> str:
+    """Return the `` in subfolder`` clause for a skip note, or an empty string."""
+    folder = (relative_dir or "").strip()
+    if not folder:
+        return ""
+    return f" in {folder}"
 
 
 def pending_download_summary_note(

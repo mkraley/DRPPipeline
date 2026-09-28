@@ -9,6 +9,44 @@ import re
 from typing import Any
 
 _AFFILIATION_RE = re.compile(r"^(?P<name>.+?)\s*\((?P<affiliation>[^)]+)\)\s*$")
+_NAME_TOKEN_RE = re.compile(r"^[A-Z][A-Za-z.'’-]*$")
+_LEGAL_SUFFIXES = frozenset(
+    {"inc", "llc", "lc", "llp", "lp", "pc", "pllc", "ltd", "co", "corp", "corporation", "company"}
+)
+_JOB_TITLES = frozenset(
+    {
+        "administrator",
+        "adviser",
+        "advisor",
+        "agronomist",
+        "analyst",
+        "archaeologist",
+        "biologist",
+        "botanist",
+        "chief",
+        "consultant",
+        "coordinator",
+        "curator",
+        "director",
+        "ecologist",
+        "forester",
+        "geologist",
+        "historian",
+        "hydrologist",
+        "intern",
+        "liaison",
+        "manager",
+        "officer",
+        "planner",
+        "professor",
+        "ranger",
+        "scientist",
+        "specialist",
+        "superintendent",
+        "supervisor",
+        "technician",
+    }
+)
 _ORG_HINT_RE = re.compile(
     r"(?i)\b("
     r"national park service|park service|inventory|monitoring|program|"
@@ -27,6 +65,10 @@ def normalize_investigator(raw: dict[str, Any]) -> dict[str, str] | None:
     first = str(raw.get("first_name") or raw.get("firstName") or "").strip()
     last = str(raw.get("last_name") or raw.get("primaryName") or raw.get("lastName") or "").strip()
     affiliation = str(raw.get("affiliation") or "").strip()
+    if not first:
+        parsed = _person_from_unstructured(affiliation or last)
+        if parsed:
+            return parsed
     if not first and not last and not affiliation:
         return None
     return {
@@ -36,12 +78,22 @@ def normalize_investigator(raw: dict[str, Any]) -> dict[str, str] | None:
     }
 
 
+def _named_investigators(people: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Drop leads that are organizations rather than named people."""
+    return [
+        person
+        for person in people
+        if person.get("first_name") and person.get("last_name")
+    ]
+
+
 def investigators_from_irma_contacts(contacts: list[dict[str, Any]]) -> list[dict[str, str]]:
     """
     Build investigator records from raw IRMA contact person dicts.
 
     Corporate contacts (``isCorporate``) become affiliation for following
-    named people that lack their own affiliation, instead of fake last names.
+    named people that lack their own affiliation. An organization with no
+    named person is omitted.
     """
     out: list[dict[str, str]] = []
     seen: set[tuple[str, str, str]] = set()
@@ -50,8 +102,16 @@ def investigators_from_irma_contacts(contacts: list[dict[str, Any]]) -> list[dic
         if not isinstance(item, dict):
             continue
         if _irma_contact_is_corporate(item):
-            pending_affiliation = _corporate_affiliation_text(item)
-            continue
+            text = _corporate_affiliation_text(item)
+            parsed = _person_from_unstructured(text)
+            if not parsed:
+                pending_affiliation = text
+                continue
+            item = {
+                "firstName": parsed["first_name"],
+                "primaryName": parsed["last_name"],
+                "affiliation": parsed["affiliation"],
+            }
         person = normalize_investigator(item)
         if person is None:
             continue
@@ -68,9 +128,9 @@ def investigators_from_irma_contacts(contacts: list[dict[str, Any]]) -> list[dic
         out.append(person)
     if not out and pending_affiliation:
         alone = normalize_investigator({"affiliation": pending_affiliation})
-        if alone:
+        if alone and alone.get("first_name") and alone.get("last_name"):
             out.append(alone)
-    return out
+    return _named_investigators(out)
 
 
 def coalesce_corporate_affiliations(people: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -92,9 +152,9 @@ def coalesce_corporate_affiliations(people: list[dict[str, str]]) -> list[dict[s
         out.append(merged)
     if not out and pending_affiliation:
         alone = normalize_investigator({"affiliation": pending_affiliation})
-        if alone:
+        if alone and alone.get("first_name") and alone.get("last_name"):
             out.append(alone)
-    return out
+    return _named_investigators(out)
 
 
 def parse_display_person(text: str) -> dict[str, str] | None:
@@ -134,7 +194,9 @@ def parse_display_person(text: str) -> dict[str, str] | None:
 
 def serialize_investigators(people: list[dict[str, str]]) -> str:
     """Encode investigator list as JSON text for the Storage column."""
-    cleaned = [person for person in (normalize_investigator(item) for item in people) if person]
+    cleaned = _named_investigators(
+        [person for person in (normalize_investigator(item) for item in people) if person]
+    )
     if not cleaned:
         return ""
     return json.dumps(cleaned, ensure_ascii=False)
@@ -158,13 +220,69 @@ def deserialize_investigators(raw: str | None) -> list[dict[str, str]]:
                 )
                 if person
             ]
-            return coalesce_corporate_affiliations(people)
+            return _named_investigators(coalesce_corporate_affiliations(people))
     people: list[dict[str, str]] = []
     for part in re.split(r"\s*;\s*", text):
         person = parse_display_person(part)
         if person:
             people.append(person)
-    return coalesce_corporate_affiliations(people)
+    return _named_investigators(coalesce_corporate_affiliations(people))
+
+
+def _person_from_unstructured(text: str) -> dict[str, str] | None:
+    """
+    Parse a lead stored as one string into first name, last name, and affiliation.
+
+    Accepts ``First Last (Affiliation)``, ``First Last, affiliation, role``,
+    and a bare ``First Last``. Organization-only text returns None.
+    """
+    cleaned = " ".join((text or "").split()).strip()
+    if not cleaned:
+        return None
+    match = _AFFILIATION_RE.match(cleaned)
+    if match:
+        name = match.group("name").strip()
+        affiliation = match.group("affiliation").strip()
+        split = _split_person_name(name)
+        if split:
+            first, last = split
+            return {"first_name": first, "last_name": last, "affiliation": affiliation}
+    if "," in cleaned:
+        left, right = cleaned.split(",", 1)
+        left = left.strip()
+        right = right.strip()
+        split = _split_person_name(left)
+        if split and right and not _starts_with_legal_suffix(right):
+            first, last = split
+            return {"first_name": first, "last_name": last, "affiliation": right}
+    split = _split_person_name(cleaned)
+    if not split:
+        return None
+    first, last = split
+    return {"first_name": first, "last_name": last, "affiliation": ""}
+
+
+def _split_person_name(name: str) -> tuple[str, str] | None:
+    """Return (first, last) when ``name`` is two or three personal-name tokens."""
+    cleaned = " ".join((name or "").split()).strip()
+    if not cleaned or _text_looks_like_organization(cleaned):
+        return None
+    parts = cleaned.split()
+    if len(parts) not in (2, 3):
+        return None
+    if not all(_NAME_TOKEN_RE.match(part) for part in parts):
+        return None
+    if any(_starts_with_legal_suffix(part) for part in parts):
+        return None
+    if any(part.casefold() in _JOB_TITLES for part in parts):
+        return None
+    return " ".join(parts[:-1]), parts[-1]
+
+
+def _starts_with_legal_suffix(text: str) -> bool:
+    """Return True when text begins with a company suffix such as LLC or Inc."""
+    token = text.split(",", 1)[0].strip().replace(".", "").lower()
+    return token in _LEGAL_SUFFIXES
 
 
 def _irma_contact_is_corporate(item: dict[str, Any]) -> bool:
