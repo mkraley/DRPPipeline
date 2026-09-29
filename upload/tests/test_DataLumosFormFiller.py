@@ -296,19 +296,16 @@ class TestDataLumosFormFiller(unittest.TestCase):
 
         self.mock_page.locator.assert_not_called()
 
-    def test_fill_summary_normalizes_html_before_wysiwyg(self) -> None:
-        """Test fill_summary structures HTML for wysihtml5 before editor fill."""
-        raw = '<p dir="ltr">Hello <a href="https://example.com">link</a></p><p>Second.</p>'
+    def test_fill_summary_unescapes_html_before_wysiwyg(self) -> None:
+        """Test fill_summary pastes unescaped HTML into the editor."""
+        raw = "<p>Hello &lt;a href=&quot;https://example.com&quot;&gt;link&lt;/a&gt;</p>"
         with unittest.mock.patch.object(self.form_filler, "_fill_wysiwyg") as mock_fill:
             self.form_filler.fill_summary(raw)
 
         mock_fill.assert_called_once()
         html_arg = mock_fill.call_args[0][1]
-        self.assertNotIn("dir=", html_arg)
-        self.assertIn('href="https://example.com"', html_arg)
-        self.assertIn("Hello", html_arg)
-        self.assertIn("<br><br>", html_arg)
-        self.assertIn("Second.", html_arg)
+        self.assertIn('<a href="https://example.com">link</a>', html_arg)
+        self.assertNotIn("&lt;", html_arg)
 
     def test_fill_original_url_skips_empty(self) -> None:
         """Test fill_original_url returns early for empty input."""

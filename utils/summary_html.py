@@ -37,21 +37,25 @@ _BLOCK_TAGS = frozenset({"p", "h1", "h2", "h3", "blockquote", "ul", "ol", "li"})
 
 def prepare_summary_for_datalumos_upload(summary: str) -> str:
     """
-    Prepare a stored summary for the DataLumos wysihtml5 description field.
+    Prepare a stored summary for the DataLumos description editor.
 
-    Decodes entity-escaped HTML, normalizes tags, then restructures block elements
-    into a single paragraph with ``<br><br>`` separators so wysihtml5 preserves
-    paragraph breaks on save.
+    Unescapes entities so links and images are real tags. Joins paragraphs
+    with ``<br><br>`` because the editor drops adjacent ``<p>`` tags. Rewrites
+    ``<strong>`` to ``<b>`` because the editor saves ``b`` and strips ``strong``.
 
     Args:
         summary: Raw summary from Storage or the interactive collector.
 
     Returns:
-        HTML string suitable for programmatic editor fill.
+        HTML ready to paste, or plain text when the summary has no markup.
     """
-    decoded = decode_summary_html_entities(summary)
-    normalized = normalize_summary_html_for_datalumos(decoded)
-    return structure_summary_for_wysihtml5(normalized)
+    text = (summary or "").strip()
+    for _ in range(5):
+        decoded = html.unescape(text)
+        if decoded == text:
+            break
+        text = decoded
+    return structure_summary_for_wysihtml5(text)
 
 
 def decode_summary_html_entities(summary: str) -> str:
@@ -79,8 +83,9 @@ def structure_summary_for_wysihtml5(normalized_html: str) -> str:
     """
     Restructure block HTML for wysihtml5 editors that collapse adjacent ``<p>`` tags.
 
-    Inline markup (links, bold, etc.) is preserved inside each block. Multiple blocks
-    are joined with ``<br><br>`` inside one ``<p>`` so line breaks survive save.
+    Inline markup (links, images, bold) is preserved inside each block. ``<strong>``
+    is rewritten to ``<b>``. Headings become bold. Multiple blocks are joined with
+    ``<br><br>`` inside one ``<p>`` so line breaks survive save.
 
     Args:
         normalized_html: Output from :func:`normalize_summary_html_for_datalumos`.
@@ -95,14 +100,13 @@ def structure_summary_for_wysihtml5(normalized_html: str) -> str:
     soup = BeautifulSoup(text, "html.parser")
     blocks: list[str] = []
     for element in soup.find_all(["p", "h1", "h2", "h3", "blockquote", "li"]):
-        if element.name in {"h1", "h2", "h3"}:
-            inner = element.decode_contents().strip()
-            if inner:
-                blocks.append(f"<strong>{inner}</strong>")
+        inner = _use_b_for_strong(element.decode_contents().strip())
+        if not inner:
             continue
-        inner = element.decode_contents().strip()
-        if inner:
-            blocks.append(inner)
+        if element.name in {"h1", "h2", "h3"}:
+            blocks.append(f"<b>{inner}</b>")
+            continue
+        blocks.append(inner)
 
     if len(blocks) >= 2:
         return f"<p>{'<br><br>'.join(blocks)}</p>"
@@ -178,6 +182,14 @@ def _block_plain_text(element: Tag) -> str:
     """Return readable plain text for one block element."""
     text = re.sub(r"\s+", " ", element.get_text(separator=" ", strip=True)).strip()
     return re.sub(r" ([,.;:!?])", r"\1", text)
+
+
+def _use_b_for_strong(fragment: str) -> str:
+    """Return ``fragment`` with every ``strong`` element renamed to ``b``."""
+    soup = BeautifulSoup(fragment, "html.parser")
+    for node in soup.find_all("strong"):
+        node.name = "b"
+    return soup.decode_contents()
 
 
 def _looks_like_escaped_html(text: str) -> bool:

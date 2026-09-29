@@ -60,11 +60,38 @@ class TestSummaryHtml:
             '<a href="https://x.com">link</a>.</p>'
         )
 
+    def test_prepare_unescapes_embedded_anchor_and_image(self) -> None:
+        """Escaped tags inside a paragraph are pasted as HTML."""
+        raw = (
+            "<p>Kelso S &lt;a target=&quot;_blank&quot; "
+            "href=&quot;https://orcid.org/0009-0002-8468-6945&quot;&gt;"
+            "&lt;img src=&quot;/DataStore/Resources/Images/Icons/ORCID.png&quot; "
+            "alt=&quot;ORCID&quot;&gt;&lt;/a&gt; wrote it.</p>"
+        )
+        result = prepare_summary_for_datalumos_upload(raw)
+        assert "&lt;" not in result
+        assert "<img" in result
+        assert 'href="https://orcid.org/0009-0002-8468-6945"' in result
+        assert "Kelso S" in result
+
+    def test_anchor_keeps_its_text_and_drops_image(self) -> None:
+        """A link's visible text stays, and an image beside it is omitted."""
+        raw = '<p>See <a href="https://example.com">the paper</a> <img src="x.png" alt="chart">.</p>'
+        result = normalize_summary_html_for_datalumos(raw)
+        assert "<img" not in result
+        assert "chart" not in result
+        assert 'href="https://example.com"' in result
+        assert "the paper" in result
+
     def test_prepare_summary_for_datalumos_upload_decodes_entities(self) -> None:
-        """Entity-encoded DB exports are decoded and structured for upload."""
+        """Entity-encoded paragraphs are unescaped and joined with line breaks."""
         raw = "&lt;p&gt;First.&lt;/p&gt;&lt;p&gt;Second.&lt;/p&gt;"
         result = prepare_summary_for_datalumos_upload(raw)
-        assert "<br><br>" in result
-        assert "&lt;" not in result
-        assert "First." in result
-        assert "Second." in result
+        assert result == "<p>First.<br><br>Second.</p>"
+
+    def test_prepare_turns_strong_into_b_and_keeps_breaks(self) -> None:
+        """DataLumos keeps b and br, and strips strong and adjacent p tags."""
+        raw = "<h2>Overview</h2><p><strong>Citation:</strong> Kelso</p><p>Next.</p>"
+        result = prepare_summary_for_datalumos_upload(raw)
+        assert result == "<p><b>Overview</b><br><br><b>Citation:</b> Kelso<br><br>Next.</p>"
+        assert "<strong>" not in result
