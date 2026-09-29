@@ -216,7 +216,9 @@ class DataLumosUploader:
 
         Logger.info("Navigating to DataLumos workspace")
         page.goto(self.WORKSPACE_URL, wait_until="domcontentloaded")
-        page.wait_for_load_state("networkidle", timeout=120000)
+        from upload.UploadLargeFiles import WORKSPACE_LOAD_TIMEOUT_MS
+
+        page.wait_for_load_state("networkidle", timeout=WORKSPACE_LOAD_TIMEOUT_MS)
 
         from upload.DataLumosAuthenticator import wait_for_human_verification
         wait_for_human_verification(page, timeout=60000, reporter=reporter)

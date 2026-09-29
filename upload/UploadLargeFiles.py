@@ -42,6 +42,7 @@ MAX_PROJECT_FILE_SIZE_BYTES = 25 * 1024**3
 _BARE_GIGABYTES_RE = re.compile(r"^\d+(?:\.\d+)?$")
 DEFAULT_SUMMARY_INTERVAL = 0
 UPLOAD_LARGE_FILES_TIMEOUT_MS = 2 * 60 * 60 * 1000  # 2 hours per file / UI action
+WORKSPACE_LOAD_TIMEOUT_MS = 60 * 60 * 1000  # workspace navigation after the load event
 
 
 def parse_max_project_size(value: str | int | float) -> int:
@@ -440,7 +441,7 @@ class UploadLargeFiles:
         project_url = self._project_url(workspace_id)
         Logger.info("Navigating to existing DataLumos project %s", workspace_id)
         page.goto(project_url, wait_until="domcontentloaded")
-        page.wait_for_load_state("networkidle", timeout=120000)
+        page.wait_for_load_state("networkidle", timeout=WORKSPACE_LOAD_TIMEOUT_MS)
 
         from upload.DataLumosAuthenticator import wait_for_human_verification
 

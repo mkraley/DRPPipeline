@@ -13,6 +13,7 @@ from upload.UploadLargeFiles import (
     STATUS_UPLOADED_EXPANDED,
     STATUS_UPLOADED_LARGE_FILE,
     UPLOAD_LARGE_FILES_TIMEOUT_MS,
+    WORKSPACE_LOAD_TIMEOUT_MS,
     UploadLargeFiles,
     is_eligible_for_upload_large_files,
     parse_max_project_size,
@@ -28,6 +29,9 @@ from utils.Logger import Logger
 class TestUploadLargeFilesHelpers(unittest.TestCase):
     def test_upload_timeout_is_two_hours(self) -> None:
         self.assertEqual(UPLOAD_LARGE_FILES_TIMEOUT_MS, 2 * 60 * 60 * 1000)
+
+    def test_workspace_load_timeout_is_sixty_minutes(self) -> None:
+        self.assertEqual(WORKSPACE_LOAD_TIMEOUT_MS, 60 * 60 * 1000)
 
     def test_project_under_size_limit(self) -> None:
         under = {"file_size": "10.0 GB"}
