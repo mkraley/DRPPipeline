@@ -37,7 +37,7 @@ class Aria2ConsoleFilter:
 
     def _feed_pending(self, line: str) -> list[str]:
         """Hold an exception continuation, or release the block and this line."""
-        if _continues_aria2_exception(line):
+        if _continues_aria2_exception(line) or not line.strip():
             self._pending.append(line)
             if _is_invalid_range_block(self._pending):
                 self._pending.clear()
@@ -68,15 +68,29 @@ def forward_aria2_console(stream: BinaryIO) -> None:
 
 
 def _emit_complete_pieces(pending: bytes, console_filter: Aria2ConsoleFilter) -> bytes:
-    """Print every \\n or \\r piece and return the incomplete tail."""
+    """Print every complete console piece and return the incomplete tail."""
     while True:
-        indexes = [index for index in (pending.find(b"\n"), pending.find(b"\r")) if index >= 0]
-        if not indexes:
+        cut = _next_piece_end(pending)
+        if cut is None:
             return pending
-        cut = min(indexes) + 1
         piece = pending[:cut].decode("utf-8", errors="replace")
         pending = pending[cut:]
         _write_lines(console_filter.feed(piece))
+
+
+def _next_piece_end(pending: bytes) -> int | None:
+    """Return the end index of the next piece. ``\\r\\n`` stays one piece."""
+    carriage = pending.find(b"\r")
+    line_feed = pending.find(b"\n")
+    if carriage < 0 and line_feed < 0:
+        return None
+    if line_feed >= 0 and (carriage < 0 or line_feed < carriage):
+        return line_feed + 1
+    if carriage + 1 == len(pending):
+        return None
+    if pending[carriage + 1:carriage + 2] == b"\n":
+        return carriage + 2
+    return carriage + 1
 
 
 def _write_lines(lines: list[str]) -> None:

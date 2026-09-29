@@ -34,7 +34,27 @@ class TestAria2ConsoleFilter(unittest.TestCase):
         self.assertIn("errorCode=1 timeout", shown)
         self.assertIn("Download aborted", shown)
 
-    def test_forward_writes_progress_only(self) -> None:
+    def test_forward_drops_windows_crlf_range_errors(self) -> None:
+        """aria2 on Windows ends lines with CR LF; that must not leak the error."""
+        text = (
+            "[#9d4142 9.7MiB/322MiB(3%) CN:8 DL:20MiB ETA:15s]\r"
+            "09/29 13:47:16 [ERROR] CUID#10 - Download aborted. "
+            "URI=https://irma.nps.gov/DataStore/DownloadFile/599193\r\n"
+            "Exception: [AbstractCommand.cc:351] errorCode=8 "
+            "URI=https://irma.nps.gov/DataStore/DownloadFile/599193\r\n"
+            "  -> [HttpResponse.cc:81] errorCode=8 Invalid range header. "
+            "Request: 1-2/9, Response: 1-8/9\r\n"
+            "\r\n"
+            "[#9d4142 322MiB/322MiB(99%) CN:1 DL:20MiB]\r"
+        )
+        stream = io.BytesIO(text.encode("utf-8"))
+        with patch("sys.stdout") as stdout:
+            forward_aria2_console(stream)
+        written = "".join(call.args[0] for call in stdout.write.call_args_list)
+        self.assertNotIn("Invalid range header", written)
+        self.assertNotIn("Download aborted", written)
+        self.assertIn("9.7MiB/322MiB", written)
+        self.assertIn("322MiB/322MiB", written)
         stream = io.BytesIO(_NOISE.encode("utf-8"))
         with patch("sys.stdout") as stdout:
             forward_aria2_console(stream)
