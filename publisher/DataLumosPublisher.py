@@ -22,8 +22,7 @@ from utils.project_folder_cleanup import (
 )
 from publisher.PublishTermsDialog import PublishTermsDialog
 from publisher.sheet_only_status import resolve_sheet_only_config
-from publisher.WorkspaceFileStats import workspace_file_stats_from_page
-from verify.DatalumosViewFileStats import verify_upload_counts
+from publisher.WorkspaceFileStats import workspace_storage_mismatches
 
 
 # Published / Download Location URL template (``version`` is V1 on first publish, V2 on republish)
@@ -36,26 +35,65 @@ PUBLISHED_URL_TEMPLATE = (
 
 FILE_NOT_AVAILABLE_TEXT = "File not available for download"
 
-# DataLumos file table: checkbox | name | type | size | ... (third td = type)
+# Workspace file table: checkbox | name | type | size | ...
+# Folder rows leave type (and often size) blank; that is not an incomplete upload.
 _UPLOAD_READINESS_JS = """
 () => {
   const spans = Array.from(document.querySelectorAll('span'));
   if (spans.some(s => (s.innerText || '').includes(%(file_not_available)r))) {
-    return 'file_not_available';
+    return { error: 'file_not_available' };
   }
   const rows = Array.from(document.querySelectorAll('table.table-hover tbody tr'));
-  for (const tr of rows) {
-    const tds = tr.querySelectorAll('td');
-    if (tds.length >= 3) {
-      const third = (tds[2].innerText || '').trim();
-      if (!third) {
-        return 'empty_third_td';
-      }
-    }
-  }
-  return null;
+  return {
+    rows: rows.map(tr => {
+      const tds = Array.from(tr.querySelectorAll('td'));
+      const text = (index) => ((tds[index] && tds[index].innerText) || '').trim();
+      return {
+        name: text(1),
+        type: text(2),
+        size: text(3),
+        isFolder: !!tr.querySelector('i.glyphicon-folder-open'),
+      };
+    }),
+  };
 }
 """ % {"file_not_available": FILE_NOT_AVAILABLE_TEXT}
+
+
+def incomplete_upload_reason(result: object) -> Optional[str]:
+    """
+    Interpret the workspace upload-readiness payload.
+
+    Args:
+        result: Evaluate result from ``_UPLOAD_READINESS_JS``.
+
+    Returns:
+        A skip reason, or None when uploads look complete.
+    """
+    if result == "file_not_available" or (
+        isinstance(result, dict) and result.get("error") == "file_not_available"
+    ):
+        return f"span contains '{FILE_NOT_AVAILABLE_TEXT}'"
+    if not isinstance(result, dict):
+        return None
+    rows = result.get("rows")
+    if not isinstance(rows, list):
+        return None
+    for row in rows:
+        if not isinstance(row, dict) or _workspace_row_is_folder(row):
+            continue
+        name = str(row.get("name") or "").strip()
+        size = str(row.get("size") or "").strip()
+        if name and not size:
+            return f"file has no size: {name}"
+    return None
+
+
+def _workspace_row_is_folder(row: dict) -> bool:
+    """Return True when a workspace table row is a folder."""
+    if row.get("isFolder") is True:
+        return True
+    return "folder" in str(row.get("type") or "").casefold()
 
 
 class DataLumosPublisher:
@@ -123,8 +161,7 @@ class DataLumosPublisher:
             wait_for_human_verification(page, timeout=60000)
 
             Logger.info(
-                "Checking workspace inventory against database for DRPID=%s "
-                "(file table scrape; may take a minute)",
+                "Checking workspace Storage Status against database for DRPID=%s",
                 drpid,
             )
             gate_error = self._pre_publish_gate(page, project, drpid)
@@ -133,10 +170,9 @@ class DataLumosPublisher:
             else:
                 upload_issue = self._uploads_incomplete_on_project_page(page)
                 if upload_issue:
-                    Logger.warning(
-                        "Skipping publish for DRPID=%s: uploads incomplete — %s",
+                    record_error(
                         drpid,
-                        upload_issue,
+                        f"Skipping publish for DRPID={drpid}: uploads incomplete — {upload_issue}",
                     )
                 else:
                     success, error_message = self._publish_workspace(page, drpid)
@@ -199,8 +235,8 @@ class DataLumosPublisher:
         """
         Abort publish when workspace inventory does not match the database.
 
-        Compares workspace file count/size to Storage ``num_files`` and
-        ``file_size`` before starting the publish click sequence.
+        Compares the Storage Status panel to ``num_files`` plus product folders
+        and ``file_size`` before starting the publish click sequence.
 
         Args:
             page: Playwright page on the DataLumos project workspace.
@@ -230,7 +266,7 @@ class DataLumosPublisher:
         project: Dict[str, Any],
     ) -> List[str]:
         """
-        Compare workspace file count/size to Storage ``num_files`` / ``file_size``.
+        Compare Storage Status to ``num_files`` plus product folders and ``file_size``.
 
         Args:
             page: Playwright page on the DataLumos project workspace.
@@ -239,12 +275,7 @@ class DataLumosPublisher:
         Returns:
             Human-readable mismatch messages; empty when inventory matches.
         """
-        page_stats = workspace_file_stats_from_page(page)
-        db_num_files = project.get("num_files")
-        if db_num_files is not None:
-            db_num_files = int(db_num_files)
-        db_file_size = get_field(project, "file_size")
-        return verify_upload_counts(db_num_files, db_file_size, page_stats)
+        return workspace_storage_mismatches(page, project)
 
     def _finalize_after_publish(self, drpid: int) -> None:
         """
@@ -443,11 +474,11 @@ class DataLumosPublisher:
 
     def _uploads_incomplete_on_project_page(self, page: Page) -> Optional[str]:
         """
-        Return a warning message when DataLumos shows incomplete uploads.
+        Return a reason when DataLumos shows incomplete uploads.
 
-        Checks (either triggers skip):
-        - a span containing "File not available for download"
-        - table.table-hover row with empty third <td>
+        A file row with an empty size cell, or the text "File not available
+        for download", means the upload did not finish. Folder rows are
+        ignored: their type column is blank.
         """
         try:
             result = page.evaluate(_UPLOAD_READINESS_JS)
@@ -457,12 +488,7 @@ class DataLumosPublisher:
                 exc,
             )
             return None
-
-        if result == "file_not_available":
-            return f"span contains '{FILE_NOT_AVAILABLE_TEXT}'"
-        if result == "empty_third_td":
-            return "table.table-hover has a row with empty third column"
-        return None
+        return incomplete_upload_reason(result)
 
     def _check_errormsg(self, page: Page) -> Optional[str]:
         """If #errormsg is visible and has text, return that text; else None."""

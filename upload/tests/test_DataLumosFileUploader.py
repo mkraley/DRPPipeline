@@ -14,6 +14,8 @@ from upload.DataLumosFileUploader import (
     FILE_PER_FILE_QUEUE_PHRASES,
     FILE_UPLOAD_ACCEPTANCE_PHRASES,
     DataLumosFileUploader,
+    any_file_in_subfolder,
+    zip_files_with_relative_paths,
 )
 
 
@@ -119,6 +121,51 @@ class TestDataLumosFileUploader(unittest.TestCase):
             mock_page = MagicMock()
             uploader = DataLumosFileUploader(mock_page)
             self.assertFalse(uploader._folder_has_subfolders(tmp))
+
+    def test_zip_files_with_relative_paths_keeps_subfolders(self) -> None:
+        """Selected files keep product folders and omit files already uploaded."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "already.pdf").write_bytes(b"old")
+            (root / "root.rar").write_bytes(b"root")
+            product = root / "Soil_Survey"
+            product.mkdir()
+            (product / "report.zip").write_bytes(b"new")
+            selected = [root / "root.rar", product / "report.zip"]
+            self.assertTrue(any_file_in_subfolder(root, selected))
+            zip_path = zip_files_with_relative_paths(root, selected)
+            try:
+                with zipfile.ZipFile(zip_path, "r") as archive:
+                    self.assertEqual(
+                        sorted(archive.namelist()),
+                        ["Soil_Survey/report.zip", "root.rar"],
+                    )
+            finally:
+                zip_path.unlink(missing_ok=True)
+
+    def test_upload_paths_preserving_folders_uses_import_from_zip(self) -> None:
+        """A product-folder file is uploaded as a relative zip, not Upload Files."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = root / "Soil_Survey"
+            product.mkdir()
+            target = product / "report.zip"
+            target.write_bytes(b"new")
+            uploader = DataLumosFileUploader(MagicMock())
+            captured: dict[str, list[str]] = {}
+
+            def _keep_names(zip_path: Path) -> None:
+                with zipfile.ZipFile(zip_path, "r") as archive:
+                    captured["names"] = archive.namelist()
+
+            with unittest.mock.patch.object(
+                uploader, "_upload_via_import_from_zip", side_effect=_keep_names
+            ), unittest.mock.patch.object(
+                uploader, "upload_file_paths"
+            ) as mock_files:
+                uploader.upload_paths_preserving_folders(root, [target])
+            mock_files.assert_not_called()
+            self.assertEqual(captured["names"], ["Soil_Survey/report.zip"])
 
     def test_zip_folder_contents_creates_valid_zip_with_files_and_subdirs(self) -> None:
         """Test _zip_folder_contents creates a zip containing all contents."""

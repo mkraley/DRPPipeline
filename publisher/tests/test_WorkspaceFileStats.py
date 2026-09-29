@@ -3,7 +3,13 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from publisher.WorkspaceFileStats import workspace_file_stats_from_page
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+from publisher.WorkspaceFileStats import (
+    _open_workspace_folder,
+    workspace_file_stats_from_page,
+    workspace_storage_mismatches,
+)
 from utils.Logger import Logger
 
 
@@ -171,6 +177,85 @@ class TestWorkspaceFileStats(unittest.TestCase):
         self.assertIsNone(stats.error)
         self.assertEqual(stats.file_count, 2)
         self.assertEqual(stats.file_names, ("readme.pdf", "report.pdf"))
+
+    @patch("publisher.WorkspaceFileStats.wait_for_workspace_file_table")
+    def test_open_folder_retries_after_busy_overlay_timeout(
+        self, _mock_wait: MagicMock
+    ) -> None:
+        """A click blocked by #busy is retried after the overlay clears."""
+        page = MagicMock()
+        busy = MagicMock()
+        busy.count.return_value = 1
+        cell = MagicMock()
+        cell.click.side_effect = [
+            PlaywrightTimeoutError("busy intercepts"),
+            None,
+        ]
+        row = MagicMock()
+        row.locator.return_value.nth.return_value = cell
+        table = MagicMock()
+        table.filter.return_value.first = row
+
+        def locator(selector: str) -> MagicMock:
+            if selector == "#busy":
+                return busy
+            return table
+
+        page.locator.side_effect = locator
+        _open_workspace_folder(page, "Analyzing_Population_Trends")
+        self.assertEqual(cell.click.call_count, 2)
+        busy.first.wait_for.assert_called()
+
+    @patch("publisher.WorkspaceFileStats.nps_product_folder_count", return_value=1)
+    def test_storage_status_counts_files_plus_product_folders(
+        self, _mock_products: MagicMock
+    ) -> None:
+        """Panel file/folder count is num_files plus product folders."""
+        page = MagicMock()
+        page.evaluate.return_value = {"space": "< 0.01 GB", "fileFolder": "4"}
+        errors = workspace_storage_mismatches(
+            page,
+            {"DRPID": 1, "num_files": 3, "file_size": "571.9 KB"},
+        )
+        self.assertEqual(errors, [])
+
+    @patch("publisher.WorkspaceFileStats.nps_product_folder_count", return_value=1)
+    def test_storage_status_reports_count_mismatch(
+        self, _mock_products: MagicMock
+    ) -> None:
+        """A panel count that is not num_files plus products is a mismatch."""
+        page = MagicMock()
+        page.evaluate.return_value = {"space": "< 0.01 GB", "fileFolder": "3"}
+        errors = workspace_storage_mismatches(
+            page,
+            {"DRPID": 1, "num_files": 3, "file_size": "571.9 KB"},
+        )
+        self.assertEqual(len(errors), 1)
+        self.assertIn("files=4/3", errors[0])
+
+    def test_storage_status_rejects_size_above_upper_bound(self) -> None:
+        """A database size at or above '< 0.01 GB' does not match."""
+        page = MagicMock()
+        page.evaluate.return_value = {"space": "< 0.01 GB", "fileFolder": "2"}
+        errors = workspace_storage_mismatches(
+            page,
+            {"num_files": 2, "file_size": "20 MB"},
+        )
+        self.assertEqual(len(errors), 1)
+        self.assertIn("size=20 MB/< 0.01 GB", errors[0])
+
+    @patch("publisher.WorkspaceFileStats.nps_product_folder_count", return_value=0)
+    def test_rounded_gigabyte_label_matches_within_display_step(
+        self, _mock_products: MagicMock
+    ) -> None:
+        """14.5 MB displays as 0.01 GB and stays inside that rounding step."""
+        page = MagicMock()
+        page.evaluate.return_value = {"space": "0.01 GB", "fileFolder": "2"}
+        errors = workspace_storage_mismatches(
+            page,
+            {"num_files": 2, "file_size": "14.5 MB"},
+        )
+        self.assertEqual(errors, [])
 
 
 if __name__ == "__main__":

@@ -110,6 +110,9 @@ class Args(metaclass=ArgsMeta):
         "globus_transfer_poll_timeout_sec": 3600,
         "globus_survey_resurvey": False,  # Re-run adc_globus_survey when inventory line exists
         "num_rows": None,  # None = unlimited; batch limit for orchestration
+        # upload_large_files cap for uploaded - large file. None = 25GB.
+        # Bare number is gigabytes; "40GB" is also accepted.
+        "max_project_size": None,
         "start_row": None,  # If set, skip first (start_row - 1) rows (1-origin); used when listing from DB
         "start_drpid": None,  # If set, only projects with DRPID >= start_drpid (overrides start_row when set)
         "retry": False,  # If True, select prereq-error statuses and ignore errors field
@@ -146,7 +149,7 @@ class Args(metaclass=ArgsMeta):
         "inventory_sheet_format": "data_inventories",  # data_inventories | baserow_batch
         "baserow_maintainers": "DRP,DL",  # Baserow Maintainers column on successful publish
         "baserow_contact": None,  # Baserow Contact column (email); falls back to google_username
-        "default_metadata_available": True,  # Metadata available column: yes when true, no when false
+        "default_metadata_available": True,  # yes | no | check_files (scan names for metadata or table_info)
         # PEM file path: optional; use behind TLS inspection when Google API fails SSL verify
         "ssl_ca_bundle": None,
         "google_username": "mkraley",  # Value for "Claimed" column
@@ -334,6 +337,13 @@ class Args(metaclass=ArgsMeta):
                 help="interactive_collector: load projects with status "
                 "'collected - external archive' instead of 'sourced'",
             ),
+            max_project_size: Optional[str] = typer.Option(
+                None,
+                "--max-project-size",
+                help="upload_large_files: largest projects.file_size to accept for "
+                "uploaded - large file (default 25GB). A bare number is gigabytes, "
+                "for example 40 or 40GB. uploaded - expanded is not capped.",
+            ),
         ) -> None:
             """Callback to capture Typer parsed values."""
             parsed_values["module"] = module
@@ -375,6 +385,15 @@ class Args(metaclass=ArgsMeta):
                 parsed_values["usfs_metadata_only"] = True
             if external_archive:
                 parsed_values["interactive_external_archive"] = True
+            if max_project_size is not None:
+                text = max_project_size.strip()
+                from upload.UploadLargeFiles import parse_max_project_size
+
+                try:
+                    parse_max_project_size(text)
+                except ValueError as exc:
+                    raise typer.BadParameter(str(exc)) from exc
+                parsed_values["max_project_size"] = text
 
         # Use a single @app.command() so the first positional (module) is not treated as a
         # subcommand. A Group would require the first token to match a subcommand.

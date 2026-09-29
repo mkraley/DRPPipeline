@@ -13,7 +13,6 @@ from unittest.mock import MagicMock, patch
 from storage import Storage
 from utils.Args import Args
 from utils.Logger import Logger
-from verify.DatalumosViewFileStats import DatalumosViewFileStats
 from publisher.DataLumosRepublisher import (
     REPUBLISH_STATUS_NOTE,
     REPUBLISH_VERSION,
@@ -221,22 +220,22 @@ class TestDataLumosRepublisher(unittest.TestCase):
         self.assertEqual(project["status"], "re-uploaded-error")
         self.assertIn("Aborting republish", project.get("errors") or "")
 
-    @patch("publisher.DataLumosPublisher.workspace_file_stats_from_page")
-    def test_workspace_inventory_mismatches_uses_verify_counts(
+    @patch(
+        "publisher.DataLumosPublisher.workspace_storage_mismatches",
+        return_value=["inventory mismatch: files=5/4 size=1.0 MB/500 KB"],
+    )
+    def test_workspace_inventory_mismatches_uses_storage_status(
         self,
-        mock_stats: MagicMock,
+        mock_mismatches: MagicMock,
     ) -> None:
-        """Workspace inventory check compares scraped stats to the database."""
-        mock_stats.return_value = DatalumosViewFileStats(
-            file_count=4, total_bytes=1000
-        )
+        """Workspace inventory check uses the Storage Status panel."""
         errors = self.module._workspace_inventory_mismatches(
             MagicMock(),
             {"num_files": 5, "file_size": "1000"},
         )
         self.assertTrue(any("inventory mismatch" in e for e in errors))
         self.assertTrue(any("files=5/4" in e for e in errors))
-        mock_stats.assert_called_once()
+        mock_mismatches.assert_called_once()
 
 
 if __name__ == "__main__":

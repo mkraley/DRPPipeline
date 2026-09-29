@@ -120,6 +120,25 @@ class TestBaserowBatchSheetUpdater(unittest.TestCase):
         ]
         self.assertEqual(metadata_writes[0]["values"], [["no"]])
 
+    def test_build_update_requests_checks_project_files(self) -> None:
+        """check_files writes yes when a project file name contains metadata."""
+        Args._config["default_metadata_available"] = "check_files"
+        updater = BaserowBatchSheetUpdater()
+        column_map = {"Metadata available": "L"}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "FGDC_metadata.xml").write_text("<x/>", encoding="utf-8")
+            requests = updater._build_update_requests(
+                "NPS",
+                2,
+                column_map,
+                "1",
+                {"folder_path": str(root), "file_size": "1"},
+                "mkraley",
+            )
+        metadata_writes = [r for r in requests if "L2" in r.get("range", "")]
+        self.assertEqual(metadata_writes[0]["values"], [["yes"]])
+
     def test_build_sheet_only_requests_writes_notes(self) -> None:
         """Sheet-only paths write Notes like the data inventories updater."""
         updater = BaserowBatchSheetUpdater()

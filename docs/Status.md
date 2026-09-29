@@ -60,7 +60,7 @@ Projects enter at `sourced` via `sourcing` / `adc_sourcing`. Large-file and repa
 | Status | Meaning | Typical next step |
 |--------|---------|-------------------|
 | `uploaded` | Project created in DataLumos; files uploaded; `datalumos_id` set. ZIP imports may still be unpacking. | `publisher` |
-| `uploaded - large file` | Base project uploaded after `collected - large file`; large files still need a second pass. Eligible for `upload_large_files` only when `file_size` is present and **&lt; 25 GB**. | `upload_large_files` → `finish wait` |
+| `uploaded - large file` | Base project uploaded after `collected - large file`; large files still need a second pass. Eligible for `upload_large_files` when `file_size` is present and below `--max-project-size` (default **25 GB**). Aria2 files in a product subfolder are zipped by themselves (relative paths preserved) and sent with Import From Zip. | `upload_large_files` → `finish wait` |
 | `uploaded - expanded` | Operator/process status for large-file upload at **any** `file_size` (no 25 GB cap). Not set automatically by the normal upload module. | `upload_large_files` → `finish wait` |
 | `finish wait` | Large-file download/upload finished; waiting for human/process before publish. | Manual: typically set to `uploaded` so `publisher` can run. |
 | `re-uploaded` | Missing files were repaired by `verify_upload` (re-download + re-upload to existing workspace). | `republisher` |
@@ -103,7 +103,7 @@ To re-run a module against error statuses from the CLI, use ``--retry`` (selects
 | `adc_globus_collector` | `collected - external archive` (Globus URL in `status_notes`) | `collected` |
 | `adc_globus_survey` | `collected - external archive` (Globus) | *(survey only; does not advance to upload)* |
 | `upload` | `collected - large file` first, then `collected` (DRPID order within each) | `uploaded` or `uploaded - large file` |
-| `upload_large_files` | `uploaded - large file` (&lt; 25 GB), `uploaded - expanded` (any size) | `finish wait` |
+| `upload_large_files` | `uploaded - large file` (below `--max-project-size`, default 25 GB), `uploaded - expanded` (any size) | `finish wait` |
 | `publisher` | `uploaded`. Plus sheet-only: `not_found`, `no_links`, `no dataset`, `gigantic upload`, `needs scripting`, `collector_hold - *` | `published` then `updated_inventory` (browser path); or `updated_*` (sheet-only path) |
 | `verify_upload` | `updated_inventory`, `updated_inventory-error` | Unchanged on match; `re-uploaded` on repair; `updated_inventory-error` on mismatch; retry success → `updated_inventory` |
 | `republisher` | `re-uploaded` | `updated_inventory` (V2 URL / republish note) |
@@ -134,15 +134,16 @@ stateDiagram-v2
   collected_lf: collected - large file
   collected_lf --> uploaded_lf: upload
   uploaded_lf: uploaded - large file
-  uploaded_lf --> finish_wait: upload_large_files\n(if file_size < 25 GB)
+  uploaded_lf --> finish_wait: upload_large_files\n(if file_size < max)
   finish_wait: finish wait
   finish_wait --> uploaded: manual when ready
   uploaded --> published: publisher
   published --> updated_inventory: sheet update
 
   note right of uploaded_lf
-    Or set uploaded - expanded
-    to bypass the 25 GB cap
+    Or set --max-project-size
+    or uploaded - expanded
+    to go above 25 GB
   end note
 ```
 

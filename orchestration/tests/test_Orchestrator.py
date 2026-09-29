@@ -510,6 +510,33 @@ class TestOrchestrator(unittest.TestCase):
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")
+    def test_run_upload_large_files_honors_max_project_size(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
+    ) -> None:
+        """A raised max-project-size includes projects above the 25 GB default."""
+        Args._config["max_project_size"] = "40"
+        mock_storage = MagicMock()
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.get_instance.return_value = mock_storage
+        mock_storage_cls.list_eligible_projects.side_effect = [
+            [
+                {"DRPID": 1, "file_size": "10.0 GB", "status": "uploaded - large file"},
+                {"DRPID": 3, "file_size": "30.0 GB", "status": "uploaded - large file"},
+                {"DRPID": 4, "file_size": "40.0 GB", "status": "uploaded - large file"},
+            ],
+            [],
+        ]
+        mock_instance = MagicMock()
+        mock_find_class.return_value = MagicMock(return_value=mock_instance)
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
+            Orchestrator.run("upload_large_files")
+        self.assertEqual(
+            [call.args[0] for call in mock_instance.run.call_args_list],
+            [1, 3],
+        )
+
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
     def test_run_upload_large_files_includes_expanded_any_size(
         self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
     ) -> None:

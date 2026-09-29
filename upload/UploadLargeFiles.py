@@ -1,8 +1,8 @@
 """
 Upload large files module.
 
-For projects at ``uploaded - large file`` (under 25 GB) or ``uploaded - expanded``
-(any size): download missing large publication files (aria2, or Chrome Range
+For projects at ``uploaded - large file`` (below ``--max-project-size``, default
+25 GB) or ``uploaded - expanded`` (any size): download missing large publication files (aria2, or Chrome Range
 chunks for ROSA P), then upload them to the existing DataLumos project.
 """
 
@@ -22,13 +22,14 @@ from collectors.UsfsAria2Export import (
     out_name_from_aria2_cmd_line,
     parse_aria2c_lines_from_cmd_file,
     write_drpid_aria2_cmd,
+    aria2_cmd_download_parts,
 )
 from collectors.UsfsMetadataExtractor import parse_data_access_links
 from storage import Storage
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from upload.UploadIssueReporter import UploadIssueReporter
 from utils.Args import Args
-from utils.file_utils import output_folder_name, parse_file_size_to_bytes
+from utils.file_utils import format_file_size, output_folder_name, parse_file_size_to_bytes
 from utils.Logger import Logger
 from utils.project_utils import get_field
 from utils.url_utils import BROWSER_HEADERS, fetch_page_body
@@ -38,16 +39,52 @@ STATUS_UPLOADED_EXPANDED = "uploaded - expanded"
 STATUS_FINISH_WAIT = "finish wait"
 UPLOAD_LARGE_FILES_STATUSES = (STATUS_UPLOADED_LARGE_FILE, STATUS_UPLOADED_EXPANDED)
 MAX_PROJECT_FILE_SIZE_BYTES = 25 * 1024**3
+_BARE_GIGABYTES_RE = re.compile(r"^\d+(?:\.\d+)?$")
 DEFAULT_SUMMARY_INTERVAL = 0
 UPLOAD_LARGE_FILES_TIMEOUT_MS = 2 * 60 * 60 * 1000  # 2 hours per file / UI action
 
 
+def parse_max_project_size(value: str | int | float) -> int:
+    """
+    Return a project-size cap in bytes.
+
+    A bare number is gigabytes (``40`` or ``40.5``). Values with a unit, such as
+    ``40GB``, use the same parser as ``projects.file_size``.
+    """
+    if isinstance(value, bool) or (isinstance(value, (int, float)) and value <= 0):
+        raise ValueError(f"max project size must be positive, got {value!r}")
+    if isinstance(value, (int, float)):
+        return int(float(value) * 1024**3)
+    text = str(value).strip()
+    if not text:
+        raise ValueError("max project size is empty")
+    if _BARE_GIGABYTES_RE.match(text):
+        return parse_max_project_size(float(text))
+    parsed = parse_file_size_to_bytes(text)
+    if parsed is None or parsed <= 0:
+        raise ValueError(
+            f"Invalid max project size {text!r}; use gigabytes (40) or a size (40GB)"
+        )
+    return parsed
+
+
+def resolved_max_project_size_bytes() -> int:
+    """Return the configured upload_large_files cap, or 25 GB when unset."""
+    try:
+        raw = getattr(Args, "max_project_size", None)
+    except RuntimeError:
+        return MAX_PROJECT_FILE_SIZE_BYTES
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return MAX_PROJECT_FILE_SIZE_BYTES
+    return parse_max_project_size(raw)
+
+
 def project_under_size_limit(project: Dict[str, Any]) -> bool:
-    """Return True when ``file_size`` is present and below the 25 GB cap."""
+    """Return True when ``file_size`` is present and below the configured cap."""
     size_bytes = parse_file_size_to_bytes(project.get("file_size"))
     if size_bytes is None:
         return False
-    return size_bytes < MAX_PROJECT_FILE_SIZE_BYTES
+    return size_bytes < resolved_max_project_size_bytes()
 
 
 def is_eligible_for_upload_large_files(project: Dict[str, Any]) -> bool:
@@ -55,7 +92,8 @@ def is_eligible_for_upload_large_files(project: Dict[str, Any]) -> bool:
     Return True when a project may run ``upload_large_files``.
 
     ``uploaded - expanded``: any ``file_size``.
-    ``uploaded - large file``: ``file_size`` must be present and < 25 GB.
+    ``uploaded - large file``: ``file_size`` must be present and below
+    ``--max-project-size`` (default 25 GB).
     """
     status = (project.get("status") or "").strip()
     if status == STATUS_UPLOADED_EXPANDED:
@@ -74,6 +112,23 @@ def resolve_output_folder(drpid: int, folder_path: str | None) -> Path:
 def log_path_for_download(log_root: Path, drpid: int, out_name: str) -> Path:
     safe = re.sub(r'[<>:"/\\|?*]', "_", out_name)
     return log_root / output_folder_name(drpid) / f"{safe}.log"
+
+
+def planned_download_paths(aria2_lines: Sequence[str]) -> List[Path]:
+    """Return on-disk paths from each aria2 ``-d`` directory and ``-o`` name."""
+    paths: List[Path] = []
+    for line in aria2_lines:
+        _url, dir_path, out_name = aria2_cmd_download_parts(line)
+        paths.append(dir_path / out_name)
+    return paths
+
+
+def _path_for_log(folder: Path, path: Path) -> str:
+    """Return a project-relative path for logs, or the full path."""
+    try:
+        return path.resolve().relative_to(folder.resolve()).as_posix()
+    except ValueError:
+        return str(path)
 
 
 def planned_out_names(aria2_lines: Sequence[str]) -> List[str]:
@@ -260,8 +315,9 @@ class UploadLargeFiles:
     """
     Download missing large files and upload them to an existing DataLumos project.
 
-    Prerequisites: ``uploaded - large file`` with ``file_size`` < 25 GB, or
-    ``uploaded - expanded`` at any size; no errors
+    Prerequisites: ``uploaded - large file`` with ``file_size`` below
+    ``--max-project-size`` (default 25 GB), or ``uploaded - expanded`` at any
+    size; no errors
     Success status: ``finish wait``
     """
 
@@ -287,8 +343,9 @@ class UploadLargeFiles:
             return
 
         if status == STATUS_UPLOADED_LARGE_FILE and not project_under_size_limit(project):
+            cap = format_file_size(resolved_max_project_size_bytes())
             reporter.error(
-                "Project file_size is missing or >= 25 GB; skipping large-file upload"
+                f"Project file_size is missing or >= {cap}; skipping large-file upload"
             )
             return
 
@@ -305,7 +362,7 @@ class UploadLargeFiles:
 
         try:
             _, aria2_lines = ensure_aria2_cmd(drpid, project)
-            download_names = planned_out_names(aria2_lines)
+            download_paths = planned_download_paths(aria2_lines)
 
             if aria2_lines:
                 log_root = Path(Args.base_output_dir) / "logs"
@@ -317,26 +374,29 @@ class UploadLargeFiles:
                     )
                     return
 
-            upload_names = download_names or large_files_on_disk(drpid, project)
-            if not upload_names:
+            upload_paths = download_paths or [
+                folder / name for name in large_files_on_disk(drpid, project)
+            ]
+            if not upload_paths:
                 reporter.error(
                     "No large files to upload (nothing to download and none found on disk)"
                 )
                 return
 
-            file_paths = [folder / name for name in upload_names]
-            missing = [str(p) for p in file_paths if not p.is_file()]
+            missing = [str(path) for path in upload_paths if not path.is_file()]
             if missing:
                 reporter.error(f"Missing expected file(s) on disk: {', '.join(missing)}")
                 return
 
             Logger.info(
                 "Uploading %s large file(s) for DRPID=%s: %s",
-                len(file_paths),
+                len(upload_paths),
                 drpid,
-                ", ".join(p.name for p in file_paths),
+                ", ".join(_path_for_log(folder, path) for path in upload_paths),
             )
-            self._upload_files_to_existing_project(project, drpid, file_paths, reporter)
+            self._upload_files_to_existing_project(
+                project, drpid, folder, upload_paths, reporter
+            )
             Storage.update_record(drpid, {"status": STATUS_FINISH_WAIT})
             Logger.info(
                 "upload_large_files completed for DRPID=%s, status=%s",
@@ -369,6 +429,7 @@ class UploadLargeFiles:
         self,
         project: Dict[str, Any],
         drpid: int,
+        folder: Path,
         file_paths: List[Path],
         reporter: UploadIssueReporter,
     ) -> None:
@@ -395,4 +456,4 @@ class UploadLargeFiles:
             reporter=reporter,
             skip_busy_wait_on_close=True,
         )
-        file_uploader.upload_file_paths(file_paths)
+        file_uploader.upload_paths_preserving_folders(folder, file_paths)

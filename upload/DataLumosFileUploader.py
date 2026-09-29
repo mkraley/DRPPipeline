@@ -13,6 +13,7 @@ import os
 import shutil
 import tempfile
 import time
+import zipfile
 from pathlib import Path
 from typing import List, Optional, TYPE_CHECKING
 
@@ -80,6 +81,37 @@ JS_INJECT_FILE_INPUT = """
   return input.id;
 }
 """
+
+
+def any_file_in_subfolder(project_folder: Path, files: List[Path]) -> bool:
+    """Return True when any file is not a direct child of ``project_folder``."""
+    root = project_folder.resolve()
+    for path in files:
+        if len(path.resolve().relative_to(root).parts) > 1:
+            return True
+    return False
+
+
+def zip_files_with_relative_paths(project_folder: Path, files: List[Path]) -> Path:
+    """
+    Zip selected files using paths relative to the project folder.
+
+    Archive names use forward slashes. Compression is stored so large
+    downloads are not rewritten.
+
+    Returns:
+        Path to the temporary zip. The caller deletes it.
+    """
+    root = project_folder.resolve()
+    fd, zip_path = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    zip_path_obj = Path(zip_path)
+    with zipfile.ZipFile(zip_path_obj, "w", compression=zipfile.ZIP_STORED) as archive:
+        for path in files:
+            resolved = path.resolve()
+            archive.write(resolved, resolved.relative_to(root).as_posix())
+    Logger.info("Zipped %s file(s) for Import From Zip: %s", len(files), zip_path_obj.name)
+    return zip_path_obj
 
 
 class DataLumosFileUploader:
@@ -167,6 +199,25 @@ class DataLumosFileUploader:
             self._upload_via_upload_files(files)
         Logger.info("File upload completed and modal closed")
 
+    def upload_paths_preserving_folders(
+        self, project_folder: Path, files: List[Path]
+    ) -> None:
+        """
+        Upload specific files, keeping subfolders via Import From Zip.
+
+        Files that all live in ``project_folder`` use Upload Files. When any
+        file is in a subfolder, only ``files`` are zipped with paths relative
+        to ``project_folder`` and sent through Import From Zip.
+        """
+        if not files:
+            Logger.info("No files to upload")
+            return
+        self._require_files(files)
+        if any_file_in_subfolder(project_folder, files):
+            self._upload_relative_zip(project_folder, files)
+            return
+        self.upload_file_paths(files)
+
     def uses_zip_import(self, folder_path: str) -> bool:
         """Return True when this folder is uploaded via Import From Zip."""
         return self._folder_has_subfolders(folder_path)
@@ -191,6 +242,21 @@ class DataLumosFileUploader:
         shutil.make_archive(base_name, "zip", folder, ".")
         Logger.info(f"Zipped contents of {folder_path} to {zip_path_obj.name}")
         return zip_path_obj
+
+    def _require_files(self, files: List[Path]) -> None:
+        """Raise when any path is not a regular file."""
+        for path in files:
+            if not path.is_file():
+                raise FileNotFoundError(f"File not found: {path}")
+
+    def _upload_relative_zip(self, project_folder: Path, files: List[Path]) -> None:
+        """Zip ``files`` under ``project_folder`` and Import From Zip."""
+        zip_path = zip_files_with_relative_paths(project_folder, files)
+        try:
+            self._upload_via_import_from_zip(zip_path)
+        finally:
+            zip_path.unlink(missing_ok=True)
+        Logger.info("File upload completed and modal closed")
 
     def _upload_via_import_from_zip(self, zip_path: Path) -> None:
         """Open Import From Zip modal and upload the zip via drop zone."""

@@ -367,7 +367,7 @@ If the config file does not exist, a warning is shown but the pipeline continues
 | `inventory_sheet_format` | — | yes | `data_inventories` | Sheet column layout: `data_inventories` (shared inventory tabs) or `baserow_batch` (Baserow batch import template) |
 | `baserow_maintainers` | — | yes | `DRP,DL` | Maintainers column value when `inventory_sheet_format` is `baserow_batch` |
 | `baserow_contact` | — | yes | — | Contact column email for `baserow_batch` (falls back to `google_username`) |
-| `default_metadata_available` | — | yes | `true` | Publish writes `yes` to Metadata available when true, `no` when false |
+| `default_metadata_available` | — | yes | `true` | Publish writes Metadata available: `yes` when true, `no` when false, or inspect the project folder when `check_files` (yes if any file name contains `metadata` or `table_info`, ignoring `project_metadata.json` and `product_metadata.json`) |
 | `google_username` | — | yes | `mkraley` | Value for "Claimed" column in inventory |
 
 When `inventory_sheet_format` is `baserow_batch`, **File extensions** are written uppercase and comma-separated (no spaces). **Title for Datasets table** replaces colons (`: ` → em dash), is limited to 255 characters (overflow goes to **Notes**), and **Title for Backups table** copies that value, wrapping it in double quotes when it contains a comma or `/`.
@@ -590,6 +590,7 @@ You can create different databases to keep track of sets of projects, e.g. diffe
 
 - `--num-rows` / `num_rows` — Limits projects or URLs per run (omit for unlimited).
 - `--max-workers` — Concurrent projects for modules that support it (default: 1).
+- `--max-project-size` / `max_project_size` — Largest `file_size` `upload_large_files` will take for `uploaded - large file` (default `25GB`). A bare number is gigabytes (`40` or `40GB`). `uploaded - expanded` stays uncapped.
 
 ---
 

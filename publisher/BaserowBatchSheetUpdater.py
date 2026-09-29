@@ -25,6 +25,7 @@ from publisher.inventory_sheet_updater_base import (
     DOWNLOAD_LOCATION_TEMPLATE,
     InventorySheetUpdaterBase,
 )
+from publisher.MetadataAvailable import metadata_available_cell
 
 _REQUIRED_COLUMNS = [
     "URL",
@@ -109,11 +110,12 @@ class BaserowBatchSheetUpdater(InventorySheetUpdaterBase):
             google_username=getattr(Args, "google_username", None),
         )
 
-    def _metadata_available_value(self) -> str:
+    def _metadata_available_value(self, project: Dict[str, Any]) -> str:
         """Return ``yes`` or ``no`` for the Metadata available column on publish."""
-        if getattr(Args, "default_metadata_available", True):
-            return "yes"
-        return "no"
+        return metadata_available_cell(
+            getattr(Args, "default_metadata_available", True),
+            str(project.get("folder_path") or ""),
+        )
 
     def _resolve_metadata_for_row(
         self,
@@ -244,7 +246,7 @@ class BaserowBatchSheetUpdater(InventorySheetUpdaterBase):
         if column_map.get("Metadata available"):
             requests.append({
                 "range": f"{sheet_name}!{column_map['Metadata available']}{row_number}",
-                "values": [[self._metadata_available_value()]],
+                "values": [[self._metadata_available_value(project)]],
             })
 
         if column_map.get("Nominated to EOT"):

@@ -200,6 +200,30 @@ class TestNpsFileDownloader(unittest.TestCase):
             self.assertEqual(projected_folder_bytes(root, files), 60)
             self.assertEqual(projected_file_count(root, files), 2)
 
+    def test_projected_folder_bytes_counts_same_name_in_another_product(self) -> None:
+        """A downloaded name in one product does not hide a missing copy elsewhere."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            downloaded = root / "alpha"
+            downloaded.mkdir()
+            (downloaded / "data.zip").write_bytes(b"x" * 10)
+            files = [
+                NpsPlannedFile(
+                    url="https://example.com/alpha",
+                    filename="data.zip",
+                    relative_dir="alpha",
+                    size_bytes=999,
+                ),
+                NpsPlannedFile(
+                    url="https://example.com/beta",
+                    filename="data.zip",
+                    relative_dir="beta",
+                    size_bytes=50,
+                ),
+            ]
+            self.assertEqual(projected_folder_bytes(root, files), 60)
+            self.assertEqual(projected_file_count(root, files), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

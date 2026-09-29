@@ -14,7 +14,11 @@ from utils.Logger import Logger
 
 from utils.project_utils import get_field
 
-from publisher.DataLumosPublisher import DataLumosPublisher, PUBLISHED_URL_TEMPLATE
+from publisher.DataLumosPublisher import (
+    DataLumosPublisher,
+    PUBLISHED_URL_TEMPLATE,
+    incomplete_upload_reason,
+)
 
 
 class TestDataLumosPublisher(unittest.TestCase):
@@ -262,19 +266,51 @@ class TestDataLumosPublisher(unittest.TestCase):
 
     def test_uploads_incomplete_on_project_page_file_not_available(self) -> None:
         mock_page = MagicMock()
-        mock_page.evaluate.return_value = "file_not_available"
+        mock_page.evaluate.return_value = {"error": "file_not_available"}
         result = self.publisher._uploads_incomplete_on_project_page(mock_page)
         self.assertIn("File not available for download", result or "")
 
-    def test_uploads_incomplete_on_project_page_empty_third_td(self) -> None:
-        mock_page = MagicMock()
-        mock_page.evaluate.return_value = "empty_third_td"
-        result = self.publisher._uploads_incomplete_on_project_page(mock_page)
-        self.assertIn("empty third column", result or "")
+    def test_folder_row_with_blank_type_is_not_incomplete(self) -> None:
+        """Product folders leave the type column blank and must not block publish."""
+        reason = incomplete_upload_reason(
+            {
+                "rows": [
+                    {
+                        "name": "report.pdf",
+                        "type": "File",
+                        "size": "571.9 KB",
+                        "isFolder": False,
+                    },
+                    {
+                        "name": "Rich_Cove_Monitoring",
+                        "type": "",
+                        "size": "",
+                        "isFolder": True,
+                    },
+                ]
+            }
+        )
+        self.assertIsNone(reason)
+
+    def test_file_row_with_empty_size_is_incomplete(self) -> None:
+        """A file that never received a size is an unfinished upload."""
+        reason = incomplete_upload_reason(
+            {
+                "rows": [
+                    {
+                        "name": "report.pdf",
+                        "type": "File",
+                        "size": "",
+                        "isFolder": False,
+                    }
+                ]
+            }
+        )
+        self.assertIn("file has no size: report.pdf", reason or "")
 
     def test_uploads_incomplete_on_project_page_ok(self) -> None:
         mock_page = MagicMock()
-        mock_page.evaluate.return_value = None
+        mock_page.evaluate.return_value = {"rows": []}
         self.assertIsNone(self.publisher._uploads_incomplete_on_project_page(mock_page))
 
     def test_pre_publish_gate_aborts_on_mismatch(self) -> None:
@@ -304,24 +340,22 @@ class TestDataLumosPublisher(unittest.TestCase):
             self.publisher._pre_publish_gate(MagicMock(), {"num_files": 5}, 7)
         )
 
-    @patch("publisher.DataLumosPublisher.workspace_file_stats_from_page")
-    def test_workspace_inventory_mismatches_uses_verify_counts(
+    @patch(
+        "publisher.DataLumosPublisher.workspace_storage_mismatches",
+        return_value=["inventory mismatch: files=5/4 size=1.0 MB/500 KB"],
+    )
+    def test_workspace_inventory_mismatches_uses_storage_status(
         self,
-        mock_stats: MagicMock,
+        mock_mismatches: MagicMock,
     ) -> None:
-        """Workspace inventory check compares scraped stats to the database."""
-        from verify.DatalumosViewFileStats import DatalumosViewFileStats
-
-        mock_stats.return_value = DatalumosViewFileStats(
-            file_count=4, total_bytes=1000
-        )
+        """Workspace inventory check uses the Storage Status panel."""
         errors = self.publisher._workspace_inventory_mismatches(
             MagicMock(),
             {"num_files": 5, "file_size": "1000"},
         )
         self.assertTrue(any("inventory mismatch" in e for e in errors))
         self.assertTrue(any("files=5/4" in e for e in errors))
-        mock_stats.assert_called_once()
+        mock_mismatches.assert_called_once()
 
     @patch.object(DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None)
     @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
@@ -372,7 +406,7 @@ class TestDataLumosPublisher(unittest.TestCase):
         mock_wait_for_human: MagicMock,
         mock_upload_check: MagicMock,
     ) -> None:
-        """Incomplete uploads log a warning, leave status unchanged, skip publish."""
+        """Incomplete uploads are an error: skip publish and mark the project."""
         drpid = Storage.create_record("https://example.com/test")
         Storage.update_record(drpid, {"datalumos_id": "239181", "status": "uploaded"})
         mock_page = MagicMock()
@@ -380,14 +414,13 @@ class TestDataLumosPublisher(unittest.TestCase):
         self.publisher._session.ensure_authenticated = MagicMock(return_value=None)
         self.publisher._session.close = MagicMock(return_value=None)
 
-        with patch("publisher.DataLumosPublisher.record_error") as mock_record_error:
-            self.publisher.run(drpid)
+        self.publisher.run(drpid)
 
         mock_upload_check.assert_called_once_with(mock_page)
         mock_publish_workspace.assert_not_called()
-        mock_record_error.assert_not_called()
         record = Storage.get(drpid)
-        self.assertEqual(record.get("status"), "uploaded")
+        self.assertEqual(record.get("status"), "uploaded-error")
+        self.assertIn("uploads incomplete", record.get("errors") or "")
         self.assertIsNone(record.get("published_url"))
 
     @patch.object(

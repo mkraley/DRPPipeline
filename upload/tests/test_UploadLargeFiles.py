@@ -15,6 +15,8 @@ from upload.UploadLargeFiles import (
     UPLOAD_LARGE_FILES_TIMEOUT_MS,
     UploadLargeFiles,
     is_eligible_for_upload_large_files,
+    parse_max_project_size,
+    planned_download_paths,
     planned_out_names,
     project_under_size_limit,
     run_aria2_downloads,
@@ -37,6 +39,11 @@ class TestUploadLargeFilesHelpers(unittest.TestCase):
         self.assertFalse(project_under_size_limit(at_limit))
         self.assertFalse(project_under_size_limit(over))
         self.assertFalse(project_under_size_limit(missing))
+
+    def test_parse_max_project_size_bare_number_is_gigabytes(self) -> None:
+        self.assertEqual(parse_max_project_size(40), 40 * 1024**3)
+        self.assertEqual(parse_max_project_size("40GB"), 40 * 1024**3)
+        self.assertEqual(parse_max_project_size("40 GB"), 40 * 1024**3)
 
     def test_is_eligible_for_upload_large_files(self) -> None:
         self.assertTrue(
@@ -71,6 +78,21 @@ class TestUploadLargeFilesHelpers(unittest.TestCase):
             '-d "C:\\data" -o "other.zip" "https://example.com/other.zip"',
         ]
         self.assertEqual(planned_out_names(lines), ["big.zip", "other.zip"])
+
+    def test_planned_download_paths_keep_product_folders(self) -> None:
+        """``-d`` product folders are part of the path that will be uploaded."""
+        lines = [
+            'aria2c --user-agent="UA" -d "C:\\DataRescue\\NPSData\\NPS001502" '
+            '-o "LAVO_SRI_Enhanced.rar" "https://irma.nps.gov/DataStore/DownloadFile/1"',
+            'aria2c --user-agent="UA" '
+            '-d "C:\\DataRescue\\NPSData\\NPS001502\\Soil_Survey" '
+            '-o "LAVO_Soil_Survey_Report.zip" '
+            '"https://irma.nps.gov/DataStore/DownloadFile/2"',
+        ]
+        paths = planned_download_paths(lines)
+        self.assertEqual(paths[0].name, "LAVO_SRI_Enhanced.rar")
+        self.assertEqual(paths[1].parent.name, "Soil_Survey")
+        self.assertEqual(paths[1].name, "LAVO_Soil_Survey_Report.zip")
 
 
 class TestEnsureAria2CmdSkipNoteFallback(unittest.TestCase):
@@ -194,7 +216,28 @@ class TestUploadLargeFilesRun(unittest.TestCase):
         with patch("upload.UploadIssueReporter.record_error") as mock_error:
             self.module.run(drpid)
             mock_error.assert_called()
-            self.assertIn("25 GB", mock_error.call_args[0][1])
+            self.assertIn("25.0 GB", mock_error.call_args[0][1])
+
+    def test_run_accepts_project_under_raised_cap(self) -> None:
+        """--max-project-size lets a project above 25 GB through the size check."""
+        Args._config["max_project_size"] = "40GB"
+        drpid = Storage.create_record("https://example.com/test")
+        Storage.update_record(
+            drpid,
+            {
+                "status": STATUS_UPLOADED_LARGE_FILE,
+                "datalumos_id": "123",
+                "folder_path": str(self.temp_dir),
+                "file_size": "30.0 GB",
+            },
+        )
+        with patch("upload.UploadLargeFiles.ensure_aria2_cmd", return_value=(Path("x.cmd"), [])), patch(
+            "upload.UploadLargeFiles.large_files_on_disk", return_value=[]
+        ), patch("upload.UploadIssueReporter.record_error") as mock_error:
+            self.module.run(drpid)
+        messages = " ".join(item.args[1] for item in mock_error.call_args_list)
+        self.assertNotIn("40.0 GB", messages)
+        self.assertIn("No large files", messages)
 
     @patch("upload.UploadLargeFiles.Storage")
     @patch("upload.UploadLargeFiles.ensure_aria2_cmd", return_value=(Path("x.cmd"), []))
@@ -222,7 +265,7 @@ class TestUploadLargeFilesRun(unittest.TestCase):
         uploader.run(7)
 
         mock_upload.assert_called_once()
-        file_paths = mock_upload.call_args[0][2]
+        file_paths = mock_upload.call_args[0][3]
         self.assertEqual([p.name for p in file_paths], ["big.zip"])
         mock_storage.update_record.assert_called_with(7, {"status": STATUS_FINISH_WAIT})
 
