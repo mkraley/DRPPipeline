@@ -2,6 +2,7 @@
 Unit tests for Orchestrator.
 """
 
+import signal
 import sys
 import tempfile
 import time
@@ -11,6 +12,7 @@ from unittest.mock import MagicMock, call, patch
 
 from utils.Args import Args
 from utils.Logger import Logger
+from utils.SoftStop import SoftStop
 
 from orchestration.Orchestrator import (
     Orchestrator,
@@ -876,3 +878,37 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(len(summary), 1)
         # Interrupted mid-project is not counted as completed
         self.assertIn("completed=0", summary[0])
+
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
+    def test_soft_stop_runs_current_project_then_stops(
+        self, mock_storage_cls: MagicMock, mock_find_class: MagicMock
+    ) -> None:
+        """The first Ctrl-C finishes the project in progress and skips the rest."""
+        mock_storage = MagicMock()
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.list_eligible_projects.return_value = [
+            {"DRPID": 1, "source_url": "https://one.com"},
+            {"DRPID": 2, "source_url": "https://two.com"},
+        ]
+        mock_instance = MagicMock()
+
+        def on_run(drpid: int) -> None:
+            if drpid == 1:
+                SoftStop.handle(signal.SIGINT, None)
+
+        mock_instance.run.side_effect = on_run
+        mock_find_class.return_value = MagicMock(return_value=mock_instance)
+
+        info_messages: list[str] = []
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls), patch(
+            "orchestration.Orchestrator.Logger.info",
+            side_effect=lambda msg, *a, **k: info_messages.append(msg),
+        ):
+            Orchestrator.run("collector")
+
+        self.assertEqual(mock_instance.run.call_args_list, [call(1)])
+        self.assertTrue(
+            any("stopping after the current project" in message for message in info_messages)
+        )
+        self.assertFalse(SoftStop.requested())

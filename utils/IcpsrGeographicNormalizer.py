@@ -47,6 +47,9 @@ _EXTRA_ALIASES: dict[str, str] = {
     "coterminus united states": "United States",
     "united states of america": "United States",
     "new york": "New York (state)",
+    "washington dc": "District of Columbia",
+    "washington, d.c.": "District of Columbia",
+    "washington d.c.": "District of Columbia",
 }
 
 # ICPSR country-level US terms treated as aliases; emit one canonical label.
@@ -133,7 +136,7 @@ _EXTENT_PHRASE_RULES: tuple[tuple[re.Pattern[str], str, str, str], ...] = (
 _US_TERRITORY_TERMS = frozenset({"Virgin Islands of the United States", "American Samoa", "Guam"})
 
 # ICPSR preferred names that differ from _US_STATE_BBOX keys.
-_US_STATE_ICPSR_TERMS = frozenset({"New York (state)"})
+_US_STATE_ICPSR_TERMS = frozenset({"New York (state)", "Washington, DC"})
 
 
 @dataclass(frozen=True)
@@ -202,7 +205,7 @@ class IcpsrGeographicThesaurus:
         found: list[GeographicMatch] = []
         seen: set[str] = set()
         for term in self._terms_by_length:
-            pattern = re.compile(r"\b" + re.escape(term.lower()) + r"\b")
+            pattern = _preferred_term_pattern(term.lower())
             if pattern.search(lowered):
                 if term not in seen:
                     seen.add(term)
@@ -228,6 +231,21 @@ class IcpsrGeographicThesaurus:
 @lru_cache(maxsize=1)
 def _thesaurus() -> IcpsrGeographicThesaurus:
     return IcpsrGeographicThesaurus.load()
+
+
+def _preferred_term_pattern(lowered_term: str) -> re.Pattern[str]:
+    """Return a search pattern for one preferred term in already-lowered text."""
+    if lowered_term == "washington":
+        # "George Washington" is a person. "Washington, DC" is the capital.
+        return re.compile(
+            r"(?<!george )(?<!fort )(?<!-)\bwashington\b"
+            r"(?!\s*,?\s*(?:d\.c\.|dc)\b)"
+            r"(?!\s+monument\b)"
+        )
+    if lowered_term == "ohio":
+        # "Chesapeake and Ohio" is the canal, not Ohio state.
+        return re.compile(r"(?<!and )\bohio\b")
+    return re.compile(r"\b" + re.escape(lowered_term) + r"\b")
 
 
 def _bbox_center(bbox: dict[str, float]) -> tuple[float, float] | None:

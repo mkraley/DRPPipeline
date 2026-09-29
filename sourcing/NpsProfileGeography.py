@@ -23,6 +23,22 @@ _NPS_UNIT_STATES: dict[str, tuple[str, ...]] = {
     "GAAR": ("Alaska",),
     "KOVA": ("Alaska",),
     "NOAT": ("Alaska",),
+    # National Capital Region. NCRN itself is a network, not a place.
+    "ANAC": ("District of Columbia",),
+    "ANTI": ("Maryland",),
+    "BAWA": ("Maryland",),
+    "CATO": ("Maryland",),
+    "CHOH": ("District of Columbia", "Maryland"),
+    "FOWA": ("Maryland",),
+    "GREE": ("Maryland",),
+    "GWMP": ("District of Columbia", "Virginia"),
+    "HAFE": ("Maryland", "Virginia", "West Virginia"),
+    "MANA": ("Virginia",),
+    "MONO": ("Maryland",),
+    "NACE": ("District of Columbia", "Maryland"),
+    "PRWI": ("Virginia",),
+    "ROCR": ("District of Columbia",),
+    "WOTR": ("Virginia",),
 }
 
 # NPS System designation suffixes (longest first). Based on NPS park-unit

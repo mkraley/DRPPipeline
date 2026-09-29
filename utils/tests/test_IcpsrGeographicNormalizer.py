@@ -232,6 +232,56 @@ class TestIcpsrGeographicNormalizer:
         assert result.geographic_coverage == "New York City"
         assert "New York (state)" not in result.geographic_coverage
 
+    def test_fort_washington_is_not_washington_state(
+        self, thesaurus: IcpsrGeographicThesaurus
+    ) -> None:
+        """Fort Washington and Baltimore-Washington are capital-region names."""
+        result = normalize_geographic_metadata(
+            geographic_extent_description=(
+                "Fort Washington Park; Baltimore-Washington National Parkway"
+            ),
+            thesaurus=thesaurus,
+        )
+        assert "Washington" not in parse_geographic_coverage_field(result.geographic_coverage)
+
+    def test_george_washington_is_not_washington_state(
+        self, thesaurus: IcpsrGeographicThesaurus
+    ) -> None:
+        """A person's name must not select Washington state."""
+        result = normalize_geographic_metadata(
+            geographic_extent_description="George Washington Memorial Parkway",
+            thesaurus=thesaurus,
+        )
+        assert "Washington" not in result.geographic_coverage
+
+    def test_washington_dc_is_not_washington_state(
+        self, thesaurus: IcpsrGeographicThesaurus
+    ) -> None:
+        """Washington, DC is the capital, not Washington state."""
+        result = normalize_geographic_metadata(
+            geographic_extent_description="Stream sites in Washington, DC",
+            thesaurus=thesaurus,
+        )
+        assert result.geographic_coverage == "Washington, DC"
+
+    def test_chesapeake_and_ohio_is_not_ohio_state(
+        self, thesaurus: IcpsrGeographicThesaurus
+    ) -> None:
+        """The C&O Canal name must not select Ohio."""
+        result = normalize_geographic_metadata(
+            geographic_extent_description="Chesapeake and Ohio Canal National Historical Park",
+            thesaurus=thesaurus,
+        )
+        assert "Ohio" not in parse_geographic_coverage_field(result.geographic_coverage)
+
+    def test_washington_state_still_matches(self, thesaurus: IcpsrGeographicThesaurus) -> None:
+        """A bare Washington place name remains the state."""
+        result = normalize_geographic_metadata(
+            geographic_extent_description="Olympic National Park, Washington",
+            thesaurus=thesaurus,
+        )
+        assert result.geographic_coverage == "Washington"
+
     def test_parse_geographic_coverage_field(self) -> None:
         assert parse_geographic_coverage_field("Oregon; United States") == [
             "Oregon",

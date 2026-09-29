@@ -47,6 +47,8 @@ COMMON OPTIONS
                           clear errors on success
   -l, --log-level LEVEL   DEBUG, INFO, WARNING, ERROR (default: INFO)
   --log-color             Colorize log severity in terminal
+  Ctrl-C                  Finish the current project, then stop the batch.
+                          Press Ctrl-C again to stop immediately.
   --delete-all-db-entries  For sourcing only: wipe the SQLite DB before run (or set delete_all_db_entries in config; default off)
 
 USFS COLLECTOR

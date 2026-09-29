@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
@@ -261,18 +262,53 @@ def run_aria2_cmd_line_with_retries(
     return False, attempts
 
 
-def _run_aria2_argv(argv: List[str]) -> int:
-    """Run aria2 and show its console output without invalid-range noise."""
-    from collectors.Aria2ConsoleFilter import forward_aria2_console
+def _popen_aria2(argv: List[str]) -> subprocess.Popen[bytes]:
+    """
+    Start aria2 in its own process group on Windows.
 
-    proc = subprocess.Popen(
+    A new process group does not receive the console Ctrl-C event, so the
+    first Ctrl-C can finish this download. The second Ctrl-C stops the child
+    through :meth:`utils.SoftStop.SoftStop.on_immediate_stop`.
+    """
+    if sys.platform == "win32":
+        return subprocess.Popen(
+            argv,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+        )
+    return subprocess.Popen(
         argv,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
-    if proc.stdout is not None:
-        forward_aria2_console(proc.stdout)
-    return proc.wait()
+
+
+def _terminate_child(proc: subprocess.Popen[bytes]) -> None:
+    """Stop an aria2 process that ignored the console Ctrl-C event."""
+    if proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
+def _run_aria2_argv(argv: List[str]) -> int:
+    """Run aria2 and show its console output without invalid-range noise."""
+    from collectors.Aria2ConsoleFilter import forward_aria2_console
+    from utils.SoftStop import SoftStop
+
+    proc = _popen_aria2(argv)
+    with SoftStop.on_immediate_stop(lambda: _terminate_child(proc)):
+        try:
+            if proc.stdout is not None:
+                forward_aria2_console(proc.stdout)
+            return proc.wait()
+        except KeyboardInterrupt:
+            _terminate_child(proc)
+            raise
 
 
 def download_exported_cmd_line(

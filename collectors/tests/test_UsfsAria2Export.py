@@ -1,6 +1,7 @@
 """Tests for collectors.UsfsAria2Export helpers."""
 
 import io
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -266,6 +267,11 @@ class TestUsfsAria2Export(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(attempts, 1)
         self.assertEqual(mock_popen.call_count, 1)
+        if sys.platform == "win32":
+            self.assertEqual(
+                mock_popen.call_args.kwargs["creationflags"],
+                subprocess.CREATE_NEW_PROCESS_GROUP,
+            )
 
     def test_run_aria2_cmd_line_with_retries_retries_until_success(self) -> None:
         from unittest.mock import MagicMock, patch
@@ -297,6 +303,27 @@ class TestUsfsAria2Export(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(attempts, 3)
         self.assertEqual(mock_popen.call_count, 3)
+
+    def test_run_aria2_argv_terminates_child_on_interrupt(self) -> None:
+        """A second Ctrl-C, seen as KeyboardInterrupt, stops the aria2 process."""
+        from collectors.UsfsAria2Export import _run_aria2_argv
+
+        mock_proc = MagicMock()
+        mock_proc.stdout = io.BytesIO(b"")
+        mock_proc.poll.return_value = None
+        waits = {"count": 0}
+
+        def wait_side_effect(*_args: object, **_kwargs: object) -> int:
+            waits["count"] += 1
+            if waits["count"] == 1:
+                raise KeyboardInterrupt
+            return 1
+
+        mock_proc.wait.side_effect = wait_side_effect
+        with patch("collectors.UsfsAria2Export.subprocess.Popen", return_value=mock_proc):
+            with self.assertRaises(KeyboardInterrupt):
+                _run_aria2_argv(["aria2c"])
+        mock_proc.terminate.assert_called_once()
 
     def test_write_drpid_aria2_cmd(self) -> None:
         folder = Path(__file__).parent / "_tmp_aria2_write"

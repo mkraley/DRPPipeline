@@ -21,6 +21,7 @@ from storage import Storage
 from utils.Args import Args
 from utils.Errors import derive_error_status, is_error_status, record_crash, record_error
 from utils.Logger import Logger, _get_current_drpid
+from utils.SoftStop import SoftStop
 
 
 # Batch modules that collect data from source URLs (not upload/publish/verify).
@@ -352,6 +353,32 @@ def _stop_requested() -> bool:
     return path.exists()
 
 
+def _batch_stop_reason() -> Optional[str]:
+    """Return a log line when the batch should not start another project."""
+    if SoftStop.requested():
+        return "Orchestrator stopping after the current project (Ctrl-C)"
+    if _stop_requested():
+        return "Orchestrator stopped by user (stop file)"
+    return None
+
+
+def _finish_if_stopping(executor: Optional[ThreadPoolExecutor] = None) -> bool:
+    """
+    Stop the batch when a stop file or soft Ctrl-C is set.
+
+    Returns True when the caller should leave the project loop. Queued worker
+    tasks are cancelled; a project already running is left to finish unless a
+    second Ctrl-C raises ``KeyboardInterrupt``.
+    """
+    reason = _batch_stop_reason()
+    if reason is None:
+        return False
+    Logger.info(reason)
+    if executor is not None:
+        executor.shutdown(wait=False, cancel_futures=True)
+    return True
+
+
 def _log_record_drpid(record: logging.LogRecord) -> Optional[int]:
     """
     Resolve the project DRPID associated with a log record.
@@ -515,13 +542,26 @@ class Orchestrator:
         """
         Run the named module. Dynamically loads the module class and calls run(drpid).
 
+        Ctrl-C during a project batch finishes the current project and then
+        stops. A second Ctrl-C interrupts immediately.
+
         Args:
             module: Module name (e.g. "sourcing", "collectors").
 
         Raises:
             ValueError: If module is not in MODULES.
             ImportError: If the module class cannot be imported.
+            KeyboardInterrupt: If the operator interrupts the current project.
         """
+        SoftStop.install()
+        try:
+            cls._execute(module)
+        finally:
+            SoftStop.restore()
+
+    @classmethod
+    def _execute(cls, module: str) -> None:
+        """Run ``module`` with the soft-stop Ctrl-C handler already installed."""
         if module not in MODULES:
             valid = ", ".join(sorted(MODULES.keys()))
             raise ValueError(f"Unknown module {module!r}. Valid: {valid}")
@@ -712,7 +752,7 @@ class Orchestrator:
             max_workers = Args.max_workers or 1
             max_workers = max(1, int(max_workers))
 
-            with _orchestration_batch(module) as batch:
+            with SoftStop.scope(), _orchestration_batch(module) as batch:
                 def run_one(proj: Dict[str, Any]) -> None:
                     drpid = proj["DRPID"]
                     source_url = proj.get("source_url", "")
@@ -746,8 +786,7 @@ class Orchestrator:
                 if max_workers <= 1:
                     # Single-threaded: reuse one instance
                     for idx, proj in enumerate(projects, 1):
-                        if _stop_requested():
-                            Logger.info("Orchestrator stopped by user (stop file)")
+                        if _finish_if_stopping():
                             return
                         _log_orchestrator_progress(
                             batch, display_index=idx, total=n_projects
@@ -791,9 +830,7 @@ class Orchestrator:
                         done = 0
                         try:
                             for future in as_completed(futures):
-                                if _stop_requested():
-                                    Logger.info("Orchestrator stopped by user (stop file)")
-                                    executor.shutdown(wait=False, cancel_futures=True)
+                                if _finish_if_stopping(executor):
                                     return
                                 done += 1
                                 if n_projects <= 20 or done % 10 == 0 or done == n_projects:

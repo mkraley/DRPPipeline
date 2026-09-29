@@ -118,6 +118,34 @@ class TestNpsProfileGeography(unittest.TestCase):
         self.assertEqual(coverage, "Alaska")
         self.assertNotIn("United States", coverage)
 
+    def test_national_capital_parks_are_not_washington_state(self) -> None:
+        """George Washington Memorial Parkway is the capital region, not Washington state."""
+        profile = {
+            "units": [
+                {"unitCode": "NCRN", "unitName": "National Capital Region Network"},
+                {"unitCode": "ANTI", "unitName": "Antietam National Battlefield"},
+                {"unitCode": "GWMP", "unitName": "George Washington Memorial Parkway"},
+                {"unitCode": "ROCR", "unitName": "Rock Creek Park"},
+                {"unitCode": "HAFE", "unitName": "Harpers Ferry National Historical Park"},
+                {"unitCode": "WOTR", "unitName": "Wolf Trap National Park for the Performing Arts"},
+            ],
+            "boundingBoxes": [
+                {
+                    "wkt": (
+                        "POLYGON (("
+                        "-77.8 38.5, -76.9 38.5, -76.9 39.7, -77.8 39.7, -77.8 38.5"
+                        "))"
+                    )
+                }
+            ],
+        }
+        coverage = profile_geographic_coverage(profile)
+        self.assertEqual(
+            coverage,
+            "District of Columbia; Maryland; Virginia; West Virginia",
+        )
+        self.assertNotIn("Washington", coverage)
+
     def test_short_unit_name_strips_designation_suffixes(self) -> None:
         """NPS designation phrases are removed; the place stem remains."""
         cases = {

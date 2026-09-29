@@ -591,6 +591,7 @@ You can create different databases to keep track of sets of projects, e.g. diffe
 - `--num-rows` / `num_rows` — Limits projects or URLs per run (omit for unlimited).
 - `--max-workers` — Concurrent projects for modules that support it (default: 1).
 - `--max-project-size` / `max_project_size` — Largest `file_size` `upload_large_files` will take for `uploaded - large file` (default `25GB`). A bare number is gigabytes (`40` or `40GB`). `uploaded - expanded` stays uncapped.
+- **Ctrl-C** — During a project batch, the first press finishes the project already running and then stops. A second press stops immediately. Outside a project batch (for example sourcing, or the interactive collector), one press still stops immediately. On Windows, an aria2 download keeps running through the first press; the second press stops that download.
 
 ---
 
