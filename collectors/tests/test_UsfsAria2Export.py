@@ -1,5 +1,6 @@
 """Tests for collectors.UsfsAria2Export helpers."""
 
+import io
 import sys
 import tempfile
 import unittest
@@ -254,15 +255,17 @@ class TestUsfsAria2Export(unittest.TestCase):
             ),
             ua,
         )
-        mock_run = MagicMock(return_value=MagicMock(returncode=0))
-        with patch("collectors.UsfsAria2Export.subprocess.run", mock_run):
+        mock_proc = MagicMock()
+        mock_proc.stdout = io.BytesIO(b"")
+        mock_proc.wait.return_value = 0
+        with patch("collectors.UsfsAria2Export.subprocess.Popen", return_value=mock_proc) as mock_popen:
             ok, attempts = run_aria2_cmd_line_with_retries(
                 cmd,
                 log_path=Path(r"C:\logs\file.zip.log"),
             )
         self.assertTrue(ok)
         self.assertEqual(attempts, 1)
-        self.assertEqual(mock_run.call_count, 1)
+        self.assertEqual(mock_popen.call_count, 1)
 
     def test_run_aria2_cmd_line_with_retries_retries_until_success(self) -> None:
         from unittest.mock import MagicMock, patch
@@ -277,10 +280,15 @@ class TestUsfsAria2Export(unittest.TestCase):
             ),
             ua,
         )
-        mock_run = MagicMock(
-            side_effect=[MagicMock(returncode=1), MagicMock(returncode=1), MagicMock(returncode=0)]
-        )
-        with patch("collectors.UsfsAria2Export.subprocess.run", mock_run):
+        procs = []
+        for code in (1, 1, 0):
+            proc = MagicMock()
+            proc.stdout = io.BytesIO(b"")
+            proc.wait.return_value = code
+            procs.append(proc)
+        with patch(
+            "collectors.UsfsAria2Export.subprocess.Popen", side_effect=procs
+        ) as mock_popen:
             ok, attempts = run_aria2_cmd_line_with_retries(
                 cmd,
                 log_path=Path(r"C:\logs\file.zip.log"),
@@ -288,7 +296,7 @@ class TestUsfsAria2Export(unittest.TestCase):
             )
         self.assertTrue(ok)
         self.assertEqual(attempts, 3)
-        self.assertEqual(mock_run.call_count, 3)
+        self.assertEqual(mock_popen.call_count, 3)
 
     def test_write_drpid_aria2_cmd(self) -> None:
         folder = Path(__file__).parent / "_tmp_aria2_write"

@@ -256,10 +256,23 @@ def run_aria2_cmd_line_with_retries(
         summary_interval=summary_interval,
     )
     for attempt in range(1, attempts + 1):
-        result = subprocess.run(argv, check=False)
-        if result.returncode == 0:
+        if _run_aria2_argv(argv) == 0:
             return True, attempt
     return False, attempts
+
+
+def _run_aria2_argv(argv: List[str]) -> int:
+    """Run aria2 and show its console output without invalid-range noise."""
+    from collectors.Aria2ConsoleFilter import forward_aria2_console
+
+    proc = subprocess.Popen(
+        argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    if proc.stdout is not None:
+        forward_aria2_console(proc.stdout)
+    return proc.wait()
 
 
 def download_exported_cmd_line(
