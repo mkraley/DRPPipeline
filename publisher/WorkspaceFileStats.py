@@ -168,8 +168,10 @@ def _space_label_matches(db_file_size: str, space_label: str) -> bool:
     Return True when the panel space label agrees with the database size.
 
     Exact labels use the same 10% or 1 MiB tolerance as the file-table check.
-    A rounded label such as ``0.01 GB`` also matches any size within half of
-    that displayed step.
+    A gigabyte label also matches any database size up through the next
+    displayed step: ``0.01 GB`` covers sizes up to about 20 MB, and ``0.03 GB``
+    covers sizes up to about 40 MB. Truncation to the shown decimals and a
+    half-step around the label remain as additional matches.
     """
     expected = parse_file_size_to_bytes(db_file_size)
     label = (space_label or "").replace("&lt;", "<").strip()
@@ -184,10 +186,49 @@ def _space_label_matches(db_file_size: str, space_label: str) -> bool:
         return expected < limit
     if sizes_within_tolerance(expected, limit):
         return True
+    if _gb_label_covers_size(expected, numeric):
+        return True
+    if _truncated_display_matches(expected, numeric):
+        return True
     half_step = _displayed_half_step_bytes(numeric)
     if half_step is None:
         return False
     return abs(expected - limit) <= half_step
+
+
+def _gb_label_covers_size(expected_bytes: int, numeric_label: str) -> bool:
+    """
+    Return True when a GB label covers ``expected_bytes`` through the next step.
+
+    ``0.01 GB`` matches anything up to ``0.02 GB`` (about 20 MB). ``0.03 GB``
+    matches anything up to ``0.04 GB`` (about 40 MB).
+    """
+    match = re.match(r"^(\d+(?:\.(\d+))?)\s*GB$", numeric_label.strip(), re.IGNORECASE)
+    if match is None:
+        return False
+    decimals = len(match.group(2) or "")
+    scale = 10 ** decimals
+    displayed = int(round(float(match.group(1)) * scale))
+    step_text = f"{(displayed + 1) / scale:.{decimals}f}" if decimals else str(displayed + 1)
+    ceiling = parse_file_size_to_bytes(f"{step_text} GB")
+    if ceiling is None:
+        return False
+    return expected_bytes <= ceiling
+
+
+def _truncated_display_matches(expected_bytes: int, numeric_label: str) -> bool:
+    """Return True when flooring ``expected_bytes`` to the label precision equals it."""
+    match = re.match(r"^(\d+(?:\.(\d+))?)\s*([A-Za-z]+)$", numeric_label.strip())
+    if match is None:
+        return False
+    decimals = len(match.group(2) or "")
+    one_unit = parse_file_size_to_bytes(f"1 {match.group(3)}")
+    if one_unit is None or one_unit <= 0:
+        return False
+    scale = 10 ** decimals
+    displayed = int(round(float(match.group(1)) * scale))
+    truncated = (expected_bytes * scale) // one_unit
+    return truncated == displayed
 
 
 def _displayed_half_step_bytes(numeric_label: str) -> Optional[int]:

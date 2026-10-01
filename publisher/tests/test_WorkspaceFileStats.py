@@ -257,6 +257,58 @@ class TestWorkspaceFileStats(unittest.TestCase):
         )
         self.assertEqual(errors, [])
 
+    @patch("publisher.WorkspaceFileStats.nps_product_folder_count", return_value=0)
+    def test_truncated_gigabyte_label_matches_smaller_megabyte_size(
+        self, _mock_products: MagicMock
+    ) -> None:
+        """28.6 MB is truncated to 0.02 GB on the Storage Status panel."""
+        page = MagicMock()
+        page.evaluate.return_value = {"space": "0.02 GB", "fileFolder": "2"}
+        errors = workspace_storage_mismatches(
+            page,
+            {"num_files": 2, "file_size": "28.6 MB"},
+        )
+        self.assertEqual(errors, [])
+
+    @patch("publisher.WorkspaceFileStats.nps_product_folder_count", return_value=0)
+    def test_truncated_gigabyte_label_rejects_a_different_step(
+        self, _mock_products: MagicMock
+    ) -> None:
+        """50 MB truncates to 0.04 GB and does not match a 0.02 GB label."""
+        page = MagicMock()
+        page.evaluate.return_value = {"space": "0.02 GB", "fileFolder": "2"}
+        errors = workspace_storage_mismatches(
+            page,
+            {"num_files": 2, "file_size": "50 MB"},
+        )
+        self.assertEqual(len(errors), 1)
+        self.assertIn("size=50 MB/0.02 GB", errors[0])
+
+    @patch("publisher.WorkspaceFileStats.nps_product_folder_count", return_value=0)
+    def test_gigabyte_label_matches_sizes_up_through_the_next_step(
+        self, _mock_products: MagicMock
+    ) -> None:
+        """0.01 GB covers sizes up to about 20 MB, and 0.03 GB up to about 40 MB."""
+        page = MagicMock()
+        cases = (
+            ("0.01 GB", "20 MB", True),
+            ("0.01 GB", "1 KB", True),
+            ("0.01 GB", "21 MB", False),
+            ("0.03 GB", "40 MB", True),
+            ("0.03 GB", "45 MB", False),
+        )
+        for label, file_size, should_match in cases:
+            with self.subTest(label=label, file_size=file_size):
+                page.evaluate.return_value = {"space": label, "fileFolder": "2"}
+                errors = workspace_storage_mismatches(
+                    page,
+                    {"num_files": 2, "file_size": file_size},
+                )
+                if should_match:
+                    self.assertEqual(errors, [])
+                else:
+                    self.assertEqual(len(errors), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
