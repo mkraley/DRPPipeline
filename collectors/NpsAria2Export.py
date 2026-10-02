@@ -15,7 +15,9 @@ from collectors.UsfsAria2Export import Aria2Entry, write_aria2_entries
 from utils.url_utils import BROWSER_HEADERS
 
 IRMA_REFERER = "https://irma.nps.gov/"
-_IRMA_CONNECTIONS = 8
+# One connection: IRMA returns from the requested start through EOF, so extra
+# split connections log errorCode 8 Invalid range header and then abort.
+_IRMA_CONNECTIONS = 1
 
 
 def write_nps_aria2_cmd(

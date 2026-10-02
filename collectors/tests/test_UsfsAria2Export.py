@@ -242,6 +242,25 @@ class TestUsfsAria2Export(unittest.TestCase):
         self.assertIn("--summary-interval=0", argv)
         self.assertIn(f"--log={log_path}", argv)
         self.assertEqual(out_name_from_aria2_cmd_line(cmd), "file.zip")
+        self.assertNotIn("--split=1", argv)
+
+    def test_irma_download_uses_one_connection(self) -> None:
+        """IRMA range responses do not match split connections, so aria2 uses one."""
+        ua = BROWSER_HEADERS["User-Agent"]
+        cmd = format_windows_command(
+            Aria2Entry(
+                url="https://irma.nps.gov/DataStore/DownloadFile/599193",
+                out_name="big.zip",
+                dir_path=Path(r"C:\DataRescue\NPSData\NPS000814"),
+                max_connections=8,
+            ),
+            ua,
+            referer="https://irma.nps.gov/",
+        )
+        argv = aria2_argv_for_download(cmd, log_path=Path(r"C:\logs\big.zip.log"))
+        self.assertEqual(argv[argv.index("-x") + 1], "1")
+        self.assertEqual(argv[argv.index("-s") + 1], "1")
+        self.assertEqual(argv[-2:], ["--max-connection-per-server=1", "--split=1"])
 
     def test_run_aria2_cmd_line_with_retries_succeeds_first_try(self) -> None:
         from unittest.mock import MagicMock, patch

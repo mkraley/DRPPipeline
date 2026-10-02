@@ -35,6 +35,7 @@ class TestNpsAria2Export(unittest.TestCase):
             self.assertEqual(url, entry.url)
             self.assertEqual(dest_dir, (project / "Later_tables").resolve())
             self.assertIn("--referer=https://irma.nps.gov/", lines[0])
+            self.assertIn("-x 1 -s 1", lines[0])
 
     def test_skips_files_already_on_disk(self) -> None:
         """A file already in its product folder is left out of the command file."""

@@ -231,7 +231,33 @@ def aria2_argv_for_download(
         "--log-level=notice",
         "--show-console-readout=true",
     ]
-    return [argv[0], *extras, *argv[1:]]
+    return _single_connection_for_irma([argv[0], *extras, *argv[1:]])
+
+
+def _single_connection_for_irma(argv: List[str]) -> List[str]:
+    """
+    Use one connection for IRMA downloads.
+
+    DownloadFile returns from the requested start byte through EOF. A split
+    connection asks for a closed range, aria2 logs ``Invalid range header``,
+    and that connection aborts. One open-ended request matches the response.
+    """
+    if not argv or "irma.nps.gov" not in argv[-1].casefold():
+        return argv
+    return [*_set_connection_flags(argv, "1"), "--max-connection-per-server=1", "--split=1"]
+
+
+def _set_connection_flags(argv: List[str], value: str) -> List[str]:
+    """Return ``argv`` with existing ``-x`` and ``-s`` values replaced."""
+    updated = list(argv)
+    index = 0
+    while index < len(updated) - 1:
+        if updated[index] in {"-x", "-s"}:
+            updated[index + 1] = value
+            index += 2
+            continue
+        index += 1
+    return updated
 
 
 DEFAULT_ARIA2_MAX_ATTEMPTS = 3
