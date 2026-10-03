@@ -1,5 +1,5 @@
 /**
- * CollectorRightPane - Renders in the main page right pane when "Interactive collector" is active.
+ * CollectorRightPane - Renders in the main page right pane when "Collect interactively" is active.
  *
  * Top rail: Show log, Copy & Open, DRPID, Next, Load DRPID, No Links, Save.
  * Below: Scoreboard, then Metadata.
@@ -298,7 +298,7 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
       {drpid == null && !loading && (
         <div className="collector-empty-state">
           No project loaded. Use <strong>Load DRPID</strong> above to open a project, or run the{" "}
-          <strong>sourcing</strong> module from the left to add candidates.
+          <strong>source</strong> module from the left to add candidates.
         </div>
       )}
       {drpid != null && (

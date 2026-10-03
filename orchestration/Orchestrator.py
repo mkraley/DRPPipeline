@@ -33,9 +33,9 @@ from utils.SoftStop import SoftStop
 
 # Batch modules that collect data from source URLs (not upload/publish/verify).
 _COLLECTOR_MODULES = frozenset({
-    "collector",
-    "adc_globus_collector",
-    "adc_globus_survey",
+    "collect",
+    "collect_adc_globus",
+    "survey_adc_globus",
 })
 
 
@@ -72,23 +72,23 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": None,
         "class_name": None,  # Handled directly in Orchestrator
     },
-    "sourcing": {
+    "source": {
         "prereq": None,
         "class_name": "Sourcing",
     },
-    "collector": {
+    "collect": {
         "prereq": "sourced",
         "class_name": "Collector",
     },
-    "adc_globus_collector": {
+    "collect_adc_globus": {
         "prereq": "collected - external archive",
         "class_name": "AdcGlobusCollector",
     },
-    "adc_globus_survey": {
+    "survey_adc_globus": {
         "prereq": "collected - external archive",
         "class_name": "AdcGlobusSurvey",
     },
-    "interactive_collector": {
+    "collect_interactively": {
         "prereq": "sourced",
         "class_name": None,  # Handled directly: start Flask app with first eligible URL
     },
@@ -100,11 +100,11 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": "uploaded - large file",
         "class_name": "UploadLargeFiles",
     },
-    "publisher": {
+    "publish": {
         "prereq": "uploaded",
         "class_name": "DataLumosPublisher",
     },
-    "republisher": {
+    "republish": {
         "prereq": "re-uploaded",
         "class_name": "DataLumosRepublisher",
     },
@@ -112,7 +112,7 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": "updated_inventory",
         "class_name": "UploadVerifier",
     },
-    "cleanup_inprogress": {
+    "clean_inprogress": {
         "prereq": None,
         "class_name": "CleanupInProgress",
     },
@@ -127,7 +127,8 @@ MODULES: Dict[str, Dict[str, Any]] = {
 # Modules registered in MODULES but omitted from SPA/CLI pick lists.
 _UI_HIDDEN_MODULES = frozenset({
     "setup",
-    "adc_globus_survey",
+    "collect_adc_globus",
+    "survey_adc_globus",
 })
 
 
@@ -136,9 +137,9 @@ def list_pipeline_modules(*, include_noop: bool = False) -> list[str]:
     Return module names for CLI and UI lists.
 
     Excludes ``noop`` unless requested, legacy ``*_sourcing`` aliases, legacy
-    ``*_collector`` aliases (use ``sourcing`` / ``collector`` with ``Args.source``),
+    ``*_collector`` aliases (use ``source`` / ``collect`` with ``Args.source``),
     and modules in :data:`_UI_HIDDEN_MODULES`.
-    ``interactive_collector`` is always listed.
+    ``collect_interactively`` is always listed.
 
     Args:
         include_noop: When True, include the ``noop`` module.
@@ -154,7 +155,7 @@ def list_pipeline_modules(*, include_noop: bool = False) -> list[str]:
             continue
         if name.endswith("_sourcing"):
             continue
-        if name.endswith("_collector") and name not in ("collector", "interactive_collector"):
+        if name.endswith("_collector"):
             continue
         names.append(name)
     return names
@@ -553,7 +554,7 @@ class Orchestrator:
         stops. A second Ctrl-C interrupts immediately.
 
         Args:
-            module: Module name (e.g. "sourcing", "collectors").
+            module: Module name (e.g. "source", "collect").
 
         Raises:
             ValueError: If module is not in MODULES.
@@ -582,7 +583,7 @@ class Orchestrator:
 
         # Only sourcing may wipe the DB, and only when delete_all_db_entries is true in config and/or CLI
         # (default false — omit both and the database is left intact).
-        if module == "sourcing" and bool(Args.delete_all_db_entries):
+        if module == "source" and bool(Args.delete_all_db_entries):
             Logger.warning(
                 "Deleting all database entries before sourcing (delete_all_db_entries in config and/or "
                 "--delete-all-db-entries on command line)"
@@ -605,8 +606,8 @@ class Orchestrator:
             Logger.info(f"Orchestrator finished module={module!r}")
             return
 
-        # Handle interactive_collector: set DB path and start Flask app (app loads first eligible from Storage)
-        if module == "interactive_collector":
+        # Handle collect_interactively: set DB path and start Flask app (app loads first eligible from Storage)
+        if module == "collect_interactively":
             from interactive_collector.api_projects import get_interactive_prereq
             from interactive_collector.dev_server import run_server
 
@@ -637,7 +638,7 @@ class Orchestrator:
                 "start_drpid": None if ids else start_drpid,
                 "retry": retry,
             }
-            if module == "publisher":
+            if module == "publish":
                 # Publisher also processes sheet-only statuses (no browser)
                 from publisher.sheet_only_status import COLLECTOR_HOLD_PREFIXES
 
@@ -721,7 +722,7 @@ class Orchestrator:
                         ],
                         None if ids else num_rows,
                     )
-            elif module == "adc_globus_collector":
+            elif module == "collect_adc_globus":
                 from collectors.AdcGlobusCollector import is_globus_external_archive
 
                 # List without row limit; filter Globus then apply num_rows.
@@ -735,7 +736,7 @@ class Orchestrator:
                 projects.sort(key=lambda p: p["DRPID"])
                 if not ids and num_rows is not None:
                     projects = projects[:num_rows]
-            elif module == "adc_globus_survey":
+            elif module == "survey_adc_globus":
                 from collectors.AdcGlobusSurvey import is_globus_external_archive
 
                 globus_kwargs = {**list_kwargs, "num_rows": None}

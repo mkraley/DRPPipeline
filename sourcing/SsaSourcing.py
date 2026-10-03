@@ -5,7 +5,7 @@ Enumerates public file datasets from the Data.gov catalog (GSA Catalog API)
 and creates ``sourced`` storage records. Run via orchestrator when
 ``Args.source`` is ``ssa``::
 
-    python main.py sourcing
+    python main.py source
 """
 
 from __future__ import annotations

@@ -748,14 +748,15 @@ class TestApiPipeline(unittest.TestCase):
         self.assertIn("modules", data)
         mods = data["modules"]
         self.assertIsInstance(mods, list)
-        self.assertIn("sourcing", mods)
+        self.assertIn("source", mods)
         self.assertNotIn("adc_sourcing", mods)
-        self.assertIn("collector", mods)
+        self.assertIn("collect", mods)
         self.assertNotIn("catalog_collector", mods)
         self.assertNotIn("adc_collector", mods)
         self.assertNotIn("setup", mods)
-        self.assertNotIn("adc_globus_survey", mods)
-        self.assertIn("interactive_collector", mods)
+        self.assertNotIn("survey_adc_globus", mods)
+        self.assertNotIn("collect_adc_globus", mods)
+        self.assertIn("collect_interactively", mods)
         self.assertNotIn("noop", mods)
 
     def test_pipeline_run_requires_module(self) -> None:
@@ -780,11 +781,11 @@ class TestApiPipeline(unittest.TestCase):
         data = json.loads(resp.data)
         self.assertIn("error", data)
 
-    def test_pipeline_run_interactive_collector_returns_400(self) -> None:
-        """POST /api/pipeline/run with interactive_collector returns 400 (use button instead)."""
+    def test_pipeline_run_collect_interactively_returns_400(self) -> None:
+        """POST /api/pipeline/run with collect_interactively returns 400 (use button instead)."""
         resp = self.client.post(
             "/api/pipeline/run",
-            json={"module": "interactive_collector"},
+            json={"module": "collect_interactively"},
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 400)
@@ -924,7 +925,7 @@ class TestApiChat(unittest.TestCase):
                 ok=True,
                 requires_confirmation=False,
                 tool_name="run_module",
-                arguments={"module": "sourcing", "dry_run": True},
+                arguments={"module": "source", "dry_run": True},
                 result="ok",
             ),
         ):

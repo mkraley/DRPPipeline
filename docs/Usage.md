@@ -50,9 +50,9 @@ All write tools and `run_module` default to `dry_run=True`. See [MCP.md](../MCP.
 3. get_project(drpid=5)        → inspect a specific project
 4. clear_errors(drpid=5)       → make it eligible again
 5. set_project_status(drpid=5, status="sourced") → roll back for re-collection
-6. run_module("cms_collector", dry_run=True)  → preview eligible projects
-7. run_module("cms_collector", dry_run=False) → execute
-8. verify_module_run("cms_collector")         → confirm results
+6. run_module("collect", dry_run=True)  → preview eligible projects
+7. run_module("collect", dry_run=False) → execute
+8. verify_module_run("collect")         → confirm results
 ```
 
 ### Worked example: recovery operations (conversational)
@@ -165,10 +165,10 @@ Run with dry_run=False to execute.
 **Step 6 — Verify results after a collection run**
 
 ```
-verify_module_run("cms_collector")
+verify_module_run("collect")
 ```
 ```
-=== verify_module_run('cms_collector') ===
+=== verify_module_run('collect') ===
 Expected output status: 'collected'
 Projects at 'collected': 8
 Projects with errors:   2
@@ -192,11 +192,11 @@ Claude calls `preview_sourcing(num_rows=None)` and replies: *"The CMS sheet has 
 
 > **"Show me the first 5, then run sourcing to add the next batch."**
 
-Claude calls `preview_sourcing(num_rows=5)` and shows 5 URLs from the sheet, then calls `run_module("sourcing", dry_run=True, num_rows=15)` to confirm the configured sheet and mode, then asks for confirmation.
+Claude calls `preview_sourcing(num_rows=5)` and shows 5 URLs from the sheet, then calls `run_module("source", dry_run=True, num_rows=15)` to confirm the configured sheet and mode, then asks for confirmation.
 
 > **"Looks good, go ahead."**
 
-Claude calls `run_module("sourcing", dry_run=False, num_rows=15)`, waits for completion, then calls `verify_module_run("sourcing")` and `get_pipeline_stats()` and reports: *"Sourcing complete. 5 new projects added (DRPIDs 12–16), 10 skipped as duplicates already in the database. Pipeline now has 16 projects total, 5 ready to collect."*
+Claude calls `run_module("source", dry_run=False, num_rows=15)`, waits for completion, then calls `verify_module_run("source")` and `get_pipeline_stats()` and reports: *"Sourcing complete. 5 new projects added (DRPIDs 12–16), 10 skipped as duplicates already in the database. Pipeline now has 16 projects total, 5 ready to collect."*
 
 ---
 
@@ -222,16 +222,16 @@ Sheet rows scanned: 50  |  Matching: 5  |  Skipped: 45
   ... (showing first 5; pass num_rows=None for all)
 
 Note: URL availability and DB deduplication are not checked here.
-Run run_module('sourcing', dry_run=False) to execute.
+Run run_module('source', dry_run=False) to execute.
 ```
 
 **Step 2 — Confirm sourcing configuration (dry run)**
 
 ```
-run_module("sourcing", dry_run=True, num_rows=15)
+run_module("source", dry_run=True, num_rows=15)
 ```
 ```
-[DRY RUN] run_module('sourcing')
+[DRY RUN] run_module('source')
   prereq status: None
   output status: 'sourced'
   Sourcing reads from a Google Sheet and creates DB records.
@@ -251,15 +251,15 @@ Run with dry_run=False to execute.
 **Step 3 — Run sourcing**
 
 ```
-run_module("sourcing", dry_run=False, num_rows=15)
+run_module("source", dry_run=False, num_rows=15)
 ```
 ```
-=== run_module('sourcing') ===
+=== run_module('source') ===
 Exit code: 0
 
 ── stdout ──
 2026-03-17 - INFO - Storage initialized: drp_pipeline.db
-2026-03-17 - INFO - Orchestrator running module='sourcing' num_rows=15
+2026-03-17 - INFO - Orchestrator running module='source' num_rows=15
 2026-03-17 - ERROR - Duplicate source URL already in storage, skipping (no row created): ...  [×10]
 2026-03-17 - INFO - Sourcing: checking availability for 5 URLs (max_workers=1, timeout=15s)
 2026-03-17 - INFO - Sourcing complete: 5 good (sourcing) (DRPIDs: 12-16),
@@ -269,10 +269,10 @@ Exit code: 0
 **Step 4 — Verify results**
 
 ```
-verify_module_run("sourcing")
+verify_module_run("source")
 ```
 ```
-=== verify_module_run('sourcing') ===
+=== verify_module_run('source') ===
 Expected output status: 'sourced'
 Projects at 'sourced': 5
 Projects with errors:   2
@@ -311,7 +311,7 @@ Showing 5 of 5 matching projects (offset=0):
   DRPID=16  status='sourced'  'https://data.cms.gov/summary-statistics-on-use-and-payments/...'
 ```
 
-These projects are now ready to be processed by a collector (`cms_collector`, etc.).
+These projects are now ready to be processed by `collect`.
 
 ---
 
@@ -329,7 +329,7 @@ If the config file does not exist, a warning is shown but the pipeline continues
 
 | Parameter | CLI | Config | Default | Description |
 |-----------|-----|--------|---------|-------------|
-| `module` | required (positional) | — | — | Module to run: `noop`, `sourcing`, `socrata_collector`, `catalog_collector`, `interactive_collector`, `upload`, `publisher`, `cleanup_inprogress` |
+| `module` | required (positional) | — | — | Module to run: `noop`, `source`, `collect`, `collect_interactively`, `upload`, `publish`, `clean_inprogress` |
 | `config` / `-c` | yes | — | `./config.json` | Path to configuration file |
 | `log_level` / `-l` | yes | `log_level` | `INFO` | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `log_color` | yes (`--log-color`) | — | `false` | Color log severity in terminal (only when stdout is TTY) |
@@ -414,14 +414,14 @@ For Google Sheets setup, see [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md).
    ```
    Or via the orchestrator (debug + auto-reload on by default):  
    ```bash
-   python main.py interactive_collector
+   python main.py collect_interactively
    ```
    Set ``FLASK_DEBUG=0`` for production-like mode, or ``FLASK_USE_RELOADER=0`` during
    long upload/publisher runs so Flask does not restart mid-stream.
    To work through ADC (or other) projects already marked `collected - external archive`
    instead of `sourced`:
    ```bash
-   python main.py interactive_collector --external-archive
+   python main.py collect_interactively --external-archive
    ```
    Optional: `--start N` to begin at a specific DRPID. Use `--ids 5,7,10-12` to
    process an explicit list (incompatible with `-n` and `--start`). Use `--retry`
@@ -452,7 +452,7 @@ For Google Sheets setup, see [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md).
 
 ### Executing modules
 
-To run a given module, e.g., sourcing, upload, publisher, just press the corresponding button on the main page. Output will be shown in the log window.
+To run a given module, e.g., source, upload, publish, just press the corresponding button on the main page. Output will be shown in the log window.
 
 **Stale build on `:5000`:** Flask serves the **pre-built** SPA from `interactive_collector/frontend/dist`. The pipeline log is streamed as **NDJSON** and the UI parses each line. If you change the frontend TypeScript but do not rebuild, you will see raw frames like `{"line":...}` and `{"ping":true}` in the log pane, and lines can appear “missing” because nothing is decoding them. Fix: run `cd interactive_collector/frontend && npm run build`, or use **`http://127.0.0.1:5173/`** with `npm run dev` so Vite serves the current sources (Vite proxies `/api` to Flask).
 
@@ -484,7 +484,7 @@ Examples:
 - `database status`
 - `what's the next eligible project for collection`
 - `call list_projects({"status":"sourced","limit":5})`
-- `call run_module({"module":"cms_collector","dry_run":true})`
+- `call run_module({"module":"collect","dry_run":true})`
 
 
 ### Interactive collector
@@ -529,12 +529,12 @@ python main.py <module> [options]
 **Examples:**
 
 ```bash
-python main.py sourcing
-python main.py socrata_collector --num-rows 20 --max-workers 2
-python main.py interactive_collector
+python main.py source
+python main.py collect --num-rows 20 --max-workers 2
+python main.py collect_interactively
 python main.py upload --num-rows 5
-python main.py publisher
-python main.py cleanup_inprogress --log-color
+python main.py publish
+python main.py clean_inprogress --log-color
 ```
 
 **Claimed-by-name across all tabs:** Tallies non-empty cells in columns whose header in **row 1 or row 2** includes the whole word `claimed` (case-insensitive; not `unclaimed` / `disclaimed`). Also prints rows with **Claimed** filled and every **Download Location** header column empty (header contains the substring `download location`, case-insensitive)—grouped **by claimant** then **by tab** (only tabs that have both header types). Lists worksheets missing a claimed header, missing a download-location header, and the **union** of those. Same script also reports URL-filled-but-unclaimed rows (`sourcing_url_column`). Downloads the spreadsheet once as XLSX using `google_sheet_id` and `google_credentials`:
@@ -543,22 +543,22 @@ python main.py cleanup_inprogress --log-color
 python scripts/tally_data_inventories/tally_claimed_all_tabs.py
 ```
 
-**Workflow order:** sourcing → socrata_collector / catalog_collector / cms_collector / interactive_collector → upload → publisher. Optional: cleanup_inprogress for stuck DataLumos projects.
+**Workflow order:** source → collect / collect_interactively → upload → publish. Optional: clean_inprogress for stuck DataLumos projects.
 
 ### Modules
 
 | Module | Purpose |
 |--------|---------|
-| **sourcing** | Fetches candidate URLs from the configured spreadsheet or catalog API, checks duplicates, creates DB records (new rows append unless `delete_all_db_entries` is true in config and/or `--delete-all-db-entries` on the CLI). Spreadsheet sourcing requires `google_sheet_id`. Use `--sourcing-mode` to control which sheet rows are selected (see below). When `source` is `nps`, walks IRMA Collection 9688 and sources one DataLumos project per unique IRMA Project with public Digital Files (default Program: APHN `2310251`). A Project is skipped when every public Product is already stored under an earlier Project. NPS rows use agency Department of the Interior and office National Park Service; the IRMA hierarchy is stored only in `collection_notes`; Project Start/End dates and Units/Geography become `time_start`/`time_end` and `geographic_coverage`. `nps_projects.public_file_count` and `projects.num_files` start as the recursive public Digital File total (Project files plus all public descendant Products). DOIs from IRMA citations are stored in the summary, landing-page JSON, and `DOI:` lines in `collection_notes`. |
-| **socrata_collector** | Collects data and metadata from Socrata-hosted pages (e.g. data.cdc.gov). Processes `status="sourced"`. |
-| **catalog_collector** | Collects download links from catalog.data.gov dataset pages. Processes `status="sourced"`. |
-| **collector** (SSA) | When `source` is `ssa`, harvests catalog.data.gov SSA dataset pages: expands Complete Metadata before saving a catalog PDF, prints HTML resources as PDFs named from the page `<title>`, and downloads non-HTML files using the URL basename (e.g. `names.zip`). Processes `status="sourced"`. |
-| **collector** (NPS) | When `source` is `nps`, downloads public IRMA Digital Files for each sourced Project. Products become subfolders named from the product title (no IRMA id). Each Product is fetched and downloaded before the next one starts. Duplicate holdings with the same filename and size are skipped; same-name files of different sizes keep a `_2` suffix. A DownloadFile URL that returns an HTML app/error page is an error (HTTP status, Content-Type, redirect, and page title are recorded) and collection of that project stops. Project-level Digital Files land in the `NPS000xxx` folder root (not `_project_files`). Data Table Info is saved as UTF-8-sig per-file CSVs (`{stem}_data_table_info.csv`) next to those files and in each product folder. Existing `_project_files` contents are moved up on collect. Landing-page metadata is written as `project_metadata.json` and `product_metadata.json`, including the IRMA Collection > Program > Project breadcrumb (products append a Product segment), Units/Geography, and any DOI from the citation. After collection, `projects.num_files` and `nps_projects.public_file_count` count files already on disk plus Digital Files that were not downloaded. `projects.file_size` is that on-disk total plus catalog sizes of Digital Files that were not downloaded, including Products that are only sized after the 1 GB budget. Those undownloaded files are listed in `status_notes` (with `in <product folder>` when the file belongs in a subfolder), and `aria2_inputs/NPS######.cmd` is written so aria2 saves each file into that folder. Agency is Department of the Interior; office is National Park Service. External Links and restricted files are skipped. Processes `status="sourced"`. Output folders are not wiped on retry. |
-| **cms_collector** | Collects data from data.cms.gov API pages. Processes `status="sourced"`. |
-| **interactive_collector** | Flask app for manual collection; SPA at `/collector/`. Under active development; not managed by the orchestration MCP. |
+| **source** | Fetches candidate URLs from the configured spreadsheet or catalog API, checks duplicates, creates DB records (new rows append unless `delete_all_db_entries` is true in config and/or `--delete-all-db-entries` on the CLI). Spreadsheet sourcing requires `google_sheet_id`. Use `--sourcing-mode` to control which sheet rows are selected (see below). When `source` is `nps`, walks IRMA Collection 9688 and sources one DataLumos project per unique IRMA Project with public Digital Files (default Program: APHN `2310251`). A Project is skipped when every public Product is already stored under an earlier Project. NPS rows use agency Department of the Interior and office National Park Service; the IRMA hierarchy is stored only in `collection_notes`; Project Start/End dates and Units/Geography become `time_start`/`time_end` and `geographic_coverage`. `nps_projects.public_file_count` and `projects.num_files` start as the recursive public Digital File total (Project files plus all public descendant Products). DOIs from IRMA citations are stored in the summary, landing-page JSON, and `DOI:` lines in `collection_notes`. |
+| **collect** (Socrata) | Collects data and metadata from Socrata-hosted pages (e.g. data.cdc.gov). Processes `status="sourced"`. |
+| **collect** (catalog.data.gov) | Collects download links from catalog.data.gov dataset pages. Processes `status="sourced"`. |
+| **collect** (SSA) | When `source` is `ssa`, harvests catalog.data.gov SSA dataset pages: expands Complete Metadata before saving a catalog PDF, prints HTML resources as PDFs named from the page `<title>`, and downloads non-HTML files using the URL basename (e.g. `names.zip`). Processes `status="sourced"`. |
+| **collect** (NPS) | When `source` is `nps`, downloads public IRMA Digital Files for each sourced Project. Products become subfolders named from the product title (no IRMA id). Each Product is fetched and downloaded before the next one starts. Duplicate holdings with the same filename and size are skipped; same-name files of different sizes keep a `_2` suffix. A DownloadFile URL that returns an HTML app/error page is an error (HTTP status, Content-Type, redirect, and page title are recorded) and collection of that project stops. Project-level Digital Files land in the `NPS000xxx` folder root (not `_project_files`). Data Table Info is saved as UTF-8-sig per-file CSVs (`{stem}_data_table_info.csv`) next to those files and in each product folder. Existing `_project_files` contents are moved up on collect. Landing-page metadata is written as `project_metadata.json` and `product_metadata.json`, including the IRMA Collection > Program > Project breadcrumb (products append a Product segment), Units/Geography, and any DOI from the citation. After collection, `projects.num_files` and `nps_projects.public_file_count` count files already on disk plus Digital Files that were not downloaded. `projects.file_size` is that on-disk total plus catalog sizes of Digital Files that were not downloaded, including Products that are only sized after the 1 GB budget. Those undownloaded files are listed in `status_notes` (with `in <product folder>` when the file belongs in a subfolder), and `aria2_inputs/NPS######.cmd` is written so aria2 saves each file into that folder. Agency is Department of the Interior; office is National Park Service. External Links and restricted files are skipped. Processes `status="sourced"`. Output folders are not wiped on retry. |
+| **collect** (CMS) | Collects data from data.cms.gov API pages. Processes `status="sourced"`. |
+| **collect_interactively** | Flask app for manual collection; SPA at `/collector/`. Under active development; not managed by the orchestration MCP. |
 | **upload** | Uploads collected data to DataLumos. Requires `datalumos_username`, `datalumos_password`. Processes `collected - large file` first (DRPID order), then `collected`. Projects with subfolders use Import From Zip (file-count check skipped). Large-file projects also skip that check, because `num_files` includes Digital Files that were not downloaded. |
-| **publisher** | Runs DataLumos publish; optionally updates Google Sheet. Processes `status="uploaded"`. The pre-publish file-count/size check walks into workspace folders so nested files are counted. |
-| **cleanup_inprogress** | Deletes DataLumos projects in Deposit In Progress state (no DB changes). |
+| **publish** | Runs DataLumos publish; optionally updates Google Sheet. Processes `status="uploaded"`. The pre-publish file-count/size check walks into workspace folders so nested files are counted. |
+| **clean_inprogress** | Deletes DataLumos projects in Deposit In Progress state (no DB changes). |
 | **noop** | No-op; useful for testing. |
 
 ### Sourcing modes
@@ -576,8 +576,8 @@ python scripts/tally_data_inventories/tally_claimed_all_tabs.py
 **Dev/test workflow:** use `completed` mode with a separate database to benchmark the automated pipeline against prior manual work:
 
 ```bash
-python main.py sourcing --sourcing-mode completed --num-rows 10 --db-path benchmark.db
-python main.py cms_collector --db-path benchmark.db
+python main.py source --sourcing-mode completed --num-rows 10 --db-path benchmark.db
+python main.py collect --db-path benchmark.db
 # compare benchmark.db results against the Download Location column in the sheet
 ```
 

@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.argv = [sys.argv[0], "publisher"]
+sys.argv = [sys.argv[0], "publish"]
 
 from upload.DataLumosAuthenticator import wait_for_human_verification
 from upload.DataLumosBrowserSession import DataLumosBrowserSession

@@ -19,7 +19,7 @@ def test_validate_planner_json_accepts_read_only() -> None:
 
 
 def test_validate_planner_json_accepts_mutating() -> None:
-    decision = _validate_planner_json({"tool_name": "run_module", "arguments": {"module": "sourcing"}})
+    decision = _validate_planner_json({"tool_name": "run_module", "arguments": {"module": "source"}})
     assert decision.call.tool_name == "run_module"
     assert decision.is_mutating is True
 

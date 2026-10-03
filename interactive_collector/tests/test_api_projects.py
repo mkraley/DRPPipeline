@@ -126,7 +126,7 @@ class TestInteractivePrereq(unittest.TestCase):
     def setUp(self) -> None:
         """Initialize Args and Logger for each test."""
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test", "interactive_collector"]
+        sys.argv = ["test", "collect_interactively"]
         Args.initialize()
         Logger.initialize(log_level="WARNING")
 

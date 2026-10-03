@@ -735,7 +735,7 @@ body {
   background: #34495e;
 }
 
-/* Collector right pane (replaces log when "Interactive collector" is active) */
+/* Collector right pane (replaces log when "Collect interactively" is active) */
 .collector-right-pane {
   flex: 1;
   display: flex;

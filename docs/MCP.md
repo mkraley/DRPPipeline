@@ -122,15 +122,14 @@ requirements.txt       # add: mcp>=1.0.0
 | Module | Prereq status | Output status | Notes |
 |--------|--------------|---------------|-------|
 | `noop` | — | — | |
-| `sourcing` | — | `sourced` | |
-| `socrata_collector` | `sourced` | `collected` | |
-| `catalog_collector` | `sourced` | `collected` | |
-| `cms_collector` | `sourced` | `collected` | |
+| `source` | — | `sourced` | |
+| `collect` | `sourced` | `collected` | Implementation selected by config `source`. |
 | `upload` | `collected` | `uploaded` | |
-| `publisher` | `uploaded` | `published` | Also processes `not_found` and `no_links` (sheet-only update). |
-| `cleanup_inprogress` | — | — | DataLumos only, no DB changes; `verify_module_run` will return an error for this module. |
+| `publish` | `uploaded` | `published` | Also processes `not_found` and `no_links` (sheet-only update). |
+| `republish` | `re-uploaded` | `updated_inventory` | |
+| `clean_inprogress` | — | — | DataLumos only, no DB changes; `verify_module_run` will return an error for this module. |
 
-This list is not exhaustive — more collectors will be added over time. `interactive_collector` is **not** managed by MCP 1; it is under active development as a separate tool and runs as a Flask app, which is incompatible with the subprocess execution model used here.
+`collect_interactively` is **not** managed by MCP 1; it runs as a Flask app, which is incompatible with the subprocess execution model used here.
 
 ---
 
@@ -151,7 +150,7 @@ A collector is a Python class with a single public method: `run(drpid: int) -> N
 5. Writes results back via `Storage.update_record(drpid, {...})` and sets `status = "collector"`
 6. Records errors with `record_error(drpid, ...)` on failure
 
-The class is registered in `orchestration/Orchestrator.py` under `MODULES` with a `prereq` of `"sourcing"`. The two existing collectors (`SocrataCollector`, `CatalogDataCollector`) serve as reference implementations.
+The class is registered in `orchestration/Orchestrator.py` under `MODULES` with a `prereq` of `"sourced"`. The two existing collectors (`SocrataCollector`, `CatalogDataCollector`) serve as reference implementations.
 
 ### Dataflow
 
@@ -214,7 +213,7 @@ mcp_collector_dev/
 | Tool | Description |
 |------|-------------|
 | `scaffold_collector` | Given a class name, module name, and optional description, writes a new collector file under `collectors/` using the standard boilerplate: imports, `__init__`, `run`, `_collect`, `_update_storage_from_result`. `dry_run=True` (default) shows the file content; `dry_run=False` creates it. Will not overwrite an existing file unless `overwrite=True`. |
-| `register_collector` | Adds an entry to `MODULES` in `orchestration/Orchestrator.py`. Accepts `module_name`, `class_name`, `prereq` (default `"sourcing"`). `dry_run=True` (default) shows the exact diff; `dry_run=False` applies it. Errors if the module name already exists. |
+| `register_collector` | Adds an entry to `MODULES` in `orchestration/Orchestrator.py`. Accepts `module_name`, `class_name`, `prereq` (default `"sourced"`). `dry_run=True` (default) shows the exact diff; `dry_run=False` applies it. Errors if the module name already exists. |
 
 #### Testing tools
 
@@ -240,8 +239,8 @@ mcp_collector_dev/
 
 ## Open Questions / Future Work
 
-- `run_module` with `dry_run=False` blocks until the subprocess finishes and returns the full output. For long-running modules (upload, publisher with browser automation), this could take many minutes. A future enhancement could add a background-run mode that returns a job ID and a separate `poll_run` tool to check status.
-- `cleanup_inprogress` has no DB effect and no verifiable output status; it only affects DataLumos. `verify_module_run` will return an error for this module.
+- `run_module` with `dry_run=False` blocks until the subprocess finishes and returns the full output. For long-running modules (upload, publish with browser automation), this could take many minutes. A future enhancement could add a background-run mode that returns a job ID and a separate `poll_run` tool to check status.
+- `clean_inprogress` has no DB effect and no verifiable output status; it only affects DataLumos. `verify_module_run` will return an error for this module.
 - If `config.json` is absent, the server falls back to `drp_pipeline.db` in the project root. If the DB does not exist, all tools return a clear error.
 
 ## Comparison Tool Prompt
@@ -250,8 +249,8 @@ Please write an end-to-end test.
 
 Use a project that has already been fetched. A good candidate is row 13 from the spreadsheet, where "Title of Site" = "Value Modifier". for this one project
 
-- use the sourcing module to get this one row
-- use the cms_collector module to get its data
+- use the source module to get this one row
+- use the collect module to get its data
 - use use the upload module to create a new datalumos project and upload its data
 
 Then once that's done, have the test compare the datalumos project that we created today ("treatment") vs. the one that was done previously

@@ -8,11 +8,11 @@ Uses Args like the rest of the pipeline; initializes Args and Logger when run st
 
 import sys
 
-# When run as python -m interactive_collector, ensure Args gets module=interactive_collector and any optional args
+# When run as python -m interactive_collector, Args gets module=collect_interactively.
 if len(sys.argv) >= 3 and sys.argv[1] == "-m" and sys.argv[2] == "interactive_collector":
-    sys.argv = [sys.argv[0], "interactive_collector"] + sys.argv[3:]
-elif len(sys.argv) < 2 or sys.argv[1] != "interactive_collector":
-    sys.argv = [sys.argv[0], "interactive_collector"] + sys.argv[1:]
+    sys.argv = [sys.argv[0], "collect_interactively"] + sys.argv[3:]
+elif len(sys.argv) < 2 or sys.argv[1] != "collect_interactively":
+    sys.argv = [sys.argv[0], "collect_interactively"] + sys.argv[1:]
 
 from utils.Args import Args
 from utils.Logger import Logger

@@ -75,10 +75,10 @@ class TestOrchestrator(unittest.TestCase):
             Orchestrator.run("unknown")
         self.assertIn("unknown", str(cm.exception))
         self.assertIn("noop", str(cm.exception))
-        self.assertIn("sourcing", str(cm.exception))
-        self.assertIn("collector", str(cm.exception))
-        self.assertIn("cleanup_inprogress", str(cm.exception))
-        self.assertIn("interactive_collector", str(cm.exception))
+        self.assertIn("source", str(cm.exception))
+        self.assertIn("collect", str(cm.exception))
+        self.assertIn("clean_inprogress", str(cm.exception))
+        self.assertIn("collect_interactively", str(cm.exception))
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")
@@ -94,7 +94,7 @@ class TestOrchestrator(unittest.TestCase):
         mock_find_class.return_value = mock_sourcing_cls
 
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
-            Orchestrator.run("sourcing")
+            Orchestrator.run("source")
 
         mock_storage_cls.initialize.assert_called_once()
         mock_find_class.assert_called_once_with("Sourcing")
@@ -115,7 +115,7 @@ class TestOrchestrator(unittest.TestCase):
         mock_find_class.return_value = mock_cleanup_cls
 
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
-            Orchestrator.run("cleanup_inprogress")
+            Orchestrator.run("clean_inprogress")
 
         mock_find_class.assert_called_once_with("CleanupInProgress")
         mock_cleanup_cls.assert_called_once()
@@ -150,7 +150,7 @@ class TestOrchestrator(unittest.TestCase):
         mock_find_class.return_value = mock_collector_cls
 
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
-            Orchestrator.run("collector")
+            Orchestrator.run("collect")
 
         mock_storage_cls.initialize.assert_called_once()
         mock_storage.list_eligible_projects.assert_called_once_with("sourced", None, None, None)
@@ -190,7 +190,7 @@ class TestOrchestrator(unittest.TestCase):
 
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
             with self.assertRaises(PipelineFatal):
-                Orchestrator.run("collector")
+                Orchestrator.run("collect")
 
         mock_instance.run.assert_called_once_with(1)
         mock_record_error.assert_not_called()
@@ -223,22 +223,22 @@ class TestOrchestrator(unittest.TestCase):
         mock_find_class.return_value = mock_collector_cls
 
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
-            Orchestrator.run("collector")
+            Orchestrator.run("collect")
 
         mock_collector_instance.run.assert_called_once_with(2)
-        mock_claim.assert_called_once_with(2, "collector")
+        mock_claim.assert_called_once_with(2, "collect")
 
     @patch("utils.sheet_claimed_update.claim_project_on_inventory_sheet")
     def test_maybe_claim_skips_bts_source(self, mock_claim: MagicMock) -> None:
         """BTS collector runs do not write inventory Claimed."""
         Args._config["source"] = "bts"
-        _maybe_claim_inventory_sheet(6, "collector")
+        _maybe_claim_inventory_sheet(6, "collect")
         mock_claim.assert_not_called()
 
     @patch("interactive_collector.dev_server.run_server")
     def test_run_interactive_collector_starts_app(self, mock_run_server: MagicMock) -> None:
         """Test run('interactive_collector') starts the dev server."""
-        Orchestrator.run("interactive_collector")
+        Orchestrator.run("collect_interactively")
         mock_run_server.assert_called_once()
 
     @patch("orchestration.Orchestrator._find_module_class")
@@ -264,7 +264,7 @@ class TestOrchestrator(unittest.TestCase):
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls), \
              patch.object(Args, "delete_all_db_entries", True), \
              patch("orchestration.Orchestrator.Logger"):
-            Orchestrator.run("sourcing")
+            Orchestrator.run("source")
         mock_storage_cls.clear_all_records.assert_called_once()
         mock_sourcing_instance.run.assert_called_once_with(-1)
 
@@ -281,7 +281,7 @@ class TestOrchestrator(unittest.TestCase):
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls), \
              patch.object(Args, "delete_all_db_entries", False), \
              patch("orchestration.Orchestrator.Logger"):
-            Orchestrator.run("sourcing")
+            Orchestrator.run("source")
         mock_storage_cls.clear_all_records.assert_not_called()
         mock_sourcing_instance.run.assert_called_once_with(-1)
 
@@ -325,7 +325,7 @@ class TestOrchestrator(unittest.TestCase):
         mock_pub_instance = MagicMock()
         mock_find_class.return_value = MagicMock(return_value=mock_pub_instance)
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
-            Orchestrator.run("publisher")
+            Orchestrator.run("publish")
         self.assertEqual(mock_storage_cls.list_eligible_projects.call_count, 6)
         self.assertEqual(
             mock_storage_cls.list_eligible_projects_with_status_prefix.call_count, 2
@@ -397,7 +397,7 @@ class TestOrchestrator(unittest.TestCase):
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls), patch.object(
             Args, "retry", True
         ):
-            Orchestrator.run("collector")
+            Orchestrator.run("collect")
         mock_storage_cls.list_eligible_projects.assert_called_once_with(
             "sourced-error", None, None, None, include_errored=True
         )
@@ -424,7 +424,7 @@ class TestOrchestrator(unittest.TestCase):
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls), patch.object(
             Args, "ids", [1, 3]
         ):
-            Orchestrator.run("collector")
+            Orchestrator.run("collect")
         self.assertEqual(mock_collector.run.call_count, 2)
         mock_collector.run.assert_any_call(1)
         mock_collector.run.assert_any_call(3)
@@ -637,7 +637,7 @@ class TestOrchestrator(unittest.TestCase):
         mock_find_class.return_value = MagicMock(return_value=mock_pub_instance)
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls), \
              patch.object(Args, "num_rows", 2):
-            Orchestrator.run("publisher")
+            Orchestrator.run("publish")
         self.assertEqual(mock_pub_instance.run.call_count, 2)
 
     @patch("orchestration.Orchestrator._find_module_class")
@@ -654,7 +654,7 @@ class TestOrchestrator(unittest.TestCase):
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls), \
              patch.object(Args, "start_row", 5), \
              patch.object(Args, "start_drpid", 100):
-            Orchestrator.run("collector")
+            Orchestrator.run("collect")
         mock_storage_cls.list_eligible_projects.assert_called_once_with("sourced", None, 5, 100)
 
     @patch("orchestration.Orchestrator._stop_requested")
@@ -680,7 +680,7 @@ class TestOrchestrator(unittest.TestCase):
         mock_instance = MagicMock()
         mock_find_class.return_value = MagicMock(return_value=mock_instance)
         with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
-            Orchestrator.run("collector")
+            Orchestrator.run("collect")
         mock_instance.run.assert_called_once_with(1)
 
     def test_find_module_class_returns_sourcing(self) -> None:
@@ -694,12 +694,13 @@ class TestOrchestrator(unittest.TestCase):
         from orchestration.Orchestrator import list_pipeline_modules
 
         mods = list_pipeline_modules()
-        self.assertIn("sourcing", mods)
-        self.assertIn("collector", mods)
+        self.assertIn("source", mods)
+        self.assertIn("collect", mods)
         self.assertNotIn("adc_sourcing", mods)
         self.assertNotIn("catalog_collector", mods)
         self.assertNotIn("setup", mods)
-        self.assertNotIn("adc_globus_survey", mods)
+        self.assertNotIn("survey_adc_globus", mods)
+        self.assertNotIn("collect_adc_globus", mods)
         self.assertTrue(all(not name.endswith("_sourcing") for name in mods))
 
     def test_find_module_class_returns_collector(self) -> None:
@@ -713,15 +714,15 @@ class TestOrchestrator(unittest.TestCase):
         from orchestration.Orchestrator import list_pipeline_modules
 
         mods = list_pipeline_modules()
-        self.assertIn("collector", mods)
-        self.assertIn("interactive_collector", mods)
+        self.assertIn("collect", mods)
+        self.assertIn("collect_interactively", mods)
         self.assertNotIn("catalog_collector", mods)
         self.assertNotIn("adc_collector", mods)
+        self.assertNotIn("collect_adc_globus", mods)
         legacy = [
             name
             for name in mods
             if name.endswith("_collector")
-            and name not in ("collector", "interactive_collector")
         ]
         self.assertEqual(legacy, [])
 
@@ -843,7 +844,7 @@ class TestOrchestrator(unittest.TestCase):
             "orchestration.Orchestrator.Logger.info",
             side_effect=lambda msg, *a, **k: info_messages.append(msg),
         ):
-            Orchestrator.run("collector")
+            Orchestrator.run("collect")
 
         summary = [m for m in info_messages if "Orchestrator batch summary" in m]
         self.assertEqual(len(summary), 1)
@@ -879,7 +880,7 @@ class TestOrchestrator(unittest.TestCase):
             "orchestration.Orchestrator.Logger.info",
             side_effect=lambda msg, *a, **k: info_messages.append(msg),
         ):
-            Orchestrator.run("collector")
+            Orchestrator.run("collect")
 
         summary = [m for m in info_messages if "Orchestrator batch summary" in m][0]
         self.assertIn("completed=1", summary)
@@ -906,7 +907,7 @@ class TestOrchestrator(unittest.TestCase):
             side_effect=lambda msg, *a, **k: info_messages.append(msg),
         ):
             with self.assertRaises(KeyboardInterrupt):
-                Orchestrator.run("collector")
+                Orchestrator.run("collect")
 
         summary = [m for m in info_messages if "Orchestrator batch summary" in m]
         self.assertEqual(len(summary), 1)
@@ -939,7 +940,7 @@ class TestOrchestrator(unittest.TestCase):
             "orchestration.Orchestrator.Logger.info",
             side_effect=lambda msg, *a, **k: info_messages.append(msg),
         ):
-            Orchestrator.run("collector")
+            Orchestrator.run("collect")
 
         self.assertEqual(mock_instance.run.call_args_list, [call(1)])
         self.assertTrue(

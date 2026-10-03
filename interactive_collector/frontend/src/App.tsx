@@ -3,7 +3,7 @@
  *
  * Single view: Main page. Left column = pipeline controls and module buttons.
  * Right pane = Log output (when running sourcing etc.) or Collector (Scoreboard,
- * Metadata, Copy & Open in top rail) when "Interactive collector" is active.
+ * Metadata, Copy & Open in top rail) when "Collect interactively" is active.
  */
 import { useEffect } from "react";
 import { MainPage } from "./components/MainPage";

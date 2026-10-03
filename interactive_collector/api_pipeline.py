@@ -62,7 +62,7 @@ def list_modules() -> Any:
     Return the list of pipeline module names (keys of MODULES).
 
     Returns:
-        JSON: { "modules": ["noop", "sourcing", "collector", ...] }
+        JSON: { "modules": ["noop", "source", "collect", ...] }
     """
     # Preserve MODULES order (no noop in list for UI)
     mods = _ui_module_names()
@@ -110,8 +110,8 @@ def run_module() -> Any:
     if module not in modules:
         return {"error": f"Unknown module {module!r}. Valid: {sorted(modules.keys())}"}, 400
 
-    # interactive_collector is not run as subprocess; UI should open collector view instead
-    if module == "interactive_collector":
+    # collect_interactively is not run as subprocess; UI should open collector view instead
+    if module == "collect_interactively":
         return {"error": "Use the Interactive Collector button to open the collector UI."}, 400
 
     num_rows = data.get("num_rows")

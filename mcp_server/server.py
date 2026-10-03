@@ -34,13 +34,13 @@ mcp = FastMCP("drp-pipeline")
 _MODULES: dict[str, dict[str, Optional[str]]] = {
     "noop":               {"prereq": None,       "output": None},
     "setup":              {"prereq": None,       "output": None},
-    "sourcing":           {"prereq": None,       "output": "sourced"},
-    "collector":          {"prereq": "sourced",  "output": "collected"},
+    "source":             {"prereq": None,       "output": "sourced"},
+    "collect":            {"prereq": "sourced",  "output": "collected"},
     "upload":             {"prereq": "collected","output": "uploaded"},
     "upload_large_files": {"prereq": "uploaded - large file|uploaded - expanded", "output": "finish wait"},
-    "publisher":          {"prereq": "uploaded", "output": "published"},
-    "republisher":        {"prereq": "re-uploaded", "output": "updated_inventory"},
-    "cleanup_inprogress": {"prereq": None,       "output": None},
+    "publish":            {"prereq": "uploaded", "output": "published"},
+    "republish":          {"prereq": "re-uploaded", "output": "updated_inventory"},
+    "clean_inprogress":   {"prereq": None,       "output": None},
 }
 
 # Fields that can be updated via update_project (not protected)
@@ -255,8 +255,8 @@ def run_module(
     dry_run=True (default): show which projects are eligible without running.
     dry_run=False: execute via subprocess and return captured log output.
 
-    Supported modules: noop, sourcing, collector, upload,
-    publisher, cleanup_inprogress.
+    Supported modules: noop, source, collect, upload,
+    publish, clean_inprogress.
 
     Args:
         module:        Module name to run.
@@ -283,7 +283,7 @@ def run_module(
         lines.append(f"  output status: {output!r}")
 
         if prereq is None:
-            if module == "sourcing":
+            if module == "source":
                 sc = _get_sourcing_config()
                 effective_mode = sourcing_mode or sc["sourcing_mode"]
                 lines.append("  Sourcing reads from a Google Sheet and creates DB records.")
@@ -297,9 +297,9 @@ def run_module(
                 lines.append("")
                 lines.append("  Use preview_sourcing() to see which sheet rows would be pulled")
                 lines.append("  without creating any DB records.")
-            elif module == "cleanup_inprogress":
+            elif module == "clean_inprogress":
                 lines.append("  This module runs once (no per-project loop).")
-                lines.append("  Note: cleanup_inprogress only affects DataLumos, no DB changes.")
+                lines.append("  Note: clean_inprogress only affects DataLumos, no DB changes.")
             else:
                 lines.append("  This module runs once (no per-project loop).")
         else:
@@ -517,7 +517,7 @@ def preview_sourcing(
 
     lines.append("")
     lines.append("Note: URL availability and DB deduplication are not checked here.")
-    lines.append("Run run_module('sourcing', dry_run=False) to execute.")
+    lines.append("Run run_module('source', dry_run=False) to execute.")
     return "\n".join(lines)
 
 
@@ -737,7 +737,7 @@ def verify_module_run(
     if output_status is None:
         return (
             f"Module {module!r} has no DB output status "
-            f"(e.g. cleanup_inprogress only affects DataLumos). Cannot verify."
+            f"(e.g. clean_inprogress only affects DataLumos). Cannot verify."
         )
 
     try:

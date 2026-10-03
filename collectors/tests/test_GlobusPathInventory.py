@@ -18,7 +18,7 @@ class TestGlobusPathInventory(unittest.TestCase):
     def setUp(self) -> None:
         """Initialize Args and Logger for each test."""
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test", "adc_globus_survey"]
+        sys.argv = ["test", "survey_adc_globus"]
         Args.initialize()
         Logger.initialize(log_level="WARNING")
 

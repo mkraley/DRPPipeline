@@ -64,7 +64,7 @@ class TestSourcingFactory(unittest.TestCase):
 
     def test_create_sourcing_uses_args_source(self) -> None:
         """create_sourcing() reads Args.source when no override is passed."""
-        sys.argv = ["test", "sourcing"]
+        sys.argv = ["test", "source"]
         Args.initialize()
         Args._config["source"] = "adc"
         instance = create_sourcing()

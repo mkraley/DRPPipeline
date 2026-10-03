@@ -28,7 +28,7 @@ class TestPublishTermsDialog(unittest.TestCase):
     def setUp(self) -> None:
         """Initialize Args and Logger for timeouts."""
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test", "publisher"]
+        sys.argv = ["test", "publish"]
         Args._initialized = False
         Args._config = {}
         Args._parsed_args = {}
@@ -227,7 +227,7 @@ class TestPublisherRetryReset(unittest.TestCase):
         from publisher.DataLumosPublisher import DataLumosPublisher
 
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test", "publisher"]
+        sys.argv = ["test", "publish"]
         Args._initialized = False
         Args._config = {}
         Args._parsed_args = {}

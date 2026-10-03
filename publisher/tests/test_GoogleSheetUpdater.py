@@ -27,7 +27,7 @@ class TestGoogleSheetUpdater(unittest.TestCase):
 
     def setUp(self) -> None:
         """Initialize Args and Logger so updater can read Args."""
-        sys.argv = ["test", "publisher"]
+        sys.argv = ["test", "publish"]
         Args._initialized = False
         Args._config = {}
         Args._parsed_args = {}

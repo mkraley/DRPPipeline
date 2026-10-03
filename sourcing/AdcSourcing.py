@@ -5,7 +5,7 @@ Enumerates ADC datasets via the public Figshare API (no portal WAF), builds file
 summaries (including Dryad/Zenodo expansion when applicable), and creates
 ``sourced`` storage records. Run via orchestrator::
 
-    python main.py sourcing   # when Args.source is adc
+    python main.py source   # when Args.source is adc
 """
 
 from __future__ import annotations

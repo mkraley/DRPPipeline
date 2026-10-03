@@ -21,7 +21,7 @@ from duplicate_checking.datalumos_search import (
 from urllib.parse import urlencode
 
 # Use 'noop' module since this debug script doesn't use orchestration
-if len(sys.argv) < 2 or sys.argv[1] not in ("noop", "sourcing", "collectors"):
+if len(sys.argv) < 2 or sys.argv[1] not in ("noop", "source", "collect"):
     sys.argv = [sys.argv[0], "noop"] + sys.argv[1:]
 Args.initialize()
 Logger.initialize(log_level="INFO")

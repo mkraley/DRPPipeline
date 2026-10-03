@@ -72,7 +72,7 @@ class TestCollectorFactory(unittest.TestCase):
 
     def test_create_collector_uses_args_source(self) -> None:
         """create_collector() reads Args.source when no override is passed."""
-        sys.argv = ["test", "collector"]
+        sys.argv = ["test", "collect"]
         Args.initialize()
         Args._config["source"] = "adc"
         instance = create_collector()

@@ -22,7 +22,7 @@ class TestInventorySheetUpdaterFactory(unittest.TestCase):
 
     def setUp(self) -> None:
         """Initialize Args for factory tests."""
-        sys.argv = ["test", "publisher"]
+        sys.argv = ["test", "publish"]
         Args._initialized = False
         Args._config = {}
         Args._parsed_args = {}

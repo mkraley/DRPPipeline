@@ -28,7 +28,7 @@ class TestDataLumosPublisher(unittest.TestCase):
     def setUp(self) -> None:
         """Set up test environment before each test."""
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test", "publisher"]
+        sys.argv = ["test", "publish"]
 
         Args._initialized = False
         Args._config = {}

@@ -35,7 +35,7 @@ class TestSpreadsheetCandidateFetcher(unittest.TestCase):
         self._creds_file = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
         self._creds_file.write(b"{}")
         self._creds_file.close()
-        sys.argv = ["test", "sourcing"]
+        sys.argv = ["test", "source"]
         Args.initialize()
         Args._config["google_sheet_id"] = "test_sheet_id"
         Args._config["google_sheet_name"] = "CDC"

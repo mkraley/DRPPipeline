@@ -102,13 +102,13 @@ class Args(metaclass=ArgsMeta):
         # When True, BTS collector peeks inside zip archives for member extensions.
         # Default False: report only top-level uploaded / catalog-listed extensions.
         "bts_scan_zip_extensions": False,
-        # Globus supplemental collector (adc_globus_collector)
+        # Globus supplemental collector (collect_adc_globus)
         "globus_client_id": None,  # Native app client ID from Globus developers console
         "globus_refresh_token": None,  # OAuth refresh token with transfer scopes
         "globus_destination_endpoint_id": None,  # Globus Connect Personal collection UUID
         "globus_destination_base_path": "/~/",  # Base path on GCP mapped to base_output_dir
         "globus_transfer_poll_timeout_sec": 3600,
-        "globus_survey_resurvey": False,  # Re-run adc_globus_survey when inventory line exists
+        "globus_survey_resurvey": False,  # Re-run survey_adc_globus when inventory line exists
         "num_rows": None,  # None = unlimited; batch limit for orchestration
         # upload_large_files cap for uploaded - large file. None = 25GB.
         # Bare number is gigabytes; "40GB" is also accepted.
@@ -121,9 +121,9 @@ class Args(metaclass=ArgsMeta):
         "storage_implementation": "StorageSQLLite",
         "base_output_dir": r"C:\Documents\DataRescue\DRPData",
         "delete_all_db_entries": False,
-        "max_workers": 1,  # Parallel projects when > 1 (e.g. collector); 1 = sequential
+        "max_workers": 1,  # Parallel projects when > 1 (e.g. collect); 1 = sequential
         "usfs_metadata_only": False,  # USFS: harvest metadata/PDFs only; skip publication downloads; keep folder
-        # interactive_collector: load collected - external archive instead of sourced
+        # collect_interactively: load collected - external archive instead of sourced
         "interactive_external_archive": False,
         "download_timeout_ms": 30 * 60 * 1000,  # 30 min for large datasets; increase for 10GB+
         "use_url_download": True,  # Get URL from Playwright then download with requests (progress/resume)
@@ -285,7 +285,7 @@ class Args(metaclass=ArgsMeta):
         
         def callback(
             ctx: typer.Context,
-            module: Optional[str] = typer.Argument(None, help="Module to run: setup, noop, sourcing, collector, interactive_collector, upload, publisher, republisher, cleanup_inprogress, help"),
+            module: Optional[str] = typer.Argument(None, help="Module to run: setup, noop, source, collect, collect_interactively, upload, publish, republish, clean_inprogress, help"),
             config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to configuration file (JSON format). Default: ./config.json"),
             source: Optional[str] = typer.Option(
                 None,
@@ -321,7 +321,7 @@ class Args(metaclass=ArgsMeta):
                 help="For sourcing only: delete all database entries before proceeding. "
                 "May also be set via delete_all_db_entries in config.json; default is false.",
             ),
-            max_workers: Optional[int] = typer.Option(None, "--max-workers", "-w", help="Max concurrent projects for modules with prereq (e.g. collector). Default 1 = sequential."),
+            max_workers: Optional[int] = typer.Option(None, "--max-workers", "-w", help="Max concurrent projects for modules with prereq (e.g. collect). Default 1 = sequential."),
             download_timeout_ms: Optional[int] = typer.Option(None, "--download-timeout-ms", help="Download timeout in milliseconds (default 30 min). Use for large datasets."),
             no_use_url_download: bool = typer.Option(False, "--no-use-url-download", help="Use Playwright save_as instead of capturing URL and downloading with requests (no progress/resume)."),
             log_color: bool = typer.Option(False, "--log-color", help="Color the log severity in terminal (DEBUG=gray, WARNING=orange, ERROR=red, exception=purple). Only applies when stdout is a TTY."),
@@ -334,7 +334,7 @@ class Args(metaclass=ArgsMeta):
             external_archive: bool = typer.Option(
                 False,
                 "--external-archive",
-                help="interactive_collector: load projects with status "
+                help="collect_interactively: load projects with status "
                 "'collected - external archive' instead of 'sourced'",
             ),
             max_project_size: Optional[str] = typer.Option(

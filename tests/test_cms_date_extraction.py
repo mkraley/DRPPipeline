@@ -136,7 +136,7 @@ def main() -> None:
         drpid = find_drpid_for_url(args.url)
         if drpid is None:
             print(f"URL not found in database: {args.url}")
-            print("Run preview_sourcing() then run_module('sourcing') to add it first.")
+            print("Run preview_sourcing() then run_module('source') to add it first.")
             sys.exit(1)
 
     ok = check_drpid(drpid, rerun=args.rerun)

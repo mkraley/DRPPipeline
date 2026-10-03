@@ -22,7 +22,7 @@ class TestSpreadsheetSourcing(unittest.TestCase):
     def setUp(self) -> None:
         """Set up test environment before each test."""
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test", "sourcing"]
+        sys.argv = ["test", "source"]
 
         Args.initialize()
         Logger.initialize(log_level="WARNING")

@@ -23,16 +23,16 @@ USAGE
 
 MODULES
   setup                 Check/create config.json and google-credentials.json (start here)
-  sourcing              Source candidate URLs into the database (implementation from config source)
-  collector             Collect sourced projects (implementation from config source)
-  interactive_collector Browser-assisted collector for sites that block automation
+  source                Source candidate URLs into the database (implementation from config source)
+  collect               Collect sourced projects (implementation from config source)
+  collect_interactively Browser-assisted collector for sites that block automation
                         (use --external-archive for collected - external archive projects)
   upload                Upload collected datasets to DataLumos
   upload_large_files    Download/upload large files (uploaded - large file, default <25GB; --max-project-size to raise it; uploaded - expanded any size)
-  publisher             Update the Google Sheet with DataLumos links
-  republisher           Re-publish projects after missing-file repair (status re-uploaded)
+  publish               Update the Google Sheet with DataLumos links
+  republish             Re-publish projects after missing-file repair (status re-uploaded)
   verify_upload         Verify uploaded file counts/sizes against DataLumos view pages
-  cleanup_inprogress    Reset stuck in-progress records
+  clean_inprogress      Reset stuck in-progress records
   noop                  No-op (useful for testing config)
   help                  Show this help message
 

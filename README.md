@@ -66,15 +66,15 @@ DRPPipeline/
 
 | Module | Purpose |
 |--------|--------|
-| **sourcing** | Sources candidate URLs into the DB (spreadsheet, ADC Figshare API, BTS ROSA P, SSA Data.gov catalog, or NPS IRMA DataStore; selected by `source` in config). |
-| **collector** | Collects sourced projects into local folders (Socrata, catalog.data.gov, CMS, USFS, ADC, BTS, SSA, NPS IRMA, etc.; selected by `source` in config). |
-| **interactive_collector** | Flask app for manual collection: browse URLs, save PDFs, update metadata. Under active development; not managed by the orchestration MCP. |
+| **source** | Sources candidate URLs into the DB (spreadsheet, ADC Figshare API, BTS ROSA P, SSA Data.gov catalog, or NPS IRMA DataStore; selected by `source` in config). |
+| **collect** | Collects sourced projects into local folders (Socrata, catalog.data.gov, CMS, USFS, ADC, BTS, SSA, NPS IRMA, etc.; selected by `source` in config). |
+| **collect_interactively** | Flask app for manual collection: browse URLs, save PDFs, update metadata. Under active development; not managed by the orchestration MCP. |
 | **upload** | Uploads collected data to DataLumos via browser automation. |
-| **publisher** | Runs DataLumos publish workflow; also updates source inventory|
-| **cleanup_inprogress** | Standalone utility that deletes DataLumos workspace projects in “Deposit In Progress” state (no DB changes). |
+| **publish** | Runs DataLumos publish workflow; also updates source inventory|
+| **clean_inprogress** | Standalone utility that deletes DataLumos workspace projects in “Deposit In Progress” state (no DB changes). |
 | **noop** | No-op; useful for testing. |
 
-Each module (except `noop` and `cleanup_inprogress`) advances project `status` so the next module can run on eligible projects. See [Usage](docs/Usage.md) for how to run them and how the database is used.
+Each module (except `noop` and `clean_inprogress`) advances project `status` so the next module can run on eligible projects. See [Usage](docs/Usage.md) for how to run them and how the database is used.
 
 ## MCP Servers
 

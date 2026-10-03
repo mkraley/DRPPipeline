@@ -3,7 +3,7 @@
  *
  * Left: module controls (Start DRPID, Max rows, Log level, Max workers) and module buttons.
  * Right: either Log output pane (when running other modules) or Collector pane (Scoreboard,
- * Metadata, Copy & Open in top rail) when "Interactive collector" is active.
+ * Metadata, Copy & Open in top rail) when "Collect interactively" is active.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CollectorRightPane } from "./CollectorRightPane";
@@ -43,7 +43,7 @@ export function MainPage() {
 
   const runModule = useCallback(
     async (module: string) => {
-      if (module === "interactive_collector") {
+      if (module === "collect_interactively") {
         setRightPaneMode("collector");
         const start = startDrpid.trim();
         const id = start ? parseInt(start, 10) : NaN;
@@ -148,7 +148,7 @@ export function MainPage() {
           const msg = e instanceof Error ? e.message : "Run failed";
           const hint =
             /failed to fetch|networkerror|load failed|connection reset/i.test(msg)
-              ? " Long pipeline runs (upload/publisher) often hit this if Flask restarts: use `flask run --debug --no-reload`."
+              ? " Long pipeline runs (upload/publish) often hit this if Flask restarts: use `flask run --debug --no-reload`."
               : "";
           setError(msg + hint);
         }
@@ -261,10 +261,10 @@ export function MainPage() {
                 key={mod}
                 type="button"
                 onClick={() => runModule(mod)}
-                disabled={running && mod !== "interactive_collector"}
-                title={mod === "interactive_collector" ? "Open Interactive Collector in right pane" : `Run module: ${mod}`}
+                disabled={running && mod !== "collect_interactively"}
+                title={mod === "collect_interactively" ? "Open Interactive Collector in right pane" : `Run module: ${mod}`}
               >
-                {mod === "interactive_collector" ? "Interactive collector" : mod}
+                {mod === "collect_interactively" ? "Collect interactively" : mod}
               </button>
             ))}
           </div>

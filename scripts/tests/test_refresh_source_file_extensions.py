@@ -96,7 +96,7 @@ class TestUpdateFileExtensionsSheet(unittest.TestCase):
     def setUp(self) -> None:
         """Initialize Args for sheet updater construction."""
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test", "publisher"]
+        sys.argv = ["test", "publish"]
         Args._initialized = False
         Args._config = {}
         Args._parsed_args = {}

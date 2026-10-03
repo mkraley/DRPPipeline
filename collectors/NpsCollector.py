@@ -6,7 +6,7 @@ subfolders; project-level files and Data Table Info sit in the NPS folder root.
 Each Product is fetched and downloaded before the next one starts.
 Run via orchestrator when ``Args.source`` is ``nps``::
 
-    python main.py collector --source nps
+    python main.py collect --source nps
 """
 
 from __future__ import annotations

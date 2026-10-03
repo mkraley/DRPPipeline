@@ -2,7 +2,7 @@
 Retry only the Google Sheet inventory update (no browser / no DataLumos publish).
 
 Use when publish succeeded on DataLumos but the sheet step failed (e.g. SSL),
-so status is already ``published`` — ``python main.py publisher`` will not pick
+so status is already ``published`` — ``python main.py publish`` will not pick
 those rows again (it only lists ``uploaded``).
 
 From repo root:

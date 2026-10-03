@@ -1,4 +1,4 @@
-"""Obtain a Globus refresh token for adc_globus_collector (one-time setup)."""
+"""Obtain a Globus refresh token for collect_adc_globus (one-time setup)."""
 
 from __future__ import annotations
 

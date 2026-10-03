@@ -28,7 +28,7 @@ class TestDataLumosRepublisher(unittest.TestCase):
     def setUp(self) -> None:
         """Initialize Args, Logger, and temp Storage."""
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test", "republisher"]
+        sys.argv = ["test", "republish"]
         Args._initialized = False
         Args._config = {}
         Args._parsed_args = {}

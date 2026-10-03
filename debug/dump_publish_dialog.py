@@ -52,7 +52,7 @@ def main() -> None:
         sys.exit(1)
 
     workspace_id = sys.argv[1].strip()
-    sys.argv = ["dump_publish_dialog", "publisher"]
+    sys.argv = ["dump_publish_dialog", "publish"]
     Args._initialized = False
     Args.initialize()
     Logger.initialize(log_level="INFO")

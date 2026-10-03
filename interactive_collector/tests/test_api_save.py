@@ -16,7 +16,7 @@ class TestSaveMetadataSheetClaim(unittest.TestCase):
     def setUp(self) -> None:
         """Initialize Args and an in-memory-style SQLite Storage."""
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test", "interactive_collector"]
+        sys.argv = ["test", "collect_interactively"]
         Args.initialize()
         Logger.initialize(log_level="WARNING")
         self.tmpdir = tempfile.mkdtemp()

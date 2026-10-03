@@ -48,7 +48,7 @@ describe("PipelineChatPanel", () => {
           ok: true,
           requires_confirmation: true,
           tool_name: "run_module",
-          arguments: { module: "sourcing", dry_run: false },
+          arguments: { module: "source", dry_run: false },
           confirmation_token: "tok-1",
           result: "Proposed mutating action",
         }),
@@ -59,7 +59,7 @@ describe("PipelineChatPanel", () => {
           ok: true,
           requires_confirmation: false,
           tool_name: "run_module",
-          arguments: { module: "sourcing", dry_run: false },
+          arguments: { module: "source", dry_run: false },
           result: "Executed",
         }),
       });

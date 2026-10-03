@@ -5,7 +5,7 @@ Walks IRMA DataStore Collection → Program → Project and creates one
 ``sourced`` Storage row per unique IRMA Project that has public Digital
 Files. Run via orchestrator when ``Args.source`` is ``nps``::
 
-    python main.py sourcing --source nps
+    python main.py source --source nps
 """
 
 from __future__ import annotations

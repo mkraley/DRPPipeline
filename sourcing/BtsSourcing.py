@@ -5,7 +5,7 @@ Enumerates datasets from the ROSA P BTS Products collection via the JSON export
 API (Playwright-backed) and creates ``sourced`` storage records. Run via
 orchestrator when ``Args.source`` is ``bts``::
 
-    python main.py sourcing
+    python main.py source
 """
 
 from __future__ import annotations

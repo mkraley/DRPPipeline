@@ -1,5 +1,5 @@
 """
-Unit tests for CleanupInProgress (cleanup_inprogress module).
+Unit tests for CleanupInProgress (clean_inprogress module).
 """
 
 import sys
@@ -23,7 +23,7 @@ class TestCleanupInProgress(unittest.TestCase):
     def setUp(self) -> None:
         """Set up test environment before each test."""
         self._original_argv = sys.argv.copy()
-        sys.argv = ["test", "cleanup_inprogress"]
+        sys.argv = ["test", "clean_inprogress"]
         Args._initialized = False
         Args._config = {}
         Args._parsed_args = {}

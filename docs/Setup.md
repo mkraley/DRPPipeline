@@ -235,7 +235,7 @@ This repo includes a project-level `.cursor/mcp.json` that launches:
 via `mcp_python_wrapper.py`, which prefers `.venv` python when present and
 falls back to system Python.
 
-## Browser extension (optional - used by the interactive_collector)
+## Browser extension (optional - used by collect_interactively)
 
 The browser extension lets you browse source pages in a real browser and save pages as PDF to the interactive collector when AWS WAF blocks automated access.
 
