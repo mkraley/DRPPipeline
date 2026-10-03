@@ -557,7 +557,7 @@ python scripts/tally_data_inventories/tally_claimed_all_tabs.py
 | **collect** (CMS) | Collects data from data.cms.gov API pages. Processes `status="sourced"`. |
 | **collect_interactively** | Flask app for manual collection; SPA at `/collector/`. Under active development; not managed by the orchestration MCP. |
 | **upload** | Uploads collected data to DataLumos. Requires `datalumos_username`, `datalumos_password`. Processes `collected - large file` first (DRPID order), then `collected`. Projects with subfolders use Import From Zip (file-count check skipped). Large-file projects also skip that check, because `num_files` includes Digital Files that were not downloaded. |
-| **publish** | Nominates the source URL to GWDA, then runs DataLumos publish; optionally updates Google Sheet. Processes `status="uploaded"`. The pre-publish file-count/size check walks into workspace folders so nested files are counted. |
+| **publish** | Nominates the source URL to GWDA unless that URL is already on the GWDA list, then runs DataLumos publish; optionally updates Google Sheet. Processes `status="uploaded"`. The pre-publish file-count/size check walks into workspace folders so nested files are counted. |
 | **clean_inprogress** | Deletes DataLumos projects in Deposit In Progress state (no DB changes). |
 | **noop** | No-op; useful for testing. |
 
