@@ -9,6 +9,7 @@ When modifying or creating code, you MUST:
 - [ ] Keep methods short (one responsibility each)
 - [ ] Check for code duplication and apply DRY
 - [ ] Prepare git commit with all changed files and message
+- [ ] Insist that I perform the previous git commit before making any new changes
 - [ ] Use UTF-8-sig encoding for CSV/text files
 - [ ] Use Windows path syntax (backslashes, drive letters)
 - [ ] If any of the code in the browser extension is modified, always update the extension version number
@@ -16,7 +17,9 @@ When modifying or creating code, you MUST:
 
 **If ANY of these are missing, the response is incomplete.**
 
----
+## Asking questions
+- if there are multiple implementations possible, present the choices to me and let me decide
+- similarly, if you detect changes in other areas which may be required as a result of the direct request, ask permission for making those changes
 
 ## Testing - NON-NEGOTIABLE
 

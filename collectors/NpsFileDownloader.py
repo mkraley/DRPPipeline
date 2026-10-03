@@ -9,7 +9,7 @@ from pathlib import Path
 from collectors.NpsDownloadPlan import NpsPlannedFile, planned_file_dest
 from collectors.NpsHtmlDownloadCheck import unexpected_html_message, response_meta
 from utils.Args import Args
-from utils.Errors import record_error, record_warning
+from utils.Errors import abort_project, record_error
 from utils.Logger import Logger
 from utils.collector_status import (
     MAX_DOWNLOAD_BYTES,
@@ -117,8 +117,7 @@ class NpsFileDownloader:
         )
         if html_note:
             dest.unlink(missing_ok=True)
-            record_warning(drpid, html_note)
-            return False
+            abort_project(drpid, html_note)
         Logger.info("Downloaded: %s", entry.filename)
         return True
 

@@ -11,7 +11,7 @@ from typing import Any, FrozenSet
 
 from storage import Storage
 from utils.Args import Args
-from utils.Errors import record_error
+from utils.Errors import ProjectAbort, record_error
 from utils.collector_status import merge_result_to_storage
 from utils.file_utils import create_output_folder, folder_extensions_and_size, format_file_size
 from utils.url_utils import access_url, is_valid_url
@@ -38,6 +38,8 @@ class CollectorBase(ABC):
         try:
             result = self._collect(source_url, drpid, record)
             self.apply_result_to_storage(drpid, result)
+        except ProjectAbort:
+            return
         except Exception as exc:
             self.on_run_exception(drpid, exc)
 

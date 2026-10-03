@@ -16,7 +16,7 @@ from collectors.GlobusFileManagerUrl import GlobusFileManagerUrl
 from collectors.GlobusTransferService import GlobusTransferService
 from storage import Storage
 from collectors.GlobusConfig import build_transfer_service
-from utils.Errors import record_error, record_warning
+from utils.Errors import ProjectAbort, abort_project, record_error
 from utils.Logger import Logger
 from utils.file_utils import folder_extensions_and_size, format_file_size, output_folder_name
 
@@ -58,6 +58,8 @@ class AdcGlobusCollector:
             service = self._build_transfer_service()
             result = self._collect(drpid, globus_url, Path(folder_path), service)
             self._update_storage(drpid, result)
+        except ProjectAbort:
+            return
         except Exception as exc:
             record_error(drpid, f"Globus collection failed for DRPID {drpid}: {exc}")
 
@@ -81,7 +83,7 @@ class AdcGlobusCollector:
         """
         entries = self._list_source(service, globus_url)
         if not entries:
-            record_warning(drpid, f"Globus source path is empty: {globus_url.origin_path}")
+            abort_project(drpid, f"Globus source path is empty: {globus_url.origin_path}")
 
         rel_dest = folder_path.name
         task_id = service.transfer_directory(

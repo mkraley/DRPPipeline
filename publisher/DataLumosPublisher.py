@@ -15,7 +15,7 @@ from upload.DataLumosAuthenticator import datalumos_session_error
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from utils.Args import Args
 from utils.project_utils import get_field
-from utils.Errors import record_crash, record_error
+from utils.Errors import PipelineFatal, ProjectAbort, record_crash, record_error
 from utils.Logger import Logger
 from utils.project_folder_cleanup import (
     folder_path_can_be_cleared,
@@ -184,6 +184,8 @@ class DataLumosPublisher:
                             f"published_url={published_url}"
                         )
                         publish_ok = True
+        except ProjectAbort:
+            return
         except Exception as e:
             record_error(drpid, f"Publish failed: {e}")
             raise
@@ -193,21 +195,17 @@ class DataLumosPublisher:
         if not publish_ok:
             return
 
-        # Sheet update is separate: publish already succeeded; TLS/API failures are warnings only.
+        # Sheet update is separate from browser publish. Failures stop this project.
         try:
             # Reload so sheet Dataset Size / fields reflect any post-collect updates.
             fresh = Storage.get(drpid) or project
             self._update_google_sheet_if_configured(drpid, fresh, workspace_id)
-        except RuntimeError:
+        except PipelineFatal:
             raise
         except Exception as e:
-            Logger.warning(
-                "Google Sheet update failed for DRPID=%s after successful publish: %s",
+            record_error(
                 drpid,
-                e,
-            )
-            Storage.append_to_field(
-                drpid, "warnings", f"Google Sheet update failed: {e}"
+                f"Google Sheet update failed for DRPID={drpid} after successful publish: {e}",
             )
 
         self._finalize_after_publish(drpid)
@@ -381,7 +379,7 @@ class DataLumosPublisher:
     ) -> None:
         """
         If Google Sheet configured, run update_fn; on success set status to success_status.
-        Missing credentials or libraries: record_crash. Other failures: append warning.
+        Missing credentials or libraries: record_crash. Other failures: record_error.
         """
         if not Args.google_sheet_id or not Args.google_credentials:
             return
@@ -398,7 +396,7 @@ class DataLumosPublisher:
 
         source_url = get_field(project, "source_url")
         if not source_url:
-            Logger.warning("Google Sheet update skipped: no source_url")
+            record_error(drpid, "Google Sheet update skipped: no source_url")
             return
 
         try:
@@ -420,10 +418,7 @@ class DataLumosPublisher:
                     "Install with: pip install google-api-python-client google-auth google-auth-httplib2 "
                     "or leave google_sheet_id/google_credentials unset to skip sheet update."
                 )
-            Logger.warning(f"Google Sheet update failed for DRPID={drpid}: {error_message}")
-            Storage.append_to_field(
-                drpid, "warnings", f"Google Sheet update failed: {error_message}"
-            )
+            record_error(drpid, f"Google Sheet update failed: {error_message}")
 
     def _run_sheet_only_update(
         self,
@@ -461,7 +456,7 @@ class DataLumosPublisher:
         If Google Sheet ID and credentials are configured, update the sheet
         with publishing results (Claimed, Data Added, Download Location, etc.).
         Missing credentials file or missing Google Sheets libraries: record_crash (fatal).
-        Other failures (e.g. API error): append warning and continue. If the source URL
+        Other failures (e.g. API error): record an error and stop this project. If the source URL
         is not in the sheet, a new row is appended (see `GoogleSheetUpdater`).
         """
         from publisher.inventory_sheet_updater import get_inventory_sheet_updater

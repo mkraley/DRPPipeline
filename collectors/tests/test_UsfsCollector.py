@@ -314,7 +314,7 @@ class TestUsfsCollector(unittest.TestCase):
             return_value={"title": "T"},
         ), patch(
             "collectors.UsfsCollector.rds_id_from_source_url",
-            return_value=None,
+            return_value="RDS-2020-0001",
         ), patch(
             "collectors.UsfsCollector.merge_usfs_metadata",
             return_value={"title": "T"},
@@ -415,7 +415,7 @@ class TestUsfsCollector(unittest.TestCase):
             return_value={"title": "T"},
         ), patch(
             "collectors.UsfsCollector.rds_id_from_source_url",
-            return_value=None,
+            return_value="RDS-2020-0001",
         ), patch(
             "collectors.UsfsCollector.merge_usfs_metadata",
             return_value={"title": "T"},

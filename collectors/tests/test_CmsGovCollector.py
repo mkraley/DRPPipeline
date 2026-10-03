@@ -11,6 +11,7 @@ from utils.Args import Args
 from utils.Logger import Logger
 
 from collectors.CmsGovCollector import CmsGovCollector
+from utils.Errors import ProjectAbort
 from collectors.tests.test_utils import setup_mock_playwright
 
 _SAMPLE_SLUG_DATA = {
@@ -192,17 +193,17 @@ class TestCmsGovCollector(unittest.TestCase):
         self.assertIn("CMS resources API error", mock_record_error.call_args[0][1])
         self.assertEqual(mock_fetch.call_count, 2)
 
-    @patch("collectors.CmsGovCollector.record_warning")
+    @patch("utils.Errors.record_error")
     @patch.object(CmsGovCollector, "_fetch_resources")
-    def test_gather_files_empty_success_warns_not_error(
-        self, mock_fetch: Mock, mock_warn: Mock
+    def test_gather_files_empty_success_is_error(
+        self, mock_fetch: Mock, mock_error: Mock
     ) -> None:
-        """Successful empty API responses remain a warning, not an error."""
+        """Successful empty API responses stop the project."""
         mock_fetch.return_value = []
-        result = self.collector._gather_files(1, "current-uuid", None)
-        self.assertEqual(result, [])
-        mock_warn.assert_called_once()
-        self.assertIn("No downloadable files", mock_warn.call_args[0][1])
+        with self.assertRaises(ProjectAbort):
+            self.collector._gather_files(1, "current-uuid", None)
+        mock_error.assert_called_once()
+        self.assertIn("No downloadable files", mock_error.call_args[0][1])
 
     @patch("collectors.CmsGovCollector.requests.get")
     def test_fetch_resources_returns_none_on_http_error(self, mock_get: Mock) -> None:
@@ -230,47 +231,47 @@ class TestCmsGovCollector(unittest.TestCase):
             "[class*='DatasetPage__summary-field-summary-container']"
         )
 
-    @patch("collectors.CmsGovCollector.record_warning")
+    @patch("utils.Errors.record_error")
     @patch("collectors.PlaywrightSession.sync_playwright")
     def test_scrape_description_element_missing(
-        self, mock_playwright: Mock, mock_warn: Mock
+        self, mock_playwright: Mock, mock_error: Mock
     ) -> None:
         mock_page, _, _ = setup_mock_playwright(mock_playwright)
         mock_page.goto.return_value = None
         mock_page.query_selector.return_value = None
 
-        result = self.collector._scrape_description("https://data.cms.gov/some/path", 1)
+        with self.assertRaises(ProjectAbort):
+            self.collector._scrape_description("https://data.cms.gov/some/path", 1)
 
-        self.assertIsNone(result)
-        mock_warn.assert_called_once()
-        self.assertIn("not found", mock_warn.call_args[0][1])
+        mock_error.assert_called_once()
+        self.assertIn("not found", mock_error.call_args[0][1])
 
-    @patch("collectors.CmsGovCollector.record_warning")
+    @patch("utils.Errors.record_error")
     @patch("collectors.PlaywrightSession.sync_playwright")
     def test_scrape_description_browser_init_fails(
-        self, mock_playwright: Mock, mock_warn: Mock
+        self, mock_playwright: Mock, mock_error: Mock
     ) -> None:
         mock_playwright.return_value.start.side_effect = Exception("no browser")
 
-        result = self.collector._scrape_description("https://data.cms.gov/some/path", 1)
+        with self.assertRaises(ProjectAbort):
+            self.collector._scrape_description("https://data.cms.gov/some/path", 1)
 
-        self.assertIsNone(result)
-        mock_warn.assert_called_once()
-        self.assertIn("Browser unavailable", mock_warn.call_args[0][1])
+        mock_error.assert_called_once()
+        self.assertIn("Browser unavailable", mock_error.call_args[0][1])
 
-    @patch("collectors.CmsGovCollector.record_warning")
+    @patch("utils.Errors.record_error")
     @patch("collectors.PlaywrightSession.sync_playwright")
     def test_scrape_description_page_error(
-        self, mock_playwright: Mock, mock_warn: Mock
+        self, mock_playwright: Mock, mock_error: Mock
     ) -> None:
         mock_page, _, _ = setup_mock_playwright(mock_playwright)
         mock_page.goto.side_effect = Exception("timeout")
 
-        result = self.collector._scrape_description("https://data.cms.gov/some/path", 1)
+        with self.assertRaises(ProjectAbort):
+            self.collector._scrape_description("https://data.cms.gov/some/path", 1)
 
-        self.assertIsNone(result)
-        mock_warn.assert_called_once()
-        self.assertIn("Failed to scrape description", mock_warn.call_args[0][1])
+        mock_error.assert_called_once()
+        self.assertIn("Failed to scrape description", mock_error.call_args[0][1])
 
     # ── _collect ─────────────────────────────────────────────────────────────
 
@@ -352,14 +353,14 @@ class TestCmsGovCollector(unittest.TestCase):
         self.assertEqual(result["num_files"], 1)
         mock_download.assert_called_once()
 
-    @patch("collectors.CmsGovCollector.record_warning")
+    @patch("utils.Errors.record_error")
     @patch("collectors.CmsGovCollector.folder_extensions_and_size")
     @patch("collectors.CmsGovCollector.download_via_url")
     @patch.object(CmsGovCollector, "create_project_folder")
     @patch.object(CmsGovCollector, "_gather_files")
     @patch.object(CmsGovCollector, "_scrape_description")
     @patch.object(CmsGovCollector, "_fetch_slug")
-    def test_collect_download_failure_warns(
+    def test_collect_download_failure_is_error(
         self,
         mock_slug: Mock,
         mock_scrape: Mock,
@@ -367,7 +368,7 @@ class TestCmsGovCollector(unittest.TestCase):
         mock_create_folder: Mock,
         mock_download: Mock,
         mock_ext_size: Mock,
-        mock_warn: Mock,
+        mock_error: Mock,
     ) -> None:
         mock_slug.return_value = _SAMPLE_SLUG_DATA
         mock_scrape.return_value = None
@@ -376,12 +377,12 @@ class TestCmsGovCollector(unittest.TestCase):
         mock_download.return_value = (0, False)
         mock_ext_size.return_value = ([], 0, 0)
 
-        self.collector._collect("https://data.cms.gov/some/path", 1, {})
+        with self.assertRaises(ProjectAbort):
+            self.collector._collect("https://data.cms.gov/some/path", 1, {})
 
-        mock_warn.assert_called()
-        self.assertIn("Download failed", mock_warn.call_args[0][1])
+        mock_error.assert_called()
+        self.assertIn("Download failed", mock_error.call_args[0][1])
 
-    @patch("collectors.CmsGovCollector.record_warning")
     @patch("collectors.CmsGovCollector.record_error")
     @patch("collectors.CmsGovCollector.folder_extensions_and_size")
     @patch.object(CmsGovCollector, "create_project_folder")
@@ -396,9 +397,8 @@ class TestCmsGovCollector(unittest.TestCase):
         mock_create_folder: Mock,
         mock_ext_size: Mock,
         mock_record_error: Mock,
-        mock_warn: Mock,
     ) -> None:
-        """When gather returns None (API failure), collect aborts without warning."""
+        """When gather returns None (API failure), collect returns without a second error."""
         mock_slug.return_value = _SAMPLE_SLUG_DATA
         mock_scrape.return_value = None
         mock_gather.return_value = None
@@ -408,8 +408,7 @@ class TestCmsGovCollector(unittest.TestCase):
         result = self.collector._collect("https://data.cms.gov/some/path", 1, {})
 
         self.assertEqual(result["folder_path"], "/tmp/DRP000001")
-        mock_warn.assert_not_called()
-        # Error was recorded inside _gather_files (mocked here); collect just aborts.
+        # Error was recorded inside _gather_files (mocked here); collect just returns.
         mock_record_error.assert_not_called()
         mock_ext_size.assert_not_called()
 

@@ -27,7 +27,7 @@ from utils.collector_status import (
     pending_download_summary_note,
     would_exceed_download_budget,
 )
-from utils.Errors import record_error, record_warning
+from utils.Errors import abort_project, record_error, record_warning
 from utils.IcpsrGeographicNormalizer import (
     log_geographic_normalization,
     normalize_geographic_metadata,
@@ -108,7 +108,7 @@ class BtsCollector(CollectorBase):
 
         parsed = parse_detail_page(body, url)
         if not parsed.get("title"):
-            record_warning(drpid, "Title not found on BTS detail page")
+            abort_project(drpid, "Title not found on BTS detail page")
 
         result = {key: value for key, value in parsed.items() if not key.startswith("_")}
         self._apply_geographic_coverage(drpid, result)
@@ -189,7 +189,7 @@ class BtsCollector(CollectorBase):
         """Render the source catalog page to PDF."""
         dest = folder_path / _CATALOG_PDF_NAME
         if not page_downloader.url_to_pdf(source_url, dest):
-            record_warning(drpid, f"Failed to save catalog PDF: {_CATALOG_PDF_NAME}")
+            abort_project(drpid, f"Failed to save catalog PDF: {_CATALOG_PDF_NAME}")
 
     def _download_files(
         self,

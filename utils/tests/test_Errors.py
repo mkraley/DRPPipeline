@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from utils.Errors import (
+    PipelineFatal,
     derive_error_status,
     is_error_status,
     normalize_status_hyphens,
@@ -24,8 +25,8 @@ class TestRecordCrash(unittest.TestCase):
 
     @patch("utils.Errors.Logger", Mock())
     def test_record_crash_logs_and_raises(self) -> None:
-        """record_crash logs at exception level and raises RuntimeError."""
-        with self.assertRaises(RuntimeError) as ctx:
+        """record_crash logs at exception level and raises PipelineFatal."""
+        with self.assertRaises(PipelineFatal) as ctx:
             record_crash("fatal")
         self.assertEqual(str(ctx.exception), "fatal")
 

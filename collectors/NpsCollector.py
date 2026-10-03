@@ -48,7 +48,7 @@ from sourcing.NpsProfileMetadata import merge_doi_notes, profile_dois, profile_t
 from sourcing.NpsReferenceRules import irma_project_id_from_source_url, reference_id_of
 from storage.NpsHierarchyStore import NpsHierarchyStore
 from utils.Args import Args
-from utils.Errors import record_error, record_warning
+from utils.Errors import abort_project, record_error, record_warning
 from utils.Logger import Logger
 from utils.collector_status import deferred_download_skip_note
 from utils.file_utils import format_file_size
@@ -391,13 +391,12 @@ class NpsCollector(CollectorBase):
         return planned_files_for_profile(profile, relative_dir, holdings)
 
     def _fetch_profile(self, drpid: int, reference_id: int) -> dict[str, Any] | None:
-        """Fetch one IRMA Profile, recording a warning on failure."""
+        """Fetch one IRMA Profile. Failure stops this project."""
         self._pause()
         try:
             return self._client.fetch_profile(reference_id)
         except RuntimeError as exc:
-            record_warning(drpid, f"IRMA Profile {reference_id} failed: {exc}")
-            return None
+            abort_project(drpid, f"IRMA Profile {reference_id} failed: {exc}")
 
     def _finish_result(
         self,

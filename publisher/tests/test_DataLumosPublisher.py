@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 from storage import Storage
 from utils.Args import Args
+from utils.Errors import PipelineFatal
 from utils.Logger import Logger
 
 from utils.project_utils import get_field
@@ -460,7 +461,10 @@ class TestDataLumosPublisher(unittest.TestCase):
         self.assertIn("profile retrieval failed", errors)
         self.assertNotIn("does not match database", errors)
 
-    def test_load_project_page_keeps_abort_that_is_not_a_login_error(self) -> None:
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    def test_load_project_page_keeps_abort_that_is_not_a_login_error(
+        self, _mock_wait: MagicMock
+    ) -> None:
         """An aborted navigation that does not land on loginError is still a failure."""
         page = MagicMock()
         page.goto.side_effect = Exception(
@@ -572,7 +576,7 @@ class TestDataLumosPublisher(unittest.TestCase):
         mock_update_sheet: MagicMock,
         mock_upload_check: MagicMock,
     ) -> None:
-        """Google Sheet failures after publish must not mark the project as publish failed."""
+        """Google Sheet failures after publish record an error and do not say publish failed."""
         drpid = Storage.create_record("https://example.com/test")
         Storage.update_record(drpid, {"datalumos_id": "239181", "status": "uploaded"})
         mock_page = MagicMock()
@@ -584,14 +588,15 @@ class TestDataLumosPublisher(unittest.TestCase):
             "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed"
         )
 
-        with patch("publisher.DataLumosPublisher.record_error") as mock_record_error:
-            self.publisher.run(drpid)
+        self.publisher.run(drpid)
 
-        mock_record_error.assert_not_called()
         record = Storage.get(drpid)
         self.assertIsNotNone(record)
-        self.assertEqual(record.get("status"), "published")
-        self.assertIn("Google Sheet update failed", record.get("warnings") or "")
+        assert record is not None
+        self.assertEqual(record.get("status"), "published-error")
+        errors = record.get("errors") or ""
+        self.assertIn("Google Sheet update failed", errors)
+        self.assertNotIn("Publish failed", errors)
 
     @patch.object(
         DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None
@@ -732,8 +737,8 @@ class TestDataLumosPublisher(unittest.TestCase):
         with patch.object(Args, "google_sheet_id", "sheet123"), patch.object(
             Args, "google_credentials", str(Path(tempfile.gettempdir()) / "nonexistent_creds.json")
         ), patch("publisher.DataLumosPublisher.record_error"):
-            mock_record_crash.side_effect = RuntimeError("crash")
-            with self.assertRaises(RuntimeError):
+            mock_record_crash.side_effect = PipelineFatal("crash")
+            with self.assertRaises(PipelineFatal):
                 self.publisher.run(drpid)
             mock_record_crash.assert_called_once()
             self.assertIn("credentials", mock_record_crash.call_args[0][0].lower())

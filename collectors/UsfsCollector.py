@@ -29,7 +29,7 @@ from collectors.UsfsPageDownloader import UsfsPageDownloader
 from storage import Storage
 from utils.Args import Args
 from utils.collector_status import MAX_DOWNLOAD_BYTES, large_file_skip_note
-from utils.Errors import record_error, record_warning
+from utils.Errors import abort_project, record_error, record_warning
 from utils.Logger import Logger
 from utils.download_with_progress import download_via_url
 from utils.file_utils import create_output_folder, format_file_size, sanitize_filename
@@ -141,7 +141,7 @@ class UsfsCollector(CollectorBase):
 
         detail = parse_detail_page(body, url)
         if not detail.get("title"):
-            record_warning(drpid, "Title not found on USFS detail page")
+            abort_project(drpid, "Title not found on USFS detail page")
 
         rds_id = rds_id_from_source_url(url)
         metadata: Dict[str, Any] = {}
@@ -152,12 +152,12 @@ class UsfsCollector(CollectorBase):
             if meta_status == 200 and meta_body:
                 metadata = parse_metadata_page(meta_body)
             else:
-                record_warning(
+                abort_project(
                     drpid,
                     f"Failed to fetch USFS metadata page (status={meta_status}): {meta_url}",
                 )
         else:
-            record_warning(drpid, f"Could not extract RDS id from URL: {url}")
+            abort_project(drpid, f"Could not extract RDS id from URL: {url}")
 
         # Geographic coverage uses FGDC metadata HTML (above), before publication downloads.
         result = merge_usfs_metadata(detail, metadata)
@@ -322,11 +322,10 @@ class UsfsCollector(CollectorBase):
         ]
         for pdf_name, page_url in pages:
             if not page_url:
-                record_warning(drpid, f"Missing URL for {pdf_name}")
-                continue
+                abort_project(drpid, f"Missing URL for {pdf_name}")
             dest = folder_path / pdf_name
             if not page_downloader.url_to_pdf(page_url, dest):
-                record_warning(drpid, f"Failed to save PDF: {pdf_name}")
+                abort_project(drpid, f"Failed to save PDF: {pdf_name}")
 
     def _process_publication_files(
         self,
@@ -427,7 +426,7 @@ class UsfsCollector(CollectorBase):
                     if dest.suffix:
                         exts.add(dest.suffix.lstrip(".").lower())
                 else:
-                    record_warning(drpid, f"Failed to convert HTML to PDF: {dest.name}")
+                    abort_project(drpid, f"Failed to convert HTML to PDF: {dest.name}")
             elif suffix and suffix not in _KEEP_EXTENSIONS and suffix != ".pdf":
                 Logger.info("Downloaded file kept as-is: %s", dest.name)
 

@@ -161,7 +161,7 @@ class DataLumosFormFiller:
             toggle.wait_for(state="visible", timeout=30000)
         except PlaywrightTimeoutError as exc:
             if self._metadata_form_ready():
-                self._warn(
+                Logger.debug(
                     "expand_all_sections: #expand-init not found; "
                     "metadata form already visible, continuing"
                 )
@@ -177,7 +177,7 @@ class DataLumosFormFiller:
                 self._click_expand_toggle(toggle, force=True)
         except PlaywrightTimeoutError as exc:
             if self._sections_already_expanded(toggle) or self._metadata_form_ready():
-                self._warn(
+                Logger.debug(
                     "expand_all_sections: toggle click timed out but form looks "
                     f"ready; continuing ({exc})"
                 )
@@ -654,7 +654,7 @@ class DataLumosFormFiller:
         data_types = normalize_datalumos_data_types(data_type)
         if not data_types:
             if not _is_empty(data_type):
-                self._warn(
+                self._fail(
                     f"Could not map data_types to DataLumos labels: {data_type!r}"
                 )
             return

@@ -9,6 +9,7 @@ chunks for ROSA P), then upload them to the existing DataLumos project.
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple
 
@@ -28,8 +29,15 @@ from collectors.UsfsMetadataExtractor import parse_data_access_links
 from storage import Storage
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from upload.UploadIssueReporter import UploadIssueReporter
+from collectors.SkipNoteFiles import parse_skip_note_download_targets
 from utils.Args import Args
-from utils.file_utils import format_file_size, output_folder_name, parse_file_size_to_bytes
+from utils.Errors import ProjectAbort, record_crash
+from utils.file_utils import (
+    format_file_size,
+    output_folder_name,
+    parse_file_size_to_bytes,
+    sanitize_filename,
+)
 from utils.Logger import Logger
 from utils.project_utils import get_field
 from utils.url_utils import BROWSER_HEADERS, fetch_page_body
@@ -42,6 +50,7 @@ MAX_PROJECT_FILE_SIZE_BYTES = 25 * 1024**3
 _BARE_GIGABYTES_RE = re.compile(r"^\d+(?:\.\d+)?$")
 DEFAULT_SUMMARY_INTERVAL = 0
 UPLOAD_LARGE_FILES_TIMEOUT_MS = 2 * 60 * 60 * 1000  # 2 hours per file / UI action
+DISK_SPACE_BUFFER_BYTES = 50 * 1024**3
 WORKSPACE_LOAD_TIMEOUT_MS = 60 * 60 * 1000  # workspace navigation after the load event
 
 
@@ -113,6 +122,89 @@ def resolve_output_folder(drpid: int, folder_path: str | None) -> Path:
 def log_path_for_download(log_root: Path, drpid: int, out_name: str) -> Path:
     safe = re.sub(r'[<>:"/\\|?*]', "_", out_name)
     return log_root / output_folder_name(drpid) / f"{safe}.log"
+
+
+def _sizes_from_status_notes(status_notes: str | None) -> Dict[str, int]:
+    """Map download filenames from skip notes to byte sizes."""
+    sizes: Dict[str, int] = {}
+    for name, _url, size_bytes, _folder in parse_skip_note_download_targets(status_notes):
+        if size_bytes is None:
+            continue
+        sizes[name] = size_bytes
+        sizes[sanitize_filename(name)] = size_bytes
+    return sizes
+
+
+def _tree_bytes(folder: Path) -> int:
+    """Return total size of files under ``folder``."""
+    if not folder.is_dir():
+        return 0
+    total = 0
+    for path in folder.rglob("*"):
+        if path.is_file():
+            total += path.stat().st_size
+    return total
+
+
+def bytes_still_to_download(
+    project: Dict[str, Any],
+    folder: Path,
+    paths: Sequence[Path],
+) -> int:
+    """
+    Return bytes that large-file download will still write for this project.
+
+    Uses skip-note sizes when every planned file has one. Otherwise uses
+    ``file_size`` minus bytes already in the project folder.
+    """
+    sizes = _sizes_from_status_notes(get_field(project, "status_notes"))
+    missing_size = [
+        path.name for path in paths if path.name not in sizes and not path.is_file()
+    ]
+    if not missing_size:
+        needed = 0
+        for path in paths:
+            expected = sizes.get(path.name)
+            have = path.stat().st_size if path.is_file() else 0
+            if expected is None:
+                continue
+            needed += max(0, expected - have)
+        return needed
+
+    declared = parse_file_size_to_bytes(project.get("file_size"))
+    if declared is None:
+        record_crash(
+            "Cannot determine download size for "
+            + ", ".join(missing_size)
+            + "; refusing to start the download"
+        )
+    return max(0, declared - _tree_bytes(folder))
+
+
+def ensure_disk_space_for_download(folder: Path, needed_bytes: int) -> None:
+    """
+    Stop the batch when the download would leave less than 50 GB free.
+
+    Args:
+        folder: Directory the files will be written under.
+        needed_bytes: Bytes still to write. No check when this is zero.
+
+    Raises:
+        PipelineFatal: When free space is below ``needed_bytes`` plus 50 GB.
+    """
+    if needed_bytes <= 0:
+        return
+    free = shutil.disk_usage(folder).free
+    required = needed_bytes + DISK_SPACE_BUFFER_BYTES
+    if free >= required:
+        return
+    record_crash(
+        f"Not enough disk space to download project files into {folder}: "
+        f"need {format_file_size(required)} "
+        f"({format_file_size(needed_bytes)} still to download plus "
+        f"{format_file_size(DISK_SPACE_BUFFER_BYTES)} free), "
+        f"{format_file_size(free)} free"
+    )
 
 
 def planned_download_paths(aria2_lines: Sequence[str]) -> List[Path]:
@@ -366,6 +458,8 @@ class UploadLargeFiles:
             download_paths = planned_download_paths(aria2_lines)
 
             if aria2_lines:
+                needed_bytes = bytes_still_to_download(project, folder, download_paths)
+                ensure_disk_space_for_download(folder, needed_bytes)
                 log_root = Path(Args.base_output_dir) / "logs"
                 _, fail_count = run_aria2_downloads(drpid, aria2_lines, log_root=log_root)
                 if fail_count:
@@ -404,6 +498,8 @@ class UploadLargeFiles:
                 drpid,
                 STATUS_FINISH_WAIT,
             )
+        except ProjectAbort:
+            return
         except Exception as exc:
             reporter.error(f"upload_large_files failed: {exc}")
             raise

@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from storage import Storage
 from upload.UploadLargeFiles import (
+    DISK_SPACE_BUFFER_BYTES,
     MAX_PROJECT_FILE_SIZE_BYTES,
     STATUS_FINISH_WAIT,
     STATUS_UPLOADED_EXPANDED,
@@ -15,6 +16,8 @@ from upload.UploadLargeFiles import (
     UPLOAD_LARGE_FILES_TIMEOUT_MS,
     WORKSPACE_LOAD_TIMEOUT_MS,
     UploadLargeFiles,
+    bytes_still_to_download,
+    ensure_disk_space_for_download,
     is_eligible_for_upload_large_files,
     parse_max_project_size,
     planned_download_paths,
@@ -22,6 +25,7 @@ from upload.UploadLargeFiles import (
     project_under_size_limit,
     run_aria2_downloads,
 )
+from utils.Errors import PipelineFatal
 from utils.Args import Args
 from utils.Logger import Logger
 
@@ -308,6 +312,41 @@ class TestUploadLargeFilesRun(unittest.TestCase):
             mock_aria2.assert_not_called()
             mock_chrome.assert_called_once()
             self.assertTrue((dest_dir / "file.zip").is_file())
+
+
+class TestDownloadDiskSpace(unittest.TestCase):
+    """Free space must cover files still to download plus a 50 GB buffer."""
+
+    def test_bytes_still_to_download_uses_skip_note_sizes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            partial = folder / "big.zip"
+            partial.write_bytes(b"x" * 100)
+            project = {
+                "status_notes": (
+                    "Skipped download (>1GB): big.zip (10 GB) - "
+                    "download manually: https://example.com/big.zip"
+                ),
+                "file_size": "10 GB",
+            }
+            needed = bytes_still_to_download(project, folder, [partial])
+        self.assertEqual(needed, 10 * 1024**3 - 100)
+
+    def test_ensure_disk_space_raises_when_buffer_would_be_used(self) -> None:
+        needed = 10 * 1024**3
+        usage = MagicMock(free=needed + DISK_SPACE_BUFFER_BYTES - 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("upload.UploadLargeFiles.shutil.disk_usage", return_value=usage):
+                with self.assertRaises(PipelineFatal) as ctx:
+                    ensure_disk_space_for_download(Path(tmp), needed)
+        self.assertIn("Not enough disk space", str(ctx.exception))
+
+    def test_ensure_disk_space_allows_exact_buffer(self) -> None:
+        needed = 10 * 1024**3
+        usage = MagicMock(free=needed + DISK_SPACE_BUFFER_BYTES)
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("upload.UploadLargeFiles.shutil.disk_usage", return_value=usage):
+                ensure_disk_space_for_download(Path(tmp), needed)
 
 
 if __name__ == "__main__":

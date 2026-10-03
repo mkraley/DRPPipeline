@@ -18,7 +18,7 @@ from collectors.SsaMetadataExtractor import SsaDownloadFile, parse_catalog_page
 from collectors.UsfsPageDownloader import UsfsPageDownloader
 from sourcing.SsaCandidateFetcher import slug_from_source_url
 from utils.Args import Args
-from utils.Errors import record_error, record_warning
+from utils.Errors import abort_project, record_error
 from utils.Logger import Logger
 from utils.file_utils import create_output_folder, format_file_size
 
@@ -85,7 +85,7 @@ class SsaCollector(CollectorBase):
         if parsed is None:
             return {}
         if not parsed.get("title"):
-            record_warning(drpid, "Title not found on SSA catalog page")
+            abort_project(drpid, "Title not found on SSA catalog page")
         result = {key: value for key, value in parsed.items() if not key.startswith("_")}
 
         folder_path = create_output_folder(Path(Args.base_output_dir), drpid)
@@ -94,7 +94,7 @@ class SsaCollector(CollectorBase):
             return result
         result["folder_path"] = str(folder_path)
         if not self._file_downloader.save_catalog_pdf(page_downloader, folder_path, url):
-            record_warning(drpid, f"Failed to save catalog PDF: {CATALOG_PDF_NAME}")
+            abort_project(drpid, f"Failed to save catalog PDF: {CATALOG_PDF_NAME}")
         self._download_and_inventory(drpid, page_downloader, folder_path, parsed, result)
         return result
 

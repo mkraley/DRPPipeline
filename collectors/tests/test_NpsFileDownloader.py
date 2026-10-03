@@ -11,6 +11,7 @@ from unittest.mock import patch
 from collectors.NpsDownloadPlan import NpsPlannedFile
 from collectors.NpsFileDownloader import NpsFileDownloader, count_files, projected_file_count, projected_folder_bytes
 from utils.Args import Args
+from utils.Errors import ProjectAbort
 from utils.Logger import Logger
 
 
@@ -106,10 +107,10 @@ class TestNpsFileDownloader(unittest.TestCase):
         self.assertIn("pdf", exts)
         self.assertGreater(total, 0)
 
-    @patch("collectors.NpsFileDownloader.record_warning")
+    @patch("utils.Errors.record_error")
     @patch("collectors.NpsFileDownloader.download_via_url")
-    def test_html_download_is_deleted(self, mock_download, mock_warning) -> None:
-        """Login HTML is not kept as a dataset file; later files still download."""
+    def test_html_download_is_deleted(self, mock_download, mock_error) -> None:
+        """Login HTML is not kept, and collection of this project stops."""
         def _write(url: str, dest: Path, **_kwargs: object) -> tuple[int, bool]:
             dest.parent.mkdir(parents=True, exist_ok=True)
             if url.endswith("/1"):
@@ -132,12 +133,13 @@ class TestNpsFileDownloader(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
-            NpsFileDownloader().download_files(7, folder, [html_entry, pdf_entry])
+            with self.assertRaises(ProjectAbort):
+                NpsFileDownloader().download_files(7, folder, [html_entry, pdf_entry])
             self.assertFalse((folder / "secret.csv").exists())
-            self.assertTrue((folder / "ok.pdf").is_file())
+            self.assertFalse((folder / "ok.pdf").exists())
             self.assertFalse((folder / "_project_files").exists())
-        mock_warning.assert_called()
-        self.assertIn("Download returned HTML", mock_warning.call_args.args[1])
+        mock_error.assert_called()
+        self.assertIn("Download returned HTML", mock_error.call_args.args[1])
 
     @patch("collectors.NpsFileDownloader.would_exceed_download_budget")
     @patch("collectors.NpsFileDownloader.download_via_url")

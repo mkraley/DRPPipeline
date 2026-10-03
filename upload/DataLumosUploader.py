@@ -13,6 +13,7 @@ from storage import Storage
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from upload.UploadIssueReporter import UploadIssueReporter
 from utils.Args import Args
+from utils.Errors import ProjectAbort
 from utils.PrincipalInvestigators import deserialize_investigators
 from utils.project_utils import get_field
 from utils.Logger import Logger
@@ -68,11 +69,14 @@ def _warn_if_num_files_mismatch(
     *,
     used_zip: bool = False,
 ) -> None:
-    """Record a warning when collected ``num_files`` does not match upload batch count.
+    """Stop this project when collected ``num_files`` does not match upload batch count.
 
     Zip imports skip this check; publish later compares the full folder tree.
     Large-file projects also skip it: ``num_files`` includes catalog files that
     were not downloaded, and the upload sends only what is on disk.
+
+    Raises:
+        ProjectAbort: When the counts differ. The error is already recorded.
     """
     if used_zip or _is_large_file_status(str(project.get("status") or "")):
         return
@@ -85,10 +89,12 @@ def _warn_if_num_files_mismatch(
         return
     if expected_files == upload_batches:
         return
-    reporter.warn(
+    message = (
         f"Upload batch count ({upload_batches}) does not match "
         f"num_files from collection ({expected_files})."
     )
+    reporter.error(message)
+    raise ProjectAbort(message)
 
 
 class DataLumosUploader:
@@ -162,6 +168,8 @@ class DataLumosUploader:
                     f"Upload completed for DRPID={drpid}, datalumos_id={datalumos_id}, "
                     f"status={success_status}"
                 )
+            except ProjectAbort:
+                return
             except Exception as e:
                 reporter.error(f"Upload failed: {e}")
                 raise

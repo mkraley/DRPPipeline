@@ -11,7 +11,7 @@ from typing import Any
 
 from collectors.NpsDownloadPlan import NpsPlannedFile, planned_file_dest, sidecar_filename
 from sourcing.NpsCatalogClient import NpsCatalogClient
-from utils.Errors import record_warning
+from utils.Errors import abort_project
 from utils.Logger import Logger
 
 _SIDECAR_COLUMNS = ("column_name", "definition", "storage", "unit", "scales")
@@ -60,10 +60,7 @@ def write_sidecars_for_files(
         try:
             rows = client.fetch_data_table(reference_id, resource_id)
         except RuntimeError as exc:
-            message = f"Data Table Info failed for {entry.filename}: {exc}"
-            record_warning(drpid, message)
-            notes.append(message)
-            continue
+            abort_project(drpid, f"Data Table Info failed for {entry.filename}: {exc}")
         if not rows:
             continue
         write_data_table_csv(dest, rows)

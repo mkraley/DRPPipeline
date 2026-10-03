@@ -18,7 +18,7 @@ Flow:
 
 from collectors.CollectorBase import CollectorBase
 from collectors.PlaywrightSession import PlaywrightSession
-from utils.Errors import record_error, record_warning
+from utils.Errors import ProjectAbort, abort_project, record_error
 from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -109,9 +109,8 @@ class CmsGovCollector(CollectorBase):
             # Resources API failure already recorded via record_error.
             return result
         if not all_files:
-            record_warning(drpid, "No files found to download")
-        else:
-            self._download_files(drpid, all_files, folder_path)
+            abort_project(drpid, "No files found to download")
+        self._download_files(drpid, all_files, folder_path)
 
         # Infer time_start / time_end from dataset_version_date on Primary resources.
         # This is more accurate than current_dataset.version (which only reflects the
@@ -290,7 +289,7 @@ class CmsGovCollector(CollectorBase):
                     files.append(r)
 
         if not files:
-            record_warning(drpid, "No downloadable files found in API response")
+            abort_project(drpid, "No downloadable files found in API response")
 
         return files
 
@@ -319,9 +318,11 @@ class CmsGovCollector(CollectorBase):
             try:
                 _bytes, success = download_via_url(file_url, dest)
                 if not success:
-                    record_warning(drpid, f"Download failed: {file_url}")
+                    abort_project(drpid, f"Download failed: {file_url}")
+            except ProjectAbort:
+                raise
             except Exception as exc:
-                record_warning(drpid, f"Download error for {file_url}: {exc}")
+                abort_project(drpid, f"Download error for {file_url}: {exc}")
 
     def _extract_date_range(self, files: List[Dict[str, Any]]) -> Dict[str, str]:
         """
@@ -343,8 +344,7 @@ class CmsGovCollector(CollectorBase):
     def _scrape_description(self, url: str, drpid: int) -> Optional[str]:
         """Render source_url with Playwright and extract the dataset description."""
         if not self._init_browser():
-            record_warning(drpid, "Browser unavailable; description not collected")
-            return None
+            abort_project(drpid, "Browser unavailable; description not collected")
         page = self._session.page
         assert page is not None
         try:
@@ -353,11 +353,11 @@ class CmsGovCollector(CollectorBase):
             if el:
                 text = el.inner_text().strip()
                 return text if text else None
-            record_warning(drpid, "Description element not found on page")
-            return None
+            abort_project(drpid, "Description element not found on page")
+        except ProjectAbort:
+            raise
         except Exception as exc:
-            record_warning(drpid, f"Failed to scrape description: {exc}")
-            return None
+            abort_project(drpid, f"Failed to scrape description: {exc}")
 
     def _init_browser(self) -> bool:
         return self._session.start()

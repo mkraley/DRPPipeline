@@ -9,7 +9,7 @@ from pathlib import Path
 from collectors.SsaCompleteMetadata import COMPLETE_METADATA_HEADING_SELECTOR
 from collectors.SsaMetadataExtractor import SsaDownloadFile, filename_from_url
 from collectors.UsfsPageDownloader import UsfsPageDownloader
-from utils.Errors import record_error, record_warning
+from utils.Errors import abort_project, record_error
 from utils.Logger import Logger
 from utils.collector_status import (
     MAX_DOWNLOAD_BYTES,
@@ -268,9 +268,7 @@ class SsaFileDownloader:
                 fallback_stem=fallback,
             )
             if dest is None:
-                record_warning(drpid, f"Failed to save HTML resource PDF: {entry.url}")
-                notes.append(f"Failed to save HTML resource PDF: {entry.url}")
-                continue
+                abort_project(drpid, f"Failed to save HTML resource PDF: {entry.url}")
             Logger.info("Saved HTML resource PDF: %s", dest.name)
         return notes
 

@@ -9,6 +9,7 @@ from typing import Optional, TYPE_CHECKING
 
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
+from utils.Errors import ProjectAbort
 from utils.Logger import Logger
 
 if TYPE_CHECKING:
@@ -59,10 +60,10 @@ def wait_for_human_verification(
     except Exception as e:
         msg = f"Verification check completed (or not needed): {e}"
         if reporter is not None:
-            reporter.warn(msg)
-        else:
-            Logger.warning(msg)
-        page.wait_for_timeout(2000)
+            reporter.error(msg)
+            raise ProjectAbort(msg) from e
+        Logger.error(msg)
+        raise
 
 
 class DataLumosAuthenticator:

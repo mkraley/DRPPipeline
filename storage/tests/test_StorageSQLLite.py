@@ -10,6 +10,7 @@ from pathlib import Path
 from utils.Args import Args
 from utils.Logger import Logger
 from storage.StorageSQLLite import StorageSQLLite
+from utils.Errors import PipelineFatal
 
 
 class TestStorageSQLLite(unittest.TestCase):
@@ -333,7 +334,7 @@ class TestStorageSQLLite(unittest.TestCase):
     
     def test_get_db_path_not_initialized(self) -> None:
         """Test that get_db_path raises error when not initialized."""
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(PipelineFatal):
             self.storage.get_db_path()
     
     def test_close_connection(self) -> None:
@@ -537,19 +538,19 @@ class TestStorageSQLLite(unittest.TestCase):
         """Test that methods raise error when not initialized."""
         storage = StorageSQLLite()
         
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(PipelineFatal):
             storage.create_record("https://example.com")
         
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(PipelineFatal):
             storage.exists_by_source_url("https://example.com")
         
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(PipelineFatal):
             storage.get(1)
         
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(PipelineFatal):
             storage.update_record(1, {"title": "Test"})
         
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(PipelineFatal):
             storage.delete(1)
 
     def test_list_eligible_projects_none_prereq_returns_empty(self) -> None:

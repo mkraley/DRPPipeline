@@ -19,7 +19,14 @@ from typing import Any, Dict, Iterator, Optional
 
 from storage import Storage
 from utils.Args import Args
-from utils.Errors import derive_error_status, is_error_status, record_crash, record_error
+from utils.Errors import (
+    PipelineFatal,
+    ProjectAbort,
+    derive_error_status,
+    is_error_status,
+    record_crash,
+    record_error,
+)
 from utils.Logger import Logger, _get_current_drpid
 from utils.SoftStop import SoftStop
 
@@ -770,6 +777,10 @@ class Orchestrator:
                         if retry:
                             _finalize_retry_project(drpid)
                         _maybe_claim_inventory_sheet(drpid, module)
+                    except PipelineFatal:
+                        raise
+                    except ProjectAbort:
+                        pass
                     except Exception as exc:
                         record_error(
                             drpid,
@@ -807,8 +818,10 @@ class Orchestrator:
                                 _finalize_retry_project(drpid)
                             _maybe_claim_inventory_sheet(drpid, module)
                             project_finished = True
-                        except KeyboardInterrupt:
+                        except (KeyboardInterrupt, PipelineFatal):
                             raise
+                        except ProjectAbort:
+                            project_finished = True
                         except Exception as exc:
                             record_error(
                                 drpid,
@@ -840,12 +853,16 @@ class Orchestrator:
                                 proj = futures[future]
                                 try:
                                     future.result()
+                                except PipelineFatal:
+                                    raise
+                                except ProjectAbort:
+                                    pass
                                 except Exception as exc:
                                     record_error(
                                         proj["DRPID"],
                                         f"Orchestrator module={module!r} worker exception: {exc}",
                                     )
-                        except KeyboardInterrupt:
+                        except (KeyboardInterrupt, PipelineFatal):
                             executor.shutdown(wait=False, cancel_futures=True)
                             raise
             return

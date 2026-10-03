@@ -141,58 +141,64 @@ class TestDataLumosUploader(unittest.TestCase):
         self.assertEqual(_agency_values_for_upload("  Agency  ", "  "), ["Agency"])
         self.assertEqual(_agency_values_for_upload("", "Office"), ["Office"])
 
-    @patch("upload.UploadIssueReporter.record_warning")
+    @patch("upload.UploadIssueReporter.record_error")
     def test_warn_if_num_files_mismatch_records_when_differs(
-        self, mock_record_warning: MagicMock
+        self, mock_record_error: MagicMock
     ) -> None:
+        from utils.Errors import ProjectAbort
+
         reporter = UploadIssueReporter(42)
-        _warn_if_num_files_mismatch(reporter, {"num_files": 3}, 2)
-        mock_record_warning.assert_called_once()
-        self.assertEqual(mock_record_warning.call_args[0][0], 42)
-        msg = mock_record_warning.call_args[0][1]
+        with self.assertRaises(ProjectAbort):
+            _warn_if_num_files_mismatch(reporter, {"num_files": 3}, 2)
+        mock_record_error.assert_called_once()
+        self.assertEqual(mock_record_error.call_args[0][0], 42)
+        msg = mock_record_error.call_args[0][1]
         self.assertIn("Upload batch count (2)", msg)
         self.assertIn("num_files from collection (3)", msg)
 
-    @patch("upload.UploadIssueReporter.record_warning")
+    @patch("upload.UploadIssueReporter.record_error")
     def test_warn_if_num_files_mismatch_skips_when_match(
-        self, mock_record_warning: MagicMock
+        self, mock_record_error: MagicMock
     ) -> None:
         reporter = UploadIssueReporter(1)
         _warn_if_num_files_mismatch(reporter, {"num_files": 2}, 2)
-        mock_record_warning.assert_not_called()
+        mock_record_error.assert_not_called()
 
-    @patch("upload.UploadIssueReporter.record_warning")
+    @patch("upload.UploadIssueReporter.record_error")
     def test_warn_if_num_files_skips_when_num_files_null(
-        self, mock_record_warning: MagicMock
+        self, mock_record_error: MagicMock
     ) -> None:
         reporter = UploadIssueReporter(1)
         _warn_if_num_files_mismatch(reporter, {}, 2)
-        mock_record_warning.assert_not_called()
+        mock_record_error.assert_not_called()
 
     def test_warn_if_num_files_mismatch_persists_to_storage(self) -> None:
+        from utils.Errors import ProjectAbort
+
         drpid = Storage.create_record("https://example.com/test")
         Storage.update_record(drpid, {"num_files": 5})
         reporter = UploadIssueReporter(drpid)
-        _warn_if_num_files_mismatch(reporter, Storage.get(drpid), 3)
+        with self.assertRaises(ProjectAbort):
+            _warn_if_num_files_mismatch(reporter, Storage.get(drpid), 3)
         record = Storage.get(drpid)
         self.assertIsNotNone(record)
         assert record is not None
-        self.assertIn("Upload batch count (3)", record.get("warnings") or "")
+        self.assertIn("Upload batch count (3)", record.get("errors") or "")
 
-    @patch("upload.UploadIssueReporter.record_warning")
+    @patch("upload.UploadIssueReporter.record_error")
     def test_warn_if_num_files_mismatch_skips_zip_import(
-        self, mock_record_warning: MagicMock
+        self, mock_record_error: MagicMock
     ) -> None:
         """ZIP uploads do not compare batch count to collected num_files."""
         reporter = UploadIssueReporter(1)
         _warn_if_num_files_mismatch(
             reporter, {"num_files": 12}, 1, used_zip=True
         )
-        mock_record_warning.assert_not_called()
+        mock_record_error.assert_not_called()
 
-    @patch("upload.UploadIssueReporter.record_warning")
+    @patch("upload.UploadIssueReporter.record_error")
     def test_warn_if_num_files_mismatch_skips_large_file_partial_upload(
-        self, mock_record_warning: MagicMock
+        self, mock_record_error: MagicMock
     ) -> None:
         """Large-file num_files includes catalog files that were not downloaded."""
         reporter = UploadIssueReporter(426)
@@ -201,7 +207,7 @@ class TestDataLumosUploader(unittest.TestCase):
             {"num_files": 4, "status": "collected - large file"},
             1,
         )
-        mock_record_warning.assert_not_called()
+        mock_record_error.assert_not_called()
 
     @patch("upload.DataLumosUploader.Storage")
     @patch.object(DataLumosUploader, "_upload_project", return_value="12345")

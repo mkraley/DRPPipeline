@@ -15,6 +15,14 @@ from storage import Storage
 from utils.Logger import Logger
 
 
+class PipelineFatal(BaseException):
+    """Unrecoverable failure. Stops the current batch."""
+
+
+class ProjectAbort(Exception):
+    """The current project was recorded with ``record_error``. The batch continues."""
+
+
 def normalize_status_hyphens(status: str) -> str:
     """
     Collapse whitespace and spaced hyphens into a compact hyphenated status.
@@ -65,10 +73,10 @@ def record_crash(msg: str) -> NoReturn:
         msg: Crash message to log and raise.
 
     Raises:
-        RuntimeError: Always, with the given message.
+        PipelineFatal: Always, with the given message. Not caught as a project error.
     """
     Logger.exception(msg)
-    raise RuntimeError(msg)
+    raise PipelineFatal(msg)
 
 
 def record_error(
@@ -112,6 +120,31 @@ def record_error(
         Storage.append_to_field(drpid, "errors", error_msg)
     except Exception as exc:  # pragma: no cover (defensive; Storage impl may vary)
         Logger.exception(f"Failed recording error for DRPID={drpid}: {exc}")
+
+
+def abort_project(
+    drpid: int,
+    error_msg: str,
+    *,
+    update_storage: bool = True,
+) -> NoReturn:
+    """
+    Record an error and stop further work on this project.
+
+    The batch continues with the next project. Callers that catch ``Exception``
+    must let ``ProjectAbort`` through, or catch it and return without recording
+    a second error.
+
+    Args:
+        drpid: Project DRPID.
+        error_msg: Error message to log and persist.
+        update_storage: If True, update Storage status and append to errors field.
+
+    Raises:
+        ProjectAbort: Always, after the error is recorded.
+    """
+    record_error(drpid, error_msg, update_storage=update_storage)
+    raise ProjectAbort(error_msg)
 
 
 def record_warning(

@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
 from utils.Args import Args
+from utils.Errors import PipelineFatal
 from utils.Logger import Logger
 from utils.SoftStop import SoftStop
 
@@ -160,6 +161,39 @@ class TestOrchestrator(unittest.TestCase):
         args = mock_record_error.call_args[0]
         self.assertEqual(args[0], 1)
         self.assertIn("not yet implemented", args[1])
+
+    @patch("orchestration.Orchestrator.record_error")
+    @patch("orchestration.Orchestrator._find_module_class")
+    @patch("storage.Storage")
+    def test_pipeline_fatal_stops_the_batch(
+        self,
+        mock_storage_cls: MagicMock,
+        mock_find_class: MagicMock,
+        mock_record_error: MagicMock,
+    ) -> None:
+        """A PipelineFatal from one project does not start the next project."""
+        sys.argv = ["test", "noop"]
+        Args._initialized = False
+        Args.initialize(config_file=Path("/tmp/nonexistent_drp_test_config.json"))
+
+        mock_storage = MagicMock()
+        mock_storage.list_eligible_projects.return_value = [
+            {"DRPID": 1, "source_url": "https://example.com/1"},
+            {"DRPID": 2, "source_url": "https://example.com/2"},
+        ]
+        mock_storage_cls.initialize.return_value = mock_storage
+        mock_storage_cls.list_eligible_projects = mock_storage.list_eligible_projects
+
+        mock_instance = MagicMock()
+        mock_instance.run.side_effect = PipelineFatal("disk full")
+        mock_find_class.return_value = MagicMock(return_value=mock_instance)
+
+        with patch("orchestration.Orchestrator.Storage", mock_storage_cls):
+            with self.assertRaises(PipelineFatal):
+                Orchestrator.run("collector")
+
+        mock_instance.run.assert_called_once_with(1)
+        mock_record_error.assert_not_called()
 
     @patch("orchestration.Orchestrator._maybe_claim_inventory_sheet")
     @patch("orchestration.Orchestrator._find_module_class")

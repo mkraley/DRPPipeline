@@ -4,7 +4,7 @@ Unit tests for DataLumosFormFiller.
 
 import re
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
@@ -398,7 +398,16 @@ class TestDataLumosFormFiller(unittest.TestCase):
         self.mock_page.locator.side_effect = locator_side_effect
 
         with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
-            self.form_filler.expand_all_sections()
+            with patch("upload.DataLumosFormFiller.Logger.debug") as mock_debug:
+                self.form_filler.expand_all_sections()
+        mock_debug.assert_called_once()
+        self.assertIn("metadata form already visible", mock_debug.call_args[0][0])
+
+    def test_fill_data_types_unmapped_value_is_error(self) -> None:
+        """An unmapped data type stops form filling."""
+        with self.assertRaises(RuntimeError) as ctx:
+            self.form_filler.fill_data_types("not-a-real-type")
+        self.assertIn("Could not map data_types", str(ctx.exception))
 
     def test_geographic_coverage_block_uses_label_and_add_value(self) -> None:
         """Geographic add-value is found from the label span and title attribute."""
