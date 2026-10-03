@@ -1,6 +1,6 @@
 # Project status values
 
-Every project row in the SQLite database has a `status` field. Modules use it to decide which projects are eligible to run, and they write a new status when they finish successfully. `next_step`, stored immediately after `status`, names the module that should run next (`collect`, `upload`, `publish`, and so on). It is `?` when that module is not clear, and null when the row is finished. This page lists every status the pipeline uses today, what each means, and how projects move between them.
+Every project row in the SQLite database has a `status` field. Modules use it to decide which projects are eligible to run, and they write a new status when they finish successfully. `next_step`, stored immediately after `status`, is advisory. It names the module to run next, or the status the operator should set next (`resize wait`, `resized`, `uploaded`). It is `?` when that is not clear, and null when the row is finished.
 
 ## How eligibility works
 
@@ -46,7 +46,9 @@ Projects enter at `sourced` via `source`. Large-file and repair side paths branc
 | Status | Meaning | Typical next step |
 |--------|---------|-------------------|
 | `collected` | Files and metadata are on disk; ready to upload. | `upload` |
-| `collected - large file` | Collected, but one or more large publication files were deferred (e.g. ADC/USFS). Small files may already be present. | `upload` → becomes `uploaded - large file` |
+| `collected - large` | Collected under the 1 GiB budget. Total inventory is over 1 GiB and under 25 GiB. Remaining files are in `project_files`. | `upload` → `uploaded - large` |
+| `collected - xlarge` | Total inventory is at least 25 GiB, or a file size is unknown. | `upload` → `uploaded - xlarge` |
+| `collected - large file` | Legacy status. Leftover rows stay on `upload_large_files` after upload. | `upload` → `uploaded - large file` |
 | `collected - external archive` | Dataset lives on an external host (e.g. Globus). Local folder may have metadata only. | `collect_adc_globus` / `survey_adc_globus` when Globus; otherwise hold / manual. Successful Globus transfer → `collected`. |
 | `collected - file pending` | Hold variant: collection incomplete / download deferred. **Not** eligible for `upload`. | Manual follow-up; set to `collected` when ready. |
 | `no_links` | Interactive collector: operator marked the page as having no usable download links. | `publish` (sheet-only → `updated_no_links`). |
@@ -60,9 +62,14 @@ Projects enter at `sourced` via `source`. Large-file and repair side paths branc
 | Status | Meaning | Typical next step |
 |--------|---------|-------------------|
 | `uploaded` | Project created in DataLumos; files uploaded; `datalumos_id` set. ZIP imports may still be unpacking. | `publish` |
-| `uploaded - large file` | Base project uploaded after `collected - large file`; large files still need a second pass. Eligible for `upload_large_files` when `file_size` is present and below `--max-project-size` (default **25 GB**). Aria2 files in a product subfolder are zipped by themselves (relative paths preserved) and sent with Import From Zip. | `upload_large_files` → `finish wait` |
-| `uploaded - expanded` | Operator/process status for large-file upload at **any** `file_size` (no 25 GB cap). Not set automatically by the normal upload module. | `upload_large_files` → `finish wait` |
-| `finish wait` | Large-file download/upload finished; waiting for human/process before publish. | Manual: typically set to `uploaded` so `publish` can run. |
+| `uploaded - large` | First upload of a large project. Deferred files are still on the source site. | `resume_download` → `downloaded` |
+| `uploaded - xlarge` | First upload of an xlarge project. Waiting for the operator to request a DataLumos size increase. | Operator sets `resize wait` |
+| `resize wait` | Size increase has been requested. | Operator sets `resized` |
+| `resized` | DataLumos limit was raised. | `resume_download` → `downloaded` |
+| `downloaded` | Deferred files are on disk. | `resume_upload` → `finish wait` |
+| `uploaded - large file` | Legacy. Eligible for `upload_large_files` when `file_size` is below `--max-project-size` (default **25 GB**). | `upload_large_files` → `finish wait` |
+| `uploaded - expanded` | Legacy operator status for `upload_large_files` at any size. | `upload_large_files` → `finish wait` |
+| `finish wait` | Deferred files have been uploaded. | Operator sets `uploaded`, then `publish` |
 | `re-uploaded` | Missing files were repaired by `verify_upload` (re-download + re-upload to existing workspace). | `republish` |
 
 ### Publish and inventory outcomes
@@ -101,7 +108,9 @@ To re-run a module against error statuses from the CLI, use ``--retry`` (selects
 | `collect` / `collect_interactively` | `sourced` | Usually `collected`; ADC/USFS may use `collected - large file` or `collected - external archive`; interactive may set `no_links` / skip presets |
 | `collect_adc_globus` | `collected - external archive` (Globus URL in `status_notes`) | `collected` |
 | `survey_adc_globus` | `collected - external archive` (Globus) | *(survey only; does not advance to upload)* |
-| `upload` | `collected - large file` first, then `collected` (DRPID order within each) | `uploaded` or `uploaded - large file` |
+| `upload` | `collected - xlarge`, then `collected - large`, then `collected - large file`, then `collected` | `uploaded`, `uploaded - large`, `uploaded - xlarge`, or legacy `uploaded - large file` |
+| `resume_download` | `uploaded - large`, `resized` | `downloaded` |
+| `resume_upload` | `downloaded` | `finish wait` |
 | `upload_large_files` | `uploaded - large file` (below `--max-project-size`, default 25 GB), `uploaded - expanded` (any size) | `finish wait` |
 | `publish` | `uploaded`. Plus sheet-only: `not_found`, `no_links`, `no dataset`, `gigantic upload`, `needs scripting`, `collector_hold - *` | `published` then `updated_inventory` (browser path); or `updated_*` (sheet-only path) |
 | `verify_upload` | `updated_inventory`, `updated_inventory-error` | Unchanged on match; `re-uploaded` on repair; `updated_inventory-error` on mismatch; retry success → `updated_inventory` |
@@ -198,7 +207,7 @@ stateDiagram-v2
 1. **Exact strings matter.** `collected` ≠ `collected - large file`. The orchestrator merges lists when a module intentionally accepts more than one status.
 2. **Errors block progress.** Clearing `errors` (and often rolling status back, e.g. to `sourced`) is required before most modules will see the project again.
 3. **`published` is often brief.** When Google Sheets is configured, `publish` advances to `updated_inventory` in the same run after a successful sheet write.
-4. **`finish wait` is not auto-published.** After `upload_large_files`, an operator decides when the project should become `uploaded`. Then `publish` can run.
+4. **`finish wait` is not auto-published.** After `resume_upload`, `next_step` is `uploaded`. The operator sets that status, and then `publish` can run.
 5. **`dupe_in_DL` and the `updated_*` terminal statuses** normally end the automated pipeline for that row.
 6. **Manual overrides** (`set_project_status`, SQL, MCP) are supported for recovery; prefer documenting why in `status_notes` / `warnings` when you do.
 

@@ -6,19 +6,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from collectors.BudgetedDownload import BudgetedDownload
 from collectors.NpsDownloadPlan import NpsPlannedFile, planned_file_dest
 from collectors.NpsHtmlDownloadCheck import unexpected_html_message, response_meta
+from collectors.PlannedFile import PlannedFile, relative_posix
 from utils.Args import Args
 from utils.Errors import abort_project, record_error
 from utils.Logger import Logger
-from utils.collector_status import (
-    MAX_DOWNLOAD_BYTES,
-    deferred_download_skip_note,
-    download_budget_exhausted,
-    large_file_skip_note,
-    pending_download_summary_note,
-    would_exceed_download_budget,
-)
+from utils.collector_status import pending_download_summary_note
 from utils.download_with_progress import download_via_url
 from utils.file_utils import format_file_size
 
@@ -51,39 +46,16 @@ class NpsFileDownloader:
         Returns:
             Status notes, large-skip flag, on-disk bytes, and extensions.
         """
-        notes: list[str] = []
-        skipped_large = False
-        downloaded_bytes, _exts = folder_inventory(folder_path)
-        for index, entry in enumerate(files):
-            dest = planned_file_dest(folder_path, entry.relative_dir, entry.filename)
-            if dest.is_file():
-                continue
-            expected = entry.size_bytes
-            if would_exceed_download_budget(downloaded_bytes, expected):
-                notes.extend(_defer_notes(files[index:]))
-                skipped_large = True
-                break
-            if expected is not None and expected > MAX_DOWNLOAD_BYTES:
-                skipped_large = True
-                notes.append(
-                    large_file_skip_note(
-                        entry.filename,
-                        entry.url,
-                        expected,
-                        relative_dir=entry.relative_dir,
-                    )
-                )
-                continue
-            if not self._download_one(drpid, dest, entry):
-                continue
-            downloaded_bytes += dest.stat().st_size
-            if download_budget_exhausted(downloaded_bytes) and files[index + 1 :]:
-                notes.extend(_defer_notes(files[index + 1 :]))
-                skipped_large = True
-                break
-        notes.extend(_pending_summary_notes(folder_path, files, skipped_large))
+        planned = [_planned_from_nps(entry) for entry in files]
+        by_path = {item.relative_path: entry for item, entry in zip(planned, files)}
+        outcome = BudgetedDownload().download_until_budget(
+            drpid,
+            folder_path,
+            planned,
+            lambda item, dest: self._download_one(drpid, dest, by_path[item.relative_path]),
+        )
         total_bytes, extensions = folder_inventory(folder_path)
-        return notes, skipped_large, total_bytes, extensions
+        return outcome.notes, outcome.deferred, total_bytes, extensions
 
     def _download_one(self, drpid: int, dest: Path, entry: NpsPlannedFile) -> bool:
         """Download one file and reject HTML app/error pages."""
@@ -178,17 +150,13 @@ def projected_file_count(folder_path: Path, files: list[NpsPlannedFile]) -> int:
     return count_files(folder_path) + len(missing_planned_files(folder_path, files))
 
 
-def _defer_notes(files: list[NpsPlannedFile]) -> list[str]:
-    """Build skip notes for files not downloaded because of the 1 GB budget."""
-    return [
-        deferred_download_skip_note(
-            entry.filename,
-            entry.url,
-            entry.size_bytes,
-            relative_dir=entry.relative_dir,
-        )
-        for entry in files
-    ]
+def _planned_from_nps(entry: NpsPlannedFile) -> PlannedFile:
+    """Map an NPS holding onto the shared planned-file record."""
+    return PlannedFile(
+        relative_path=relative_posix(entry.relative_dir, entry.filename),
+        source_url=entry.url,
+        size_bytes=entry.size_bytes,
+    )
 
 
 def notes_with_remaining_summary(
@@ -211,21 +179,3 @@ def notes_with_remaining_summary(
     return kept
 
 
-def _pending_summary_notes(
-    folder_path: Path,
-    files: list[NpsPlannedFile],
-    skipped_large: bool,
-) -> list[str]:
-    """Return a pending-download summary when the 1 GB budget stopped the batch."""
-    if not skipped_large:
-        return []
-    pending = missing_planned_files(folder_path, files)
-    if not pending:
-        return []
-    return [
-        pending_download_summary_note(
-            len(pending),
-            sum(entry.size_bytes or 0 for entry in pending),
-            has_unknown_sizes=any(entry.size_bytes is None for entry in pending),
-        )
-    ]

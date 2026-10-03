@@ -8,6 +8,7 @@ from typing import Any, FrozenSet
 
 from storage import Storage
 from utils.Errors import derive_error_status, is_error_status
+from utils.inventory_status import COLLECTED_SIZE_STATUSES, STATUS_COLLECTED_LARGE
 
 STATUS_COLLECTED = "collected"
 STATUS_COLLECTED_LARGE_FILE = "collected - large file"
@@ -194,13 +195,18 @@ def resolve_inventory_collected_status(
     external_archive = bool(result.pop("_external_archive", False))
     if has_errors:
         result.pop("status", None)
-    elif result.get("folder_path"):
-        if skipped_large:
-            result["status"] = STATUS_COLLECTED_LARGE_FILE
-        elif external_archive:
-            result["status"] = STATUS_COLLECTED_EXTERNAL_ARCHIVE
-        else:
-            result["status"] = STATUS_COLLECTED
+        return
+    if not result.get("folder_path"):
+        return
+    preset = result.get("status")
+    if preset in COLLECTED_SIZE_STATUSES:
+        return
+    if skipped_large:
+        result["status"] = STATUS_COLLECTED_LARGE
+    elif external_archive:
+        result["status"] = STATUS_COLLECTED_EXTERNAL_ARCHIVE
+    else:
+        result["status"] = STATUS_COLLECTED
 
 
 def merge_result_to_storage(

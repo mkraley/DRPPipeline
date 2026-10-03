@@ -13,7 +13,10 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from collectors.BudgetedDownload import BudgetedDownload
 from collectors.CollectorBase import CollectorBase
+from collectors.PlannedFile import PlannedFile
+from utils.inventory_status import STATUS_COLLECTED
 from collectors.UsfsMetadataExtractor import (
     AGENCY,
     OFFICE,
@@ -28,7 +31,6 @@ from collectors.UsfsMetadataExtractor import (
 from collectors.UsfsPageDownloader import UsfsPageDownloader
 from storage import Storage
 from utils.Args import Args
-from utils.collector_status import MAX_DOWNLOAD_BYTES, large_file_skip_note
 from utils.Errors import abort_project, record_error, record_warning
 from utils.Logger import Logger
 from utils.download_with_progress import download_via_url
@@ -239,6 +241,16 @@ class UsfsCollector(CollectorBase):
 
         result["_skipped_large_file"] = skipped_large
         result["_external_archive"] = external_archive_only
+        if not metadata_only:
+            status = BudgetedDownload().commit_inventory(
+                drpid,
+                folder_path,
+                _planned_publication_files(publication_files),
+            )
+            if status != STATUS_COLLECTED:
+                result["status"] = status
+            result["_skipped_large_file"] = status != STATUS_COLLECTED
+            skipped_large = status != STATUS_COLLECTED
         if skipped_large:
             from collectors.UsfsAria2Export import write_drpid_aria2_cmd
 
@@ -342,102 +354,87 @@ class UsfsCollector(CollectorBase):
         Returns:
             (status_note_lines, total_bytes_for_inventory, extensions_set, skipped_large)
         """
+        planned = _planned_publication_files(publication_files)
+        exts = {
+            suffix.lstrip(".").lower()
+            for item in planned
+            if (suffix := Path(item.filename()).suffix)
+        }
+        if not download:
+            notes = _deferred_notes_without_download(folder_path, planned)
+            return notes, _bytes_after_attempt(folder_path, planned, set()), exts, bool(notes)
+
         notes: List[str] = []
-        total_bytes = 0
-        exts: set[str] = set()
-        skipped_large = False
+        failed: set[str] = set()
 
-        for filename, file_url, catalog_bytes in publication_files:
-            dest = folder_path / sanitize_filename(filename)
-            if dest.suffix:
-                exts.add(dest.suffix.lstrip(".").lower())
+        def download_one(item: PlannedFile, dest: Path) -> bool:
+            ok = self._download_publication_file(
+                drpid, page_downloader, item, dest, notes, exts
+            )
+            if not ok:
+                failed.add(item.relative_path)
+            return ok
 
-            inventory_bytes = catalog_bytes
-            if inventory_bytes is None and dest.exists():
-                inventory_bytes = dest.stat().st_size
+        outcome = BudgetedDownload().download_until_budget(
+            drpid, folder_path, planned, download_one
+        )
+        notes.extend(outcome.notes)
+        return notes, _bytes_after_attempt(folder_path, planned, failed), exts, outcome.deferred
 
-            if dest.exists():
-                disk_bytes = dest.stat().st_size
-                total_bytes += inventory_bytes if inventory_bytes is not None else disk_bytes
-                limit = inventory_bytes if inventory_bytes is not None else disk_bytes
-                if limit > MAX_DOWNLOAD_BYTES:
-                    notes.append(
-                        f"On disk (>1GB): {dest.name} ({format_file_size(limit)})"
-                    )
-                continue
+    def _download_publication_file(
+        self,
+        drpid: int,
+        page_downloader: UsfsPageDownloader | None,
+        item: PlannedFile,
+        dest: Path,
+        notes: List[str],
+        exts: set[str],
+    ) -> bool:
+        """Download one USFS file and convert HTML downloads to PDF."""
+        if item.size_bytes is not None:
+            Logger.info(
+                "Downloading publication file: %s (%s)",
+                item.filename(),
+                format_file_size(item.size_bytes),
+            )
+        else:
+            Logger.info("Downloading publication file: %s", item.filename())
+        success = False
+        if page_downloader is not None and _USFS_HOST in item.source_url:
+            _written, success = page_downloader.download_file(item.source_url, dest)
+        if not success:
+            Logger.info("HTTP download starting: %s", item.filename())
+            _written, success = download_via_url(
+                item.source_url, dest, timeout_sec=_DOWNLOAD_TIMEOUT_SEC
+            )
+        if not success:
+            record_error(drpid, f"Download failed: {item.filename()} - {item.source_url}")
+            notes.append(f"Download failed: {item.filename()} - {item.source_url}")
+            return False
+        if dest.is_file():
+            Logger.info("Downloaded publication file: %s", item.filename())
+            self._convert_html_download(drpid, page_downloader, dest, exts)
+        return True
 
-            if inventory_bytes is not None and inventory_bytes > MAX_DOWNLOAD_BYTES:
-                total_bytes += inventory_bytes
-                skipped_large = True
-                notes.append(large_file_skip_note(filename, file_url, inventory_bytes))
-                continue
-
-            if not download:
-                if inventory_bytes is not None:
-                    total_bytes += inventory_bytes
-                continue
-
-            counted_catalog = False
-            if inventory_bytes is not None:
-                total_bytes += inventory_bytes
-                counted_catalog = True
-
-            success = False
-            _bytes_written = 0
-            if inventory_bytes is not None:
-                Logger.info(
-                    "Downloading publication file: %s (%s)",
-                    filename,
-                    format_file_size(inventory_bytes),
-                )
-            else:
-                Logger.info("Downloading publication file: %s", filename)
-            if page_downloader is not None and _USFS_HOST in file_url:
-                _bytes_written, success = page_downloader.download_file(file_url, dest)
-            if not success:
-                if inventory_bytes is not None:
-                    Logger.info(
-                        "HTTP download starting: %s (%s)",
-                        filename,
-                        format_file_size(inventory_bytes),
-                    )
-                else:
-                    Logger.info("HTTP download starting: %s", filename)
-                _bytes_written, success = download_via_url(
-                    file_url, dest, timeout_sec=_DOWNLOAD_TIMEOUT_SEC
-                )
-            if success and dest.is_file():
-                Logger.info("Downloaded publication file: %s", filename)
-            if not success:
-                Logger.info("Publication file download failed: %s", filename)
-            if not success:
-                if counted_catalog and inventory_bytes is not None:
-                    total_bytes -= inventory_bytes
-                record_error(drpid, f"Download failed: {filename} - {file_url}")
-                notes.append(f"Download failed: {filename} - {file_url}")
-                continue
-
-            suffix = dest.suffix.lower()
-            if suffix in _HTML_EXTENSIONS:
-                pdf_dest = dest.with_suffix(".pdf")
-                if page_downloader and page_downloader.html_file_to_pdf(dest, pdf_dest):
-                    dest.unlink(missing_ok=True)
-                    dest = pdf_dest
-                    if dest.suffix:
-                        exts.add(dest.suffix.lstrip(".").lower())
-                else:
-                    abort_project(drpid, f"Failed to convert HTML to PDF: {dest.name}")
-            elif suffix and suffix not in _KEEP_EXTENSIONS and suffix != ".pdf":
-                Logger.info("Downloaded file kept as-is: %s", dest.name)
-
-            if dest.exists():
-                actual = dest.stat().st_size
-                if counted_catalog and inventory_bytes is not None:
-                    total_bytes += actual - inventory_bytes
-                elif not counted_catalog:
-                    total_bytes += actual
-
-        return notes, total_bytes, exts, skipped_large
+    def _convert_html_download(
+        self,
+        drpid: int,
+        page_downloader: UsfsPageDownloader | None,
+        dest: Path,
+        exts: set[str],
+    ) -> None:
+        """Replace an HTML download with a PDF when conversion succeeds."""
+        suffix = dest.suffix.lower()
+        if suffix in _HTML_EXTENSIONS:
+            pdf_dest = dest.with_suffix(".pdf")
+            if page_downloader and page_downloader.html_file_to_pdf(dest, pdf_dest):
+                dest.unlink(missing_ok=True)
+                if pdf_dest.suffix:
+                    exts.add(pdf_dest.suffix.lstrip(".").lower())
+                return
+            abort_project(drpid, f"Failed to convert HTML to PDF: {dest.name}")
+        if suffix and suffix not in _KEEP_EXTENSIONS and suffix != ".pdf":
+            Logger.info("Downloaded file kept as-is: %s", dest.name)
 
     def _pdf_folder_bytes(self, folder_path: Path) -> int:
         total = 0
@@ -446,3 +443,55 @@ class UsfsCollector(CollectorBase):
             if path.is_file():
                 total += path.stat().st_size
         return total
+
+
+def _planned_publication_files(
+    publication_files: List[PublicationFile],
+) -> list[PlannedFile]:
+    """Map catalog publication tuples onto shared planned files."""
+    planned: list[PlannedFile] = []
+    for filename, file_url, catalog_bytes in publication_files:
+        planned.append(
+            PlannedFile(
+                relative_path=sanitize_filename(filename),
+                source_url=file_url,
+                size_bytes=catalog_bytes,
+            )
+        )
+    return planned
+
+
+def _bytes_after_attempt(
+    folder: Path,
+    files: list[PlannedFile],
+    failed: set[str],
+) -> int:
+    """Count catalog bytes except files whose download failed."""
+    total = 0
+    for item in files:
+        if item.relative_path in failed:
+            continue
+        if item.size_bytes is not None:
+            total += item.size_bytes
+            continue
+        dest = item.destination(folder)
+        if dest.is_file():
+            total += dest.stat().st_size
+    return total
+
+
+def _deferred_notes_without_download(folder: Path, files: list[PlannedFile]) -> List[str]:
+    """Return deferral notes for an inventory pass that does not download."""
+    from collectors.BudgetedDownload import _budget_bytes_on_disk, _defer_notes, _is_complete, _must_defer
+
+    downloaded = _budget_bytes_on_disk(folder)
+    for index, item in enumerate(files):
+        dest = item.destination(folder)
+        if _is_complete(dest, item.size_bytes):
+            continue
+        if _must_defer(downloaded, item.size_bytes):
+            return _defer_notes(files[index:])
+        if item.size_bytes is not None:
+            downloaded += item.size_bytes
+    return []
+

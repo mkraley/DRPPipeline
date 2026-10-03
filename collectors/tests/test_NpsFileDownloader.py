@@ -73,6 +73,7 @@ class TestNpsFileDownloader(unittest.TestCase):
             url="https://irma.nps.gov/DataStore/DownloadFile/761255",
             filename="AK06_AMoN_SummaryTools_Report.html",
             relative_dir="",
+            size_bytes=40,
         )
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
@@ -124,6 +125,7 @@ class TestNpsFileDownloader(unittest.TestCase):
             url="https://irma.nps.gov/DataStore/DownloadFile/1",
             filename="secret.csv",
             relative_dir="",
+            size_bytes=40,
         )
         pdf_entry = NpsPlannedFile(
             url="https://irma.nps.gov/DataStore/DownloadFile/2",
@@ -141,7 +143,7 @@ class TestNpsFileDownloader(unittest.TestCase):
         mock_error.assert_called()
         self.assertIn("Download returned HTML", mock_error.call_args.args[1])
 
-    @patch("collectors.NpsFileDownloader.would_exceed_download_budget")
+    @patch("collectors.BudgetedDownload.would_exceed_download_budget")
     @patch("collectors.NpsFileDownloader.download_via_url")
     def test_existing_files_count_toward_budget_across_batches(
         self,

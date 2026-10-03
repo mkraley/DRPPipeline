@@ -16,17 +16,13 @@ from collectors.BtsMetadataExtractor import (
     infer_data_types,
     parse_detail_page,
 )
+from collectors.BudgetedDownload import BudgetedDownload
 from collectors.CollectorBase import CollectorBase
+from collectors.PlannedFile import PlannedFile
 from collectors.UsfsPageDownloader import UsfsPageDownloader
 from utils.Args import Args
-from utils.collector_status import (
-    MAX_DOWNLOAD_BYTES,
-    deferred_download_skip_note,
-    download_budget_exhausted,
-    large_file_skip_note,
-    pending_download_summary_note,
-    would_exceed_download_budget,
-)
+from utils.collector_status import pending_download_summary_note
+from utils.inventory_status import STATUS_COLLECTED
 from utils.Errors import abort_project, record_error, record_warning
 from utils.IcpsrGeographicNormalizer import (
     log_geographic_normalization,
@@ -151,8 +147,22 @@ class BtsCollector(CollectorBase):
         result["download_date"] = date.today().isoformat()
         if status_notes:
             result["status_notes"] = "\n".join(status_notes)
-        result["_skipped_large_file"] = skipped_large
-        if skipped_large:
+        status = BudgetedDownload().commit_inventory(
+            drpid,
+            folder_path,
+            [
+                PlannedFile(
+                    relative_path=self._destination_filename(entry),
+                    source_url=entry.url,
+                    size_bytes=size_cache.get(entry.url, entry.size_bytes),
+                )
+                for entry in download_files
+            ],
+        )
+        if status != STATUS_COLLECTED:
+            result["status"] = status
+        result["_skipped_large_file"] = status != STATUS_COLLECTED
+        if status != STATUS_COLLECTED:
             self._write_aria2_cmd(drpid, folder_path, download_files, size_cache)
 
         Logger.info(
@@ -210,81 +220,51 @@ class BtsCollector(CollectorBase):
             estimated total inventory bytes, and catalog file extensions.
         """
         notes: list[str] = []
-        skipped_large = False
-        downloaded_bytes = self._downloaded_bytes_on_disk(folder_path, files)
-        inventory_exts = self._catalog_file_extensions(files)
-        inventory_exts.add("pdf")
-
-        for index, entry in enumerate(files):
-            filename = self._destination_filename(entry)
-            dest = folder_path / filename
-            if dest.exists():
-                Logger.info("Skipping already-downloaded: %s", filename)
-                continue
-
-            expected_bytes = self._expected_download_bytes(
-                page_downloader,
-                entry,
-                size_cache,
+        planned: list[PlannedFile] = []
+        for entry in files:
+            planned.append(
+                PlannedFile(
+                    relative_path=self._destination_filename(entry),
+                    source_url=entry.url,
+                    size_bytes=self._expected_download_bytes(page_downloader, entry, size_cache),
+                )
             )
 
-            if would_exceed_download_budget(downloaded_bytes, expected_bytes):
-                notes.extend(
-                    self._defer_download_notes(page_downloader, files[index:], size_cache)
-                )
-                skipped_large = True
-                break
-
-            if expected_bytes is not None and expected_bytes > MAX_DOWNLOAD_BYTES:
-                skipped_large = True
-                notes.append(large_file_skip_note(filename, entry.url, expected_bytes))
-                continue
-
-            if expected_bytes is not None:
+        def download_one(item: PlannedFile, dest: Path) -> bool:
+            entry = next(candidate for candidate in files if candidate.url == item.source_url)
+            kind = "main" if entry.is_main else "supporting"
+            if item.size_bytes is not None:
                 Logger.info(
                     "Downloading %s file: %s (%s)",
-                    "main" if entry.is_main else "supporting",
-                    filename,
-                    format_file_size(expected_bytes),
+                    kind,
+                    item.filename(),
+                    format_file_size(item.size_bytes),
                 )
             else:
-                Logger.info(
-                    "Downloading %s file: %s",
-                    "main" if entry.is_main else "supporting",
-                    filename,
-                )
-            _bytes_written, success = page_downloader.download_file(entry.url, dest)
+                Logger.info("Downloading %s file: %s", kind, item.filename())
+            _written, success = page_downloader.download_file(item.source_url, dest)
             if not success or not dest.is_file():
-                record_error(drpid, f"Download failed: {filename} - {entry.url}")
-                notes.append(f"Download failed: {filename} - {entry.url}")
-                continue
-            Logger.info("Downloaded: %s", filename)
-            downloaded_bytes += dest.stat().st_size
-            if download_budget_exhausted(downloaded_bytes):
-                remaining = files[index + 1 :]
-                if remaining:
-                    notes.extend(
-                        self._defer_download_notes(page_downloader, remaining, size_cache)
-                    )
-                    skipped_large = True
-                break
+                record_error(drpid, f"Download failed: {item.filename()} - {item.source_url}")
+                notes.append(f"Download failed: {item.filename()} - {item.source_url}")
+                return False
+            Logger.info("Downloaded: %s", item.filename())
+            return True
 
+        outcome = BudgetedDownload().download_until_budget(
+            drpid, folder_path, planned, download_one
+        )
+        notes.extend(outcome.notes)
         summary_note = self._pending_download_summary_note(
-            page_downloader,
-            folder_path,
-            files,
-            size_cache,
+            page_downloader, folder_path, files, size_cache
         )
-        if summary_note:
+        if summary_note and not outcome.notes:
             notes.append(summary_note)
-
         inventory_bytes = self._catalog_inventory_bytes(
-            page_downloader,
-            folder_path,
-            files,
-            size_cache,
+            page_downloader, folder_path, files, size_cache
         )
-        return notes, skipped_large, inventory_bytes, inventory_exts
+        inventory_exts = self._catalog_file_extensions(files)
+        inventory_exts.add("pdf")
+        return notes, outcome.deferred, inventory_bytes, inventory_exts
 
     def _expected_download_bytes(
         self,
@@ -399,26 +379,6 @@ class BtsCollector(CollectorBase):
             if dest.is_file():
                 total_bytes += dest.stat().st_size
         return total_bytes
-
-    def _defer_download_notes(
-        self,
-        page_downloader: UsfsPageDownloader,
-        entries: list[BtsDownloadFile],
-        size_cache: dict[str, int | None],
-    ) -> list[str]:
-        """Build status_notes lines for files not downloaded due to size limits."""
-        notes: list[str] = []
-        for entry in entries:
-            filename = self._destination_filename(entry)
-            expected_bytes = self._expected_download_bytes(
-                page_downloader,
-                entry,
-                size_cache,
-            )
-            notes.append(
-                deferred_download_skip_note(filename, entry.url, expected_bytes)
-            )
-        return notes
 
     def _write_aria2_cmd(
         self,

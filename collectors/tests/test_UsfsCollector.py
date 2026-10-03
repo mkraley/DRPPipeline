@@ -180,7 +180,7 @@ class TestUsfsCollector(unittest.TestCase):
         collector.apply_result_to_storage(1, result)
         mock_storage.update_record.assert_called_once()
         update = mock_storage.update_record.call_args[0][1]
-        self.assertEqual(update["status"], STATUS_COLLECTED_LARGE_FILE)
+        self.assertEqual(update["status"], "collected - large")
         self.assertNotIn("_skipped_large_file", update)
 
     @patch("utils.collector_status.Storage")

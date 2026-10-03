@@ -6,19 +6,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from collectors.BudgetedDownload import BudgetedDownload
+from collectors.PlannedFile import PlannedFile
 from collectors.SsaCompleteMetadata import COMPLETE_METADATA_HEADING_SELECTOR
 from collectors.SsaMetadataExtractor import SsaDownloadFile, filename_from_url
 from collectors.UsfsPageDownloader import UsfsPageDownloader
 from utils.Errors import abort_project, record_error
 from utils.Logger import Logger
-from utils.collector_status import (
-    MAX_DOWNLOAD_BYTES,
-    deferred_download_skip_note,
-    download_budget_exhausted,
-    large_file_skip_note,
-    pending_download_summary_note,
-    would_exceed_download_budget,
-)
+from utils.collector_status import pending_download_summary_note
 from utils.file_utils import format_file_size, sanitize_filename
 
 CATALOG_PDF_NAME = "catalog_page.pdf"
@@ -76,43 +71,46 @@ class SsaFileDownloader:
             Status notes, large-skip flag, inventory bytes, and extensions.
         """
         notes: list[str] = []
-        skipped_large = False
-        downloaded_bytes = self._on_disk_bytes(folder_path, files)
-        inventory_exts = catalog_file_extensions(files)
+        planned = self._planned_files(page_downloader, files, size_cache)
 
-        for index, entry in enumerate(files):
-            filename = destination_filename(entry)
-            dest = folder_path / filename
-            if dest.exists():
-                Logger.info("Skipping already-downloaded: %s", filename)
-                continue
-            expected_bytes = self.expected_bytes(page_downloader, entry, size_cache)
-            if would_exceed_download_budget(downloaded_bytes, expected_bytes):
-                notes.extend(self._defer_notes(page_downloader, files[index:], size_cache))
-                skipped_large = True
-                break
-            if expected_bytes is not None and expected_bytes > MAX_DOWNLOAD_BYTES:
-                skipped_large = True
-                notes.append(large_file_skip_note(filename, entry.url, expected_bytes))
-                continue
-            self._log_download(filename, expected_bytes)
-            _written, success = page_downloader.download_file(entry.url, dest)
+        def download_one(item: PlannedFile, dest: Path) -> bool:
+            self._log_download(item.filename(), item.size_bytes)
+            _written, success = page_downloader.download_file(item.source_url, dest)
             if not success or not dest.is_file():
-                record_error(drpid, f"Download failed: {filename} - {entry.url}")
-                notes.append(f"Download failed: {filename} - {entry.url}")
-                continue
-            Logger.info("Downloaded: %s", filename)
-            downloaded_bytes += dest.stat().st_size
-            if download_budget_exhausted(downloaded_bytes) and files[index + 1 :]:
-                notes.extend(self._defer_notes(page_downloader, files[index + 1 :], size_cache))
-                skipped_large = True
-                break
+                record_error(drpid, f"Download failed: {item.filename()} - {item.source_url}")
+                notes.append(f"Download failed: {item.filename()} - {item.source_url}")
+                return False
+            Logger.info("Downloaded: %s", item.filename())
+            return True
 
+        outcome = BudgetedDownload().download_until_budget(
+            drpid, folder_path, planned, download_one
+        )
+        notes.extend(outcome.notes)
         summary = self._pending_summary(page_downloader, folder_path, files, size_cache)
-        if summary:
+        if summary and not outcome.notes:
             notes.append(summary)
         inventory_bytes = self.inventory_bytes(page_downloader, folder_path, files, size_cache)
-        return notes, skipped_large, inventory_bytes, inventory_exts
+        inventory_exts = catalog_file_extensions(files)
+        return notes, outcome.deferred, inventory_bytes, inventory_exts
+
+    def _planned_files(
+        self,
+        page_downloader: UsfsPageDownloader,
+        files: list[SsaDownloadFile],
+        size_cache: dict[str, int | None],
+    ) -> list[PlannedFile]:
+        """Probe sizes and return shared planned-file records."""
+        planned: list[PlannedFile] = []
+        for entry in files:
+            planned.append(
+                PlannedFile(
+                    relative_path=destination_filename(entry),
+                    source_url=entry.url,
+                    size_bytes=self.expected_bytes(page_downloader, entry, size_cache),
+                )
+            )
+        return planned
 
     def expected_bytes(
         self,
@@ -193,20 +191,6 @@ class SsaFileDownloader:
             if dest.is_file():
                 total_bytes += dest.stat().st_size
         return total_bytes
-
-    def _defer_notes(
-        self,
-        page_downloader: UsfsPageDownloader,
-        entries: list[SsaDownloadFile],
-        size_cache: dict[str, int | None],
-    ) -> list[str]:
-        """Build skip notes for files not downloaded due to size limits."""
-        notes: list[str] = []
-        for entry in entries:
-            filename = destination_filename(entry)
-            expected = self.expected_bytes(page_downloader, entry, size_cache)
-            notes.append(deferred_download_skip_note(filename, entry.url, expected))
-        return notes
 
     def _pending_summary(
         self,

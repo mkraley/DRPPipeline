@@ -16,6 +16,7 @@ from utils.Args import Args
 from utils.Errors import ProjectAbort
 from utils.PrincipalInvestigators import deserialize_investigators
 from utils.project_utils import get_field
+from utils.inventory_status import skips_upload_file_count, upload_status_for_collected
 from utils.Logger import Logger
 
 STATUS_COLLECTED_LARGE_FILE = "collected - large file"
@@ -53,13 +54,12 @@ def _success_status_after_upload(prior_status: str) -> str:
     """Map pre-upload status to post-upload status."""
     if prior_status == STATUS_COLLECTED_LARGE_FILE:
         return STATUS_UPLOADED_LARGE_FILE
-    return "uploaded"
+    return upload_status_for_collected(prior_status)
 
 
 def _is_large_file_status(status: str) -> bool:
-    """Return True for collected/uploaded large-file statuses, spaced or compact."""
-    compact = status.casefold().replace(" ", "").replace("-", "")
-    return "largefile" in compact
+    """Return True when the first upload must not compare file counts."""
+    return skips_upload_file_count(status)
 
 
 def _warn_if_num_files_mismatch(
@@ -152,6 +152,7 @@ class DataLumosUploader:
                 "datalumos_id": datalumos_id,
                 "status": success_status,
             })
+            _mark_downloaded_files_uploaded(drpid)
             Logger.info(
                 f"Upload completed for DRPID={drpid}, datalumos_id={datalumos_id}, "
                 f"status={success_status}"
@@ -300,3 +301,13 @@ class DataLumosUploader:
         cleaned = keywords_raw.replace("'", "").replace("[", "").replace("]", "").replace('"', "")
         parts = re.split(r"[,;]+", cleaned)
         return [t for p in parts if (t := p.strip().strip("&").strip())]
+
+
+def _mark_downloaded_files_uploaded(drpid: int) -> None:
+    """Mark catalog rows that were on disk for the first upload."""
+    from storage.ProjectFileStore import ProjectFileStore
+
+    store = ProjectFileStore.from_storage()
+    paths = [row.relative_path for row in store.list_for_project(drpid) if row.downloaded]
+    if paths:
+        store.mark_uploaded(drpid, paths)

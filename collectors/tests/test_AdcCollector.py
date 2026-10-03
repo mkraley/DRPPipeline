@@ -163,7 +163,7 @@ class TestAdcCollector(unittest.TestCase):
         )
         mock_storage.update_record.assert_called_once()
         fields = mock_storage.update_record.call_args[0][1]
-        self.assertEqual(fields["status"], STATUS_COLLECTED_LARGE_FILE)
+        self.assertEqual(fields["status"], "collected - large")
 
     @patch("utils.collector_status.Storage")
     def test_apply_result_to_storage_external_archive_status(self, mock_storage: MagicMock) -> None:

@@ -28,7 +28,9 @@ MODULES
   collect_interactively Browser-assisted collector for sites that block automation
                         (use --external-archive for collected - external archive projects)
   upload                Upload collected datasets to DataLumos
-  upload_large_files    Download/upload large files (uploaded - large file, default <25GB; --max-project-size to raise it; uploaded - expanded any size)
+  upload_large_files    Legacy download/upload for uploaded - large file (default <25GB)
+  resume_download       Download deferred files (uploaded - large, or resized)
+  resume_upload         Upload files added by resume_download (status downloaded)
   publish               Update the Google Sheet with DataLumos links
   republish             Re-publish projects after missing-file repair (status re-uploaded)
   verify_upload         Verify uploaded file counts/sizes against DataLumos view pages

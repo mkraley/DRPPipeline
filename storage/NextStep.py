@@ -9,6 +9,16 @@ from __future__ import annotations
 from collectors.GlobusFileManagerUrl import GlobusFileManagerUrl
 from publisher.sheet_only_status import is_collector_hold_status
 from utils.Errors import normalize_status_hyphens
+from utils.inventory_status import (
+    STATUS_COLLECTED_LARGE,
+    STATUS_COLLECTED_XLARGE,
+    STATUS_DOWNLOADED,
+    STATUS_FINISH_WAIT,
+    STATUS_RESIZE_WAIT,
+    STATUS_RESIZED,
+    STATUS_UPLOADED_LARGE,
+    STATUS_UPLOADED_XLARGE,
+)
 
 # Status value -> next module, "?" when a person must decide, None when finished.
 _NEXT_BY_STATUS: dict[str, str | None] = {
@@ -17,6 +27,8 @@ _NEXT_BY_STATUS: dict[str, str | None] = {
     "dupe_in_DL": None,
     "collected": "upload",
     "collected - large file": "upload",
+    STATUS_COLLECTED_LARGE: "upload",
+    STATUS_COLLECTED_XLARGE: "upload",
     "collected - file pending": "?",
     "no_links": "publish",
     "no dataset": "publish",
@@ -25,7 +37,12 @@ _NEXT_BY_STATUS: dict[str, str | None] = {
     "uploaded": "publish",
     "uploaded - large file": "upload_large_files",
     "uploaded - expanded": "upload_large_files",
-    "finish wait": "?",
+    STATUS_UPLOADED_LARGE: "resume_download",
+    STATUS_UPLOADED_XLARGE: STATUS_RESIZE_WAIT,
+    STATUS_RESIZE_WAIT: STATUS_RESIZED,
+    STATUS_RESIZED: "resume_download",
+    STATUS_DOWNLOADED: "resume_upload",
+    STATUS_FINISH_WAIT: "uploaded",
     "re-uploaded": "republish",
     "published": "publish",
     "updated_inventory": "verify_upload",

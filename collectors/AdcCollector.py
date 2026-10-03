@@ -16,16 +16,17 @@ from typing import Any
 
 from collectors.AdcCatalogHtmlBuilder import build_catalog_html
 from collectors.AdcMetadataExtractor import extract_metadata
+from collectors.BudgetedDownload import BudgetedDownload
 from collectors.CollectorBase import CollectorBase
+from collectors.PlannedFile import PlannedFile
 from sourcing.AdcApiClient import AdcApiClient, article_id_from_source_url
 from sourcing.AdcCandidateFetcher import AGENCY, OFFICE
-from sourcing.AdcFileInventory import MAX_DOWNLOAD_BYTES, AdcFileInventory
+from sourcing.AdcFileInventory import AdcFileInventory
 from utils.collector_status import (
     STATUS_COLLECTED_EXTERNAL_ARCHIVE,
-    STATUS_COLLECTED_LARGE_FILE,
     STATUS_NOT_FOUND,
-    large_file_skip_note,
 )
+from utils.inventory_status import STATUS_COLLECTED
 from utils.Errors import record_error, record_warning
 from utils.Logger import Logger
 from utils.download_with_progress import download_via_url
@@ -142,7 +143,7 @@ class AdcCollector(CollectorBase):
             return result
 
         files = self._inventory.list_figshare_hosted_files(article)
-        status_notes, inventory_bytes, inventory_exts, skipped_large = self._process_files(
+        status_notes, inventory_bytes, inventory_exts, _skipped_large = self._process_files(
             drpid,
             folder_path,
             files,
@@ -152,12 +153,19 @@ class AdcCollector(CollectorBase):
             self._collection_summary(folder_path, files, inventory_bytes, inventory_exts)
         )
         result["download_date"] = date.today().isoformat()
-        result["_skipped_large_file"] = skipped_large
+        status = BudgetedDownload().commit_inventory(
+            drpid,
+            folder_path,
+            [_planned_adc_file(file_row) for file_row in files],
+        )
+        if status != STATUS_COLLECTED:
+            result["status"] = status
+        result["_skipped_large_file"] = status != STATUS_COLLECTED
         result["_external_archive"] = False
         if status_notes:
             result["status_notes"] = "\n".join(status_notes)
 
-        if skipped_large:
+        if status != STATUS_COLLECTED:
             self._write_aria2_cmd(drpid, folder_path, files)
 
         Logger.info(
@@ -288,55 +296,36 @@ class AdcCollector(CollectorBase):
             Tuple of (status_note_lines for >1GB skips only, total_bytes, extensions, skipped_large).
         """
         notes: list[str] = []
-        total_bytes = 0
-        exts: set[str] = set()
-        skipped_large = False
+        planned = [_planned_adc_file(file_row) for file_row in files]
+        exts = _extensions_for(planned)
 
-        for file_row in files:
-            filename = str(file_row.get("name") or "file")
-            file_url = str(file_row.get("url") or "")
-            size_bytes = file_row.get("size_bytes")
-            catalog_bytes = size_bytes if isinstance(size_bytes, int) else None
-
-            dest = folder_path / sanitize_filename(filename)
-            if dest.suffix:
-                exts.add(dest.suffix.lstrip(".").lower())
-
-            if dest.exists():
-                disk_bytes = dest.stat().st_size
-                total_bytes += catalog_bytes if catalog_bytes is not None else disk_bytes
-                continue
-
-            if catalog_bytes is not None and catalog_bytes > MAX_DOWNLOAD_BYTES:
-                total_bytes += catalog_bytes
-                skipped_large = True
-                notes.append(large_file_skip_note(filename, file_url, catalog_bytes))
-                continue
-
-            if not file_url:
-                record_error(drpid, f"Missing download URL for file: {filename}")
-                continue
-
-            Logger.info("Downloading ADC file: %s", filename)
+        def download_one(item: PlannedFile, dest: Path) -> bool:
+            if not item.source_url:
+                record_error(drpid, f"Missing download URL for file: {item.filename()}")
+                return False
+            Logger.info("Downloading ADC file: %s", item.filename())
             _bytes_written, success = download_with_retry(
-                lambda url=file_url, path=dest: download_via_url(
+                lambda url=item.source_url, path=dest: download_via_url(
                     url,
                     path,
                     timeout_sec=_DOWNLOAD_TIMEOUT_SEC,
                 ),
                 max_retries=self._download_retries,
                 base_delay=self._retry_backoff,
-                operation_label=f"ADC download {filename}",
+                operation_label=f"ADC download {item.filename()}",
             )
             if not success:
-                record_error(drpid, f"Download failed: {filename} - {file_url}")
-                continue
+                record_error(drpid, f"Download failed: {item.filename()} - {item.source_url}")
+                return False
+            Logger.info("Downloaded ADC file: %s", item.filename())
+            return True
 
-            if dest.exists():
-                total_bytes += dest.stat().st_size
-                Logger.info("Downloaded ADC file: %s", filename)
-
-        return notes, total_bytes, exts, skipped_large
+        outcome = BudgetedDownload().download_until_budget(
+            drpid, folder_path, planned, download_one
+        )
+        notes.extend(outcome.notes)
+        total_bytes = _adc_inventory_bytes(folder_path, planned)
+        return notes, total_bytes, exts, outcome.deferred
 
     def _write_aria2_cmd(
         self,
@@ -358,3 +347,37 @@ class AdcCollector(CollectorBase):
         cmd_path = write_drpid_aria2_cmd(drpid, folder_path, inventory_files)
         if cmd_path:
             Logger.info("Wrote aria2 download commands for DRPID %s: %s", drpid, cmd_path)
+
+
+def _planned_adc_file(file_row: dict[str, Any]) -> PlannedFile:
+    """Map one Figshare inventory row onto a shared planned file."""
+    size = file_row.get("size_bytes")
+    return PlannedFile(
+        relative_path=sanitize_filename(str(file_row.get("name") or "file")),
+        source_url=str(file_row.get("url") or ""),
+        size_bytes=size if isinstance(size, int) else None,
+    )
+
+
+def _extensions_for(files: list[PlannedFile]) -> set[str]:
+    """Return extensions named by the planned files."""
+    extensions: set[str] = set()
+    for item in files:
+        suffix = Path(item.filename()).suffix
+        if suffix:
+            extensions.add(suffix.lstrip(".").lower())
+    return extensions
+
+
+def _adc_inventory_bytes(folder: Path, files: list[PlannedFile]) -> int:
+    """Return catalog bytes, using on-disk size when the catalog size is missing."""
+    total = 0
+    for item in files:
+        if item.size_bytes is not None:
+            total += item.size_bytes
+            continue
+        dest = item.destination(folder)
+        if dest.is_file():
+            total += dest.stat().st_size
+    return total
+

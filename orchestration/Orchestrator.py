@@ -100,6 +100,14 @@ MODULES: Dict[str, Dict[str, Any]] = {
         "prereq": "uploaded - large file",
         "class_name": "UploadLargeFiles",
     },
+    "resume_download": {
+        "prereq": "uploaded - large",
+        "class_name": "ResumeDownload",
+    },
+    "resume_upload": {
+        "prereq": "downloaded",
+        "class_name": "ResumeUpload",
+    },
     "publish": {
         "prereq": "uploaded",
         "class_name": "DataLumosPublisher",
@@ -666,7 +674,20 @@ class Orchestrator:
                 )
             elif module == "upload":
                 projects = _projects_in_status_order(
-                    ["collected - large file", "collected"],
+                    [
+                        "collected - xlarge",
+                        "collected - large",
+                        "collected - large file",
+                        "collected",
+                    ],
+                    num_rows=None if ids else num_rows,
+                    start_row=None if ids else start_row,
+                    start_drpid=None if ids else start_drpid,
+                    retry=retry,
+                )
+            elif module == "resume_download":
+                projects = _projects_in_status_order(
+                    ["uploaded - large", "resized"],
                     num_rows=None if ids else num_rows,
                     start_row=None if ids else start_row,
                     start_drpid=None if ids else start_drpid,

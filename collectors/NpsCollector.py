@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from collectors.BtsMetadataExtractor import infer_data_types
+from collectors.BudgetedDownload import BudgetedDownload
 from collectors.CollectorBase import CollectorBase
 from collectors.NpsDataTableSidecar import write_sidecars_for_files
 from collectors.NpsDownloadPlan import (
@@ -31,6 +32,7 @@ from collectors.NpsDownloadPlan import (
 )
 from collectors.NpsFileDownloader import (
     NpsFileDownloader,
+    _planned_from_nps,
     folder_inventory,
     notes_with_remaining_summary,
     projected_file_count,
@@ -49,6 +51,7 @@ from sourcing.NpsReferenceRules import irma_project_id_from_source_url, referenc
 from storage.NpsHierarchyStore import NpsHierarchyStore
 from utils.Args import Args
 from utils.Errors import abort_project, record_error, record_warning
+from utils.inventory_status import STATUS_COLLECTED
 from utils.Logger import Logger
 from utils.collector_status import deferred_download_skip_note
 from utils.file_utils import format_file_size
@@ -417,11 +420,17 @@ class NpsCollector(CollectorBase):
         if pending_files:
             sized.extend(pending_files)
         notes = notes_with_remaining_summary(notes, folder_path, sized)
-        if skipped_large:
+        status = BudgetedDownload().commit_inventory(
+            drpid,
+            folder_path,
+            [_planned_from_nps(entry) for entry in sized],
+        )
+        if skipped_large or status != STATUS_COLLECTED:
             self._write_aria2_cmd(drpid, folder_path, sized)
         result = self._inventory_result(
-            record, folder_path, notes, skipped_large, sized
+            record, folder_path, notes, status != STATUS_COLLECTED, sized
         )
+        result["status"] = status
         store.update_public_file_count(drpid, int(result["num_files"]))
         if project_profile is not None:
             result.update(

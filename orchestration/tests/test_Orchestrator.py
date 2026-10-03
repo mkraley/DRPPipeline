@@ -477,7 +477,7 @@ class TestOrchestrator(unittest.TestCase):
         ):
             Orchestrator.run("upload")
         mock_storage_cls.list_eligible_projects.assert_called_once_with(
-            "collected - large file", 1, None, None
+            "collected - xlarge", 1, None, None
         )
         mock_upload_instance.run.assert_called_once_with(30)
 

@@ -183,6 +183,7 @@ class StorageSQLLite:
             self._reorder_projects_columns_if_needed()
             self._fill_missing_next_steps()
             self._ensure_nps_hierarchy_schema()
+            self._ensure_project_files_schema()
 
             self._initialized = True
             Logger.info(f"Storage initialized: {self._db_path}")
@@ -212,6 +213,13 @@ class StorageSQLLite:
             except sqlite3.OperationalError as exc:
                 if "duplicate column name" not in str(exc).lower():
                     raise
+
+    def _ensure_project_files_schema(self) -> None:
+        """Create the project_files table when missing."""
+        from storage.ProjectFileStore import ProjectFileStore
+
+        assert self._connection is not None
+        ProjectFileStore.ensure_schema(self._connection)
 
     def _ensure_nps_hierarchy_schema(self) -> None:
         """Create NPS Program/Project/Product tables when missing."""

@@ -38,6 +38,8 @@ _MODULES: dict[str, dict[str, Optional[str]]] = {
     "collect":            {"prereq": "sourced",  "output": "collected"},
     "upload":             {"prereq": "collected","output": "uploaded"},
     "upload_large_files": {"prereq": "uploaded - large file|uploaded - expanded", "output": "finish wait"},
+    "resume_download":    {"prereq": "uploaded - large|resized", "output": "downloaded"},
+    "resume_upload":      {"prereq": "downloaded", "output": "finish wait"},
     "publish":            {"prereq": "uploaded", "output": "published"},
     "republish":          {"prereq": "re-uploaded", "output": "updated_inventory"},
     "clean_inprogress":   {"prereq": None,       "output": None},

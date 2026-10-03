@@ -86,7 +86,7 @@ class TestCollectorStatus(unittest.TestCase):
         """Inventory mode sets collected - large file when flagged."""
         result = {"folder_path": "C:\\Data\\1", "_skipped_large_file": True}
         resolve_inventory_collected_status(result, has_errors=False)
-        self.assertEqual(result["status"], STATUS_COLLECTED_LARGE_FILE)
+        self.assertEqual(result["status"], "collected - large")
         self.assertNotIn("_skipped_large_file", result)
 
     def test_resolve_inventory_external_archive_status(self) -> None:
@@ -117,7 +117,7 @@ class TestCollectorStatus(unittest.TestCase):
             status_mode="inventory",
         )
         fields = mock_storage.update_record.call_args[0][1]
-        self.assertEqual(fields["status"], STATUS_COLLECTED_LARGE_FILE)
+        self.assertEqual(fields["status"], "collected - large")
 
     @patch("utils.collector_status.Storage")
     def test_merge_result_to_storage_notes_only(self, mock_storage: MagicMock) -> None:

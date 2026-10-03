@@ -13,7 +13,10 @@ from typing import Any
 
 from collectors.BtsMetadataExtractor import infer_data_types
 from collectors.CollectorBase import CollectorBase
-from collectors.SsaFileDownloader import CATALOG_PDF_NAME, SsaFileDownloader
+from collectors.BudgetedDownload import BudgetedDownload
+from collectors.SsaFileDownloader import CATALOG_PDF_NAME, SsaFileDownloader, destination_filename
+from collectors.PlannedFile import PlannedFile
+from utils.inventory_status import STATUS_COLLECTED
 from collectors.SsaMetadataExtractor import SsaDownloadFile, parse_catalog_page
 from collectors.UsfsPageDownloader import UsfsPageDownloader
 from sourcing.SsaCandidateFetcher import slug_from_source_url
@@ -208,8 +211,22 @@ class SsaCollector(CollectorBase):
         result["download_date"] = date.today().isoformat()
         if notes:
             result["status_notes"] = "\n".join(notes)
-        result["_skipped_large_file"] = skipped_large
-        if skipped_large:
+        status = BudgetedDownload().commit_inventory(
+            drpid,
+            folder_path,
+            [
+                PlannedFile(
+                    relative_path=destination_filename(entry),
+                    source_url=entry.url,
+                    size_bytes=size_cache.get(entry.url, entry.size_bytes),
+                )
+                for entry in download_files
+            ],
+        )
+        if status != STATUS_COLLECTED:
+            result["status"] = status
+        result["_skipped_large_file"] = status != STATUS_COLLECTED
+        if status != STATUS_COLLECTED:
             self._file_downloader.write_aria2_cmd(drpid, folder_path, download_files, size_cache)
         Logger.info(
             "SSA collection complete for DRPID %s: %s files, %s",
