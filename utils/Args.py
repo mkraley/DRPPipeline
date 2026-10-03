@@ -138,7 +138,7 @@ class Args(metaclass=ArgsMeta):
         "upload_viewport_height": 1080,
         # When set (directory path), Playwright saves a WebM per page when the context closes (upload/publisher/cleanup)
         "upload_record_video_dir": None,
-        # GWDA nomination (before DataLumos upload; gwda_your_name required in config)
+        # GWDA nomination (during publish; gwda_your_name required in config)
         "gwda_your_name": "",
         "gwda_institution": "Data Rescue Project",
         "gwda_email": None,  # Set in config.json (not the per-source DataLumos login)

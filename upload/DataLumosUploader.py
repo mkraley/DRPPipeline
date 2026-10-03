@@ -146,33 +146,21 @@ class DataLumosUploader:
             return
 
         try:
-            source_url = get_field(project, "source_url")
-            if source_url:
-                page = self._session.ensure_browser()
-                from upload.GWDANominator import GWDANominator
-
-                nominator = GWDANominator(page, timeout=Args.upload_timeout)
-                success, error = nominator.nominate(source_url)
-                if not success:
-                    reporter.error(error or "GWDA nomination failed")
-                    return
-
-            try:
-                datalumos_id = self._upload_project(project, drpid, reporter)
-                success_status = _success_status_after_upload(prior_status)
-                Storage.update_record(drpid, {
-                    "datalumos_id": datalumos_id,
-                    "status": success_status,
-                })
-                Logger.info(
-                    f"Upload completed for DRPID={drpid}, datalumos_id={datalumos_id}, "
-                    f"status={success_status}"
-                )
-            except ProjectAbort:
-                return
-            except Exception as e:
-                reporter.error(f"Upload failed: {e}")
-                raise
+            datalumos_id = self._upload_project(project, drpid, reporter)
+            success_status = _success_status_after_upload(prior_status)
+            Storage.update_record(drpid, {
+                "datalumos_id": datalumos_id,
+                "status": success_status,
+            })
+            Logger.info(
+                f"Upload completed for DRPID={drpid}, datalumos_id={datalumos_id}, "
+                f"status={success_status}"
+            )
+        except ProjectAbort:
+            return
+        except Exception as e:
+            reporter.error(f"Upload failed: {e}")
+            raise
         finally:
             self._session.close()
     

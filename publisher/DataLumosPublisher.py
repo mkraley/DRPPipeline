@@ -21,6 +21,7 @@ from utils.project_folder_cleanup import (
     folder_path_can_be_cleared,
     try_delete_project_folder,
 )
+from publisher.GWDANominator import GWDANominator
 from publisher.PublishTermsDialog import PublishTermsDialog
 from publisher.sheet_only_status import resolve_sheet_only_config
 from publisher.WorkspaceFileStats import workspace_storage_mismatches
@@ -102,7 +103,8 @@ class DataLumosPublisher:
     Publisher module that publishes uploaded projects in DataLumos.
 
     Implements ModuleProtocol. For each eligible project (status
-    ``uploaded``), this module: authenticates, navigates to the project, verifies
+    ``uploaded``), this module: nominates the source URL to GWDA, authenticates,
+    navigates to the project, verifies
     workspace file count/size against the database, runs the publish workflow
     (Publish Project → review → Proceed to Publish → terms dialog → Publish
     Data → Back to Project), and updates Storage with published_url and
@@ -152,6 +154,10 @@ class DataLumosPublisher:
         publish_ok = False
         try:
             page = self._session.ensure_browser()
+            gwda_error = self._nominate_gwda(page, get_field(project, "source_url"))
+            if gwda_error:
+                record_error(drpid, gwda_error)
+                return
             self._session.ensure_authenticated()
             self._open_project_workspace(page, str(workspace_id))
 
@@ -209,6 +215,25 @@ class DataLumosPublisher:
             )
 
         self._finalize_after_publish(drpid)
+
+    def _nominate_gwda(self, page: Page, source_url: str) -> Optional[str]:
+        """
+        Nominate the project source URL to GWDA before publish.
+
+        Args:
+            page: Browser page for the nomination form.
+            source_url: URL to nominate. Empty values are skipped.
+
+        Returns:
+            An error message when nomination fails, otherwise None.
+        """
+        if not source_url:
+            return None
+        nominator = GWDANominator(page, timeout=Args.upload_timeout)
+        success, error = nominator.nominate(source_url)
+        if success:
+            return None
+        return error or "GWDA nomination failed"
 
     def _open_project_workspace(self, page: Page, workspace_id: str) -> None:
         """

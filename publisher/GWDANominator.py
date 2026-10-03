@@ -39,8 +39,8 @@ class GWDANominator:
         """
         Nominate a URL to GWDA.
 
-        Reads your_name, institution, and email from Args (gwda_email
-        falls back to datalumos_username if not set).
+        Reads your_name, institution, and email from Args. ``gwda_email``
+        must be set in config.
 
         Args:
             source_url: The URL to nominate

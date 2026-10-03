@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from utils.Logger import Logger
 
-from upload.GWDANominator import GWDANominator, NOMINATION_URL
+from publisher.GWDANominator import GWDANominator, NOMINATION_URL
 
 
 class TestGWDANominator(unittest.TestCase):
@@ -46,7 +46,7 @@ class TestGWDANominator(unittest.TestCase):
         """Test nominate returns False when email not configured."""
         mock_page = MagicMock()
         nominator = GWDANominator(mock_page)
-        with patch("upload.GWDANominator.Args", MagicMock()) as mock_args:
+        with patch("publisher.GWDANominator.Args", MagicMock()) as mock_args:
             mock_args.gwda_email = None
             mock_args.datalumos_username = None
             mock_args.gwda_your_name = "Test"

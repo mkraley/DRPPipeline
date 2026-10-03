@@ -71,7 +71,7 @@ Use `google_sheet_id` and `google_sheet_name` in config; the same sheet and tab 
 - **google_sheet_name**: Worksheet/tab name (default: "CDC"). When credentials are set, sourcing uses this tab for the CSV export; otherwise the first sheet is used.
 - **google_credentials**: Path to the service account JSON file (required for publisher sheet updates; also used by sourcing to resolve the tab by name)
 - **google_username**: Username to write in "Claimed" column (default: "mkraley")
-- **gwda_your_name**: Required for GWDA nomination (upload step); set in config (e.g. your full name)
+- **gwda_your_name**: Required for GWDA nomination (publish step); set in config (e.g. your full name)
 
 ## How It Works
 

@@ -183,7 +183,7 @@ Step 2: google-credentials.json
 | `google_credentials` | Yes | Path to the service account JSON file |
 | `google_sheet_name` | Yes | Worksheet/tab name (e.g. `CMS`, `CDC`) |
 | `google_username` | Yes | Value written to the "Claimed" column when sourcing |
-| `gwda_your_name` | Yes | Full name for GWDA nomination (upload step) |
+| `gwda_your_name` | Yes | Full name for GWDA nomination (publish step) |
 | `sourcing_url_prefix` | No | Only source rows whose URL starts with this prefix |
 | `num_rows` | No | Max projects per batch (omit for unlimited) |
 | `upload_headless` | No | Run upload browser headlessly (default: `true`) |

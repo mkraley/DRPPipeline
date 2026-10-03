@@ -44,9 +44,14 @@ class TestDataLumosPublisher(unittest.TestCase):
             DataLumosPublisher, "_pre_publish_gate", return_value=None
         )
         self._pre_publish_gate_mock = self._pre_publish_gate_patch.start()
+        self._gwda_patch = patch.object(
+            DataLumosPublisher, "_nominate_gwda", return_value=None
+        )
+        self._gwda_mock = self._gwda_patch.start()
 
     def tearDown(self) -> None:
         """Clean up after each test."""
+        self._gwda_patch.stop()
         self._pre_publish_gate_patch.stop()
         sys.argv = self._original_argv
         self.storage.close()
@@ -501,6 +506,45 @@ class TestDataLumosPublisher(unittest.TestCase):
         page.wait_for_load_state.assert_called_once()
 
     @patch.object(
+        DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None
+    )
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
+    def test_run_gwda_failure_skips_publish(
+        self,
+        mock_publish_workspace: MagicMock,
+        mock_wait_for_human: MagicMock,
+        mock_upload_check: MagicMock,
+    ) -> None:
+        """A failed GWDA nomination records an error and does not publish."""
+        drpid = Storage.create_record("https://example.com/test")
+        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "uploaded"})
+        mock_page = MagicMock()
+        self.publisher._session.ensure_browser = MagicMock(return_value=mock_page)
+        self.publisher._session.ensure_authenticated = MagicMock(return_value=None)
+        self.publisher._session.close = MagicMock(return_value=None)
+        self._gwda_mock.return_value = "GWDA nomination failed"
+
+        self.publisher.run(drpid)
+
+        mock_publish_workspace.assert_not_called()
+        self.publisher._session.ensure_authenticated.assert_not_called()
+        record = Storage.get(drpid)
+        self.assertEqual(record.get("status"), "uploaded-error")
+        self.assertIn("GWDA nomination failed", record.get("errors") or "")
+
+    def test_nominate_gwda_skips_blank_url(self) -> None:
+        """Blank source URLs are not sent to the nomination form."""
+        self._gwda_patch.stop()
+        try:
+            with patch("publisher.DataLumosPublisher.GWDANominator") as mock_cls:
+                error = self.publisher._nominate_gwda(MagicMock(), "")
+            self.assertIsNone(error)
+            mock_cls.assert_not_called()
+        finally:
+            self._gwda_patch.start()
+
+    @patch.object(
         DataLumosPublisher,
         "_uploads_incomplete_on_project_page",
         return_value="span contains 'File not available for download'",
@@ -556,6 +600,7 @@ class TestDataLumosPublisher(unittest.TestCase):
         ), patch.object(Args, "google_credentials", None):
             self.publisher.run(drpid)
 
+        self._gwda_mock.assert_called_once_with(mock_page, "https://example.com/test")
         mock_publish_workspace.assert_called_once_with(mock_page, drpid)
         expected_url = "https://www.datalumos.org/datalumos/project/239181/version/V1/view"
         record = Storage.get(drpid)

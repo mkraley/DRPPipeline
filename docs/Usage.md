@@ -358,7 +358,7 @@ If the config file does not exist, a warning is shown but the pipeline continues
 | `nps_program_id` | — | yes | `2310251` | IRMA Program to source (APHN). Set to `0` to source every Program in the Collection |
 | `nps_request_delay` | — | yes | `0.1` | Seconds between IRMA API calls during NPS sourcing |
 | `nps_request_timeout` | — | yes | `45` | Seconds per IRMA HTTP request |
-| `gwda_your_name` | — | yes (required for GWDA) | `""` | Name for GWDA nomination (nominates URLs to U.S. Gov Web & Data Archive) |
+| `gwda_your_name` | — | yes (required for GWDA) | `""` | Name for GWDA nomination during publish (nominates URLs to U.S. Gov Web & Data Archive) |
 | `gwda_institution` | — | yes | `Data Rescue Project` | Institution for GWDA |
 | `gwda_email` | — | yes | — | Email for GWDA; set in config (not the per-source DataLumos login) |
 | `google_sheet_id` | — | yes (required for sourcing) | — | Google Sheet ID from URL |
@@ -557,7 +557,7 @@ python scripts/tally_data_inventories/tally_claimed_all_tabs.py
 | **collect** (CMS) | Collects data from data.cms.gov API pages. Processes `status="sourced"`. |
 | **collect_interactively** | Flask app for manual collection; SPA at `/collector/`. Under active development; not managed by the orchestration MCP. |
 | **upload** | Uploads collected data to DataLumos. Requires `datalumos_username`, `datalumos_password`. Processes `collected - large file` first (DRPID order), then `collected`. Projects with subfolders use Import From Zip (file-count check skipped). Large-file projects also skip that check, because `num_files` includes Digital Files that were not downloaded. |
-| **publish** | Runs DataLumos publish; optionally updates Google Sheet. Processes `status="uploaded"`. The pre-publish file-count/size check walks into workspace folders so nested files are counted. |
+| **publish** | Nominates the source URL to GWDA, then runs DataLumos publish; optionally updates Google Sheet. Processes `status="uploaded"`. The pre-publish file-count/size check walks into workspace folders so nested files are counted. |
 | **clean_inprogress** | Deletes DataLumos projects in Deposit In Progress state (no DB changes). |
 | **noop** | No-op; useful for testing. |
 

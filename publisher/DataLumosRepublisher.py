@@ -38,6 +38,21 @@ class DataLumosRepublisher(DataLumosPublisher):
         """Return ``republish`` for inventory gate error messages."""
         return "republish"
 
+    def _nominate_gwda(self, page: Page, source_url: str) -> str | None:
+        """
+        Skip GWDA nomination on republish.
+
+        The source URL is nominated during the first publish.
+
+        Args:
+            page: Unused browser page.
+            source_url: Unused source URL.
+
+        Returns:
+            None. Republish does not nominate.
+        """
+        return None
+
     def _published_view_url(self, workspace_id: str) -> str:
         """
         Build the V2 public view URL after re-publish.

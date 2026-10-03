@@ -39,6 +39,12 @@ class TestDataLumosRepublisher(unittest.TestCase):
         self.storage = Storage.initialize("StorageSQLLite", db_path=self.test_db_path)
         self.module = DataLumosRepublisher()
 
+    def test_nominate_gwda_is_skipped(self) -> None:
+        """Republish does not nominate the source URL again."""
+        self.assertIsNone(
+            self.module._nominate_gwda(MagicMock(), "https://example.com")
+        )
+
     def tearDown(self) -> None:
         """Restore argv and reset Storage/Args."""
         sys.argv = self._original_argv
