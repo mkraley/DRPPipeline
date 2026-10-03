@@ -394,7 +394,9 @@ class TestStorageSQLLite(unittest.TestCase):
         # Verify file_size is TEXT, not INTEGER
         self.assertEqual(types["file_size"], "TEXT")
         self.assertEqual(types["num_files"], "INTEGER")
-        self.assertEqual(types["downloads"], "INTEGER")
+        self.assertEqual(types["next_step"], "TEXT")
+        self.assertNotIn("downloads", names)
+        self.assertEqual(names[names.index("status") + 1], "next_step")
 
         # Verify DRPID is INTEGER
         self.assertEqual(types["DRPID"], "INTEGER")
@@ -455,6 +457,20 @@ class TestStorageSQLLite(unittest.TestCase):
         self.assertEqual(record["datalumos_id"], "DL1")
         self.assertEqual(record["num_files"], 4)
         self.assertEqual(record["file_size"], "10.0 MB")
+        self.assertEqual(record["next_step"], "?")
+        self.assertNotIn("downloads", names)
+
+    def test_update_status_sets_next_step(self) -> None:
+        """Changing status writes the module that should run next."""
+        self.storage.initialize(db_path=self.test_db_path)
+        drpid = self.storage.create_record("https://example.com/next")
+        self.assertEqual(self.storage.get(drpid)["next_step"], "?")
+
+        self.storage.update_record(drpid, {"status": "collected"})
+        self.assertEqual(self.storage.get(drpid)["next_step"], "upload")
+
+        self.storage.update_record(drpid, {"status": "dupe_in_DL"})
+        self.assertNotIn("next_step", self.storage.get(drpid))
     
     def test_concurrent_access_simulation(self) -> None:
         """Test that database can handle multiple operations (simulating concurrency)."""

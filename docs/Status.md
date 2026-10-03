@@ -1,6 +1,6 @@
 # Project status values
 
-Every project row in the SQLite database has a `status` field. Modules use it to decide which projects are eligible to run, and they write a new status when they finish successfully. This page lists every status the pipeline uses today, what each means, and how projects move between them.
+Every project row in the SQLite database has a `status` field. Modules use it to decide which projects are eligible to run, and they write a new status when they finish successfully. `next_step`, stored immediately after `status`, names the module that should run next (`collect`, `upload`, `publish`, and so on). It is `?` when that module is not clear, and null when the row is finished. This page lists every status the pipeline uses today, what each means, and how projects move between them.
 
 ## How eligibility works
 

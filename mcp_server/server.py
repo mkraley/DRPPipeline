@@ -47,7 +47,7 @@ _MODULES: dict[str, dict[str, Optional[str]]] = {
 _UPDATABLE_FIELDS = {
     "title", "agency", "office", "principal_investigators", "summary", "keywords",
     "time_start", "time_end", "data_types", "extensions",
-    "download_date", "collection_notes", "file_size", "num_files", "downloads", "status_notes",
+    "download_date", "collection_notes", "file_size", "num_files", "status_notes",
 }
 
 # Fields that are protected from update_project (require dedicated tools)
@@ -663,7 +663,20 @@ def set_project_status(drpid: int, status: str, dry_run: bool = True) -> str:
                 f"Run with dry_run=False to apply."
             )
 
-        con.execute("UPDATE projects SET status = ? WHERE DRPID = ?", (status, drpid))
+        columns = {row[1] for row in con.execute("PRAGMA table_info(projects)")}
+        if "next_step" in columns:
+            from storage.NextStep import next_step_for_status
+
+            step = next_step_for_status(status, current.get("status_notes"))
+            con.execute(
+                "UPDATE projects SET status = ?, next_step = ? WHERE DRPID = ?",
+                (status, step, drpid),
+            )
+        else:
+            con.execute(
+                "UPDATE projects SET status = ? WHERE DRPID = ?",
+                (status, drpid),
+            )
         con.commit()
     finally:
         con.close()

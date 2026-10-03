@@ -10,6 +10,7 @@ import sqlite3
 from pathlib import Path
 from typing import Literal, Optional, Dict, Any, Tuple, TYPE_CHECKING
 
+from storage.NextStep import next_step_for_status
 from utils.Errors import record_crash
 from utils.Logger import Logger
 
@@ -34,6 +35,7 @@ class StorageSQLLite:
     _PROJECT_COLUMNS: list[tuple[str, str]] = [
         ("DRPID", "INTEGER PRIMARY KEY AUTOINCREMENT"),
         ("status", "TEXT"),
+        ("next_step", "TEXT"),
         ("status_notes", "TEXT"),
         ("warnings", "TEXT"),
         ("errors", "TEXT"),
@@ -56,7 +58,6 @@ class StorageSQLLite:
         ("download_date", "TEXT"),
         ("collection_notes", "TEXT"),
         ("published_url", "TEXT"),
-        ("downloads", "INTEGER"),
     ]
 
     _INDEX_SQL = """
@@ -180,6 +181,7 @@ class StorageSQLLite:
 
             self._add_missing_columns()
             self._reorder_projects_columns_if_needed()
+            self._fill_missing_next_steps()
             self._ensure_nps_hierarchy_schema()
 
             self._initialized = True
@@ -197,9 +199,9 @@ class StorageSQLLite:
         migrations = [
             ("extensions", "TEXT"),
             ("num_files", "INTEGER"),
-            ("downloads", "INTEGER"),
             ("geographic_coverage", "TEXT"),
             ("principal_investigators", "TEXT"),
+            ("next_step", "TEXT"),
         ]
         for column, col_type in migrations:
             try:
@@ -253,9 +255,7 @@ class StorageSQLLite:
                 f"Cannot reorder projects columns; missing columns: {sorted(missing)}"
             )
 
-        Logger.info(
-            "Reordering projects columns so num_files and file_size follow datalumos_id"
-        )
+        Logger.info("Rebuilding projects so column order matches the current schema")
         cols_csv = ", ".join(desired)
         col_defs = ",\n            ".join(
             f"{name} {decl}" for name, decl in self._PROJECT_COLUMNS
@@ -273,6 +273,20 @@ class StorageSQLLite:
             """
         )
         self._connection.commit()
+
+    def _fill_missing_next_steps(self) -> None:
+        """Set next_step from status on rows where it is still null."""
+        assert self._connection is not None
+        rows = self._connection.execute(
+            "SELECT DRPID, status, status_notes FROM projects WHERE next_step IS NULL"
+        ).fetchall()
+        for drpid, status, notes in rows:
+            self._connection.execute(
+                "UPDATE projects SET next_step = ? WHERE DRPID = ?",
+                (next_step_for_status(status, notes), drpid),
+            )
+        if rows:
+            self._connection.commit()
     
     def create_record(self, source_url: str) -> int:
         """
@@ -289,8 +303,8 @@ class StorageSQLLite:
             sqlite3.Error: If insert fails (e.g., duplicate source_url)
         """
         cursor = self._execute_query(
-            "INSERT INTO projects (source_url) VALUES (?)",
-            (source_url,),
+            "INSERT INTO projects (source_url, next_step) VALUES (?, ?)",
+            (source_url, "?"),
             operation_name=f"create record with source_url '{source_url}'"
         )
         return cursor.lastrowid
@@ -317,11 +331,13 @@ class StorageSQLLite:
         
         if not values:
             return  # Nothing to update
+
+        updates = self._with_next_step(drpid, values)
         
         # Build UPDATE query - database will raise error for invalid columns
-        set_clauses = [f"{column} = ?" for column in values.keys()]
+        set_clauses = [f"{column} = ?" for column in updates.keys()]
         update_query = f"UPDATE projects SET {', '.join(set_clauses)} WHERE DRPID = ?"
-        params = tuple(values.values()) + (drpid,)
+        params = tuple(updates.values()) + (drpid,)
         
         cursor = self._execute_query(
             update_query,
@@ -332,6 +348,28 @@ class StorageSQLLite:
         # Check if any rows were affected (record exists)
         if cursor.rowcount == 0:
             raise ValueError(f"Record with DRPID {drpid} does not exist")
+
+    def _with_next_step(self, drpid: int, values: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Copy an update and set next_step when status changes.
+
+        Args:
+            drpid: Project being updated.
+            values: Caller-supplied column updates.
+
+        Returns:
+            Updates including next_step derived from status, when status is set
+            and next_step was not supplied.
+        """
+        if "status" not in values or "next_step" in values:
+            return values
+        notes = values.get("status_notes")
+        if "status_notes" not in values:
+            current = self.get(drpid)
+            notes = current.get("status_notes") if current else None
+        updates = dict(values)
+        updates["next_step"] = next_step_for_status(values.get("status"), notes)
+        return updates
     
     def get(self, drpid: int) -> Optional[Dict[str, Any]]:
         """
