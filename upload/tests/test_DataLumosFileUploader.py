@@ -13,8 +13,11 @@ from utils.Logger import Logger
 from upload.DataLumosFileUploader import (
     FILE_PER_FILE_QUEUE_PHRASES,
     FILE_UPLOAD_ACCEPTANCE_PHRASES,
+    LARGE_UPLOAD_BYTES,
+    LARGE_UPLOAD_QUEUE_TIMEOUT_MS,
     DataLumosFileUploader,
     any_file_in_subfolder,
+    queue_wait_timeout_ms,
     zip_files_with_relative_paths,
 )
 
@@ -233,6 +236,47 @@ class TestDataLumosFileUploader(unittest.TestCase):
             return_value="Uploaded files are being processed...",
         ):
             self.assertTrue(uploader._has_batch_upload_status(use_zip=False))
+
+    def test_queue_wait_stays_short_at_five_gigabytes(self) -> None:
+        """A file of 5 GB keeps the configured 10 minute wait."""
+        self.assertEqual(queue_wait_timeout_ms(600000, LARGE_UPLOAD_BYTES), 600000)
+
+    def test_queue_wait_uses_two_hours_over_five_gigabytes(self) -> None:
+        """A file just over 5 GB waits two hours."""
+        self.assertEqual(
+            queue_wait_timeout_ms(600000, LARGE_UPLOAD_BYTES + 1),
+            LARGE_UPLOAD_QUEUE_TIMEOUT_MS,
+        )
+
+    def test_queue_wait_keeps_a_longer_configured_timeout(self) -> None:
+        """A caller timeout above two hours is left unchanged."""
+        longer = LARGE_UPLOAD_QUEUE_TIMEOUT_MS + 1000
+        self.assertEqual(
+            queue_wait_timeout_ms(longer, LARGE_UPLOAD_BYTES + 1),
+            longer,
+        )
+
+    def test_large_file_wait_reports_the_two_hour_limit(self) -> None:
+        """A file over 5 GB times out against two hours, not the 10 minute default."""
+        uploader = DataLumosFileUploader(MagicMock(), upload_wait_timeout=600000)
+        with unittest.mock.patch.object(uploader, "_wait_for_obscuring_elements"), \
+             unittest.mock.patch.object(
+                 uploader, "_per_file_queue_signal_count", return_value=0
+             ), \
+             unittest.mock.patch.object(uploader, "_modal_status_text", return_value=""), \
+             unittest.mock.patch.object(uploader._page, "wait_for_timeout"), \
+             unittest.mock.patch(
+                 "upload.DataLumosFileUploader.time.monotonic",
+                 side_effect=[0, 601, 7201],
+             ):
+            with self.assertRaises(TimeoutError) as caught:
+                uploader._wait_until_queued_count(
+                    use_zip=True,
+                    expected=1,
+                    total_files=1,
+                    file_size_bytes=LARGE_UPLOAD_BYTES + 1,
+                )
+        self.assertIn("7200000", str(caught.exception))
 
     def test_wait_until_queued_count_logs_upload_progress(self) -> None:
         """Per-file wait logs uploading file N of M with formatted size."""

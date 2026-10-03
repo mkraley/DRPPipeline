@@ -26,6 +26,31 @@ if TYPE_CHECKING:
     from upload.UploadIssueReporter import UploadIssueReporter
 
 
+# Files larger than this wait two hours for DataLumos to accept the upload.
+LARGE_UPLOAD_BYTES = 5 * 1024**3
+LARGE_UPLOAD_QUEUE_TIMEOUT_MS = 2 * 60 * 60 * 1000
+
+
+def queue_wait_timeout_ms(configured_ms: int, file_size_bytes: int | None) -> int:
+    """
+    Return how long to wait for DataLumos to accept one file.
+
+    The configured wait is kept for smaller files. A file over 5 GB uses at
+    least two hours, because a 10 GB upload can still be transferring after
+    the default 10 minutes.
+
+    Args:
+        configured_ms: Caller timeout in milliseconds.
+        file_size_bytes: Size of the file being uploaded, when known.
+
+    Returns:
+        Wait timeout in milliseconds.
+    """
+    if file_size_bytes is not None and file_size_bytes > LARGE_UPLOAD_BYTES:
+        return max(configured_ms, LARGE_UPLOAD_QUEUE_TIMEOUT_MS)
+    return configured_ms
+
+
 # Selectors from DataLumos import file modal (aligned with chiara_upload.py)
 UPLOAD_BTN_SELECTOR = "a.btn-primary:nth-child(3) > span:nth-child(4)"
 IMPORT_FROM_ZIP_BTN_SELECTOR = 'a.btn-default:has-text("Import From Zip")'
@@ -137,7 +162,8 @@ class DataLumosFileUploader:
         Args:
             page: Playwright Page object
             timeout: Default timeout in milliseconds for UI actions
-            upload_wait_timeout: Timeout in ms to wait for all files to be queued (default 10 min)
+            upload_wait_timeout: Timeout in ms to wait for all files to be queued (default 10 min).
+                Files over 5 GB wait at least two hours.
             reporter: Reserved for non-fatal upload notes (Playwright failures raise)
             skip_busy_wait_on_close: When True, close the modal after queue acceptance without
                 waiting for the busy overlay (large files may keep #busy visible while uploading)
@@ -508,21 +534,14 @@ class DataLumosFileUploader:
         phrases = self._upload_acceptance_phrases(use_zip)
         return self._signal_count(use_zip, phrases)
 
-    def _wait_until_queued_count(
+    def _announce_queue_wait(
         self,
-        use_zip: bool,
         expected: int,
-        *,
-        total_files: int | None = None,
-        file_size_bytes: int | None = None,
-    ) -> None:
-        if expected <= 0:
-            return
-        modal_sel = self._upload_modal_selector(use_zip)
-        if use_zip:
-            wait_phrases: tuple[str, ...] = ZIP_UPLOAD_ACCEPTANCE_PHRASES
-        else:
-            wait_phrases = FILE_PER_FILE_QUEUE_PHRASES
+        total_files: int | None,
+        file_size_bytes: int | None,
+        wait_phrases: tuple[str, ...],
+    ) -> int:
+        """Log the file being uploaded and return the wait timeout in milliseconds."""
         if total_files is not None and file_size_bytes is not None:
             Logger.info(
                 "uploading file %s of %s (%s)",
@@ -538,7 +557,34 @@ class DataLumosFileUploader:
                 expected,
                 ", ".join(repr(p) for p in wait_phrases),
             )
-        deadline = time.monotonic() + self._upload_wait_timeout / 1000.0
+        timeout_ms = queue_wait_timeout_ms(self._upload_wait_timeout, file_size_bytes)
+        if timeout_ms > self._upload_wait_timeout and file_size_bytes is not None:
+            Logger.info(
+                "File is %s; waiting up to %s minutes for upload acceptance",
+                format_file_size(file_size_bytes),
+                timeout_ms // 60000,
+            )
+        return timeout_ms
+
+    def _wait_until_queued_count(
+        self,
+        use_zip: bool,
+        expected: int,
+        *,
+        total_files: int | None = None,
+        file_size_bytes: int | None = None,
+    ) -> None:
+        if expected <= 0:
+            return
+        modal_sel = self._upload_modal_selector(use_zip)
+        if use_zip:
+            wait_phrases: tuple[str, ...] = ZIP_UPLOAD_ACCEPTANCE_PHRASES
+        else:
+            wait_phrases = FILE_PER_FILE_QUEUE_PHRASES
+        timeout_ms = self._announce_queue_wait(
+            expected, total_files, file_size_bytes, wait_phrases
+        )
+        deadline = time.monotonic() + timeout_ms / 1000.0
         while time.monotonic() < deadline:
             # Short busy poll only; large uploads keep #busy visible for a long time.
             self._wait_for_obscuring_elements(max_wait_ms=2000)
@@ -562,7 +608,7 @@ class DataLumosFileUploader:
             self._page.wait_for_timeout(400)
         status_preview = self._modal_status_text(use_zip).strip().replace("\n", " ")[:200]
         raise TimeoutError(
-            f"Upload did not reach {expected} queue signal(s) within {self._upload_wait_timeout} ms "
+            f"Upload did not reach {expected} queue signal(s) within {timeout_ms} ms "
             f"(phrases={wait_phrases!r} in {modal_sel}; visible status={status_preview!r})"
         )
 

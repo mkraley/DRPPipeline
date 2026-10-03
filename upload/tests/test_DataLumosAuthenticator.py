@@ -8,7 +8,10 @@ from unittest.mock import MagicMock, patch, PropertyMock
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from utils.Logger import Logger
-from upload.DataLumosAuthenticator import DataLumosAuthenticator
+from upload.DataLumosAuthenticator import (
+    DataLumosAuthenticator,
+    datalumos_session_error,
+)
 
 
 class TestDataLumosAuthenticator(unittest.TestCase):
@@ -224,6 +227,39 @@ class TestDataLumosAuthenticatorAuthenticate(unittest.TestCase):
         mock_email_button.click.assert_called_once()
         mock_username_input.fill.assert_called_once_with("user@test.com")
         mock_password_input.fill.assert_called_once_with("password")
+
+
+class TestDatalumosSessionError(unittest.TestCase):
+    """Tests for detecting the DataLumos profile-retrieval error page."""
+
+    def test_profile_retrieval_url_is_an_error(self) -> None:
+        """loginError with the MyData code is a session failure."""
+        page = MagicMock()
+        type(page).url = PropertyMock(
+            return_value=(
+                "https://www.datalumos.org/datalumos/loginError"
+                "?code=MYDATA_PROFILE_RETRIEVAL_FAILED"
+            )
+        )
+        message = datalumos_session_error(page)
+        self.assertIsNotNone(message)
+        self.assertIn("profile retrieval failed", message or "")
+
+    def test_workspace_url_is_not_an_error(self) -> None:
+        """A project workspace URL is ready for the inventory check."""
+        page = MagicMock()
+        type(page).url = PropertyMock(
+            return_value=(
+                "https://www.datalumos.org/datalumos/workspace"
+                "?goToPath=/datalumos/257537#"
+            )
+        )
+        self.assertIsNone(datalumos_session_error(page))
+
+    def test_non_string_url_is_not_an_error(self) -> None:
+        """Mock pages without a real URL are left for the caller."""
+        page = MagicMock()
+        self.assertIsNone(datalumos_session_error(page))
 
 
 if __name__ == "__main__":

@@ -284,3 +284,28 @@ class DataLumosAuthenticator:
             return True
         
         return False
+
+
+def datalumos_session_error(page: Page) -> Optional[str]:
+    """
+    Return a login-failure message when DataLumos did not open the workspace.
+
+    A successful form login can still redirect to ``loginError`` with
+    ``MYDATA_PROFILE_RETRIEVAL_FAILED``. That page has no Storage Status panel.
+
+    Args:
+        page: Playwright page after a workspace navigation.
+
+    Returns:
+        A short error string, or None when the URL is not a login-error page.
+    """
+    url = getattr(page, "url", "") or ""
+    if not isinstance(url, str):
+        return None
+    lowered = url.lower()
+    if "loginerror" not in lowered and "mydata_profile_retrieval_failed" not in lowered:
+        return None
+    return (
+        "DataLumos login error: profile retrieval failed "
+        "(loginError MYDATA_PROFILE_RETRIEVAL_FAILED)"
+    )

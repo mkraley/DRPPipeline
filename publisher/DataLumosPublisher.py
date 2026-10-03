@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Optional
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from storage import Storage
+from upload.DataLumosAuthenticator import datalumos_session_error
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from utils.Args import Args
 from utils.project_utils import get_field
@@ -152,13 +153,7 @@ class DataLumosPublisher:
         try:
             page = self._session.ensure_browser()
             self._session.ensure_authenticated()
-
-            project_url = self._project_url(workspace_id)
-            page.goto(project_url, wait_until="domcontentloaded")
-            page.wait_for_load_state("networkidle", timeout=120000)
-
-            from upload.DataLumosAuthenticator import wait_for_human_verification
-            wait_for_human_verification(page, timeout=60000)
+            self._open_project_workspace(page, str(workspace_id))
 
             Logger.info(
                 "Checking workspace Storage Status against database for DRPID=%s",
@@ -216,6 +211,76 @@ class DataLumosPublisher:
             )
 
         self._finalize_after_publish(drpid)
+
+    def _open_project_workspace(self, page: Page, workspace_id: str) -> None:
+        """
+        Open the project workspace, signing in again if the profile lookup fails.
+
+        Args:
+            page: Playwright page for this publish.
+            workspace_id: DataLumos project id.
+
+        Raises:
+            RuntimeError: When the workspace still lands on the login-error page.
+        """
+        project_url = self._project_url(workspace_id)
+        self._load_project_page(page, project_url)
+        if datalumos_session_error(page) is None:
+            return
+        Logger.warning(
+            "DataLumos rejected the session after login; signing in again"
+        )
+        self._session.reauthenticate()
+        self._load_project_page(page, project_url)
+        error = datalumos_session_error(page)
+        if error:
+            raise RuntimeError(error)
+
+    def _load_project_page(self, page: Page, project_url: str) -> None:
+        """
+        Navigate to a workspace URL and wait for human verification.
+
+        A redirect to the login-error page can abort ``goto`` with
+        ``net::ERR_ABORTED``. That abort is kept only when the resulting page
+        is not the profile-retrieval error.
+
+        Args:
+            page: Playwright page.
+            project_url: Workspace URL for one DataLumos project.
+        """
+        aborted = self._goto_workspace(page, project_url)
+        self._wait_for_workspace_settle(page)
+        if aborted is not None and datalumos_session_error(page) is None:
+            raise aborted
+
+    def _goto_workspace(self, page: Page, project_url: str) -> Optional[Exception]:
+        """
+        Start navigation to ``project_url``.
+
+        Returns:
+            The aborted-navigation exception when DataLumos cancelled the load,
+            otherwise None.
+        """
+        try:
+            page.goto(project_url, wait_until="domcontentloaded")
+        except Exception as exc:
+            if "ERR_ABORTED" not in str(exc):
+                raise
+            Logger.warning("Workspace navigation was aborted: %s", exc)
+            return exc
+        return None
+
+    def _wait_for_workspace_settle(self, page: Page) -> None:
+        """Wait for network idle and any human-verification interstitial."""
+        try:
+            page.wait_for_load_state("networkidle", timeout=120000)
+        except Exception as exc:
+            if "ERR_ABORTED" not in str(exc):
+                raise
+            Logger.warning("Workspace network-idle wait was aborted: %s", exc)
+        from upload.DataLumosAuthenticator import wait_for_human_verification
+
+        wait_for_human_verification(page, timeout=60000)
 
     def _pre_publish_abort_label(self) -> str:
         """

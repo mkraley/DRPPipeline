@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 from storage import Storage
 from utils.Args import Args
@@ -392,6 +392,109 @@ class TestDataLumosPublisher(unittest.TestCase):
         record = Storage.get(drpid)
         self.assertEqual(record.get("status"), "uploaded-error")
         self.assertIn("Aborting publish", record.get("errors") or "")
+
+    @patch.object(DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None)
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    @patch.object(DataLumosPublisher, "_publish_workspace")
+    def test_run_signs_in_again_when_workspace_hits_login_error(
+        self,
+        mock_publish: MagicMock,
+        mock_wait_for_human: MagicMock,
+        mock_upload_check: MagicMock,
+    ) -> None:
+        """A profile-retrieval page triggers one fresh login, then publish continues."""
+        drpid = Storage.create_record("https://example.com/test")
+        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "uploaded"})
+        mock_page = MagicMock()
+        type(mock_page).url = PropertyMock(
+            side_effect=[
+                "https://www.datalumos.org/datalumos/loginError?code=MYDATA_PROFILE_RETRIEVAL_FAILED",
+                "https://www.datalumos.org/datalumos/workspace?goToPath=/datalumos/239181#",
+            ]
+        )
+        self.publisher._session.ensure_browser = MagicMock(return_value=mock_page)
+        self.publisher._session.ensure_authenticated = MagicMock(return_value=None)
+        self.publisher._session.reauthenticate = MagicMock(return_value=None)
+        self.publisher._session.close = MagicMock(return_value=None)
+        mock_publish.return_value = (True, None)
+
+        with patch.object(Args, "google_sheet_id", None), patch.object(
+            Args, "google_credentials", None
+        ):
+            self.publisher.run(drpid)
+
+        self.publisher._session.reauthenticate.assert_called_once()
+        mock_publish.assert_called_once_with(mock_page, drpid)
+        self.assertEqual(mock_page.goto.call_count, 2)
+
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    @patch.object(DataLumosPublisher, "_publish_workspace")
+    def test_run_records_login_error_when_retry_still_fails(
+        self,
+        mock_publish: MagicMock,
+        mock_wait_for_human: MagicMock,
+    ) -> None:
+        """A second profile-retrieval failure is not stored as an inventory mismatch."""
+        drpid = Storage.create_record("https://example.com/test")
+        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "uploaded"})
+        mock_page = MagicMock()
+        type(mock_page).url = PropertyMock(
+            return_value=(
+                "https://www.datalumos.org/datalumos/loginError"
+                "?code=MYDATA_PROFILE_RETRIEVAL_FAILED"
+            )
+        )
+        self.publisher._session.ensure_browser = MagicMock(return_value=mock_page)
+        self.publisher._session.ensure_authenticated = MagicMock(return_value=None)
+        self.publisher._session.reauthenticate = MagicMock(return_value=None)
+        self.publisher._session.close = MagicMock(return_value=None)
+
+        with self.assertRaises(RuntimeError):
+            self.publisher.run(drpid)
+
+        mock_publish.assert_not_called()
+        self._pre_publish_gate_mock.assert_not_called()
+        record = Storage.get(drpid)
+        self.assertEqual(record.get("status"), "uploaded-error")
+        errors = record.get("errors") or ""
+        self.assertIn("profile retrieval failed", errors)
+        self.assertNotIn("does not match database", errors)
+
+    def test_load_project_page_keeps_abort_that_is_not_a_login_error(self) -> None:
+        """An aborted navigation that does not land on loginError is still a failure."""
+        page = MagicMock()
+        page.goto.side_effect = Exception(
+            "Page.goto: net::ERR_ABORTED at https://www.datalumos.org/datalumos/workspace"
+        )
+        type(page).url = PropertyMock(
+            return_value="https://www.datalumos.org/datalumos/home"
+        )
+        with self.assertRaises(Exception) as caught:
+            self.publisher._load_project_page(
+                page,
+                "https://www.datalumos.org/datalumos/workspace?goToPath=/datalumos/1#",
+            )
+        self.assertIn("ERR_ABORTED", str(caught.exception))
+
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    def test_load_project_page_accepts_abort_onto_login_error(
+        self,
+        mock_wait_for_human: MagicMock,
+    ) -> None:
+        """An abort that lands on loginError is left for the sign-in retry."""
+        page = MagicMock()
+        page.goto.side_effect = Exception("Page.goto: net::ERR_ABORTED")
+        type(page).url = PropertyMock(
+            return_value=(
+                "https://www.datalumos.org/datalumos/loginError"
+                "?code=MYDATA_PROFILE_RETRIEVAL_FAILED"
+            )
+        )
+        self.publisher._load_project_page(
+            page,
+            "https://www.datalumos.org/datalumos/workspace?goToPath=/datalumos/1#",
+        )
+        page.wait_for_load_state.assert_called_once()
 
     @patch.object(
         DataLumosPublisher,
