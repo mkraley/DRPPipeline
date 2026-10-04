@@ -185,6 +185,7 @@ def get_collector_interface() -> str:
       DRPID           INTEGER   Primary key (read-only)
       status          TEXT      Current pipeline status
       next_step       TEXT      Next module to run, "?" if unclear, null if finished
+      last_change     TEXT      Local time the project was last processed by a module
       status_notes    TEXT      Human-readable notes
       warnings        TEXT      Newline-separated warnings
       errors          TEXT      Newline-separated errors (non-null = skip)

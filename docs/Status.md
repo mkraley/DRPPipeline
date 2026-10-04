@@ -1,6 +1,6 @@
 # Project status values
 
-Every project row in the SQLite database has a `status` field. Modules use it to decide which projects are eligible to run, and they write a new status when they finish successfully. `next_step`, stored immediately after `status`, is advisory. It names the module to run next, or the status the operator should set next (`resize wait`, `resized`, `uploaded`). It is `?` when that is not clear, and null when the row is finished.
+Every project row in the SQLite database has a `status` field. Modules use it to decide which projects are eligible to run, and they write a new status when they finish successfully. `next_step`, stored immediately after `status`, is advisory. It names the module to run next, or the status the operator should set next (`resize wait`, `resized`, `uploaded`). It is `?` when that is not clear, and null when the row is finished. `last_change`, stored immediately after `next_step`, is the local time (`YYYY-MM-DD HH:MM:SS`) of the last module that created, updated, or finished that project. Rows that have not been processed yet leave it null.
 
 ## How eligibility works
 

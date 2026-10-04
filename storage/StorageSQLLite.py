@@ -7,6 +7,7 @@ This class should be instantiated via Storage.initialize() factory method.
 """
 
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional, Dict, Any, Tuple, TYPE_CHECKING
 
@@ -16,6 +17,16 @@ from utils.Logger import Logger
 
 if TYPE_CHECKING:
     from storage.StorageProtocol import StorageProtocol
+
+
+def local_timestamp() -> str:
+    """
+    Return the current local time as ``YYYY-MM-DD HH:MM:SS``.
+
+    Returns:
+        Local timestamp with no timezone suffix.
+    """
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 class StorageSQLLite:
@@ -36,6 +47,7 @@ class StorageSQLLite:
         ("DRPID", "INTEGER PRIMARY KEY AUTOINCREMENT"),
         ("status", "TEXT"),
         ("next_step", "TEXT"),
+        ("last_change", "TEXT"),
         ("status_notes", "TEXT"),
         ("warnings", "TEXT"),
         ("errors", "TEXT"),
@@ -203,6 +215,7 @@ class StorageSQLLite:
             ("geographic_coverage", "TEXT"),
             ("principal_investigators", "TEXT"),
             ("next_step", "TEXT"),
+            ("last_change", "TEXT"),
         ]
         for column, col_type in migrations:
             try:
@@ -299,6 +312,8 @@ class StorageSQLLite:
     def create_record(self, source_url: str) -> int:
         """
         Create a new record with the given source_url.
+
+        Sets next_step to ``?`` and last_change to the current local time.
         
         Args:
             source_url: The source URL for the project
@@ -311,8 +326,8 @@ class StorageSQLLite:
             sqlite3.Error: If insert fails (e.g., duplicate source_url)
         """
         cursor = self._execute_query(
-            "INSERT INTO projects (source_url, next_step) VALUES (?, ?)",
-            (source_url, "?"),
+            "INSERT INTO projects (source_url, next_step, last_change) VALUES (?, ?, ?)",
+            (source_url, "?", local_timestamp()),
             operation_name=f"create record with source_url '{source_url}'"
         )
         return cursor.lastrowid
@@ -322,7 +337,7 @@ class StorageSQLLite:
         Update an existing record with the provided values.
         
         Only the columns specified in values are updated. DRPID and source_url
-        cannot be updated.
+        cannot be updated. ``last_change`` is set to the current local time.
         
         Args:
             drpid: The DRPID of the record to update
@@ -340,7 +355,7 @@ class StorageSQLLite:
         if not values:
             return  # Nothing to update
 
-        updates = self._with_next_step(drpid, values)
+        updates = self._with_last_change(self._with_next_step(drpid, values))
         
         # Build UPDATE query - database will raise error for invalid columns
         set_clauses = [f"{column} = ?" for column in updates.keys()]
@@ -377,6 +392,20 @@ class StorageSQLLite:
             notes = current.get("status_notes") if current else None
         updates = dict(values)
         updates["next_step"] = next_step_for_status(values.get("status"), notes)
+        return updates
+
+    def _with_last_change(self, values: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Copy an update and set last_change to the local time.
+
+        Args:
+            values: Column updates about to be written.
+
+        Returns:
+            Those updates with last_change set to the current local timestamp.
+        """
+        updates = dict(values)
+        updates["last_change"] = local_timestamp()
         return updates
     
     def get(self, drpid: int) -> Optional[Dict[str, Any]]:

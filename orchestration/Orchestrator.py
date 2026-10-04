@@ -347,6 +347,13 @@ def _prepare_retry_project(proj: Dict[str, Any]) -> None:
     )
 
 
+def _stamp_last_change(drpid: int) -> None:
+    """Record the local time a module finished processing ``drpid``."""
+    from storage.StorageSQLLite import local_timestamp
+
+    Storage.update_record(drpid, {"last_change": local_timestamp()})
+
+
 def _finalize_retry_project(drpid: int) -> None:
     """Clear the errors field after a successful --retry run."""
     if not bool(getattr(Args, "retry", False)):
@@ -788,6 +795,7 @@ class Orchestrator:
                     Logger.set_current_drpid(drpid)
                     # Each thread gets its own module instance (and thus its own Playwright/browser)
                     instance = module_class()
+                    project_finished = False
                     try:
                         Logger.info(
                             f"Orchestrator starting project module={module!r} "
@@ -799,16 +807,20 @@ class Orchestrator:
                         if retry:
                             _finalize_retry_project(drpid)
                         _maybe_claim_inventory_sheet(drpid, module)
+                        project_finished = True
                     except PipelineFatal:
                         raise
                     except ProjectAbort:
-                        pass
+                        project_finished = True
                     except Exception as exc:
                         record_error(
                             drpid,
                             f"Orchestrator module={module!r} DRPID={drpid} exception: {exc}",
                         )
+                        project_finished = True
                     finally:
+                        if project_finished:
+                            _stamp_last_change(drpid)
                         batch.note_project_finished()
                         Logger.info(
                             f"Orchestrator finished project module={module!r} DRPID={drpid}"
@@ -852,6 +864,7 @@ class Orchestrator:
                             project_finished = True
                         finally:
                             if project_finished:
+                                _stamp_last_change(drpid)
                                 batch.note_project_finished()
                                 Logger.info(
                                     f"Orchestrator finished project module={module!r} "

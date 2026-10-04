@@ -194,6 +194,7 @@ class TestOrchestrator(unittest.TestCase):
 
         mock_instance.run.assert_called_once_with(1)
         mock_record_error.assert_not_called()
+        mock_storage_cls.update_record.assert_not_called()
 
     @patch("orchestration.Orchestrator._maybe_claim_inventory_sheet")
     @patch("orchestration.Orchestrator._find_module_class")
@@ -227,6 +228,12 @@ class TestOrchestrator(unittest.TestCase):
 
         mock_collector_instance.run.assert_called_once_with(2)
         mock_claim.assert_called_once_with(2, "collect")
+        stamp = mock_storage_cls.update_record.call_args
+        self.assertEqual(stamp.args[0], 2)
+        self.assertRegex(
+            stamp.args[1]["last_change"],
+            r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$",
+        )
 
     @patch("utils.sheet_claimed_update.claim_project_on_inventory_sheet")
     def test_maybe_claim_skips_bts_source(self, mock_claim: MagicMock) -> None:

@@ -6,6 +6,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from utils.Args import Args
 from utils.Logger import Logger
@@ -395,8 +396,10 @@ class TestStorageSQLLite(unittest.TestCase):
         self.assertEqual(types["file_size"], "TEXT")
         self.assertEqual(types["num_files"], "INTEGER")
         self.assertEqual(types["next_step"], "TEXT")
+        self.assertEqual(types["last_change"], "TEXT")
         self.assertNotIn("downloads", names)
         self.assertEqual(names[names.index("status") + 1], "next_step")
+        self.assertEqual(names[names.index("next_step") + 1], "last_change")
 
         # Verify DRPID is INTEGER
         self.assertEqual(types["DRPID"], "INTEGER")
@@ -458,6 +461,7 @@ class TestStorageSQLLite(unittest.TestCase):
         self.assertEqual(record["num_files"], 4)
         self.assertEqual(record["file_size"], "10.0 MB")
         self.assertEqual(record["next_step"], "?")
+        self.assertNotIn("last_change", record)
         self.assertNotIn("downloads", names)
 
     def test_update_status_sets_next_step(self) -> None:
@@ -471,6 +475,22 @@ class TestStorageSQLLite(unittest.TestCase):
 
         self.storage.update_record(drpid, {"status": "dupe_in_DL"})
         self.assertNotIn("next_step", self.storage.get(drpid))
+
+    def test_last_change_set_on_create_and_update(self) -> None:
+        """Creating or updating a project stores the local processing time."""
+        self.storage.initialize(db_path=self.test_db_path)
+        with patch(
+            "storage.StorageSQLLite.local_timestamp",
+            side_effect=["2026-10-04 17:00:00", "2026-10-04 17:05:00"],
+        ):
+            drpid = self.storage.create_record("https://example.com/when")
+            self.assertEqual(
+                self.storage.get(drpid)["last_change"], "2026-10-04 17:00:00"
+            )
+            self.storage.update_record(drpid, {"title": "Timed"})
+            record = self.storage.get(drpid)
+        self.assertEqual(record["title"], "Timed")
+        self.assertEqual(record["last_change"], "2026-10-04 17:05:00")
     
     def test_concurrent_access_simulation(self) -> None:
         """Test that database can handle multiple operations (simulating concurrency)."""
