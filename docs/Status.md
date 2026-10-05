@@ -92,7 +92,18 @@ Projects enter at `sourced` via `source`. Large-file and repair side paths branc
 | `error` | Generic / legacy failure (also used by source). |
 | `{status}-error` | Failure while the project was at `{status}`. Always written in **compact** form with no spaces: e.g. `sourced-error`, `uploaded-error`, `updated_inventory-error`, `re-uploaded-error`, `uploaded-large-file-error` (from `uploaded - large file`). |
 
-`record_error` derives a compact `{previous}-error` unless the status is already `error` or already an error form. Spaced variants such as `sourced - error` or `uploaded - large file-error` are recognized as already-error and normalized to `sourced-error` / `uploaded-large-file-error`. The message is appended to the `errors` column, which blocks normal eligibility until cleared (MCP `clear_errors` / manual DB update).
+`record_error` derives a compact `{previous}-error` unless the status is already `error` or already an error form. Spaced variants such as `sourced - error` or `uploaded - large file-error` are recognized as already-error and normalized to `sourced-error` / `uploaded-large-file-error`. Each failure is appended to the `errors` column as its own block, one `name: value` line per field:
+
+```
+description: Download failed
+drpid: 12
+datalumos_id: 34567
+timestamp: 2026-10-04 17:49:00
+module: collect
+details: Download failed: report.csv - https://example.com/report.csv
+```
+
+`description` is the text before the first `: ` when that prefix is short; otherwise it matches `details`. `datalumos_id` is empty when the project has none. `timestamp` is local time. `module` is the pipeline module that was running, or the script file name. A blank line separates blocks. Any text in `errors` blocks normal eligibility until cleared (MCP `clear_errors` / manual DB update).
 
 To re-run a module against error statuses from the CLI, use ``--retry`` (selects `<prereq>-error`, ignores the errors field, restores the base status for the run, and clears `errors` on success). Combine with ``--ids 5,10-12`` to limit which DRPIDs are retried.
 

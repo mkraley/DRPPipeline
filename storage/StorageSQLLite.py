@@ -707,7 +707,10 @@ class StorageSQLLite:
         self, drpid: int, field: Literal["warnings", "errors"], text: str
     ) -> None:
         """
-        Append text to the warnings or errors field. Format: one entry per line (newline).
+        Append text to the warnings or errors field.
+
+        Warnings stay one entry per line. Multi-line error records are
+        separated from the previous text by a blank line.
 
         Args:
             drpid: The DRPID of the record to update.
@@ -729,7 +732,6 @@ class StorageSQLLite:
         if row is None:
             raise ValueError(f"Record with DRPID {drpid} does not exist")
         current = row[0] or ""
-        # Preserve whitespace consistently: append with newline, only strip trailing whitespace
-        # from the entire field to avoid trailing newlines, but preserve whitespace within entries
-        new_value = (current + "\n" + text).rstrip() if current else text
+        separator = "\n\n" if current and "\n" in text else "\n"
+        new_value = (current + separator + text).rstrip() if current else text
         self.update_record(drpid, {field: new_value})

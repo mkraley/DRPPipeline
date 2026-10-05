@@ -744,6 +744,17 @@ class TestStorageSQLLite(unittest.TestCase):
         r = self.storage.get(1)
         self.assertEqual(r["errors"], "e1")
 
+    def test_append_to_field_errors_separates_multiline_records(self) -> None:
+        """Multi-line error blocks are separated by a blank line."""
+        self.storage.initialize(db_path=self.test_db_path)
+        self.storage.create_record("https://a.com")
+        first = "description: first\ndrpid: 1"
+        second = "description: second\ndrpid: 1"
+        self.storage.append_to_field(1, "errors", first)
+        self.storage.append_to_field(1, "errors", second)
+        record = self.storage.get(1)
+        self.assertEqual(record["errors"], first + "\n\n" + second)
+
     def test_append_to_field_invalid_field_raises(self) -> None:
         """Test append_to_field with field not warnings/errors raises."""
         self.storage.initialize(db_path=self.test_db_path)

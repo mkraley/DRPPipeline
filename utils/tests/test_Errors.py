@@ -109,7 +109,15 @@ class TestRecordError(unittest.TestCase):
         _mock_logger.error.assert_called_once_with("boom")
         _mock_storage.get.assert_called_once_with(123)
         _mock_storage.update_record.assert_called_once_with(123, {"status": "sourced-error"})
-        _mock_storage.append_to_field.assert_called_once_with(123, "errors", "boom")
+        stored = _mock_storage.append_to_field.call_args.args[2]
+        self.assertEqual(_mock_storage.append_to_field.call_args.args[0], 123)
+        self.assertEqual(_mock_storage.append_to_field.call_args.args[1], "errors")
+        self.assertIn("description: boom", stored)
+        self.assertIn("drpid: 123", stored)
+        self.assertIn("datalumos_id:", stored)
+        self.assertIn("module: test_Errors.py", stored)
+        self.assertIn("details: boom", stored)
+        self.assertRegex(stored, r"timestamp: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
 
     @patch("utils.Errors.Storage", _mock_storage)
     @patch("utils.Errors.Logger", _mock_logger)
@@ -122,6 +130,28 @@ class TestRecordError(unittest.TestCase):
         _mock_storage.update_record.assert_called_once_with(
             5, {"status": "uploaded-large-file-error"}
         )
+
+    @patch("utils.Errors.Storage", _mock_storage)
+    @patch("utils.Errors.Logger", _mock_logger)
+    def test_record_error_includes_datalumos_id_and_module(self) -> None:
+        """Stored text keeps the DataLumos id, module, and a short description."""
+        _mock_storage.reset_mock()
+        _mock_logger.reset_mock()
+        _mock_storage.get.return_value = {
+            "status": "uploaded",
+            "datalumos_id": "34567",
+        }
+        record_error(
+            12,
+            "Publish failed: profile missing",
+            update_storage=True,
+            module="publish",
+        )
+        stored = _mock_storage.append_to_field.call_args.args[2]
+        self.assertIn("description: Publish failed", stored)
+        self.assertIn("datalumos_id: 34567", stored)
+        self.assertIn("module: publish", stored)
+        self.assertIn("details: Publish failed: profile missing", stored)
 
     @patch("utils.Errors.Logger", _mock_logger)
     @patch("utils.Errors.Storage", _mock_storage)

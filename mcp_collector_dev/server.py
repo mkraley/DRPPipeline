@@ -188,7 +188,7 @@ def get_collector_interface() -> str:
       last_change     TEXT      Local time the project was last processed by a module
       status_notes    TEXT      Human-readable notes
       warnings        TEXT      Newline-separated warnings
-      errors          TEXT      Newline-separated errors (non-null = skip)
+      errors          TEXT      Structured error blocks (non-null = skip); one name:value line each
       datalumos_id    TEXT      DataLumos record ID (set by upload module)
       source_url      TEXT      Source URL (read-only after creation)
       folder_path     TEXT      Absolute path to local output folder
@@ -232,7 +232,9 @@ def get_collector_interface() -> str:
 
     ── UTILITY FUNCTIONS ────────────────────────────────────────────
     from utils.Errors import record_error, record_warning, record_crash
-      record_error(drpid, msg)    → sets status="error", appends to errors field
+      record_error(drpid, msg)    → sets status to {previous}-error and appends a
+                                   structured errors block (description, drpid,
+                                   datalumos_id, timestamp, module, details)
       record_warning(drpid, msg)  → appends to warnings field (non-fatal)
       record_crash(msg)           → fatal; raises RuntimeError
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import NoReturn
 
 from storage import Storage
+from utils.ErrorRecord import executing_module, format_project_error
 from utils.Logger import Logger
 
 
@@ -85,41 +86,101 @@ def record_error(
     *,
     update_storage: bool = True,
     status_value: str | None = None,
+    module: str | None = None,
 ) -> None:
     """
     Record an error for the current project: abort this project, continue with the next.
 
-    Logs the message, then optionally sets project status and appends to the
-    ``errors`` field so the project is skipped in later steps.
+    Logs the message, then optionally sets project status and appends a
+    structured block to the ``errors`` field so the project is skipped in
+    later steps. The block has one name:value line each for description,
+    drpid, datalumos_id, timestamp, module, and details.
 
     Use ``update_storage=False`` when the record may not exist (e.g. DRPID not found).
 
     Args:
         drpid: Project DRPID.
-        error_msg: Error message to log and persist.
+        error_msg: Error message to log. Stored as details, and shortened
+            for the description line when it contains ``: ``.
         update_storage: If True, update Storage status and append to errors field.
         status_value: Value for ``status``; default is ``{previous_status}-error``
             in compact form (spaces around hyphens removed). Custom values that
             look like error statuses are also normalized to ``xxx-error``.
+        module: Module or script name. Default is the running pipeline module,
+            or the caller's file name when that is not set.
     """
     Logger.error(error_msg)
 
     if not update_storage:
         return
 
-    if status_value is None:
-        record = Storage.get(drpid)
-        previous = record.get("status") if record else None
-        status_value = derive_error_status(previous)
-    elif is_error_status(status_value):
-        # Normalize custom error statuses (e.g. "sourced - error") to compact form.
-        status_value = derive_error_status(status_value)
+    record = Storage.get(drpid)
+    status_value = _status_after_error(record, status_value)
+    stored = _stored_error(drpid, error_msg, record, module)
 
     try:
         Storage.update_record(drpid, {"status": status_value})
-        Storage.append_to_field(drpid, "errors", error_msg)
+        Storage.append_to_field(drpid, "errors", stored)
     except Exception as exc:  # pragma: no cover (defensive; Storage impl may vary)
         Logger.exception(f"Failed recording error for DRPID={drpid}: {exc}")
+
+
+def _status_after_error(record: dict | None, status_value: str | None) -> str:
+    """
+    Choose the compact error status to store.
+
+    Args:
+        record: Current project row, if it exists.
+        status_value: Caller override, or None to derive from the current status.
+
+    Returns:
+        Status string to write.
+    """
+    if status_value is None:
+        previous = record.get("status") if record else None
+        return derive_error_status(previous)
+    if is_error_status(status_value):
+        return derive_error_status(status_value)
+    return status_value
+
+
+def _stored_error(
+    drpid: int,
+    error_msg: str,
+    record: dict | None,
+    module: str | None,
+) -> str:
+    """
+    Build the structured errors-column block for this failure.
+
+    Args:
+        drpid: Project id.
+        error_msg: Message to store as details.
+        record: Current project row, used for datalumos_id.
+        module: Optional module or script name.
+
+    Returns:
+        The name:value block appended to errors.
+    """
+    from storage.StorageSQLLite import local_timestamp
+
+    return format_project_error(
+        error_msg,
+        drpid,
+        _datalumos_id(record),
+        executing_module(module),
+        local_timestamp(),
+    )
+
+
+def _datalumos_id(record: dict | None) -> str:
+    """Return the project's datalumos id, or an empty string when unset."""
+    if not record:
+        return ""
+    raw = record.get("datalumos_id")
+    if isinstance(raw, bool) or not isinstance(raw, (str, int)):
+        return ""
+    return str(raw).strip()
 
 
 def abort_project(

@@ -15,6 +15,7 @@ from sourcing.SourcingBase import SourcingBase
 from sourcing.SpreadsheetCandidateFetcher import SpreadsheetCandidateFetcher
 from storage import Storage
 from utils.Args import Args
+from utils.Errors import record_error
 from utils.Logger import Logger
 
 
@@ -125,13 +126,9 @@ class SpreadsheetSourcing(SourcingBase):
                 error_count += 1
                 Storage.update_record(
                     new_drpid,
-                    {
-                        "status": "error",
-                        "office": office,
-                        "agency": agency,
-                        "errors": str(exc),
-                    },
+                    {"office": office, "agency": agency},
                 )
+                record_error(new_drpid, str(exc), status_value="error", module="source")
             elif status_code == 404:
                 not_found_count += 1
                 Storage.update_record(
