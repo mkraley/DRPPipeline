@@ -374,6 +374,19 @@ When `inventory_sheet_format` is `baserow_batch`, **File extensions** are writte
 
 **New sources:** each new `sources.<name>` section (and configs created by `python main.py setup`) should include `inventory_sheet_format: baserow_batch`, `baserow_contact`, and `default_metadata_available: false`. Existing CDC/AHRQ-style sources keep the global `data_inventories` default unless they set these keys.
 
+Create those pieces from an existing source (database, download folder, config section, and a copy of that source's spreadsheet). The script prints a Make-a-copy link. Open it in the Google account that should own the file, share the copy with the service account as Editor, and paste the new URL. The script then renames the template tab (for example `NPS` becomes `NRC`) and clears every row under the header. The DataLumos password is left blank.
+
+A service account has no Drive storage, so the script does not copy the file with the Drive API. That call fails with `storageQuotaExceeded` even when the signed-in Google account still has free space.
+
+```powershell
+python scripts/start_new_source.py nrc
+python scripts/start_new_source.py nrc --template nps
+python scripts/start_new_source.py nrc --sheet-url "https://docs.google.com/spreadsheets/d/SHEET_ID/edit"
+python scripts/start_new_source.py nrc --dry-run
+```
+
+The new source becomes the active `source` in `config.json`. Create the DataLumos login yourself, then set `sources.<name>.datalumos_password`.
+
 **Config-only:** Parameters without a CLI column can only be set in the config file (or use defaults).
 
 ### Config file format

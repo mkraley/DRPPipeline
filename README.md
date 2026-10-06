@@ -76,6 +76,8 @@ DRPPipeline/
 
 Each module (except `noop` and `clean_inprogress`) advances project `status` so the next module can run on eligible projects. See [Usage](docs/Usage.md) for how to run them and how the database is used.
 
+To start a new source (SQLite database, download folder, config section, and an inventory spreadsheet you copy into your Google account), run `python scripts/start_new_source.py nrc`. The DataLumos login is left for you to create.
+
 ## MCP Servers
 
 The pipeline exposes two [Model Context Protocol](https://modelcontextprotocol.io/) servers that allow Claude (and other MCP-compatible clients) to drive the pipeline without writing code. Both are registered in `.mcp.json`.

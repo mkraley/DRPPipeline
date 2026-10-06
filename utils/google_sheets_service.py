@@ -131,14 +131,16 @@ def _ensure_system_trust_store() -> None:
         pass
 
 
-def build_sheets_v4_service(
+def build_google_api_service(
+    api_name: str,
+    api_version: str,
     credentials: Credentials,
     *,
     cache_discovery: bool = False,
     ssl_ca_bundle: Optional[Union[str, Path]] = None,
 ) -> Any:
     """
-    Return a Sheets API v4 service object.
+    Return a Google API client for ``api_name`` / ``api_version``.
 
     When ``ssl_ca_bundle`` is a path to an existing PEM file, requests use
     httplib2 with that CA bundle (via :class:`google_auth_httplib2.AuthorizedHttp`).
@@ -147,12 +149,14 @@ def build_sheets_v4_service(
     default Google client.
 
     Args:
+        api_name: Discovery API name, such as ``sheets`` or ``drive``.
+        api_version: Discovery API version, such as ``v4`` or ``v3``.
         credentials: ``google.auth.credentials.Credentials`` (e.g. service account).
         cache_discovery: Passed through to discovery ``build``.
         ssl_ca_bundle: Explicit CA bundle path; overrides Args when set.
 
     Returns:
-        The result of ``googleapiclient.discovery.build('sheets', 'v4', ...)``.
+        The result of ``googleapiclient.discovery.build(...)``.
     """
     from googleapiclient.discovery import build
 
@@ -163,14 +167,45 @@ def build_sheets_v4_service(
 
         http = httplib2.Http(ca_certs=str(bundle_path))
         authorized = AuthorizedHttp(credentials, http=http)
-        return build("sheets", "v4", http=authorized, cache_discovery=cache_discovery)
+        return build(
+            api_name,
+            api_version,
+            http=authorized,
+            cache_discovery=cache_discovery,
+        )
 
     _ensure_system_trust_store()
     return build(
-        "sheets",
-        "v4",
+        api_name,
+        api_version,
         credentials=credentials,
         cache_discovery=cache_discovery,
+    )
+
+
+def build_sheets_v4_service(
+    credentials: Credentials,
+    *,
+    cache_discovery: bool = False,
+    ssl_ca_bundle: Optional[Union[str, Path]] = None,
+) -> Any:
+    """
+    Return a Sheets API v4 service object.
+
+    Args:
+        credentials: ``google.auth.credentials.Credentials`` (e.g. service account).
+        cache_discovery: Passed through to discovery ``build``.
+        ssl_ca_bundle: Explicit CA bundle path; overrides Args when set.
+
+    Returns:
+        The result of ``googleapiclient.discovery.build('sheets', 'v4', ...)``.
+    """
+    return build_google_api_service(
+        "sheets",
+        "v4",
+        credentials,
+        cache_discovery=cache_discovery,
+        ssl_ca_bundle=ssl_ca_bundle,
     )
 
 

@@ -9,6 +9,24 @@ from unittest.mock import MagicMock, patch
 class TestBuildSheetsV4Service(unittest.TestCase):
     """build_sheets_v4_service delegates to discovery build with correct wiring."""
 
+    def test_build_google_api_service_passes_api_name(self) -> None:
+        """Drive clients use the same TLS wiring with the requested API name."""
+        from utils.google_sheets_service import build_google_api_service
+
+        creds = MagicMock()
+        mock_service = MagicMock()
+        with patch("utils.google_sheets_service._resolve_ssl_ca_bundle_path", return_value=None), patch(
+            "utils.google_sheets_service._ensure_system_trust_store"
+        ), patch("googleapiclient.discovery.build", return_value=mock_service) as mock_build:
+            out = build_google_api_service("drive", "v3", creds)
+        self.assertIs(out, mock_service)
+        mock_build.assert_called_once_with(
+            "drive",
+            "v3",
+            credentials=creds,
+            cache_discovery=False,
+        )
+
     def test_without_ca_bundle_uses_credentials_only(self) -> None:
         from utils.google_sheets_service import build_sheets_v4_service
 
