@@ -18,6 +18,7 @@ class Aria2ConsoleFilter:
     def __init__(self) -> None:
         """Start with no held error block."""
         self._pending: list[str] = []
+        self.error_text = ""
 
     def feed(self, line: str) -> list[str]:
         """Accept one console piece and return lines that should be shown."""
@@ -26,14 +27,14 @@ class Aria2ConsoleFilter:
         if _is_download_aborted_line(line):
             self._pending.append(line)
             return []
-        return [line]
+        return self._remember([line])
 
     def flush(self) -> list[str]:
         """Return a held block at end of output, unless it is range noise."""
         if _is_invalid_range_block(self._pending):
             self._pending.clear()
             return []
-        return self._take_pending()
+        return self._remember(self._take_pending())
 
     def _feed_pending(self, line: str) -> list[str]:
         """Hold an exception continuation, or release the block and this line."""
@@ -43,7 +44,16 @@ class Aria2ConsoleFilter:
                 self._pending.clear()
             return []
         kept = self._take_pending()
-        return kept + self.feed(line)
+        return self._remember(kept) + self.feed(line)
+
+    def _remember(self, lines: list[str]) -> list[str]:
+        """Keep shown aria2 errors. Invalid-range blocks never reach here."""
+        for line in lines:
+            text = line.strip()
+            if not _is_shown_aria2_error(text):
+                continue
+            self.error_text = f"{self.error_text} {text}".strip()
+        return lines
 
     def _take_pending(self) -> list[str]:
         """Return and clear the held lines."""
@@ -52,8 +62,11 @@ class Aria2ConsoleFilter:
         return kept
 
 
-def forward_aria2_console(stream: BinaryIO) -> None:
-    """Copy aria2 stdout, omitting invalid-range error blocks."""
+def forward_aria2_console(stream: BinaryIO) -> str:
+    """Copy aria2 stdout, omitting invalid-range error blocks.
+
+    Returns shown aria2 error text. An empty string means no real error.
+    """
     console_filter = Aria2ConsoleFilter()
     pending = b""
     while True:
@@ -65,6 +78,7 @@ def forward_aria2_console(stream: BinaryIO) -> None:
     if pending:
         _write_lines(console_filter.feed(pending.decode("utf-8", errors="replace")))
     _write_lines(console_filter.flush())
+    return console_filter.error_text
 
 
 def _emit_complete_pieces(pending: bytes, console_filter: Aria2ConsoleFilter) -> bytes:
@@ -114,3 +128,8 @@ def _continues_aria2_exception(line: str) -> bool:
 def _is_invalid_range_block(lines: list[str]) -> bool:
     """Return True when a held block is the IRMA range-header mismatch."""
     return any("Invalid range header" in line for line in lines)
+
+
+def _is_shown_aria2_error(text: str) -> bool:
+    """Return True for an emitted line that reports an aria2 failure."""
+    return "[ERROR]" in text or text.startswith("Exception:") or text.startswith("->")

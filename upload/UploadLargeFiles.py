@@ -18,6 +18,7 @@ from collectors.UsfsAria2Export import (
     DEFAULT_ARIA2_OUTPUT_DIR,
     MAX_DOWNLOAD_BYTES,
     download_exported_cmd_line,
+    download_failure_message,
     drpid_cmd_path,
     entries_for_publication_files,
     out_name_from_aria2_cmd_line,
@@ -464,8 +465,10 @@ class UploadLargeFiles:
                 _, fail_count = run_aria2_downloads(drpid, aria2_lines, log_root=log_root)
                 if fail_count:
                     reporter.error(
-                        f"Large-file download failed for {fail_count} file(s); "
-                        f"see logs under {log_root}"
+                        download_failure_message(
+                            f"Large-file download failed for {fail_count} file(s); "
+                            f"see logs under {log_root}"
+                        )
                     )
                     return
 

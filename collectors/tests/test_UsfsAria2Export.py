@@ -323,6 +323,40 @@ class TestUsfsAria2Export(unittest.TestCase):
         self.assertEqual(attempts, 3)
         self.assertEqual(mock_popen.call_count, 3)
 
+    def test_console_error_fails_when_aria2_exits_zero(self) -> None:
+        """An aria2 [ERROR] line fails the download even when the exit code is 0."""
+        from collectors.UsfsAria2Export import download_failure_message, take_aria2_console_error
+
+        ua = BROWSER_HEADERS["User-Agent"]
+        cmd = format_windows_command(
+            Aria2Entry(
+                url="https://example.com/file.pdf",
+                out_name="file.pdf",
+                dir_path=Path(r"C:\data\DRP000029"),
+                max_connections=1,
+            ),
+            ua,
+        )
+        console = (
+            b"10/09 15:07:08 [ERROR] Exception caught\n"
+            b"Exception: [DefaultBtProgressInfoFile.cc:213] errorCode=1 "
+            b"Failed to write into the segment file C:/data/file.pdf.aria2\n"
+        )
+        proc = MagicMock()
+        proc.stdout = io.BytesIO(console)
+        proc.wait.return_value = 0
+        with patch("collectors.UsfsAria2Export.subprocess.Popen", return_value=proc):
+            ok, attempts = run_aria2_cmd_line_with_retries(
+                cmd,
+                log_path=Path(r"C:\logs\file.pdf.log"),
+                max_attempts=1,
+            )
+        self.assertFalse(ok)
+        self.assertEqual(attempts, 1)
+        message = download_failure_message("Download failed: file.pdf")
+        self.assertIn("Failed to write into the segment file", message)
+        self.assertEqual(take_aria2_console_error(), "")
+
     def test_run_aria2_argv_terminates_child_on_interrupt(self) -> None:
         """A second Ctrl-C, seen as KeyboardInterrupt, stops the aria2 process."""
         from collectors.UsfsAria2Export import _run_aria2_argv

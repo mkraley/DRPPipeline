@@ -8,7 +8,12 @@ import shutil
 from pathlib import Path
 
 from collectors.BudgetedDownload import _is_complete
-from collectors.UsfsAria2Export import Aria2Entry, format_windows_command, max_connections_for_url
+from collectors.UsfsAria2Export import (
+    Aria2Entry,
+    download_failure_message,
+    format_windows_command,
+    max_connections_for_url,
+)
 from storage import Storage
 from storage.ProjectFileStore import ProjectFileRow, ProjectFileStore
 from upload.UploadIssueReporter import UploadIssueReporter
@@ -113,7 +118,7 @@ def _fetch_row(
     dest.parent.mkdir(parents=True, exist_ok=True)
     _ok, fail_count = run_aria2_downloads(drpid, [_aria2_line(row, dest)], log_root=log_root)
     if fail_count or not dest.is_file():
-        reporter.error(f"Download failed: {row.relative_path}")
+        reporter.error(download_failure_message(f"Download failed: {row.relative_path}"))
         return False
     if row.size_bytes is not None and dest.stat().st_size != row.size_bytes:
         reporter.error(

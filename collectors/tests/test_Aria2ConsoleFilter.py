@@ -34,6 +34,26 @@ class TestAria2ConsoleFilter(unittest.TestCase):
         self.assertIn("errorCode=1 timeout", shown)
         self.assertIn("Download aborted", shown)
 
+    def test_segment_write_error_is_kept_when_exit_would_be_success(self) -> None:
+        """A control-file write error is a failure even if aria2 later prints OK."""
+        text = (
+            "10/09 15:07:08 [ERROR] Exception caught\n"
+            "Exception: [DefaultBtProgressInfoFile.cc:213] errorCode=1 "
+            "Failed to write into the segment file C:/data/file.pdf.aria2\n"
+            "73ce69|OK  |   2.2MiB/s|C:/data/file.pdf\n"
+        )
+        stream = io.BytesIO(text.encode("utf-8"))
+        with patch("sys.stdout"):
+            error_text = forward_aria2_console(stream)
+        self.assertIn("Failed to write into the segment file", error_text)
+        self.assertIn("[ERROR] Exception caught", error_text)
+
+    def test_invalid_range_noise_is_not_an_error(self) -> None:
+        stream = io.BytesIO(_NOISE.encode("utf-8"))
+        with patch("sys.stdout"):
+            error_text = forward_aria2_console(stream)
+        self.assertEqual(error_text, "")
+
     def test_forward_drops_windows_crlf_range_errors(self) -> None:
         """aria2 on Windows ends lines with CR LF; that must not leak the error."""
         text = (

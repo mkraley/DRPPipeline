@@ -261,6 +261,24 @@ def _set_connection_flags(argv: List[str], value: str) -> List[str]:
 
 
 DEFAULT_ARIA2_MAX_ATTEMPTS = 3
+_MAX_ARIA2_ERROR_CHARS = 500
+_last_console_error = ""
+
+
+def take_aria2_console_error() -> str:
+    """Return and clear the last aria2 console error from a failed run."""
+    global _last_console_error
+    text = _last_console_error
+    _last_console_error = ""
+    return text
+
+
+def download_failure_message(message: str) -> str:
+    """Append the last aria2 console error to a download failure message."""
+    detail = take_aria2_console_error()
+    if not detail:
+        return message
+    return f"{message}: {detail}"
 
 
 def run_aria2_cmd_line_with_retries(
@@ -276,6 +294,8 @@ def run_aria2_cmd_line_with_retries(
     Exported commands include ``-c`` (continue), so retries resume partial files.
     Returns ``(success, attempts_used)``.
     """
+    global _last_console_error
+    _last_console_error = ""
     attempts = max(1, max_attempts)
     argv = aria2_argv_for_download(
         cmd_line,
@@ -284,6 +304,7 @@ def run_aria2_cmd_line_with_retries(
     )
     for attempt in range(1, attempts + 1):
         if _run_aria2_argv(argv) == 0:
+            _last_console_error = ""
             return True, attempt
     return False, attempts
 
@@ -329,12 +350,36 @@ def _run_aria2_argv(argv: List[str]) -> int:
     proc = _popen_aria2(argv)
     with SoftStop.on_immediate_stop(lambda: _terminate_child(proc)):
         try:
+            error_text = ""
             if proc.stdout is not None:
-                forward_aria2_console(proc.stdout)
-            return proc.wait()
+                error_text = forward_aria2_console(proc.stdout)
+            code = proc.wait()
+            return _exit_code_for_console_error(code, error_text)
         except KeyboardInterrupt:
             _terminate_child(proc)
             raise
+
+
+def _exit_code_for_console_error(code: int, error_text: str) -> int:
+    """Treat a shown aria2 error as failure even when the process exits 0."""
+    global _last_console_error
+    if not error_text:
+        return code
+    _last_console_error = _collapse_console_error(error_text)
+    from utils.Logger import Logger
+
+    Logger.error("aria2 reported: %s", _last_console_error)
+    if code == 0:
+        return 1
+    return code
+
+
+def _collapse_console_error(text: str) -> str:
+    """Return one line of aria2 error text, capped for the project record."""
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= _MAX_ARIA2_ERROR_CHARS:
+        return collapsed
+    return collapsed[: _MAX_ARIA2_ERROR_CHARS - 3] + "..."
 
 
 def download_exported_cmd_line(
