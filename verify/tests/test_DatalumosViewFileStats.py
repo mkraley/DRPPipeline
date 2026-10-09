@@ -5,9 +5,13 @@ Unit tests for DatalumosViewFileStats.
 import unittest
 from unittest.mock import MagicMock, patch
 
+from utils.Logger import Logger
+
 from verify.DatalumosViewFileStats import (
     DatalumosViewFileStats,
     WORKSPACE_TABLE_READY_JS,
+    _MAX_FOLDER_DEPTH,
+    _stats_including_view_folders,
     format_verify_comparison,
     format_verify_success_message,
     set_records_per_page,
@@ -88,6 +92,68 @@ class TestDatalumosViewFileStats(unittest.TestCase):
         self.assertEqual(stats.file_count, 2)
         self.assertEqual(stats.total_bytes, 2048)
         self.assertEqual(stats.file_names, ("a.csv", "b.csv"))
+
+    @patch("verify.DatalumosViewFileStats.set_records_per_page", return_value=True)
+    def test_from_page_counts_files_inside_folders(
+        self, _mock_set_page_size: MagicMock
+    ) -> None:
+        """Folder rows are opened and their files are included in the total."""
+        Logger.initialize(log_level="WARNING")
+        page = MagicMock()
+        page.url = "https://www.datalumos.org/datalumos/project/255543/version/V1/view"
+        page.evaluate.side_effect = [
+            {
+                "files": [
+                    {
+                        "name": "Resource_Brief",
+                        "size": "",
+                        "isFolder": True,
+                        "href": "?path=/datalumos/255543/fcr:versions/V1/Resource_Brief&type=folder",
+                    },
+                    {
+                        "name": "project_metadata.json",
+                        "size": "3.4 KB",
+                        "isFolder": False,
+                        "href": "?path=/datalumos/255543/fcr:versions/V1/project_metadata.json&type=file",
+                    },
+                ]
+            },
+            {
+                "files": [
+                    {"name": "brief.pdf", "size": "1.0 KB", "isFolder": False},
+                    {"name": "notes.pdf", "size": "2.0 KB", "isFolder": False},
+                ]
+            },
+        ]
+        stats = DatalumosViewFileStats.from_page(page)
+        self.assertIsNone(stats.error)
+        self.assertEqual(stats.file_count, 3)
+        self.assertEqual(
+            stats.file_names,
+            ("project_metadata.json", "brief.pdf", "notes.pdf"),
+        )
+        self.assertEqual(
+            stats.total_bytes,
+            int(3.4 * 1024) + 1024 + 2048,
+        )
+        opened = page.goto.call_args[0][0]
+        self.assertIn("type=folder", opened)
+        self.assertTrue(opened.startswith("https://www.datalumos.org/"))
+
+    def test_folder_walk_stops_at_max_depth(self) -> None:
+        """A folder nested past the depth limit is reported instead of followed."""
+        entries = [
+            {
+                "name": "nested",
+                "size": "",
+                "href": "?path=/a&type=folder",
+                "isFolder": "true",
+            }
+        ]
+        stats = _stats_including_view_folders(
+            MagicMock(), entries, depth=_MAX_FOLDER_DEPTH
+        )
+        self.assertEqual(stats.error, "folder_walk_too_deep")
 
     def test_from_page_parses_view_table_layout(self) -> None:
         """Test from_page handles published view table (table-striped, Name/Size headers)."""

@@ -6,13 +6,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
+from urllib.parse import urljoin
 
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from utils.file_utils import format_file_size, parse_file_size_to_bytes
+from utils.Logger import Logger
 
 SIZE_TOLERANCE = 0.10
 DEFAULT_RECORDS_PER_PAGE = 100
+_MAX_FOLDER_DEPTH = 25
 _PAGE_SIZE_SELECTORS = ("#pageSizeOptions", "#recordsPerPage")
 _WORKSPACE_PAGER_SELECTOR = "#recordsPerPage"
 
@@ -192,7 +195,11 @@ _EXTRACT_VIEW_FILES_JS = """
         sizeCol >= 0 && sizeCol < tds.length
           ? (tds[sizeCol].innerText || '').trim()
           : '';
-      files.push({ name, size: sizeText });
+      const link = tds[nameCol].querySelector('a');
+      const href = link ? (link.getAttribute('href') || '') : '';
+      const isFolder = !!tr.querySelector('i.glyphicon-folder-open')
+        || /(?:^|[?&])type=folder(?:&|$)/.test(href);
+      files.push({ name, size: sizeText, isFolder, href });
     }
     if (files.length > 0) {
       return { files };
@@ -215,7 +222,10 @@ class DatalumosViewFileStats:
     @classmethod
     def from_page(cls, page: Page) -> "DatalumosViewFileStats":
         """
-        Evaluate the view page DOM and return parsed file statistics.
+        Read the published view, including files inside folders.
+
+        Folder rows (blank size, folder icon) are opened and their files are
+        added to the count and byte total. A blank folder size is not a file size.
 
         Args:
             page: Playwright page positioned on a DataLumos project view URL.
@@ -223,39 +233,7 @@ class DatalumosViewFileStats:
         Returns:
             Parsed stats, or an instance with ``error`` set on failure.
         """
-        raw = _evaluate_view_files(page)
-        if not isinstance(raw, dict):
-            return cls(error="invalid_page_response")
-        if raw.get("error"):
-            return cls(error=str(raw["error"]))
-        files = raw.get("files")
-        if not isinstance(files, list) or not files:
-            return cls(error="no_files_found")
-        names: List[str] = []
-        sizes: List[str] = []
-        for entry in files:
-            if not isinstance(entry, dict):
-                continue
-            name = str(entry.get("name") or "").strip()
-            if not name:
-                continue
-            names.append(name)
-            sizes.append(str(entry.get("size") or "").strip())
-        if not sizes:
-            return cls(error="no_files_found")
-        name_tuple = tuple(names)
-        total = sum_sizes_text(sizes)
-        if total is None:
-            return cls(
-                file_count=len(sizes),
-                file_names=name_tuple,
-                error="unparseable_file_sizes",
-            )
-        return cls(
-            file_count=len(sizes),
-            total_bytes=total,
-            file_names=name_tuple,
-        )
+        return view_file_stats_from_page(page)
 
 
 def _evaluate_view_files(page: Page) -> object:
@@ -277,6 +255,130 @@ def _evaluate_view_files(page: Page) -> object:
         page.wait_for_load_state("domcontentloaded", timeout=120000)
         page.wait_for_load_state("networkidle", timeout=120000)
         return page.evaluate(_EXTRACT_VIEW_FILES_JS)
+
+
+def view_file_stats_from_page(page: Page, *, _depth: int = 0) -> DatalumosViewFileStats:
+    """
+    Sum files on the current published listing, descending into folders.
+
+    Args:
+        page: Playwright page on a DataLumos project view or folder listing.
+        _depth: Folder nesting depth already entered.
+
+    Returns:
+        Combined file count and size, or stats with ``error`` set.
+    """
+    entries, error = _parse_view_entries(_evaluate_view_files(page))
+    if error == "no_files_found" and _depth > 0:
+        return DatalumosViewFileStats()
+    if error:
+        return DatalumosViewFileStats(error=error)
+    return _stats_including_view_folders(page, entries, depth=_depth)
+
+
+def _parse_view_entries(raw: object) -> tuple[list[dict[str, str]], Optional[str]]:
+    """Turn a view-page evaluate payload into row dicts."""
+    if not isinstance(raw, dict):
+        return [], "invalid_page_response"
+    if raw.get("error"):
+        return [], str(raw["error"])
+    files = raw.get("files")
+    if not isinstance(files, list) or not files:
+        return [], "no_files_found"
+    entries: list[dict[str, str]] = []
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        entries.append(
+            {
+                "name": name,
+                "size": str(item.get("size") or "").strip(),
+                "href": str(item.get("href") or "").strip(),
+                "isFolder": "true" if _payload_is_folder(item) else "",
+            }
+        )
+    if not entries:
+        return [], "no_files_found"
+    return entries, None
+
+
+def _payload_is_folder(item: dict[str, object]) -> bool:
+    """Return True when an evaluate row is a published-view folder."""
+    flag = item.get("isFolder")
+    if flag is True or str(flag).lower() == "true":
+        return True
+    href = str(item.get("href") or "")
+    return "type=folder" in href
+
+
+def _stats_including_view_folders(
+    page: Page,
+    entries: list[dict[str, str]],
+    *,
+    depth: int,
+) -> DatalumosViewFileStats:
+    """Sum files at this level and recurse into folder rows."""
+    names, sizes, folders = _split_view_entries(entries)
+    total = 0 if not sizes else sum_sizes_text(sizes)
+    if sizes and total is None:
+        return DatalumosViewFileStats(
+            file_count=len(names),
+            file_names=tuple(names),
+            error="unparseable_file_sizes",
+        )
+    if depth >= _MAX_FOLDER_DEPTH and folders:
+        return DatalumosViewFileStats(error="folder_walk_too_deep")
+    count = len(names)
+    bytes_total = int(total or 0)
+    all_names = list(names)
+    for folder_name, href in folders:
+        nested = _read_published_folder(page, folder_name, href, depth)
+        if nested.error:
+            return nested
+        count += nested.file_count
+        bytes_total += nested.total_bytes
+        all_names.extend(nested.file_names)
+    return DatalumosViewFileStats(
+        file_count=count,
+        total_bytes=bytes_total,
+        file_names=tuple(all_names),
+    )
+
+
+def _split_view_entries(
+    entries: list[dict[str, str]],
+) -> tuple[list[str], list[str], list[tuple[str, str]]]:
+    """Separate file names and sizes from folder name/href pairs."""
+    names: list[str] = []
+    sizes: list[str] = []
+    folders: list[tuple[str, str]] = []
+    for entry in entries:
+        if entry.get("isFolder") == "true":
+            folders.append((entry["name"], entry.get("href") or ""))
+            continue
+        names.append(entry["name"])
+        sizes.append(entry["size"])
+    return names, sizes, folders
+
+
+def _read_published_folder(
+    page: Page,
+    folder_name: str,
+    href: str,
+    depth: int,
+) -> DatalumosViewFileStats:
+    """Open one published folder and return the files listed inside it."""
+    if not href:
+        return DatalumosViewFileStats(error=f"folder_link_missing: {folder_name}")
+    target = urljoin(page.url, href)
+    Logger.info("Opening published folder %s", folder_name)
+    page.goto(target, wait_until="domcontentloaded", timeout=120000)
+    page.wait_for_load_state("networkidle", timeout=120000)
+    set_records_per_page(page)
+    return view_file_stats_from_page(page, _depth=depth + 1)
 
 
 def sum_sizes_text(sizes: Sequence[str]) -> Optional[int]:

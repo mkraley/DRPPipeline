@@ -3,7 +3,9 @@ National Park Service collector for DRP Pipeline.
 
 Downloads public IRMA Digital Files for one sourced Project. Products become
 subfolders; project-level files and Data Table Info sit in the NPS folder root.
-Each Product is fetched and downloaded before the next one starts.
+Each Product is fetched and downloaded before the next one starts. After the
+1 GiB budget, remaining Products are still read so their folders and
+product_metadata.json files are written.
 Run via orchestrator when ``Args.source`` is ``nps``::
 
     python main.py collect --source nps
@@ -186,6 +188,8 @@ class NpsCollector(CollectorBase):
                 used_folders,
                 rename_notes,
                 notes,
+                crumb,
+                product_profiles,
             )
         if not all_files and not pending_files:
             record_error(drpid, "No public Digital Files found for this IRMA Project")
@@ -243,15 +247,7 @@ class NpsCollector(CollectorBase):
             all_files.extend(files)
             notes.extend(batch_notes)
             product_profiles.append((folder, profile))
-            write_landing_metadata(
-                folder_path / folder / PRODUCT_METADATA_NAME,
-                profile,
-                breadcrumb=product_breadcrumb_text(
-                    crumb,
-                    product_id=reference_id_of(profile),
-                    product_title=profile_title(profile),
-                ),
-            )
+            self._write_product_metadata(folder_path, folder, profile, crumb)
             if skipped:
                 leftover = products[index:]
                 if leftover:
@@ -271,6 +267,8 @@ class NpsCollector(CollectorBase):
                         used_folders,
                         rename_notes,
                         notes,
+                        crumb,
+                        product_profiles,
                     )
                 return True
         return False
@@ -284,8 +282,10 @@ class NpsCollector(CollectorBase):
         used_folders: set[str],
         rename_notes: list[str],
         notes: list[str],
+        crumb: str,
+        product_profiles: list[tuple[str, dict[str, Any]]],
     ) -> None:
-        """Plan remaining Products and record a skip note for each missing file."""
+        """Plan remaining Products, write their metadata, and note missing files."""
         total = len(products)
         for index, product in enumerate(products, 1):
             product_id = int(product["irma_product_id"])
@@ -296,11 +296,15 @@ class NpsCollector(CollectorBase):
                 total,
                 product_id,
             )
-            planned = self._plan_remaining_product(
+            planned, folder, profile = self._plan_remaining_product(
                 drpid, product, folder_path, used_folders, rename_notes
             )
             pending_files.extend(planned)
             notes.extend(_skip_notes_for_missing(folder_path, planned))
+            if profile is None:
+                continue
+            product_profiles.append((folder, profile))
+            self._write_product_metadata(folder_path, folder, profile, crumb)
 
     def _plan_remaining_product(
         self,
@@ -309,30 +313,37 @@ class NpsCollector(CollectorBase):
         folder_path: Path,
         used_folders: set[str],
         rename_notes: list[str],
-    ) -> list[NpsPlannedFile]:
+    ) -> tuple[list[NpsPlannedFile], str, dict[str, Any] | None]:
         """Assign a product folder and return its planned files without downloading."""
         title = str(product.get("title") or "product")
         folder = unique_product_folder_name(title, used_folders, rename_notes)
-        planned = self._plan_product_files(drpid, int(product["irma_product_id"]), folder)
+        profile = self._fetch_profile(drpid, int(product["irma_product_id"]))
+        if profile is None:
+            return [], folder, None
+        planned = self._files_for_profile(drpid, profile, folder)
         planned, dup_notes = drop_duplicate_planned_files(planned)
         rename_notes.extend(dup_notes)
-        planned, path_notes, _renames = fit_planned_files(folder_path, planned)
+        planned, path_notes, dir_renames = fit_planned_files(folder_path, planned)
         rename_notes.extend(path_notes)
-        return planned
+        return planned, dir_renames.get(folder, folder), profile
 
-    def _plan_product_files(
+    def _write_product_metadata(
         self,
-        drpid: int,
-        product_id: int,
-        relative_dir: str = "",
-    ) -> list[NpsPlannedFile]:
-        """Return planned Digital Files for one Product without downloading them."""
-        profile = self._fetch_profile(drpid, product_id)
-        if profile is None:
-            return []
-        planned = self._files_for_profile(drpid, profile, relative_dir)
-        planned, _notes = drop_duplicate_planned_files(planned)
-        return planned
+        folder_path: Path,
+        folder: str,
+        profile: dict[str, Any],
+        crumb: str,
+    ) -> None:
+        """Write product_metadata.json into the product folder."""
+        write_landing_metadata(
+            folder_path / folder / PRODUCT_METADATA_NAME,
+            profile,
+            breadcrumb=product_breadcrumb_text(
+                crumb,
+                product_id=reference_id_of(profile),
+                product_title=profile_title(profile),
+            ),
+        )
 
     def _ingest_profile(
         self,

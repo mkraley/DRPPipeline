@@ -124,7 +124,7 @@ To re-run a module against error statuses from the CLI, use ``--retry`` (selects
 | `resume_upload` | `downloaded` | `finish wait` |
 | `upload_large_files` | `uploaded - large file` (below `--max-project-size`, default 25 GB), `uploaded - expanded` (any size) | `finish wait` |
 | `publish` | `uploaded`. Plus sheet-only: `not_found`, `no_links`, `no dataset`, `gigantic upload`, `needs scripting`, `collector_hold - *` | `published` then `updated_inventory` (browser path); or `updated_*` (sheet-only path) |
-| `verify_upload` | `updated_inventory`, `updated_inventory-error` | Unchanged on match; `re-uploaded` on repair; `updated_inventory-error` on mismatch; retry success → `updated_inventory` |
+| `verify_upload` | `updated_inventory`, `updated_inventory-error` | Unchanged on match; `re-uploaded` on repair; `updated_inventory-error` on mismatch; retry success → `updated_inventory`. File count and size include files inside published-view folders. |
 | `republish` | `re-uploaded` | `updated_inventory` (V2 URL / republish note) |
 
 ---

@@ -347,7 +347,7 @@ class TestNpsCollector(unittest.TestCase):
         write_aria2: MagicMock,
         _mock_sidecars: MagicMock,
     ) -> None:
-        """Projected file_size adds catalog sizes for files left undownloaded."""
+        """Deferred products keep a metadata folder and are counted in file_size."""
         collector, client, store, downloader = self._collector()
         later = {
             "referenceId": 663486,
@@ -420,7 +420,11 @@ class TestNpsCollector(unittest.TestCase):
         planned = captured.args[2]
         later = next(entry for entry in planned if entry.filename == "later.zip")
         self.assertTrue(later.relative_dir)
-        on_disk = count_files(Path(result["folder_path"]))
+        folder = Path(result["folder_path"])
+        metadata = folder / later.relative_dir / "product_metadata.json"
+        self.assertTrue(metadata.is_file())
+        self.assertFalse((folder / later.relative_dir / "later.zip").is_file())
+        on_disk = count_files(folder)
         self.assertEqual(result["num_files"], on_disk + 2)
 
     @patch("collectors.NpsCollector.record_error")
