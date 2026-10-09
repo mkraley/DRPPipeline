@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Scoreboard } from "./Scoreboard";
-import { MetadataForm } from "./MetadataForm";
+import { MetadataForm, METADATA_DRAFT_KEY } from "./MetadataForm";
 import { useCollectorStore } from "../store";
 
 interface CollectorRightPaneProps {
@@ -35,6 +35,7 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
     batchRunning,
   } = useCollectorStore();
   const [toast, setToast] = useState<string | null>(null);
+  const [inferring, setInferring] = useState(false);
 
   useEffect(() => {
     const updateStatus = () => {
@@ -87,6 +88,57 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
     const t = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(t);
   }, [toast]);
+
+  const fillFromFiles = useCallback(async () => {
+    if (drpid == null) return;
+    setInferring(true);
+    try {
+      const res = await fetch("/api/infer-metadata", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ drpid }),
+      });
+      const data = (await res.json()) as { fields?: Record<string, string>; error?: string };
+      if (!res.ok) {
+        setToast(data.error || "Could not read the project files.");
+        return;
+      }
+      const current = useCollectorStore.getState().metadata;
+      const fields = data.fields ?? {};
+      const keys = ["keywords", "geographic_coverage", "data_types", "time_start", "time_end"] as const;
+      const labels: Record<(typeof keys)[number], string> = {
+        keywords: "keywords",
+        geographic_coverage: "geography",
+        data_types: "data type",
+        time_start: "start date",
+        time_end: "end date",
+      };
+      const updates: Partial<typeof current> = {};
+      const entered: string[] = [];
+      for (const key of keys) {
+        const value = (fields[key] || "").trim();
+        if (!value || (current[key] || "").trim()) continue;
+        updates[key] = value;
+        entered.push(labels[key]);
+      }
+      if (!entered.length) {
+        setToast("Nothing to add from the summary or downloaded files.");
+        return;
+      }
+      setMetadata(updates);
+      try {
+        const next = { ...current, ...updates };
+        sessionStorage.setItem(METADATA_DRAFT_KEY + drpid, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      setToast(`Entered ${formatEnteredList(entered)}.`);
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : "Could not read the project files.");
+    } finally {
+      setInferring(false);
+    }
+  }, [drpid, setMetadata]);
 
   const runCopyAndOpen = useCallback(
     async (overrides?: { drpid: number; sourceUrl: string }) => {
@@ -269,6 +321,15 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
             <button
               type="button"
               className="btn-top"
+              title="Fill empty keywords, geography, data type, and dates from the summary and downloaded files"
+              onClick={fillFromFiles}
+              disabled={loading || inferring}
+            >
+              Fill metadata
+            </button>
+            <button
+              type="button"
+              className="btn-top"
               title="Save metadata to database"
               onClick={save}
               disabled={loading}
@@ -313,4 +374,11 @@ export function CollectorRightPane({ onShowLog }: CollectorRightPaneProps) {
       )}
     </div>
   );
+}
+
+/** Join field labels for the rail toast. */
+function formatEnteredList(items: string[]): string {
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
 }

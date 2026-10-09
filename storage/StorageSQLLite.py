@@ -152,7 +152,8 @@ class StorageSQLLite:
         Initialize the database connection and create schema if needed.
         
         Sets up SQLite with WAL mode for concurrent access. Creates the database
-        file and tables if they don't exist.
+        file and pipeline tables if they don't exist. NPS hierarchy tables are
+        created by ``NpsHierarchyStore`` when NPS sourcing uses them.
         
         Args:
             db_path: Path to SQLite database file. If None, uses 'drp_pipeline.db'
@@ -194,7 +195,6 @@ class StorageSQLLite:
             self._add_missing_columns()
             self._reorder_projects_columns_if_needed()
             self._fill_missing_next_steps()
-            self._ensure_nps_hierarchy_schema()
             self._ensure_project_files_schema()
 
             self._initialized = True
@@ -233,13 +233,6 @@ class StorageSQLLite:
 
         assert self._connection is not None
         ProjectFileStore.ensure_schema(self._connection)
-
-    def _ensure_nps_hierarchy_schema(self) -> None:
-        """Create NPS Program/Project/Product tables when missing."""
-        from storage.NpsHierarchyStore import NpsHierarchyStore
-
-        assert self._connection is not None
-        NpsHierarchyStore.ensure_schema(self._connection)
 
     def sqlite_connection(self) -> sqlite3.Connection:
         """

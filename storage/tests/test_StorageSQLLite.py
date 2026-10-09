@@ -100,8 +100,7 @@ class TestStorageSQLLite(unittest.TestCase):
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name IN ('nps_projects', 'nps_products')"
         )
-        nps_tables = {row[0] for row in cursor.fetchall()}
-        self.assertEqual(nps_tables, {"nps_projects", "nps_products"})
+        self.assertEqual(cursor.fetchall(), [])
     
     def test_initialize_enables_wal_mode(self) -> None:
         """Test that WAL mode is enabled for concurrent access."""

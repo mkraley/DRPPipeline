@@ -72,8 +72,7 @@ def print_plan(
     code: str,
     template_name: str,
     section: dict[str, Any],
-    copy_url: str,
-    editor_email: str,
+    template_tab: str,
 ) -> None:
     """
     Print what a live run would create.
@@ -81,18 +80,16 @@ def print_plan(
     Args:
         code: New source code.
         template_name: Template source key.
-        section: Planned config section (sheet id may be a placeholder).
-        copy_url: Link that copies the template into the signed-in Google account.
-        editor_email: Service account that must be an editor of that copy.
+        section: Planned config section.
+        template_tab: Worksheet whose header row will be copied.
     """
+    sheet_id = section["google_sheet_id"]
     print(f"Dry run: would create source '{code}' from template '{template_name}'.")
     print(f"  database: {section['db_path']}")
     print(f"  output: {section['base_output_dir']}")
-    print(f"  tab: {section['google_sheet_name']}")
+    print(f"  spreadsheet: https://docs.google.com/spreadsheets/d/{sheet_id}/edit")
+    print(f"  new tab: {section['google_sheet_name']} (headers copied from {template_tab})")
     print(f"  DataLumos username: {section['datalumos_username'] or '(unset)'}")
-    print(f"  make a copy in your Google account: {copy_url}")
-    if editor_email:
-        print(f"  share that copy with {editor_email} as Editor")
     print("  DataLumos password is left blank.")
 
 
@@ -103,7 +100,7 @@ def print_created(code: str, section: dict[str, Any], sheet_url: str) -> None:
     Args:
         code: New source code.
         section: Config section that was written.
-        sheet_url: URL of the new spreadsheet.
+        sheet_url: URL of the new worksheet.
     """
     username = section["datalumos_username"] or "(set datalumos_username)"
     print(f"Source '{code}' is active in config.json.")

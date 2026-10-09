@@ -31,41 +31,6 @@ from utils.Logger import Logger, _get_current_drpid
 from utils.SoftStop import SoftStop
 
 
-# Batch modules that collect data from source URLs (not upload/publish/verify).
-_COLLECTOR_MODULES = frozenset({
-    "collect",
-    "collect_adc_globus",
-    "survey_adc_globus",
-})
-
-
-def _maybe_claim_inventory_sheet(drpid: int, module: str) -> None:
-    """
-    After a successful collector run, set Claimed on the inventory sheet row.
-
-    Args:
-        drpid: Project DRPID.
-        module: Orchestrator module name.
-    """
-    if module not in _COLLECTOR_MODULES:
-        return
-    from utils.sheet_claimed_update import (
-        claim_project_on_inventory_sheet,
-        should_claim_after_collector_status,
-        should_claim_inventory_sheet,
-    )
-
-    if not should_claim_inventory_sheet():
-        return
-    record = Storage.get(drpid)
-    if not record:
-        return
-
-    if not should_claim_after_collector_status(record.get("status")):
-        return
-    claim_project_on_inventory_sheet(drpid, record)
-
-
 # Registry mapping module names to their class names and prerequisites
 MODULES: Dict[str, Dict[str, Any]] = {
     "noop": {
@@ -806,7 +771,6 @@ class Orchestrator:
                         instance.run(drpid)
                         if retry:
                             _finalize_retry_project(drpid)
-                        _maybe_claim_inventory_sheet(drpid, module)
                         project_finished = True
                     except PipelineFatal:
                         raise
@@ -850,7 +814,6 @@ class Orchestrator:
                             module_instance.run(drpid)
                             if retry:
                                 _finalize_retry_project(drpid)
-                            _maybe_claim_inventory_sheet(drpid, module)
                             project_finished = True
                         except (KeyboardInterrupt, PipelineFatal):
                             raise

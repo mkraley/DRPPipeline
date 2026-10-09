@@ -374,14 +374,11 @@ When `inventory_sheet_format` is `baserow_batch`, **File extensions** are writte
 
 **New sources:** each new `sources.<name>` section (and configs created by `python main.py setup`) should include `inventory_sheet_format: baserow_batch`, `baserow_contact`, and `default_metadata_available: false`. Existing CDC/AHRQ-style sources keep the global `data_inventories` default unless they set these keys.
 
-Create those pieces from an existing source (database, download folder, config section, and a copy of that source's spreadsheet). The script prints a Make-a-copy link. Open it in the Google account that should own the file, share the copy with the service account as Editor, and paste the new URL. The script then renames the template tab (for example `NPS` becomes `NRC`) and clears every row under the header. The DataLumos password is left blank.
-
-A service account has no Drive storage, so the script does not copy the file with the Drive API. That call fails with `storageQuotaExceeded` even when the signed-in Google account still has free space.
+Create those pieces from an existing source (database, download folder, and config section). Every new source uses the shared inventory spreadsheet `1WwOfNtWUvMC69HCTO95Rk-KbjpVwZWJilgeihbdv_3A`. The script adds a worksheet named with the source initials and copies row 1 from the tab `Baserow Batch Import Template (please download)`. The new database has the pipeline tables only; NPS hierarchy tables are created when NPS sourcing runs. The DataLumos password is left blank.
 
 ```powershell
 python scripts/start_new_source.py nrc
 python scripts/start_new_source.py nrc --template nps
-python scripts/start_new_source.py nrc --sheet-url "https://docs.google.com/spreadsheets/d/SHEET_ID/edit"
 python scripts/start_new_source.py nrc --dry-run
 ```
 
@@ -513,6 +510,8 @@ A **Save as PDF** button will be overlaid in the lower right corner. Press this 
 Now explore the links on the source page to find other relevant pages and/or datasets. As you encounter HTML pages of interest, press **Save as PDF**. If you click on a link which results in a download that would otherwise end up in your Downloads folder, the collector will intercept the downloaded file and move it to the output folder for the project. 
 
 **Download all data links:** On catalog pages with many file links (for example [CMS public use files](https://www.cms.gov/marketplace/resources/data/public-use-files)), use **Download all data links** instead of clicking each file. In the extension (while **Collecting**), a purple button appears above **Save as Markdown**; it scans the main page content for PDF, CSV, ZIP, and similar links and skips header, footer, and navigation. The collector SPA has the same button in the top rail when a source URL is loaded—it fetches the source page server-side and downloads the same kinds of links. Downloads run one at a time with a short delay between files; use **Pause**, **Resume**, or **Cancel** while a batch is running. Links already on the scoreboard are skipped.
+
+**Fill metadata:** After a project is loaded, **Fill metadata** reads the title, summary, and files already in the project folder. It fills empty geography, data type, and start and end dates when those values are written in that text or in the files (for example "since Q4 2000", "United States", or a Year column). Keywords come from phrases in the title and summary, from column headings, and from short category lists in a spreadsheet. It leaves a field blank when the evidence is not there, and it does not replace a value you already entered. Click **Save** to store the result.
 
 The collector also attempts to preload the Metadata fields where possible. Update these fields (typically from the source page) by manual entry or copy/paste.
 

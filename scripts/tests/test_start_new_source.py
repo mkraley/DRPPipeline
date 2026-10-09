@@ -12,13 +12,14 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from scripts.new_source_google import prepare_existing_spreadsheet
+from scripts.new_source_google import add_inventory_tab
 from scripts.new_source_setup import build_source_config, normalize_source_code
 from scripts.new_source_sheet import (
-    clear_values_range,
+    HEADER_TEMPLATE_TAB,
+    INVENTORY_SPREADSHEET_ID,
+    assert_tab_available,
     find_data_tab,
-    spreadsheet_id_from_text,
-    spreadsheet_title,
+    header_values_range,
 )
 from scripts.start_new_source import run
 
@@ -64,28 +65,20 @@ class TestNewSourcePlan(unittest.TestCase):
         self.assertNotIn("nps_collection_id", section)
         self.assertTrue(section["base_output_dir"].endswith("NRCData"))
 
-    def test_spreadsheet_title_uses_batch_import_name(self) -> None:
-        """The copied file is named with the new initials."""
-        self.assertEqual(spreadsheet_title("NRC"), "NRC Batch Import")
-
     def test_find_data_tab_reports_available_tabs(self) -> None:
         """A missing template tab lists the worksheets that were found."""
         with self.assertRaises(ValueError) as raised:
             find_data_tab([{"title": "Mapping", "sheetId": 1}], "NPS")
         self.assertIn("Mapping", str(raised.exception))
 
-    def test_clear_values_range_quotes_tab_name(self) -> None:
-        """Data rows start at row 2 and the tab name is quoted."""
-        self.assertEqual(clear_values_range("O'Brien"), "'O''Brien'!2:1000000")
+    def test_header_values_range_quotes_tab_name(self) -> None:
+        """The header range is row 1 and the tab name is quoted."""
+        self.assertEqual(header_values_range("O'Brien"), "'O''Brien'!1:1")
 
-    def test_spreadsheet_id_from_text(self) -> None:
-        """A Sheets URL and a bare id both yield the spreadsheet id."""
-        url = "https://docs.google.com/spreadsheets/d/abc123456789012345678/edit"
-        self.assertEqual(spreadsheet_id_from_text(url), "abc123456789012345678")
-        self.assertEqual(
-            spreadsheet_id_from_text("abc123456789012345678"),
-            "abc123456789012345678",
-        )
+    def test_assert_tab_available_rejects_existing_name(self) -> None:
+        """A tab that already exists is not created again."""
+        with self.assertRaises(ValueError):
+            assert_tab_available([{"title": "nrc"}], "NRC")
 
 
 class TestStartNewSourceCommand(unittest.TestCase):
@@ -103,6 +96,7 @@ class TestStartNewSourceCommand(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("initials", result.stdout)
+        self.assertNotIn("sheet-url", result.stdout)
 
     def test_dry_run_leaves_config_unchanged(self) -> None:
         """Dry run prints the plan and does not write a database or config entry."""
@@ -117,26 +111,27 @@ class TestStartNewSourceCommand(unittest.TestCase):
             self.assertFalse((root / "nrc.db").exists())
 
     @patch("scripts.start_new_source.google_sheets_client")
-    @patch("scripts.start_new_source.prepare_existing_spreadsheet")
+    @patch("scripts.start_new_source.add_inventory_tab")
     def test_run_creates_source(
         self,
-        mock_prepare: MagicMock,
+        mock_add_tab: MagicMock,
         mock_clients: MagicMock,
     ) -> None:
-        """A live run uses the pasted sheet, creates the database, and switches source."""
-        mock_prepare.return_value = "https://docs.google.com/spreadsheets/d/new-id/edit"
+        """A live run adds a tab on the shared spreadsheet and switches source."""
+        mock_add_tab.return_value = (
+            f"https://docs.google.com/spreadsheets/d/{INVENTORY_SPREADSHEET_ID}/edit#gid=9"
+        )
         mock_clients.return_value = MagicMock()
-        sheet_url = "https://docs.google.com/spreadsheets/d/new-sheet-id-value-ok/edit"
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_path = root / "config.json"
             config_path.write_text(json.dumps(_config(root)), encoding="utf-8")
-            code = run(["NRC", "--config", str(config_path), "--sheet-url", sheet_url])
+            code = run(["NRC", "--config", str(config_path)])
             self.assertEqual(code, 0)
             saved = json.loads(config_path.read_text(encoding="utf-8"))
             self.assertEqual(saved["source"], "nrc")
             section = saved["sources"]["nrc"]
-            self.assertEqual(section["google_sheet_id"], "new-sheet-id-value-ok")
+            self.assertEqual(section["google_sheet_id"], INVENTORY_SPREADSHEET_ID)
             self.assertEqual(section["datalumos_password"], "")
             self.assertTrue((root / "NRCData").is_dir())
             connection = sqlite3.connect(root / "nrc.db")
@@ -148,43 +143,50 @@ class TestStartNewSourceCommand(unittest.TestCase):
             }
             connection.close()
             self.assertIn("projects", tables)
-        self.assertEqual(mock_prepare.call_args.args[1], "new-sheet-id-value-ok")
-        self.assertEqual(mock_prepare.call_args.args[2], "NPS")
-        self.assertEqual(mock_prepare.call_args.args[3], "NRC")
+            self.assertNotIn("nps_projects", tables)
+            self.assertNotIn("nps_products", tables)
+        self.assertEqual(mock_add_tab.call_args.args[1], INVENTORY_SPREADSHEET_ID)
+        self.assertEqual(mock_add_tab.call_args.args[2], HEADER_TEMPLATE_TAB)
+        self.assertEqual(mock_add_tab.call_args.args[3], "NRC")
 
-    def test_prepare_renames_tab_and_clears_rows(self) -> None:
-        """The user-owned copy is renamed and data rows under the header are cleared."""
+    def test_add_inventory_tab_copies_header_only(self) -> None:
+        """A new tab is added and receives only the template header row."""
         sheets = MagicMock()
         sheets.spreadsheets.return_value.get.return_value.execute.return_value = {
-            "properties": {"title": "NPS inventory"},
             "sheets": [
                 {"properties": {"title": "NPS", "sheetId": 7}},
                 {"properties": {"title": "Mapping", "sheetId": 8}},
             ],
         }
-        link = prepare_existing_spreadsheet(sheets, "abc", "NPS", "NRC")
-        self.assertEqual(link, "https://docs.google.com/spreadsheets/d/abc/edit")
-        rename = sheets.spreadsheets.return_value.batchUpdate.call_args.kwargs["body"]
-        tab = rename["requests"][0]["updateSheetProperties"]["properties"]
-        file_title = rename["requests"][1]["updateSpreadsheetProperties"]["properties"]
-        self.assertEqual(tab["title"], "NRC")
-        self.assertEqual(tab["sheetId"], 7)
-        self.assertEqual(file_title["title"], "NRC Batch Import")
-        cleared = sheets.spreadsheets.return_value.values.return_value.clear.call_args.kwargs
-        self.assertEqual(cleared["range"], "'NRC'!2:1000000")
+        values = sheets.spreadsheets.return_value.values.return_value
+        values.get.return_value.execute.return_value = {"values": [["Title", "URL"]]}
+        sheets.spreadsheets.return_value.batchUpdate.return_value.execute.return_value = {
+            "replies": [{"addSheet": {"properties": {"sheetId": 99, "title": "NRC"}}}]
+        }
+        link = add_inventory_tab(sheets, "abc", "NPS", "NRC")
+        self.assertEqual(link, "https://docs.google.com/spreadsheets/d/abc/edit#gid=99")
+        added = sheets.spreadsheets.return_value.batchUpdate.call_args.kwargs["body"]
+        self.assertEqual(
+            added["requests"],
+            [{"addSheet": {"properties": {"title": "NRC"}}}],
+        )
+        written = values.update.call_args.kwargs
+        self.assertEqual(written["range"], "'NRC'!1:1")
+        self.assertEqual(written["body"], {"values": [["Title", "URL"]]})
 
-    def test_prepare_names_sheet_id_when_rename_fails(self) -> None:
-        """A failed rename still reports the spreadsheet id."""
+    def test_add_inventory_tab_names_sheet_id_when_add_fails(self) -> None:
+        """A failed add still reports the spreadsheet id."""
         sheets = MagicMock()
         sheets.spreadsheets.return_value.get.return_value.execute.return_value = {
-            "properties": {"title": "NPS"},
             "sheets": [{"properties": {"title": "NPS", "sheetId": 7}}],
         }
+        values = sheets.spreadsheets.return_value.values.return_value
+        values.get.return_value.execute.return_value = {"values": [["Title"]]}
         sheets.spreadsheets.return_value.batchUpdate.return_value.execute.side_effect = RuntimeError(
-            "rename failed"
+            "add failed"
         )
         with self.assertRaises(RuntimeError) as raised:
-            prepare_existing_spreadsheet(sheets, "abc", "NPS", "NRC")
+            add_inventory_tab(sheets, "abc", "NPS", "NRC")
         self.assertIn("abc", str(raised.exception))
 
 

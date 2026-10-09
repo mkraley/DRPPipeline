@@ -12,7 +12,7 @@ import os
 import queue
 import threading
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, Generator, List, Mapping, Optional, Tuple
 
 from utils.file_utils import folder_extensions_and_size, format_file_size, sanitize_filename
 from utils.title_utils import normalize_inventory_title
@@ -34,6 +34,8 @@ def save_metadata(
     download_date: str,
     status_notes: Optional[str] = None,
     status_override: Optional[str] = None,
+    geographic_coverage: Optional[str] = None,
+    data_types: Optional[str] = None,
 ) -> None:
     """
     Update the project record in Storage with metadata and folder stats (extensions, file_size).
@@ -45,6 +47,8 @@ def save_metadata(
         time_start, time_end: Date range.
         download_date: When data was downloaded.
         status_override: If set, use instead of default "collected" (e.g. "collector_hold - reason").
+        geographic_coverage: Geography, when the request included that field.
+        data_types: Data type labels, when the request included that field.
     """
     from interactive_collector.api_projects import _ensure_storage
 
@@ -64,6 +68,10 @@ def save_metadata(
         "time_end": time_end,
         "download_date": download_date,
     }
+    if geographic_coverage is not None:
+        values["geographic_coverage"] = geographic_coverage
+    if data_types is not None:
+        values["data_types"] = data_types
     if folder_path_str:
         values["folder_path"] = folder_path_str
         folder_path = Path(folder_path_str)
@@ -85,17 +93,22 @@ def save_metadata(
     except ValueError:
         raise
 
-    from utils.sheet_claimed_update import (
-        claim_project_on_inventory_sheet,
-        should_claim_after_collector_status,
-        should_claim_inventory_sheet,
-    )
 
-    if (
-        should_claim_after_collector_status(values.get("status"))
-        and should_claim_inventory_sheet()
-    ):
-        claim_project_on_inventory_sheet(drpid)
+def coverage_kwargs(source: Mapping[str, Any]) -> Dict[str, str]:
+    """
+    Return geography and data type when the caller included those fields.
+
+    Accepts either Storage column names or ``metadata_`` form keys.
+    Absent keys are omitted so a save does not blank values it did not send.
+    """
+    found: Dict[str, str] = {}
+    for column in ("geographic_coverage", "data_types"):
+        form_key = f"metadata_{column}"
+        if column in source:
+            found[column] = str(source.get(column) or "").strip()
+        elif form_key in source:
+            found[column] = str(source.get(form_key) or "").strip()
+    return found
 
 
 # PDF generation: use "commit" so we only wait for the navigation to commit (response received).
@@ -252,5 +265,6 @@ def generate_save_progress(
                     time_end=metadata.get("time_end", ""),
                     download_date=metadata.get("download_date", ""),
                     status_notes=status_notes,
+                    **coverage_kwargs(metadata),
                 )
             yield f"DONE\t{item[1]}\n"

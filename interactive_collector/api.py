@@ -29,7 +29,8 @@ from interactive_collector.api_projects import (
     get_next_eligible_after,
     get_project_by_drpid,
 )
-from interactive_collector.api_save import generate_save_progress, save_metadata
+from interactive_collector.api_infer import infer_metadata_route
+from interactive_collector.api_save import coverage_kwargs, generate_save_progress, save_metadata
 from interactive_collector.api_scoreboard import add_download, add_to_scoreboard, clear_scoreboard, get_scoreboard_tree, get_scoreboard_urls
 from interactive_collector.collector_state import (
     get_metadata_from_page,
@@ -46,6 +47,7 @@ from utils.title_utils import normalize_inventory_title
 from utils.url_utils import BROWSER_HEADERS, is_valid_url
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
+api_bp.add_url_rule("/infer-metadata", view_func=infer_metadata_route, methods=["POST"])
 
 
 def _str_or_none(x: Any) -> str | None:
@@ -174,6 +176,8 @@ def projects_load() -> Any:
         "time_start": (proj.get("time_start") or "").strip(),
         "time_end": (proj.get("time_end") or "").strip(),
         "download_date": (proj.get("download_date") or "").strip(),
+        "geographic_coverage": (proj.get("geographic_coverage") or "").strip(),
+        "data_types": (proj.get("data_types") or "").strip(),
     }
     if not metadata["download_date"]:
         from datetime import date
@@ -621,6 +625,7 @@ def save_route() -> Any:
         "time_end": (request.form.get("metadata_time_end") or "").strip(),
         "download_date": (request.form.get("metadata_download_date") or "").strip(),
     }
+    metadata.update(coverage_kwargs(request.form))
     if drpid_str and not will_generate_pdfs:
         try:
             drpid = int(drpid_str)
@@ -639,6 +644,7 @@ def save_route() -> Any:
                 time_end=metadata["time_end"],
                 download_date=metadata["download_date"],
                 status_notes=status_notes,
+                **coverage_kwargs(metadata),
             )
         except (ValueError, TypeError):
             pass
@@ -714,6 +720,7 @@ def skip_route() -> Any:
             "time_end": (data.get("metadata_time_end") or "").strip(),
             "download_date": (data.get("metadata_download_date") or "").strip(),
         }
+        metadata.update(coverage_kwargs(data))
     else:
         drpid_val = (request.form.get("drpid") or "").strip()
         reason = (request.form.get("reason") or "").strip()
@@ -729,6 +736,7 @@ def skip_route() -> Any:
             "time_end": (request.form.get("metadata_time_end") or "").strip(),
             "download_date": (request.form.get("metadata_download_date") or "").strip(),
         }
+        metadata.update(coverage_kwargs(request.form))
     if skip_type and skip_type not in _SKIP_TYPES:
         return {"error": "invalid skip_type", "ok": False}, 400
     if not skip_type and not reason:
@@ -766,6 +774,7 @@ def skip_route() -> Any:
             download_date=metadata["download_date"],
             status_notes=status_notes,
             status_override=status_override,
+            **coverage_kwargs(metadata),
         )
         return {"ok": True}
     except (ValueError, RuntimeError) as e:

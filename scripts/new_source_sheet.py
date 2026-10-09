@@ -1,27 +1,42 @@
-"""Worksheet title and range helpers for a copied inventory spreadsheet."""
+"""Tab names and header ranges on the shared inventory spreadsheet."""
 
 from __future__ import annotations
 
-import re
-from typing import Any, Callable
+from typing import Any
+
+INVENTORY_SPREADSHEET_ID = "1WwOfNtWUvMC69HCTO95Rk-KbjpVwZWJilgeihbdv_3A"
+HEADER_TEMPLATE_TAB = "Baserow Batch Import Template (please download)"
 
 
-def spreadsheet_title(tab_name: str) -> str:
+def quoted_tab(tab_name: str) -> str:
     """
-    Return the file title for a new source spreadsheet.
+    Return a tab name quoted for an A1 range.
 
     Args:
-        tab_name: Uppercase source initials, such as ``NRC``.
+        tab_name: Worksheet title.
 
     Returns:
-        ``{tab_name} Batch Import``.
+        A single-quoted title with embedded quotes doubled.
     """
-    return f"{tab_name} Batch Import"
+    return "'" + tab_name.replace("'", "''") + "'"
+
+
+def header_values_range(tab_name: str) -> str:
+    """
+    Return the A1 range of the header row.
+
+    Args:
+        tab_name: Worksheet title.
+
+    Returns:
+        A quoted sheet range for row 1.
+    """
+    return f"{quoted_tab(tab_name)}!1:1"
 
 
 def find_data_tab(tabs: list[dict[str, Any]], tab_name: str) -> dict[str, Any]:
     """
-    Find the template worksheet that should be renamed.
+    Find the template worksheet whose header row should be copied.
 
     Args:
         tabs: Sheet property dicts with ``title`` and ``sheetId``.
@@ -47,85 +62,18 @@ def find_data_tab(tabs: list[dict[str, Any]], tab_name: str) -> dict[str, Any]:
     return exact[0]
 
 
-def make_copy_url(template_id: str) -> str:
+def assert_tab_available(tabs: list[dict[str, Any]], tab_name: str) -> None:
     """
-    Return the Google Sheets link that copies a file into the signed-in account.
+    Reject a worksheet title that is already in the spreadsheet.
 
     Args:
-        template_id: Spreadsheet id to copy.
-
-    Returns:
-        A ``/copy`` URL opened in the account that should own the new file.
-    """
-    return f"https://docs.google.com/spreadsheets/d/{template_id}/copy"
-
-
-def spreadsheet_id_from_text(text: str) -> str:
-    """
-    Return a spreadsheet id from a pasted URL or bare id.
-
-    Args:
-        text: User input.
-
-    Returns:
-        Spreadsheet id.
+        tabs: Sheet property dicts with ``title``.
+        tab_name: Proposed worksheet title.
 
     Raises:
-        ValueError: If ``text`` is not a Sheets URL or id.
+        ValueError: If a tab with the same name already exists.
     """
-    raw = text.strip()
-    if "/d/" in raw:
-        from utils.sheet_url_utils import parse_spreadsheet_url
-
-        sheet_id, _gid = parse_spreadsheet_url(raw)
-        return sheet_id
-    if re.fullmatch(r"[a-zA-Z0-9_-]{20,}", raw):
-        return raw
-    raise ValueError("Paste a Google Sheets URL or spreadsheet id.")
-
-
-def prompt_for_copied_spreadsheet(
-    template_id: str,
-    editor_email: str,
-    reader: Callable[[str], str] | None = None,
-) -> str:
-    """
-    Ask for a spreadsheet the user copied into their own Drive.
-
-    Service accounts have no Drive storage, so ``files.copy`` fails with
-    ``storageQuotaExceeded`` even when the human account has free space.
-
-    Args:
-        template_id: Spreadsheet to copy.
-        editor_email: Service account that must be an editor of the copy.
-        reader: Prompt function. Defaults to ``input``.
-
-    Returns:
-        Spreadsheet id of the user's copy.
-    """
-    ask = reader or input
-    print("The Drive API copy runs as the service account, which has no Drive storage.")
-    print("Your Google account quota is not the one that failed.")
-    print("1. Open this link while signed in to the account that should own the sheet:")
-    print(f"   {make_copy_url(template_id)}")
-    print("2. Make a copy.")
-    if editor_email:
-        print(f"3. Share that copy with {editor_email} as Editor.")
-    else:
-        print("3. Share that copy with the service account in google_credentials as Editor.")
-    print("4. Paste the new spreadsheet URL.")
-    return spreadsheet_id_from_text(ask("Spreadsheet URL: "))
-
-
-def clear_values_range(tab_name: str) -> str:
-    """
-    Return the A1 range of data rows under a header row.
-
-    Args:
-        tab_name: Worksheet title.
-
-    Returns:
-        A quoted sheet range starting at row 2.
-    """
-    escaped = tab_name.replace("'", "''")
-    return f"'{escaped}'!2:1000000"
+    for tab in tabs:
+        title = str(tab.get("title") or "")
+        if title.casefold() == tab_name.casefold():
+            raise ValueError(f"Tab '{tab_name}' already exists.")

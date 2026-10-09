@@ -190,21 +190,6 @@ class InventorySheetUpdaterBase(ABC):
             write_claimed=write_claimed,
         )
 
-    def update_claimed(
-        self,
-        source_url: str,
-        project: Optional[Dict[str, Any]] = None,
-    ) -> tuple[bool, Optional[str]]:
-        """Set the claim/contact column for ``source_url``."""
-        return self._update_row(
-            source_url=source_url,
-            required_columns=self._required_columns_claimed(),
-            optional_columns=self._optional_columns_claimed(),
-            build_requests=self._build_claimed_only_requests,
-            log_suffix=" (claimed)",
-            project=project,
-        )
-
     @abstractmethod
     def _required_columns_publish(self) -> List[str]:
         """Required header names for a successful publish update."""
@@ -220,14 +205,6 @@ class InventorySheetUpdaterBase(ABC):
     @abstractmethod
     def _optional_columns_sheet_only(self) -> List[str]:
         """Optional header names for sheet-only updates."""
-
-    @abstractmethod
-    def _required_columns_claimed(self) -> List[str]:
-        """Required header names for claim-only updates."""
-
-    @abstractmethod
-    def _optional_columns_claimed(self) -> List[str]:
-        """Optional header names for claim-only updates."""
 
     @abstractmethod
     def _resolve_metadata_for_row(
@@ -282,21 +259,6 @@ class InventorySheetUpdaterBase(ABC):
         **kwargs: Any,
     ) -> List[Dict[str, Any]]:
         """Build batchUpdate cells for sheet-only updates."""
-
-    @abstractmethod
-    def _build_claimed_only_requests(
-        self,
-        sheet_name: str,
-        row_number: int,
-        column_map: Dict[str, str],
-        append_new_row: bool,
-        source_url: str,
-        title_to_write: str = "",
-        agency_to_write: str = "",
-        office_to_write: str = "",
-        **kwargs: Any,
-    ) -> List[Dict[str, Any]]:
-        """Build batchUpdate cells for claim-only updates."""
 
     def update_file_extensions(
         self,

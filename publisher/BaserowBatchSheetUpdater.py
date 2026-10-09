@@ -83,18 +83,6 @@ class BaserowBatchSheetUpdater(InventorySheetUpdaterBase):
             "Contact",
         ]
 
-    def _required_columns_claimed(self) -> List[str]:
-        return ["URL", "Contact"]
-
-    def _optional_columns_claimed(self) -> List[str]:
-        return [
-            "Title for Datasets table",
-            "Title for Backups table",
-            "Organization",
-            "Agency",
-            "Websites",
-        ]
-
     def _file_extensions_column(self) -> str:
         """Return the Baserow File extensions column header."""
         return "File extensions"
@@ -319,46 +307,6 @@ class BaserowBatchSheetUpdater(InventorySheetUpdaterBase):
                 "values": [[self._contact_value()]],
             })
 
-        return requests
-
-    def _build_claimed_only_requests(
-        self,
-        sheet_name: str,
-        row_number: int,
-        column_map: Dict[str, str],
-        append_new_row: bool,
-        source_url: str,
-        title_to_write: str = "",
-        agency_to_write: str = "",
-        office_to_write: str = "",
-        **kwargs: Any,
-    ) -> List[Dict[str, Any]]:
-        """Build batchUpdate cells that set Contact (plus URL/metadata on append)."""
-        requests: List[Dict[str, Any]] = []
-
-        url = (source_url or "").strip()
-        if append_new_row and url and column_map.get("URL"):
-            requests.append({
-                "range": f"{sheet_name}!{column_map['URL']}{row_number}",
-                "values": [[url]],
-            })
-
-        self._append_baserow_metadata_requests(
-            requests,
-            sheet_name,
-            row_number,
-            column_map,
-            url,
-            title_to_write,
-            agency_to_write,
-            office_to_write,
-        )
-
-        if column_map.get("Contact"):
-            requests.append({
-                "range": f"{sheet_name}!{column_map['Contact']}{row_number}",
-                "values": [[self._contact_value()]],
-            })
         return requests
 
     def _append_baserow_metadata_requests(

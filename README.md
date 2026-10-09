@@ -76,7 +76,7 @@ DRPPipeline/
 
 Each module (except `noop` and `clean_inprogress`) advances project `status` so the next module can run on eligible projects. See [Usage](docs/Usage.md) for how to run them and how the database is used.
 
-To start a new source (SQLite database, download folder, config section, and an inventory spreadsheet you copy into your Google account), run `python scripts/start_new_source.py nrc`. The DataLumos login is left for you to create.
+To start a new source (SQLite database, download folder, config section, and a new tab on the shared inventory spreadsheet), run `python scripts/start_new_source.py nrc`. The new tab copies the header row from `Baserow Batch Import Template (please download)`. The DataLumos login is left for you to create.
 
 ## MCP Servers
 

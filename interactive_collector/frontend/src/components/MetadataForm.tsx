@@ -10,6 +10,8 @@ import { useCollectorStore } from "../store";
 
 const STORAGE_KEY = "metadata_draft_";
 
+export { STORAGE_KEY as METADATA_DRAFT_KEY };
+
 export function MetadataForm() {
   const { drpid, metadata, setMetadata } = useCollectorStore();
   const summaryEditorRef = useRef<HTMLDivElement>(null);
@@ -199,6 +201,22 @@ export function MetadataForm() {
         id="metadata-office"
         name="metadata_office"
         value={metadata.office}
+        onChange={handleChange}
+      />
+      <label htmlFor="metadata-geographic-coverage">Geography</label>
+      <input
+        type="text"
+        id="metadata-geographic-coverage"
+        name="metadata_geographic_coverage"
+        value={metadata.geographic_coverage}
+        onChange={handleChange}
+      />
+      <label htmlFor="metadata-data-types">Data type</label>
+      <input
+        type="text"
+        id="metadata-data-types"
+        name="metadata_data_types"
+        value={metadata.data_types}
         onChange={handleChange}
       />
       <label htmlFor="metadata-time-start">Start Date</label>

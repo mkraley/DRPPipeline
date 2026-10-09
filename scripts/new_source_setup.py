@@ -48,7 +48,7 @@ def choose_template_source(
     requested: str | None,
 ) -> tuple[str, dict[str, Any]]:
     """
-    Select the existing source whose spreadsheet will be copied.
+    Select the existing source whose tab supplies the header row.
 
     Args:
         config: Parsed config.json object.
@@ -128,7 +128,7 @@ def build_source_config(
     Args:
         code: Lowercase source code.
         template: Template source section.
-        sheet_id: New spreadsheet id.
+        sheet_id: Shared inventory spreadsheet id.
         contact: Baserow contact email when the template has none.
 
     Returns:

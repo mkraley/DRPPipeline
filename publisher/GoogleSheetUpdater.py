@@ -70,12 +70,6 @@ class GoogleSheetUpdater(InventorySheetUpdaterBase):
     def _optional_columns_sheet_only(self) -> List[str]:
         return ["Notes", *_OPTIONAL_METADATA_COLUMNS]
 
-    def _required_columns_claimed(self) -> List[str]:
-        return ["URL", "Claimed"]
-
-    def _optional_columns_claimed(self) -> List[str]:
-        return list(_OPTIONAL_METADATA_COLUMNS)
-
     def _file_extensions_column(self) -> str:
         """Return the data-inventories File extensions column header."""
         return "File extensions of data uploads"
@@ -142,46 +136,6 @@ class GoogleSheetUpdater(InventorySheetUpdaterBase):
             "office",
         )
         return title or "", agency or "", office or ""
-
-    def _build_claimed_only_requests(
-        self,
-        sheet_name: str,
-        row_number: int,
-        column_map: Dict[str, str],
-        append_new_row: bool,
-        source_url: str,
-        title_to_write: str = "",
-        agency_to_write: str = "",
-        office_to_write: str = "",
-        **kwargs: Any,
-    ) -> List[Dict[str, Any]]:
-        """Build update requests that set only Claimed (plus URL on append)."""
-        username = Args.google_username or ""
-        requests: List[Dict[str, Any]] = []
-
-        url = (source_url or "").strip()
-        if append_new_row and url and column_map.get("URL"):
-            requests.append({
-                "range": f"{sheet_name}!{column_map['URL']}{row_number}",
-                "values": [[url]],
-            })
-
-        self._append_metadata_requests(
-            requests,
-            sheet_name,
-            row_number,
-            column_map,
-            title_to_write,
-            agency_to_write,
-            office_to_write,
-        )
-
-        if column_map.get("Claimed"):
-            requests.append({
-                "range": f"{sheet_name}!{column_map['Claimed']}{row_number}",
-                "values": [[username]],
-            })
-        return requests
 
     def _build_sheet_only_requests(
         self,

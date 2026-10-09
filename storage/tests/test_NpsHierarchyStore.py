@@ -39,8 +39,8 @@ class TestNpsHierarchyStore(unittest.TestCase):
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
 
-    def test_initialize_creates_nps_tables(self) -> None:
-        """Storage initialization creates hierarchy tables."""
+    def test_store_creates_nps_tables(self) -> None:
+        """Opening the hierarchy store creates nps_projects and nps_products."""
         cursor = self.storage.sqlite_connection().execute(
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name IN ('nps_projects', 'nps_products') ORDER BY name"

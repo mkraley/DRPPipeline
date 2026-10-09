@@ -29,6 +29,8 @@ export interface Metadata {
   time_start: string;
   time_end: string;
   download_date: string;
+  geographic_coverage: string;
+  data_types: string;
 }
 
 interface CollectorState {
@@ -192,6 +194,8 @@ function applyLoadResult(
       time_start: String(meta.time_start ?? ""),
       time_end: String(meta.time_end ?? ""),
       download_date: String(meta.download_date ?? ""),
+      geographic_coverage: String(meta.geographic_coverage ?? ""),
+      data_types: String(meta.data_types ?? ""),
     },
     loading: false,
     error: null,
@@ -212,6 +216,8 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
     time_start: "",
     time_end: "",
     download_date: "",
+    geographic_coverage: "",
+    data_types: "",
   },
   folderPath: null,
   loading: false,
@@ -254,6 +260,8 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
     form.append("metadata_time_start", metadata.time_start);
     form.append("metadata_time_end", metadata.time_end);
     form.append("metadata_download_date", metadata.download_date);
+    form.append("metadata_geographic_coverage", metadata.geographic_coverage);
+    form.append("metadata_data_types", metadata.data_types);
     // Save only updates DB (no PDF conversion) and stops downloads watcher
     try {
       const res = await fetch(`${API}/save`, { method: "POST", body: form });
@@ -351,6 +359,8 @@ export const useCollectorStore = create<CollectorState & CollectorActions>((set,
       metadata_time_start: metadata.time_start,
       metadata_time_end: metadata.time_end,
       metadata_download_date: metadata.download_date,
+      metadata_geographic_coverage: metadata.geographic_coverage,
+      metadata_data_types: metadata.data_types,
     };
     try {
       const data = await fetchJson<{ ok: boolean; error?: string }>(`${API}/skip`, {

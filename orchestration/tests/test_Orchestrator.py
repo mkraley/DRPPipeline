@@ -21,7 +21,6 @@ from orchestration.Orchestrator import (
     _format_duration,
     _log_batch_summary,
     _log_orchestrator_progress,
-    _maybe_claim_inventory_sheet,
     _merge_project_lists,
     _progress_timing_suffix,
     _projects_in_status_order,
@@ -196,16 +195,14 @@ class TestOrchestrator(unittest.TestCase):
         mock_record_error.assert_not_called()
         mock_storage_cls.update_record.assert_not_called()
 
-    @patch("orchestration.Orchestrator._maybe_claim_inventory_sheet")
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")
-    def test_run_collector_claims_sheet_after_success(
+    def test_run_collector_stamps_last_change_after_success(
         self,
         mock_storage_cls: MagicMock,
         mock_find_class: MagicMock,
-        mock_claim: MagicMock,
     ) -> None:
-        """Test successful collector run triggers inventory sheet claim."""
+        """Test a successful collector run records last_change and does not touch the sheet."""
         mock_storage = MagicMock()
         mock_storage.list_eligible_projects.return_value = [
             {"DRPID": 2, "source_url": "https://example.com/x"}
@@ -227,20 +224,12 @@ class TestOrchestrator(unittest.TestCase):
             Orchestrator.run("collect")
 
         mock_collector_instance.run.assert_called_once_with(2)
-        mock_claim.assert_called_once_with(2, "collect")
         stamp = mock_storage_cls.update_record.call_args
         self.assertEqual(stamp.args[0], 2)
         self.assertRegex(
             stamp.args[1]["last_change"],
             r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$",
         )
-
-    @patch("utils.sheet_claimed_update.claim_project_on_inventory_sheet")
-    def test_maybe_claim_skips_bts_source(self, mock_claim: MagicMock) -> None:
-        """BTS collector runs do not write inventory Claimed."""
-        Args._config["source"] = "bts"
-        _maybe_claim_inventory_sheet(6, "collect")
-        mock_claim.assert_not_called()
 
     @patch("interactive_collector.dev_server.run_server")
     def test_run_interactive_collector_starts_app(self, mock_run_server: MagicMock) -> None:
