@@ -93,15 +93,17 @@ def record_error(
 
     Logs the message, then optionally sets project status and appends a
     structured block to the ``errors`` field so the project is skipped in
-    later steps. The block has one name:value line each for description,
-    drpid, datalumos_id, timestamp, module, and details.
+    later steps. The first line is an unlabeled summary of the failure.
+    The following lines are name:value pairs for drpid, datalumos_id,
+    timestamp, module, and details.
 
     Use ``update_storage=False`` when the record may not exist (e.g. DRPID not found).
 
     Args:
         drpid: Project DRPID.
-        error_msg: Error message to log. Stored as details, and shortened
-            for the description line when it contains ``: ``.
+        error_msg: Error message to log. Stored as details. The first stored
+            line summarizes that text, skipping a generic "failed" prefix and
+            bare project ids.
         update_storage: If True, update Storage status and append to errors field.
         status_value: Value for ``status``; default is ``{previous_status}-error``
             in compact form (spaces around hyphens removed). Custom values that

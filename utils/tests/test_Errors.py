@@ -112,7 +112,8 @@ class TestRecordError(unittest.TestCase):
         stored = _mock_storage.append_to_field.call_args.args[2]
         self.assertEqual(_mock_storage.append_to_field.call_args.args[0], 123)
         self.assertEqual(_mock_storage.append_to_field.call_args.args[1], "errors")
-        self.assertIn("description: boom", stored)
+        self.assertTrue(stored.startswith("boom\n"))
+        self.assertNotIn("description:", stored)
         self.assertIn("drpid: 123", stored)
         self.assertIn("datalumos_id:", stored)
         self.assertIn("module: test_Errors.py", stored)
@@ -148,7 +149,8 @@ class TestRecordError(unittest.TestCase):
             module="publish",
         )
         stored = _mock_storage.append_to_field.call_args.args[2]
-        self.assertIn("description: Publish failed", stored)
+        self.assertTrue(stored.startswith("profile missing\n"))
+        self.assertNotIn("description:", stored)
         self.assertIn("datalumos_id: 34567", stored)
         self.assertIn("module: publish", stored)
         self.assertIn("details: Publish failed: profile missing", stored)

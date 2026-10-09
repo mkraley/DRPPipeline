@@ -1,9 +1,10 @@
 """
 Structured text stored in a project's errors column.
 
-Each recorded failure is one block of name:value lines:
+The first line is an unlabeled summary of what went wrong. The rest are
+name:value lines:
 
-    description: Download failed
+    report.csv - https://example.com/report.csv
     drpid: 12
     datalumos_id: 34567
     timestamp: 2026-10-04 17:49:00
@@ -14,18 +15,39 @@ Each recorded failure is one block of name:value lines:
 from __future__ import annotations
 
 import inspect
+import re
 from pathlib import Path
 
-_ERROR_FIELDS: tuple[str, ...] = (
-    "description",
+_LABELED_FIELDS: tuple[str, ...] = (
     "drpid",
     "datalumos_id",
     "timestamp",
     "module",
     "details",
 )
+_WRAPPERS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"(?i)^orchestrator\s+module=(?:'[^']+'|\"[^\"]+\"|\S+)\s+"
+        r"(?:drpid=\d+\s+)?(?:worker\s+)?exception:\s+"
+    ),
+    re.compile(r"(?i)^exception\s+during\b.+?\bfor\s+drpid\s+\d+\s*:\s+"),
+    re.compile(r"(?i)^.+?\s+failed\s+for\s+drpid\s+\d+\s*:\s+"),
+    re.compile(r"(?i)^drpid\s*[=:]?\s*\d+\s*:\s+"),
+)
+_GENERIC_FAILED = re.compile(
+    r"(?i)^(?P<head>[^:=()]{1,60}?)\s+(?:failed|error):\s+"
+)
+_SPECIFIC_HEAD = re.compile(
+    r"(?i)\b(?:not|missing|cannot|can't|could\s+not|invalid|no)\b"
+)
+_ID_CLAUSE = re.compile(
+    r"(?i)\s*(?:\b(?:for|with)\b\s+)?\b(?:drpid|datalumos(?:\s*id)?)\b\s*[=:]?\s*\d+"
+)
+_ID_ONLY = re.compile(
+    r"(?i)^(?:(?:drpid|datalumos(?:\s*id)?)\s*[=:]?\s*)?\d+"
+    r"(?:\s+(?:(?:drpid|datalumos(?:\s*id)?)\s*[=:]?\s*)?\d+)*$"
+)
 _SKIP_CALLERS = {"Errors.py", "ErrorRecord.py"}
-_BRIEF_LIMIT = 120
 
 
 def single_line(value: object) -> str:
@@ -41,25 +63,27 @@ def single_line(value: object) -> str:
     return " ".join(str(value).split())
 
 
-def brief_error_description(error_msg: str) -> str:
+def error_summary(error_msg: str) -> str:
     """
-    Take a short label from an error message.
+    Summarize an error message for the unlabeled first line.
 
-    When the message has a ``: `` and the text before it is non-empty and
-    within the brief limit, that prefix is the description. Otherwise the
-    whole message is the description.
+    Drops a generic prefix such as ``Download failed`` or
+    ``Exception during collection for DRPID 12``, and drops clauses that are
+    only a DRPID or DataLumos id. The remaining text is the summary.
 
     Args:
         error_msg: Message passed to ``record_error``.
 
     Returns:
-        One-line description.
+        One line describing what went wrong.
     """
-    flat = single_line(error_msg)
-    head, separator, tail = flat.partition(": ")
-    if separator and head and tail and len(head) <= _BRIEF_LIMIT:
-        return head
-    return flat
+    text = single_line(error_msg)
+    summary = _without_id_clauses(_without_generic_wrapper(text))
+    if _is_blank_or_ids(summary):
+        summary = _without_id_clauses(text)
+    if _is_blank_or_ids(summary):
+        return text
+    return summary
 
 
 def executing_module(explicit: str | None = None) -> str:
@@ -98,17 +122,52 @@ def format_project_error(
         timestamp: Local time the error was recorded.
 
     Returns:
-        Six name:value lines, one field per line.
+        An unlabeled summary line, then one name:value line for each remaining field.
     """
     values = {
-        "description": brief_error_description(error_msg),
         "drpid": str(drpid),
         "datalumos_id": single_line(datalumos_id or ""),
         "timestamp": single_line(timestamp),
         "module": single_line(module),
         "details": single_line(error_msg),
     }
-    return "\n".join(_format_line(name, values[name]) for name in _ERROR_FIELDS)
+    lines = [error_summary(error_msg)]
+    lines.extend(_format_line(name, values[name]) for name in _LABELED_FIELDS)
+    return "\n".join(lines)
+
+
+def _without_generic_wrapper(text: str) -> str:
+    """Drop leading boilerplate while a substantive remainder remains."""
+    current = text
+    for _ in range(4):
+        peeled = _peel_once(current)
+        if peeled is None or _is_blank_or_ids(peeled):
+            return current
+        current = peeled
+    return current
+
+
+def _peel_once(text: str) -> str | None:
+    """Return text after one generic wrapper, or None when none matches."""
+    for pattern in _WRAPPERS:
+        match = pattern.match(text)
+        if match:
+            return text[match.end():].strip()
+    failed = _GENERIC_FAILED.match(text)
+    if failed and _SPECIFIC_HEAD.search(failed.group("head")) is None:
+        return text[failed.end():].strip()
+    return None
+
+
+def _without_id_clauses(text: str) -> str:
+    """Remove DRPID and DataLumos id clauses, then collapse whitespace."""
+    return single_line(_ID_CLAUSE.sub(" ", text))
+
+
+def _is_blank_or_ids(text: str) -> bool:
+    """Return True when text is empty or only project identifiers."""
+    stripped = text.strip()
+    return not stripped or _ID_ONLY.match(stripped) is not None
 
 
 def _format_line(name: str, value: str) -> str:

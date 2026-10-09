@@ -108,7 +108,7 @@ Open `collectors/ExampleGovCollector.py` in Claude Code and fill in the `_collec
 Refer to `SocrataCollector._collect()` for a full-featured example, or `CatalogDataCollector._collect()` for a lighter approach that only records links.
 
 Key rules:
-- Always call `record_error(drpid, msg)` and return early on failure; never raise. The errors column stores that message as a structured block (description, drpid, datalumos id, local timestamp, module, and details).
+- Always call `record_error(drpid, msg)` and return early on failure; never raise. The errors column starts with an unlabeled summary of that message, then drpid, datalumos id, local timestamp, module, and details.
 - Set `result["folder_path"]` to trigger `status = "collected"`
 - Only return keys with non-None values; unused fields can be omitted
 

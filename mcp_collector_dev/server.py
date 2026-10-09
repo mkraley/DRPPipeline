@@ -233,8 +233,8 @@ def get_collector_interface() -> str:
     ── UTILITY FUNCTIONS ────────────────────────────────────────────
     from utils.Errors import record_error, record_warning, record_crash
       record_error(drpid, msg)    → sets status to {previous}-error and appends a
-                                   structured errors block (description, drpid,
-                                   datalumos_id, timestamp, module, details)
+                                   structured errors block (unlabeled summary,
+                                   drpid, datalumos_id, timestamp, module, details)
       record_warning(drpid, msg)  → appends to warnings field (non-fatal)
       record_crash(msg)           → fatal; raises RuntimeError
 
