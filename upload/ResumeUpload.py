@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from storage import Storage
-from storage.ProjectFileStore import ProjectFileStore
+from storage.ProjectFileStore import ProjectFileRow, ProjectFileStore
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from upload.UploadIssueReporter import UploadIssueReporter
 from upload.UploadLargeFiles import UPLOAD_LARGE_FILES_TIMEOUT_MS, WORKSPACE_LOAD_TIMEOUT_MS
@@ -74,12 +74,13 @@ class ResumeUpload:
         folder: Path,
         reporter: UploadIssueReporter,
     ) -> None:
-        """Upload each not-yet-uploaded file and mark it after it succeeds."""
+        """Upload not-yet-uploaded files in one batch and mark them after it succeeds."""
         store = ProjectFileStore.from_storage()
         pending = store.list_pending_uploads(drpid)
         if not pending:
             Logger.info("No new files to upload for DRPID=%s", drpid)
             return
+        paths = self._pending_paths(folder, pending, reporter)
         page = self._session.ensure_browser()
         self._session.ensure_authenticated(reporter=reporter)
         workspace_id = get_field(project, "datalumos_id")
@@ -100,10 +101,26 @@ class ResumeUpload:
             reporter=reporter,
             skip_busy_wait_on_close=True,
         )
+        Logger.info(
+            "Uploading %s file(s) not yet on DataLumos for DRPID=%s",
+            len(paths),
+            drpid,
+        )
+        uploader.upload_paths_preserving_folders(folder, paths)
+        store.mark_uploaded(drpid, [row.relative_path for row in pending])
+
+    def _pending_paths(
+        self,
+        folder: Path,
+        pending: list[ProjectFileRow],
+        reporter: UploadIssueReporter,
+    ) -> list[Path]:
+        """Return on-disk paths for pending rows, stopping when one is missing."""
+        paths: list[Path] = []
         for row in pending:
             path = folder / row.relative_path
             if not path.is_file():
                 reporter.error(f"Missing file to upload: {row.relative_path}")
                 raise ProjectAbort(row.relative_path)
-            uploader.upload_paths_preserving_folders(folder, [path])
-            store.mark_uploaded(drpid, [row.relative_path])
+            paths.append(path)
+        return paths
