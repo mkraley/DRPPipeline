@@ -38,6 +38,18 @@ def catalog_files(project_folder: Path) -> list[Path]:
     return sorted(files, key=lambda path: path.as_posix().casefold())
 
 
+def omitted_oversized_zips(paths: list[Path], max_bytes: int) -> tuple[list[Path], list[Path]]:
+    """Return ``(files to pack, zip files larger than max_bytes)``."""
+    packed: list[Path] = []
+    omitted: list[Path] = []
+    for path in paths:
+        if _is_zip_over_limit(path, max_bytes):
+            omitted.append(path)
+            continue
+        packed.append(path)
+    return packed, omitted
+
+
 def pack_by_max_size(paths: list[Path], max_bytes: int) -> list[list[Path]]:
     """Group files so each group stays within ``max_bytes`` when a file fits."""
     groups: list[list[Path]] = []
@@ -60,15 +72,21 @@ def plan_zip_parts(
     project_folder: Path,
     deferred: list[Path],
     max_bytes: int | None,
-) -> list[tuple[list[str], list[Path]]]:
-    """Return ``(directories, files)`` for each zip, catalog part first."""
+) -> tuple[list[tuple[list[str], list[Path]]], list[Path]]:
+    """Return zip parts and zip files left out because they exceed ``max_bytes``."""
     if max_bytes is None:
-        return [([], deferred)]
+        return [([], deferred)], []
     content = [path for path in deferred if not is_generated_sidecar(path)]
-    groups = pack_by_max_size(content, max_bytes) if content else []
+    packed, omitted = omitted_oversized_zips(content, max_bytes)
+    groups = pack_by_max_size(packed, max_bytes) if packed else []
     parts = [(project_directories(project_folder), catalog_files(project_folder))]
     parts.extend(([], group) for group in groups)
-    return parts
+    return parts, omitted
+
+
+def _is_zip_over_limit(path: Path, max_bytes: int) -> bool:
+    """Return True when ``path`` is a zip larger than ``max_bytes``."""
+    return path.suffix.casefold() == ".zip" and path.stat().st_size > max_bytes
 
 
 def write_stored_zip(

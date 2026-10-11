@@ -111,7 +111,8 @@ class TestZipDeferredUploads(unittest.TestCase):
             later = birds / "b.zip"
             big.write_bytes(b"a" * 30)
             later.write_bytes(b"b" * 30)
-            parts = plan_zip_parts(root, [big, later], max_bytes=40)
+            parts, omitted = plan_zip_parts(root, [big, later], max_bytes=40)
+            self.assertEqual(omitted, [])
             self.assertEqual(len(parts), 3)
             directories, catalogs = parts[0]
             self.assertEqual(directories, ["Birds_2020"])
@@ -124,6 +125,25 @@ class TestZipDeferredUploads(unittest.TestCase):
                 self.assertIn("Birds_2020/", archive.namelist())
                 self.assertIn("Birds_2020/product_metadata.json", archive.namelist())
                 self.assertNotIn("Birds_2020/a.zip", archive.namelist())
+
+    def test_oversized_zip_is_left_out_of_new_archives(self) -> None:
+        """A zip larger than the limit is omitted. Other oversized files are still packed."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            folder = root / "Imagery"
+            folder.mkdir()
+            huge_zip = folder / "olymortho.zip"
+            huge_bin = folder / "ortho.bin"
+            small = folder / "notes.pdf"
+            huge_zip.write_bytes(b"z" * 50)
+            huge_bin.write_bytes(b"b" * 50)
+            small.write_bytes(b"s" * 10)
+            parts, omitted = plan_zip_parts(root, [huge_zip, huge_bin, small], max_bytes=40)
+        self.assertEqual(omitted, [huge_zip])
+        packed = [path for _directories, files in parts for path in files]
+        self.assertNotIn(huge_zip, packed)
+        self.assertIn(huge_bin, packed)
+        self.assertIn(small, packed)
 
 
 if __name__ == "__main__":

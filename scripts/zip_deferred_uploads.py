@@ -4,7 +4,9 @@ Zip files still waiting to upload, one or more archives per project.
 Reads ``Skipped download (>1GB)`` notes. Without ``--max-size``, one stored
 zip holds the deferred files. With ``--max-size``, ``<drpid>a.zip`` holds
 every project folder and catalog file, and later letters hold the deferred
-content files packed up to that size. Paths inside each zip are
+content files packed up to that size. A zip file already larger than that
+limit is left as-is and listed in ``<drpid>-not-zipped.txt``. Paths inside
+each new zip are
 ``product-folder/file``, ready for DataLumos Import From Zip.
 
 From the repo root::
@@ -145,10 +147,12 @@ def zip_project(
         sheet_name=sheet_name,
     )
     deferred = collect_project_files(project_folder, group_skip_files(notes))
+    parts, omitted = plan_zip_parts(project_folder, deferred, max_bytes)
+    _note_omitted(drpid, output_root, omitted, dry_run=dry_run)
     return _write_parts(
         drpid,
         project_folder,
-        plan_zip_parts(project_folder, deferred, max_bytes),
+        parts,
         output_root=output_root,
         sheet_name=sheet_name,
         dry_run=dry_run,
@@ -177,6 +181,22 @@ def _write_parts(
         if not dry_run and (files or directories):
             write_stored_zip(project_folder, files, dest, directories)
     return total_bytes
+
+
+def _note_omitted(drpid: int, output_root: Path, omitted: list[Path], *, dry_run: bool) -> None:
+    """Print and, unless this is a dry run, save zip files left out of the new archives."""
+    if not omitted:
+        return
+    print(f"DRPID {drpid} not included in a new zip ({len(omitted)} file(s)):")
+    for path in omitted:
+        print(f"  {path.resolve()}")
+    if dry_run:
+        return
+    note = output_root / f"{drpid}-not-zipped.txt"
+    note.parent.mkdir(parents=True, exist_ok=True)
+    lines = "".join(f"{path.resolve()}\n" for path in omitted)
+    note.write_text(lines, encoding="utf-8-sig")
+    print(f"DRPID {drpid} note: {note}")
 
 
 def _report_part(
