@@ -6,6 +6,7 @@ from utils.temporal_utils import (
     apply_temporal_inference,
     extract_dates_from_text,
     format_date_for_datalumos_upload,
+    align_upload_time_period,
     infer_time_end_from_filenames,
     merge_and_pair_time_updates,
     pair_time_fields,
@@ -74,3 +75,9 @@ class TestTemporalUtils:
         assert format_date_for_datalumos_upload("2024-01-01") == "2024"
         assert format_date_for_datalumos_upload("2010-05-01") == "2010-05-01"
         assert format_date_for_datalumos_upload("2020") == "2020"
+
+    def test_align_upload_time_period_truncates_full_start_when_end_is_year(self) -> None:
+        """A full start date is entered as a year when the end date is a year."""
+        assert align_upload_time_period("2014-06-15", "2020") == ("2014", "2020")
+        assert align_upload_time_period("2014-06-15", "2020-03-01") == ("2014-06-15", "2020-03-01")
+        assert align_upload_time_period("2014", "2020-03-01") == ("2014", "2020-03-01")

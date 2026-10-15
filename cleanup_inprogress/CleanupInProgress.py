@@ -19,6 +19,9 @@ from utils.Logger import Logger
 WORKSPACE_URL = "https://www.datalumos.org/datalumos/workspace"
 PROJECT_URL_TEMPLATE = "https://www.datalumos.org/datalumos/workspace?goToLevel=project&goToPath=/datalumos/{workspace_id}"
 DEPOSIT_IN_PROGRESS_TEXT = "[Deposit In Progress]"
+_PROJECT_LIST = "ul.list-group"
+_PROJECT_STATUS = "xpath=//h1/following-sibling::span[3]"
+_PROJECT_LIST_TIMEOUT_MS = 120000
 
 
 class CleanupInProgress:
@@ -49,10 +52,9 @@ class CleanupInProgress:
 
         try:
             page.goto(WORKSPACE_URL, wait_until="domcontentloaded")
-            page.wait_for_load_state("networkidle", timeout=120000)
-
             from upload.DataLumosAuthenticator import wait_for_human_verification
             wait_for_human_verification(page, timeout=60000)
+            self._wait_for_project_list(page)
 
             self._click_hide_inactive(page)
             project_ids = self._get_project_ids_from_list(page)
@@ -64,6 +66,13 @@ class CleanupInProgress:
         finally:
             self._session.close()
         Logger.info("Cleanup In Progress: finished")
+
+    def _wait_for_project_list(self, page: Page) -> None:
+        """Wait until the workspace project list is visible."""
+        page.locator(_PROJECT_LIST).first.wait_for(
+            state="visible",
+            timeout=_PROJECT_LIST_TIMEOUT_MS,
+        )
 
     def _click_hide_inactive(self, page: Page) -> None:
         """Click the 'Hide inactive' radio so only active (e.g. In Progress) projects show."""
@@ -102,8 +111,10 @@ class CleanupInProgress:
         project_url = PROJECT_URL_TEMPLATE.format(workspace_id=workspace_id)
         try:
             page.goto(project_url, wait_until="domcontentloaded")
-            page.wait_for_load_state("networkidle", timeout=Args.upload_timeout)
-            page.wait_for_timeout(1500)
+            page.locator(_PROJECT_STATUS).first.wait_for(
+                state="visible",
+                timeout=Args.upload_timeout,
+            )
         except PlaywrightTimeoutError:
             Logger.error(f"Cleanup In Progress: timeout loading project {workspace_id}")
             return
@@ -163,7 +174,7 @@ class CleanupInProgress:
         """
         Return True if the third sibling span of h1 has text [Deposit In Progress]; else log error and return False.
         """
-        third_span = page.locator("xpath=//h1/following-sibling::span[3]")
+        third_span = page.locator(_PROJECT_STATUS)
         if third_span.count() == 0:
             Logger.error(
                 f"Cleanup In Progress: project {workspace_id} has no third sibling span of h1 (wrong page?)"

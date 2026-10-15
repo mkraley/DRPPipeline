@@ -561,6 +561,31 @@ class TestDataLumosFormFiller(unittest.TestCase):
         mock_start.fill.assert_called_once_with("2004")
         mock_end.fill.assert_called_once_with("2026")
 
+    def test_fill_time_period_truncates_full_start_when_end_is_year(self) -> None:
+        """A yyyy-mm-dd start is entered as a year when the end date is a year."""
+        mock_add = MagicMock()
+        mock_start = MagicMock()
+        mock_end = MagicMock()
+        mock_save = MagicMock()
+
+        def locator_side_effect(selector: str) -> MagicMock:
+            if selector == "#startDate":
+                return mock_start
+            if selector == "#endDate":
+                return mock_end
+            if selector == ".save-dates":
+                return mock_save
+            return mock_add
+
+        self.mock_page.locator.side_effect = locator_side_effect
+
+        with unittest.mock.patch.object(self.form_filler, "wait_for_obscuring_elements"):
+            with unittest.mock.patch.object(self.form_filler._page.keyboard, "press"):
+                self.form_filler.fill_time_period("2014-06-15", "2020")
+
+        mock_start.fill.assert_called_once_with("2014")
+        mock_end.fill.assert_called_once_with("2020")
+
     def test_fill_collection_notes_skips_empty(self) -> None:
         """Test fill_collection_notes returns early when both empty."""
         self.form_filler.fill_collection_notes("", None)

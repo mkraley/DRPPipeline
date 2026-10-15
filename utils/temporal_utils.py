@@ -192,6 +192,31 @@ def format_date_for_datalumos_upload(value: str | None) -> str:
     return raw
 
 
+_FULL_DATE_RE = re.compile(r"^(\d{4})-\d{2}-\d{2}$")
+_YEAR_ONLY_RE = re.compile(r"^\d{4}$")
+
+
+def align_upload_time_period(start: str | None, end: str | None) -> tuple[str, str]:
+    """
+    Return start and end strings for the DataLumos time period form.
+
+    A full ``yyyy-mm-dd`` start is entered as ``yyyy`` when the end date is a year.
+
+    Args:
+        start: Stored coverage start.
+        end: Stored coverage end.
+
+    Returns:
+        ``(start, end)`` after upload formatting.
+    """
+    formatted_start = format_date_for_datalumos_upload(start)
+    formatted_end = format_date_for_datalumos_upload(end)
+    full_start = _FULL_DATE_RE.match(formatted_start)
+    if full_start and _YEAR_ONLY_RE.fullmatch(formatted_end):
+        return full_start.group(1), formatted_end
+    return formatted_start, formatted_end
+
+
 def _append_date(found: list[str], seen: set[str], raw: str) -> None:
     """Append a normalized date when it has not already been recorded."""
     from collectors.UsfsMetadataExtractor import normalize_temporal_date

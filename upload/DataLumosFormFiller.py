@@ -13,7 +13,7 @@ from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 from utils.Logger import Logger
 from utils.datalumos_data_types import normalize_datalumos_data_types
 from utils.summary_html import prepare_summary_for_datalumos_upload
-from utils.temporal_utils import format_date_for_datalumos_upload
+from utils.temporal_utils import align_upload_time_period
 from utils.title_utils import (
     DATALUMOS_TITLE_MAX_LENGTH,
     normalize_inventory_title,
@@ -602,10 +602,10 @@ class DataLumosFormFiller:
         if _is_empty(start) and _is_empty(end):
             return
 
+        formatted_start, formatted_end = align_upload_time_period(start, end)
         _debug_form_field(
             "time_period",
-            f"start={format_date_for_datalumos_upload(start)!r} "
-            f"end={format_date_for_datalumos_upload(end)!r}",
+            f"start={formatted_start!r} end={formatted_end!r}",
         )
 
         add_btn = self._page.locator(
@@ -619,12 +619,12 @@ class DataLumosFormFiller:
         start_input = self._page.locator("#startDate")
         start_input.wait_for(state="visible", timeout=50000)
         self.wait_for_obscuring_elements()
-        start_input.fill(format_date_for_datalumos_upload(start))
+        start_input.fill(formatted_start)
         
         end_input = self._page.locator("#endDate")
         end_input.wait_for(state="visible", timeout=50000)
         self.wait_for_obscuring_elements()
-        end_input.fill(format_date_for_datalumos_upload(end))
+        end_input.fill(formatted_end)
         
         save_btn = self._page.locator(".save-dates")
         save_btn.wait_for(state="visible", timeout=50000)

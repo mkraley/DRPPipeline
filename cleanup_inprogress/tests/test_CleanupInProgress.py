@@ -14,6 +14,9 @@ from cleanup_inprogress.CleanupInProgress import (
     PROJECT_URL_TEMPLATE,
     WORKSPACE_URL,
     DEPOSIT_IN_PROGRESS_TEXT,
+    _PROJECT_LIST,
+    _PROJECT_LIST_TIMEOUT_MS,
+    _PROJECT_STATUS,
 )
 
 
@@ -145,6 +148,21 @@ class TestCleanupInProgress(unittest.TestCase):
         self.cleanup._session.ensure_browser.assert_called_once()
         self.cleanup._session.ensure_authenticated.assert_called_once()
         mock_page.goto.assert_called_once_with(WORKSPACE_URL, wait_until="domcontentloaded")
+        mock_page.wait_for_load_state.assert_not_called()
+        mock_page.locator.assert_any_call(_PROJECT_LIST)
+        mock_page.locator.return_value.first.wait_for.assert_called_once_with(
+            state="visible",
+            timeout=_PROJECT_LIST_TIMEOUT_MS,
+        )
         self.cleanup._click_hide_inactive.assert_called_once_with(mock_page)
         self.cleanup._get_project_ids_from_list.assert_called_once_with(mock_page)
         self.cleanup._session.close.assert_called_once()
+
+    def test_process_one_project_waits_for_status(self) -> None:
+        """Opening a project waits for its status text, not for the network to go idle."""
+        page = MagicMock()
+        self.cleanup._confirm_deposit_in_progress = MagicMock(return_value=False)
+        self.cleanup._process_one_project(page, "256298")
+        page.wait_for_load_state.assert_not_called()
+        page.locator.assert_any_call(_PROJECT_STATUS)
+        page.locator.return_value.first.wait_for.assert_called_once()
