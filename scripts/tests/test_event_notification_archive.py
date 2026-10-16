@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from scripts.event_notification_archive import MANIFEST_NAME, collect_month, read_manifest
+from scripts.collect_event_notifications import collect_months
 from scripts.event_notification_links import looks_like_event_report
 from utils.Logger import Logger
 
@@ -36,7 +37,7 @@ class TestCollectEventNotificationMonth(unittest.TestCase):
             retrieved = read_manifest(dest / MANIFEST_NAME)["2026-09-01"]["retrieved_at"]
             second = collect_month(dest, 2026, 9, self._index, self._saver(pages), delay_seconds=0)
             again = read_manifest(dest / MANIFEST_NAME)["2026-09-01"]
-            self.assertTrue((dest / "2026" / "20260901en.pdf").is_file())
+            self.assertTrue((dest / "2026" / "09" / "20260901en.pdf").is_file())
         self.assertEqual(first, {"saved": 2, "skipped": 0, "failed": 0})
         self.assertEqual(second, {"saved": 0, "skipped": 2, "failed": 0})
         self.assertEqual(again["retrieved_at"], retrieved)
@@ -50,8 +51,8 @@ class TestCollectEventNotificationMonth(unittest.TestCase):
         }
         with self._temp_dest() as dest:
             counts = collect_month(dest, 2026, 9, self._index, self._saver(pages))
-            saved = dest / "2026" / "20260902en.pdf"
-            blocked = dest / "2026" / "20260901en.pdf"
+            saved = dest / "2026" / "09" / "20260902en.pdf"
+            blocked = dest / "2026" / "09" / "20260901en.pdf"
             self.assertTrue(saved.is_file())
             self.assertFalse(blocked.exists())
             manifest = read_manifest(dest / MANIFEST_NAME)
@@ -66,12 +67,27 @@ class TestCollectEventNotificationMonth(unittest.TestCase):
             "20260902en": b"%PDF Event Notification Report two",
         }
         with self._temp_dest() as dest:
-            html_copy = dest / "2026" / "20260901en.html"
+            html_copy = dest / "2026" / "09" / "20260901en.html"
             html_copy.parent.mkdir(parents=True)
             html_copy.write_text("<html>unstyled</html>", encoding="utf-8")
             collect_month(dest, 2026, 9, self._index, self._saver(pages))
             self.assertFalse(html_copy.exists())
-            self.assertTrue((dest / "2026" / "20260901en.pdf").is_file())
+            self.assertTrue((dest / "2026" / "09" / "20260901en.pdf").is_file())
+
+    def test_year_run_skips_a_month_with_no_pages(self) -> None:
+        """A full-year run continues when one month is absent from the index."""
+        pages = {
+            "20260901en": b"%PDF Event Notification Report one",
+            "20260902en": b"%PDF Event Notification Report two",
+        }
+        with self._temp_dest() as dest:
+            counts = collect_months(
+                dest,
+                [(2026, 8), (2026, 9)],
+                self._index,
+                self._saver(pages),
+            )
+        self.assertEqual(counts, {"saved": 2, "skipped": 0, "failed": 0})
 
     def test_empty_month_raises(self) -> None:
         """A month with no index links is an error."""

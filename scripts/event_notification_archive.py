@@ -29,8 +29,9 @@ MANIFEST_COLUMNS = (
 
 
 def report_path(dest: Path, link: EventDayLink) -> Path:
-    """Return ``dest\\{year}\\{YYYYMMDD}en.pdf``."""
-    return dest / str(link.day.year) / link.filename
+    """Return ``dest\\{year}\\{mm}\\{YYYYMMDD}en.pdf``."""
+    month_folder = f"{link.day.month:02d}"
+    return dest / str(link.day.year) / month_folder / link.filename
 
 
 def read_manifest(path: Path) -> dict[str, dict[str, str]]:

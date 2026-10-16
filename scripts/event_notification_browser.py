@@ -11,6 +11,8 @@ _REPORT_PRINT_CSS = """
 html, body {
     overflow: visible !important;
     height: auto !important;
+    background-image: none !important;
+    background-color: #0d1225 !important;
 }
 header, footer, nav, .usa-banner, .alert-banner-container,
 .usa-layout-docs__sidenav, .breadcrumb, .pager, .usa-overlay {
@@ -18,6 +20,17 @@ header, footer, nav, .usa-banner, .alert-banner-container,
 }
 .grid, .grid-row, .grid-container, .grid.border, .usa-layout-docs__main {
     display: block !important;
+}
+main, .nrc-event-report-day, .grid, .grid-row, .grid-container,
+.grid.border, .usa-layout-docs__main, h1, p, div {
+    background-color: #0d1225 !important;
+    color: #f2f2f2 !important;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+}
+.th {
+    background-color: #eaf2eb !important;
+    color: #333333 !important;
 }
 """
 
@@ -86,7 +99,7 @@ class EventNotificationBrowser:
             raise RuntimeError(f"Empty PDF for {url}")
 
     def _prepare_report_for_pdf(self) -> None:
-        """Drop form controls and the grid layout that clips the last page."""
+        """Give each page a solid background and drop form controls."""
         self._page.add_style_tag(content=_REPORT_PRINT_CSS)
         self._page.evaluate(_STRIP_INTERACTIVE_JS)
 
