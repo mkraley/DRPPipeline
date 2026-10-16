@@ -78,7 +78,7 @@ Each module (except `noop` and `clean_inprogress`) advances project `status` so 
 
 To start a new source (SQLite database, download folder, config section, and a new tab on the shared inventory spreadsheet), run `python scripts/start_new_source.py nrc`. The new tab copies the header row from `Baserow Batch Import Template (please download)`. The DataLumos login is left for you to create.
 
-Daily NRC event-notification PDFs for one month, a year, or a year range: `python scripts/collect_event_notifications.py --year 2024` or `--year 1999 --through 2026`. See [Usage](docs/Usage.md).
+Daily NRC event-notification PDFs for one month, a year, or a year range: `python scripts/collect_event_notifications.py --year 2024` or `--year 1999 --through 2026`. A finished year is written to `{year}.zip` in the project folder. See [Usage](docs/Usage.md).
 
 ## MCP Servers
 

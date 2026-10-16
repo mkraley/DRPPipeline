@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+import zipfile
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -87,7 +88,36 @@ class TestCollectEventNotificationMonth(unittest.TestCase):
                 self._index,
                 self._saver(pages),
             )
+            self.assertFalse((dest / "2026.zip").exists())
         self.assertEqual(counts, {"saved": 2, "skipped": 0, "failed": 0})
+
+    def test_finished_year_is_zipped(self) -> None:
+        """Requesting every month writes ``{year}.zip`` with the month folder at the top."""
+        pages = {"20260901en": b"%PDF Event Notification Report one"}
+        with self._temp_dest() as dest:
+            counts = collect_months(
+                dest,
+                [(2026, month) for month in range(1, 13)],
+                self._september_index,
+                self._saver(pages),
+            )
+            archive = dest / "2026.zip"
+            self.assertTrue(archive.is_file())
+            self.assertFalse((dest / "2026").exists())
+            with zipfile.ZipFile(archive) as zipped:
+                self.assertIn("09/20260901en.pdf", zipped.namelist())
+                self.assertFalse(any(name.startswith("2026/") for name in zipped.namelist()))
+        self.assertEqual(counts, {"saved": 1, "skipped": 0, "failed": 0})
+
+    def _september_index(self, url: str) -> str:
+        """Return a year index that lists only 1 September 2026."""
+        if not url.endswith("/index"):
+            raise AssertionError(url)
+        return (
+            "<html><body><a href=\"/documents-reports/document-collections/"
+            "events-reports-associated-with/event-notification-reports/2026/20260901en\">"
+            "Sep 1</a></body></html>"
+        )
 
     def test_empty_month_raises(self) -> None:
         """A month with no index links is an error."""

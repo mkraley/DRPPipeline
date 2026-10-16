@@ -384,7 +384,7 @@ python scripts/start_new_source.py nrc --dry-run
 
 The new source becomes the active `source` in `config.json`. Create the DataLumos login yourself, then set `sources.<name>.datalumos_password`.
 
-**NRC daily event notifications:** daily reports listed on the year indexes, saved as PDFs of the rendered report with the site header, menus, and form controls left out. Files land in `C:\DataRescue\NRCData\NRC000005\{year}\{mm}\` as `{YYYYMMDD}en.pdf`, with `event_notification_manifest.csv` in that project folder. PDFs already saved are skipped. Omit `--month` for every month of a year. `--through` sets the last year.
+**NRC daily event notifications:** daily reports listed on the year indexes, saved as PDFs of the rendered report with the site header, menus, and form controls left out. While a year is in progress, files land in `C:\DataRescue\NRCData\NRC000005\{year}\{mm}\` as `{YYYYMMDD}en.pdf`. When every month of a year has been collected, those month folders are zipped to `{year}.zip` in the project folder (month folders at the top of the zip, as in `2020.zip`) and the loose year folder is removed. `event_notification_manifest.csv` stays in the project folder. PDFs already saved are skipped. Omit `--month` for every month of a year. `--through` sets the last year.
 
 ```powershell
 python scripts/collect_event_notifications.py --year 2026 --month 9

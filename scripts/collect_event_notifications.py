@@ -10,6 +10,9 @@ From the repo root:
     python scripts/collect_event_notifications.py --year 2026 --month 9
     python scripts/collect_event_notifications.py --year 2024
     python scripts/collect_event_notifications.py --year 1999 --through 2026
+
+A finished year is zipped to ``{year}.zip`` in the project folder. Month
+folders are at the top of that zip, and the loose year folder is removed.
 """
 
 from __future__ import annotations
@@ -25,6 +28,11 @@ if str(_REPO_ROOT) not in sys.path:
 
 from scripts.event_notification_archive import collect_month  # noqa: E402
 from scripts.event_notification_browser import EventNotificationBrowser  # noqa: E402
+from scripts.event_notification_zip import (  # noqa: E402
+    should_zip_year,
+    year_is_archived,
+    zip_year_folder,
+)
 from utils.Logger import Logger  # noqa: E402
 
 DEFAULT_DEST = Path(r"C:\DataRescue\NRCData\NRC000005")
@@ -79,19 +87,37 @@ def collect_months(
     A month with no index links is skipped when more than one month was requested.
     """
     totals = {"saved": 0, "skipped": 0, "failed": 0}
+    only_month = len(pairs) == 1
+    for year in dict.fromkeys(year for year, _month in pairs):
+        year_pairs = [pair for pair in pairs if pair[0] == year]
+        if year_is_archived(dest, year) and should_zip_year({month for _, month in year_pairs}, 0):
+            Logger.info("%s.zip already exists", year)
+            continue
+        failed_before = totals["failed"]
+        _collect_year(dest, year_pairs, fetch_html, save_page, delay_seconds, only_month, totals)
+        if should_zip_year({month for _, month in year_pairs}, totals["failed"] - failed_before):
+            archive = zip_year_folder(dest, year)
+            if archive is not None:
+                Logger.info("Zipped %s", archive)
+    return totals
+
+
+def _collect_year(
+    dest: Path,
+    pairs: list[tuple[int, int]],
+    fetch_html: Callable[[str], str],
+    save_page: Callable[[str, Path], None],
+    delay_seconds: float,
+    only_month: bool,
+    totals: dict[str, int],
+) -> None:
+    """Download one year's requested months and add the counts to ``totals``."""
     for year, month in pairs:
         counts = _collect_or_skip(
-            dest,
-            year,
-            month,
-            fetch_html,
-            save_page,
-            delay_seconds,
-            len(pairs) == 1,
+            dest, year, month, fetch_html, save_page, delay_seconds, only_month,
         )
         for key in totals:
             totals[key] += counts[key]
-    return totals
 
 
 def main(argv: list[str] | None = None) -> int:
