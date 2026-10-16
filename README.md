@@ -78,6 +78,8 @@ Each module (except `noop` and `clean_inprogress`) advances project `status` so 
 
 To start a new source (SQLite database, download folder, config section, and a new tab on the shared inventory spreadsheet), run `python scripts/start_new_source.py nrc`. The new tab copies the header row from `Baserow Batch Import Template (please download)`. The DataLumos login is left for you to create.
 
+Daily NRC event-notification PDFs for one month: `python scripts/collect_event_notifications.py --year 2026 --month 9`. See [Usage](docs/Usage.md).
+
 ## MCP Servers
 
 The pipeline exposes two [Model Context Protocol](https://modelcontextprotocol.io/) servers that allow Claude (and other MCP-compatible clients) to drive the pipeline without writing code. Both are registered in `.mcp.json`.

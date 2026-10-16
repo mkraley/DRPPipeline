@@ -384,6 +384,12 @@ python scripts/start_new_source.py nrc --dry-run
 
 The new source becomes the active `source` in `config.json`. Create the DataLumos login yourself, then set `sources.<name>.datalumos_password`.
 
+**NRC daily event notifications:** one month of the daily reports listed on the year index, saved as PDFs of the rendered report with the site header, menus, and form controls left out. Files land in `C:\DataRescue\NRCData\NRC000005\{year}\` as `{YYYYMMDD}en.pdf`, with `event_notification_manifest.csv` in that project folder. PDFs already saved are skipped. The default month is September 2026.
+
+```powershell
+python scripts/collect_event_notifications.py --year 2026 --month 9
+```
+
 **Config-only:** Parameters without a CLI column can only be set in the config file (or use defaults).
 
 ### Config file format
