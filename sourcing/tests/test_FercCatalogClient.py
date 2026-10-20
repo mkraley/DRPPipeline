@@ -29,7 +29,7 @@ class TestFercCatalogClient(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.fetch_data_assets()
 
-    @patch("sourcing.FercCatalogClient.requests.get")
+    @patch("sourcing.FercApi.requests.get")
     def test_fetch_data_assets_sends_key(self, mock_get: MagicMock) -> None:
         """The catalog request sends the API key and returns asset objects."""
         response = MagicMock()
@@ -44,7 +44,7 @@ class TestFercCatalogClient(unittest.TestCase):
         self.assertEqual(kwargs["headers"]["X-Api-Key"], "test-key")
         self.assertIn("data-assets", mock_get.call_args.args[0])
 
-    @patch("sourcing.FercCatalogClient.requests.get")
+    @patch("sourcing.FercApi.requests.get")
     def test_rate_limit_raises_runtime_error(self, mock_get: MagicMock) -> None:
         """HTTP 429 becomes a RuntimeError."""
         response = MagicMock()
@@ -56,7 +56,7 @@ class TestFercCatalogClient(unittest.TestCase):
             FercCatalogClient(api_key="k").fetch_data_assets()
         self.assertIn("429", str(ctx.exception))
 
-    @patch("sourcing.FercCatalogClient.requests.get")
+    @patch("sourcing.FercApi.requests.get")
     def test_missing_assets_list_raises(self, mock_get: MagicMock) -> None:
         """A JSON object without data-assets is an error."""
         response = MagicMock()

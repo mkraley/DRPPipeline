@@ -187,5 +187,5 @@ class CollectorBase(ABC):
         result["num_files"] = num_files
         result["file_size"] = format_file_size(total_bytes)
         if extensions:
-            result["extensions"] = extensions
+            result["extensions"] = ", ".join(extensions)
         result["download_date"] = date.today().isoformat()

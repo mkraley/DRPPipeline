@@ -11,6 +11,7 @@ from collectors.BtsCollector import BtsCollector
 from collectors.CatalogDataCollector import CatalogDataCollector
 from collectors.CmsGovCollector import CmsGovCollector
 from collectors.Collector import Collector
+from collectors.FercCollector import FercCollector
 from collectors.CollectorFactory import collector_class_for_source, create_collector
 from collectors.NpsCollector import NpsCollector
 from collectors.SocrataCollector import SocrataCollector
@@ -60,6 +61,10 @@ class TestCollectorFactory(unittest.TestCase):
     def test_nps_source_returns_nps_collector(self) -> None:
         """NPS source selects NpsCollector."""
         self.assertIs(collector_class_for_source("nps"), NpsCollector)
+
+    def test_ferc_source_returns_ferc_collector(self) -> None:
+        """FERC source selects FercCollector."""
+        self.assertIs(collector_class_for_source("ferc"), FercCollector)
 
     def test_ahrq_source_returns_catalog_collector(self) -> None:
         """AHRQ source selects CatalogDataCollector."""

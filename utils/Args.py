@@ -95,7 +95,8 @@ class Args(metaclass=ArgsMeta):
         "bts_request_delay": 0.1,  # Seconds between ROSA P catalog page fetches during BTS sourcing
         "ssa_request_delay": 0.1,  # Seconds between GSA Catalog API pages during SSA sourcing
         "gsa_api_key": None,  # api.data.gov key for SSA catalog sourcing (GSA Catalog API)
-        "ferc_api_key": None,  # data.ferc.gov key for FERC catalog sourcing
+        "ferc_api_key": None,  # data.ferc.gov key for FERC catalog sourcing and collection
+        "ferc_request_delay": 0.1,  # Seconds between FERC data-API pages during collection
         "nps_collection_id": 9688,  # IRMA Collection of IMD Programs
         "nps_program_id": 2310251,  # IRMA Program to source (APHN); 0 = all programs
         "nps_request_delay": 0.1,  # Seconds between IRMA API calls during NPS sourcing
