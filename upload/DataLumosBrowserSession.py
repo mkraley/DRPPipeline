@@ -11,6 +11,10 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 
+from upload.minimize_browser_window import (
+    AWAKE_WHEN_MINIMIZED_ARGS,
+    keep_browser_window_minimized,
+)
 from utils.Args import Args
 from utils.Logger import Logger
 
@@ -43,13 +47,16 @@ class DataLumosBrowserSession:
 
         Logger.debug("Initializing Playwright browser")
         self._playwright = sync_playwright().start()
+        launch_args = [
+            "--disable-blink-features=AutomationControlled",
+            "--disable-dev-shm-usage",
+            "--no-sandbox",
+        ]
+        if not Args.upload_headless:
+            launch_args.extend(AWAKE_WHEN_MINIMIZED_ARGS)
         self._browser = self._playwright.chromium.launch(
             headless=Args.upload_headless,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-            ],
+            args=launch_args,
         )
         viewport = {
             "width": int(Args.upload_viewport_width),
@@ -80,6 +87,8 @@ class DataLumosBrowserSession:
         self._context = self._browser.new_context(**ctx_kwargs)
         self._context.set_default_timeout(Args.upload_timeout)
         self._page = self._context.new_page()
+        if not Args.upload_headless:
+            keep_browser_window_minimized(self._page)
         return self._page
 
     def ensure_authenticated(self, reporter: Optional["UploadIssueReporter"] = None) -> None:

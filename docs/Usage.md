@@ -349,7 +349,7 @@ If the config file does not exist, a warning is shown but the pipeline continues
 | `base_output_dir` | — | yes | `C:\Documents\DataRescue\DRPData` | Base directory for collected files |
 | `datalumos_username` | — | yes (required for upload) | — | DataLumos login email |
 | `datalumos_password` | — | yes (required for upload) | — | DataLumos password |
-| `upload_headless` | — | yes | `false` | Run browser in headless mode for upload |
+| `upload_headless` | — | yes | `false` | Run browser in headless mode for upload. When false, the DataLumos window is minimized and minimized again after each navigation |
 | `upload_timeout` | — | yes | `60000` | Timeout in ms for upload operations |
 | `socrata_app_token` | — | yes | — | Optional Socrata API token (avoids 403 on direct download) |
 | `gsa_api_key` | — | yes | — | api.data.gov key for SSA catalog sourcing (GSA Catalog API). Get a free key at https://api.data.gov/signup/ |
