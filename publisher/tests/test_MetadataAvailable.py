@@ -37,6 +37,20 @@ class TestMetadataAvailable(unittest.TestCase):
             (nested / "HUC_data_table_info.csv").write_text("a\n", encoding="utf-8-sig")
             self.assertTrue(folder_has_metadata_files(str(root)))
 
+    def test_check_files_yes_for_data_dictionary_with_or_without_space(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            spaced = Path(tmp) / "spaced"
+            spaced.mkdir()
+            (spaced / "Reactor Event Data Dictionary.xls").write_text("a", encoding="utf-8")
+            self.assertEqual(metadata_available_cell("check_files", str(spaced)), "yes")
+            compact = Path(tmp) / "compact"
+            compact.mkdir()
+            (compact / "event-notification-rpt-datadictionary.xls").write_text(
+                "a",
+                encoding="utf-8",
+            )
+            self.assertEqual(metadata_available_cell("check_files", str(compact)), "yes")
+
     def test_check_files_no_when_names_do_not_match(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

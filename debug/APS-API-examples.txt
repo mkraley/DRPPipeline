@@ -1,0 +1,191 @@
+Appendices 
+Appendix A: Document Properties 
+The following properties may be returned in a document object or used as filters in search 
+queries: 
+- AccessionNumber: Unique identifier for each document 
+- DocumentTitle: Title of the document 
+- AuthorName: One or more authors of the document 
+- AuthorAffiliation: Organization of the author 
+- AddresseeName: Recipient name if available 
+- AddresseeAffiliation: Recipient organization 
+- DocumentDate: Date of the document 
+- DocumentType: Type of the document (e.g., Inspection Report, Letter) 
+- Keyword: Keywords associated with the document 
+- DocketNumber: NRC-assigned docket number (if applicable) 
+- DateAddedTimestamp: Date the document was added to ADAMS Public Library with 
+timestamp 
+- EstimatedPageCount: Estimated length of the document 
+- Url: Direct URI to the document resource 
+  
+Appendix B: Example Search Queries 
+Below are two examples of HTTP requests that use the API to search the library with a filter 
+(example 1) and then use an Accession Number to retrieve a particular document. 
+Send a Boolean Search with Date Filter 
+Example 1: Find all inspection reports mentioning 'safety valve' published after January 1, 
+2024. 
+Below is the REST Request to query: 
+POST https://adams-api.nrc.gov/aps/api/search HTTP/1.1 
+Content-Type: application/json 
+Cache-Control: no-cache 
+Ocp-Apim-Subscription-Key: <YOU-SUBSCRIPTION-KEY> 
+{ 
+  "q": "safety valve", 
+   "content": true, 
+  "filters": [ 
+{"field": "DocumentType", "operator": "equals", "value": "Inspection Report"}, 
+{"field": "DocumentDate", "value": "(DocumentDate ge '2024-01-01')"} 
+  ], 
+"anyFilters": [ ], 
+  "mainLibFilter": true, 
+  "legacyLibFilter": true, 
+  "sort": "DocumentDate", 
+  "sortDirection": 1 
+} 
+  
+Find a Document By AccessionNumber 
+Example 2: Retrieve a specific document by accession number. 
+GET https://adams-api.nrc.gov/aps/api/search/ML2024012345 HTTP/1.1 
+Cache-Control: no-cache 
+Ocp-Apim-Subscription-Key: <YOU-SUBSCRIPTION-KEY> 
+Accept: application/json 
+  
+Find Part 21 Reports 
+Example 3: Part 21 Component Defect Reports can be found using the property search 
+features of the ADAMS Public Search API, which will then return a list of Part 21 reports. In 
+this example we use 1 filter: 
+• Document Type Equals: “Part 21 Correspondence” 
+Below is the REST Request to query: 
+POST https://adams-api.nrc.gov/aps/api/search HTTP/1.1 
+Content-Type: application/json 
+Cache-Control: no-cache 
+Ocp-Apim-Subscription-Key: <YOU-SUBSCRIPTION-KEY> 
+ 
+{ 
+  "q":"", 
+  "filters":[ 
+{ 
+"field":"DocumentType", 
+"value":"Part 21 Correspondence", 
+"operator":"equals" 
+} 
+   ], 
+ "legacyLibFilter":true, 
+ "mainLibFilter":true, 
+ "anyFilters":[], 
+ "sort":"", 
+ "sortDirection":1 
+}  
+Find Operating Reactor Inspection Reports 
+Example 4: Operating Reactor Inspection Reports can be found using the property search 
+features of the ADAMS Public Search API, which will then return a list of these reports.  In 
+this query we use two filters.   
+• Document Type Starts: “Inspection Report” 
+• Docket Number Starts: “05000” 
+Below is the REST Request to query: 
+POST https://adams-api.nrc.gov/aps/api/search HTTP/1.1 
+Content-Type: application/json 
+Cache-Control: no-cache 
+Ocp-Apim-Subscription-Key: <YOU-SUBSCRIPTION-KEY> 
+{ 
+"q":"", 
+"filters":[ 
+{ 
+"field":"DocumentType", 
+"value":"inspection report", 
+"operator":"starts" 
+}, 
+{ 
+"field":"DocketNumber", 
+"value":"05000", 
+"operator":"starts" 
+} 
+], 
+"legacyLibFilter":true, 
+"mainLibFilter":true, 
+"anyFilters":[], 
+"sort":"", 
+"sortDirection":1 
+}  
+Appendix C: Sample JSON Result Set 
+Below is a representative JSON response from a search query: 
+{ 
+    "count": 2, 
+    "results": [{ 
+        "score": 12.175547, 
+        "highlights": null, 
+        "semanticSearch": { 
+            "rerankerScore": null, 
+            "captions": null 
+        }, 
+        "document": { 
+            "IdT": "ADC8BC2E-D7F9-4089-9D8C-743E50E3B8FE", 
+            "Id": "{ADC8BC2E-D7F9-4089-9D8C-743E50E3B8FE}", 
+            "Name": "LaSalle County Station - Biennial Problem Identification and Resolution 
+Inspection Report 05000373/2023012 and 05000374/2023012", 
+            "AccessionNumber": "ML24017A120", 
+            "Availability": "Publicly Available", 
+            "AuthorName": ["Ruiz R"], 
+            "AuthorAffiliation": ["NRC/RGN-III/DORS/RPB1"], 
+            "AddresseeName": ["Rhoades D P"], 
+            "AddresseeAffiliation": ["Constellation Energy Generation, LLC", "Constellation 
+Nuclear"], 
+            "CaseReferenceNumber": [], 
+            "Comment": "<! SBW1 !><BR>", 
+            "ContactPerson": null, 
+            "DocumentTitle": "LaSalle County Station - Biennial Problem Identification and 
+Resolution Inspection Report 05000373/2023012 and 05000374/2023012", 
+            "DocumentTitleEquals": "LaSalle County Station - Biennial Problem Identification and 
+Resolution Inspection Report 05000373/2023012 and 05000374/2023012", 
+            "DocumentTitleWord": "LaSalle County Station - Biennial Problem Identification and 
+Resolution Inspection Report 05000373/2023012 and 05000374/2023012", 
+            "DateAdded": "2024-01-23", 
+            "DateAddedTimestamp": "2024-01-23 08:34", 
+            "DocumentDate": "2024-01-18", 
+            "DocumentType": ["Inspection Report", "Letter"], 
+            "DocumentReportNumber": ["IR 2023012"], 
+            "DocketNumber": ["05000373", "05000374"], 
+            "DistributionListCodes": null, 
+            "DocumentsFiledInPackage": [], 
+            "LicenseNumber": ["NPF-011", "NPF-018"], 
+            "Keyword": ["NRC-002", "gps1", "dnd", "utsPARS"], 
+            "PackageNumber": null, 
+            "PackagesFiledIn": [], 
+            "Url": "https://www.nrc.gov/docs/ML2401/ML24017A120.pdf", 
+            "content": "\nDavid P. Rhoades\nSenior Vice President\nConstellation Energy 
+Generation, LLC\nPresident and Chief Nuclear Officer (CNO)\nConstellation Nuclear\n4300 
+Winfield Road\nWarrenville, IL 60555\n\nSUBJECT: LASALLE COUNTY STATION - 
+BIENNIAL PROBLEM IDENTIFICATION AND \nRESOLUTION INSPECTION REPORT 
+05000373/2023012 AND \n05000374/2023012\n\nDear David P. Rhoades:\n\nOn 
+December 15, 2023, the U.S. Nuclear Regulatory Com", 
+            "IsPackage": "No", 
+            "IsLegacy": "No", 
+            "MicroformAddresses": null, 
+            "PhysicalFileLocation": "ADAMS", 
+            "EstimatedPageCount": null, 
+            "AccessionNumberLower": "ml24017a120", 
+            "ItemType": "doc" 
+        } 
+    }, { 
+        "score": 10.164975, 
+        "highlights": null, 
+        "semanticSearch": { 
+            "rerankerScore": null, 
+            "captions": null 
+        }, 
+        "document": { 
+            "AccessionNumber": "ML21234A129", 
+            "Availability": "Publicly Available", 
+            "AuthorName": ["Doe B"], 
+            "AuthorAffiliation": ["NRC/RGN-II/DRS"], 
+            "AddresseeName": ["Case D G"], 
+            "AddresseeAffiliation": ["Electric & Power Co"], 
+            "CaseReferenceNumber": [], 
+            "Comment": "jrs16<BR>", 
+            "ContactPerson": null, 
+            "DocumentTitle": "Power Station - Age Related Degradation Inspection Report", 
+            "DateAdded": "2024-01-22", 
+            "DateAddedTimestamp": "2024-01-22 08:45", 
+            "DocumentDate": "2024-01-18", 
+            "DocumentType": ["Inspection Report", "Letter"], 
+            "DocumentReportNumber": ["IR 2023234"], 
+            "DocketNumber": ["050004521", "05000123"], 
