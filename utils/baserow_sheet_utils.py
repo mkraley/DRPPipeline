@@ -101,8 +101,9 @@ def format_baserow_backup_title(title: str) -> str:
     """
     Format a dataset title for the Baserow Backups ``Dataset`` column.
 
-    Copies the Datasets title. Titles containing a comma or forward slash are
-    wrapped in double quotes so batch import matches the Datasets table name.
+    Copies the Datasets title. Titles containing a comma, forward slash, or
+    vertical bar are wrapped in double quotes so batch import matches the
+    Datasets table name.
 
     Args:
         title: Formatted Datasets-table title (not yet quoted).
@@ -115,7 +116,7 @@ def format_baserow_backup_title(title: str) -> str:
         return ""
     if text.startswith('"') and text.endswith('"'):
         return text
-    if "," in text or "/" in text:
+    if any(character in text for character in (",", "/", "|")):
         return f'"{text}"'
     return text
 

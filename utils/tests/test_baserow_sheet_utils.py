@@ -69,6 +69,13 @@ class TestBaserowSheetUtils(unittest.TestCase):
             '"City/Airport Nomenclature"',
         )
 
+    def test_format_baserow_backup_title_quotes_vertical_bar(self) -> None:
+        """Titles with a vertical bar are wrapped in double quotes."""
+        self.assertEqual(
+            format_baserow_backup_title("Form 1 | Electric Plant"),
+            '"Form 1 | Electric Plant"',
+        )
+
     def test_format_dataset_size_gb_jedec(self) -> None:
         """Byte counts convert to floating-point binary GB."""
         self.assertEqual(format_dataset_size_gb_jedec(1024**3), "1.0")
