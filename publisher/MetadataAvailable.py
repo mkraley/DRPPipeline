@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 CHECK_FILES = "check_files"
-_NAME_MARKERS = ("metadata", "table_info", "datadictionary")
+_NAME_MARKERS = ("metadata", "table_info", "dictionary", "datadictionary")
 _IGNORED_NAMES = frozenset({"project_metadata.json", "product_metadata.json"})
 
 
@@ -27,9 +27,9 @@ def metadata_available_cell(setting: Any, folder_path: str | None) -> str:
 def folder_has_metadata_files(folder_path: str | None) -> bool:
     """Return True when a file name contains a metadata marker.
 
-    Markers are ``metadata``, ``table_info``, and ``data dictionary`` with or
-    without the space. ``project_metadata.json`` and ``product_metadata.json``
-    are landing-page sidecars and do not count.
+    Markers are ``metadata``, ``table_info``, ``dictionary``, and
+    ``data dictionary`` with or without the space. ``project_metadata.json``
+    and ``product_metadata.json`` are landing-page sidecars and do not count.
     """
     raw = str(folder_path or "").strip()
     if not raw:

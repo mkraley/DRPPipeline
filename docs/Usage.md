@@ -369,7 +369,7 @@ If the config file does not exist, a warning is shown but the pipeline continues
 | `inventory_sheet_format` | — | yes | `data_inventories` | Sheet column layout: `data_inventories` (shared inventory tabs) or `baserow_batch` (Baserow batch import template) |
 | `baserow_maintainers` | — | yes | `DRP,DL` | Maintainers column value when `inventory_sheet_format` is `baserow_batch` |
 | `baserow_contact` | — | yes | — | Contact column email for `baserow_batch` (falls back to `google_username`) |
-| `default_metadata_available` | — | yes | `true` | Publish writes Metadata available: `yes` when true, `no` when false, or inspect the project folder when `check_files` (yes if any file name contains `metadata`, `table_info`, or `data dictionary` with or without the space, ignoring `project_metadata.json` and `product_metadata.json`) |
+| `default_metadata_available` | — | yes | `true` | Publish writes Metadata available: `yes` when true, `no` when false, or inspect the project folder when `check_files` (yes if any file name contains `metadata`, `table_info`, `dictionary`, or `data dictionary` with or without the space, ignoring `project_metadata.json` and `product_metadata.json`) |
 | `google_username` | — | yes | `mkraley` | Value for "Claimed" column in inventory |
 
 When `inventory_sheet_format` is `baserow_batch`, **File extensions** are written uppercase and comma-separated (no spaces). **Title for Datasets table** replaces colons (`: ` → em dash), is limited to 255 characters (overflow goes to **Notes**), and **Title for Backups table** copies that value, wrapping it in double quotes when it contains a comma or `/`.
