@@ -128,6 +128,45 @@ class TestFercCollector(unittest.TestCase):
         self.assertIn("Project_Name", text)
         datasets.fetch_dictionary.assert_called_once_with(33)
 
+    def test_collect_infers_metadata_from_summary_and_dataset(self) -> None:
+        """Fill metadata uses the stored summary and the dataset just written."""
+        pages = MagicMock()
+        pages.url_to_pdf.side_effect = lambda _url, path: path.write_bytes(b"%PDF") or True
+        datasets = MagicMock()
+        datasets.fetch_details.return_value = None
+        datasets.fetch_dictionary.return_value = None
+        datasets.fetch_data_page.return_value = {
+            "row_data": [
+                {"State": "AK", "Issuance_Date": "2019-05-23"},
+                {"State": "OR", "Issuance_Date": "2021-03-01"},
+            ],
+            "has_more": False,
+        }
+        catalog = MagicMock()
+        catalog.fetch_data_assets.return_value = [
+            {"data-sets": [{"id": 33, "title": "Licensed", "url": _URL, "description": ""}]}
+        ]
+        collector = FercCollector(
+            page_downloader=pages,
+            dataset_client=datasets,
+            catalog_client=catalog,
+            html_fetcher=lambda _url: "<html></html>",
+        )
+
+        result = collector._collect(
+            _URL,
+            7,
+            {
+                "title": "Licensed Marine and Hydrokinetic Projects",
+                "summary": "Hydrokinetic projects in the United States.",
+            },
+        )
+
+        self.assertEqual(result["geographic_coverage"], "United States")
+        self.assertEqual(result["time_start"], "2019-05-23")
+        self.assertEqual(result["time_end"], "2021-03-01")
+        self.assertIn("hydrokinetic", result["keywords"])
+
 
 if __name__ == "__main__":
     unittest.main()

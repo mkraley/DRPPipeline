@@ -1,14 +1,11 @@
-"""Keywords copied from a title, summary, and downloaded table."""
+"""Keywords copied from a title and summary."""
 
 from __future__ import annotations
 
 import re
 from functools import lru_cache
 
-from interactive_collector.metadata_inference_tables import is_date_header, is_keyword_header
-from interactive_collector.metadata_inference_places import is_state_header
 from interactive_collector.metadata_inference_text import keywords_from_text
-from interactive_collector.table_preview import TablePreview
 from utils.IcpsrSubjectThesaurus import IcpsrSubjectThesaurus
 
 _MAX_KEYWORDS = 12
@@ -51,18 +48,6 @@ def keywords_from_title_and_summary(title: str, summary: str) -> str:
     _add_terms(terms, _thesaurus_terms(f"{title}\n{summary}"))
     _add_terms(terms, _listed_terms(summary))
     return "; ".join(_drop_shorter(terms)[:_MAX_KEYWORDS])
-
-
-def keywords_from_table(preview: TablePreview) -> str:
-    """Return column labels and short category values from one table."""
-    terms: list[str] = []
-    _add_terms(terms, [_header_phrase(header) for header in preview.headers])
-    if not preview.truncated:
-        for header, values in preview.categories.items():
-            if _skip_header(header):
-                continue
-            _add_terms(terms, [value.lower() for value in values])
-    return "; ".join(terms[:_MAX_KEYWORDS])
 
 
 def _title_phrases(title: str) -> list[str]:
@@ -124,21 +109,6 @@ def _short_items(text: str) -> list[str]:
             continue
         phrases.append(" ".join(words))
     return phrases
-
-
-def _header_phrase(header: str) -> str:
-    """Return a column header with filler words removed."""
-    if _skip_header(header):
-        return ""
-    words = _content_words(header)
-    if not words or (len(words) == 1 and len(words[0]) < 5):
-        return ""
-    return " ".join(words[:4])
-
-
-def _skip_header(header: str) -> bool:
-    """True for date, state, and explicit keyword columns."""
-    return is_date_header(header) or is_state_header(header) or is_keyword_header(header)
 
 
 def _thesaurus_terms(text: str) -> list[str]:

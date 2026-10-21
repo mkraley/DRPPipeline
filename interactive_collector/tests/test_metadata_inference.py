@@ -115,8 +115,8 @@ class TestMetadataInference(unittest.TestCase):
             )
             fields, notes = infer_project_metadata("Plants", "No dates here.", Path(folder))
         self.assertEqual(notes, [])
-        self.assertEqual(fields["time_start"], "2020-03")
-        self.assertEqual(fields["time_end"], "2024-11")
+        self.assertEqual(fields["time_start"], "2020-03-01")
+        self.assertEqual(fields["time_end"], "2024-11-30")
         self.assertEqual(fields["geographic_coverage"], "Texas; California")
         self.assertIn("scram", fields["keywords"])
         self.assertIn("plants", fields["keywords"])
@@ -176,8 +176,47 @@ class TestMetadataInference(unittest.TestCase):
         self.assertIn("plume", keywords)
         self.assertIn("nuclear power", keywords)
 
-    def test_spreadsheet_headers_and_categories(self) -> None:
-        """Column headings and short category lists are keywords."""
+    def test_underscore_date_and_state_columns(self) -> None:
+        """FERC-style Issuance_Date and State headers are read, and Last_Updated is not."""
+        with tempfile.TemporaryDirectory() as folder:
+            Path(folder, "dataset.csv").write_text(
+                "State,Issuance_Date,Last_Updated\n"
+                "AK,2019-05-23,2024-01-01\n"
+                "OR,2021-03-01,2024-01-02\n",
+                encoding="utf-8-sig",
+            )
+            fields, notes = infer_project_metadata("Projects", "", Path(folder))
+        self.assertEqual(notes, [])
+        self.assertEqual(fields["time_start"], "2019-05-23")
+        self.assertEqual(fields["time_end"], "2021-03-01")
+        self.assertEqual(fields["geographic_coverage"], "Alaska; Oregon")
+
+    def test_many_states_including_combined_cells_are_united_states(self) -> None:
+        """More than eight states, including a cell that lists two, is United States."""
+        with tempfile.TemporaryDirectory() as folder:
+            Path(folder, "plants.csv").write_text(
+                "State\nCA\nNY\nTX\nFL\nWA\nIL\nOH\nPA\nGA\nMI, WI\n",
+                encoding="utf-8-sig",
+            )
+            fields, _notes = infer_project_metadata("Plants", "", Path(folder))
+        self.assertEqual(fields["geographic_coverage"], "United States")
+
+    def test_future_end_is_clipped_to_today(self) -> None:
+        """A license expiration after today is stored as today, in the same format as the start."""
+        from datetime import date
+
+        from interactive_collector.metadata_inference_dates import align_coverage_dates
+
+        start, end = align_coverage_dates(
+            "1978-12-04",
+            "2076-06-30",
+            today=date(2026, 10, 21),
+        )
+        self.assertEqual(start, "1978-12-04")
+        self.assertEqual(end, "2026-10-21")
+
+    def test_spreadsheet_headers_are_not_keywords(self) -> None:
+        """Column headings and category values are not keywords."""
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "scrams.csv"
             path.write_text(
@@ -185,11 +224,11 @@ class TestMetadataInference(unittest.TestCase):
                 encoding="utf-8-sig",
             )
             fields, _notes = infer_project_metadata("Scrams", "", Path(folder))
-        keywords = fields["keywords"]
-        self.assertIn("docket", keywords)
-        self.assertIn("scram", keywords)
-        self.assertIn("automatic", keywords)
-        self.assertIn("manual", keywords)
+        keywords = fields.get("keywords", "")
+        self.assertIn("scrams", keywords)
+        self.assertNotIn("docket", keywords)
+        self.assertNotIn("automatic", keywords)
+        self.assertNotIn("manual", keywords)
 
 
 class TestInferMetadataRoute(unittest.TestCase):

@@ -8,6 +8,9 @@ For each sourced dataset landing page, saves:
 * ``details.json`` when the details endpoint returns a body
 * ``dictionary.csv`` from the embedded page dictionary when present,
   otherwise from the shorter API dictionary
+
+Keywords, time range, data types, and geographic coverage are filled with
+the same inference the interactive collector uses for Fill metadata.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ from collectors.FercCollectedFiles import (
     write_dictionary_csv,
 )
 from collectors.FercDatasetClient import FercDatasetClient
+from collectors.FercKeywords import apply_ferc_keywords
 from collectors.FercLandingDictionary import fetch_landing_html, parse_embedded_dictionary
 from collectors.UsfsPageDownloader import UsfsPageDownloader
 from sourcing.FercCandidateFetcher import canonical_dataset_url, rows_from_assets
@@ -68,7 +72,6 @@ class FercCollector(CollectorBase):
 
     def _collect(self, url: str, drpid: int, record: dict[str, Any]) -> dict[str, Any]:
         """Collect one dataset into its project folder."""
-        del record
         if not self.validate_url(drpid, url):
             return {}
         dataset_id = self._dataset_id(url)
@@ -94,7 +97,38 @@ class FercCollector(CollectorBase):
                 pages.close()
         result: dict[str, Any] = {"folder_path": str(folder)}
         self.finalize_folder_stats(result, folder)
+        self._apply_inferred_metadata(result, record, folder, drpid)
         return result
+
+    def _apply_inferred_metadata(
+        self,
+        result: dict[str, Any],
+        record: dict[str, Any],
+        folder: Path,
+        drpid: int,
+    ) -> None:
+        """Fill metadata fields from the title, summary, and files just saved."""
+        from interactive_collector.metadata_inference import infer_project_metadata
+
+        try:
+            fields, notes = infer_project_metadata(
+                str(record.get("title") or ""),
+                str(record.get("summary") or ""),
+                folder,
+            )
+        except Exception as exc:
+            Logger.warning("FERC metadata inference failed for DRPID %s: %s", drpid, exc)
+            return
+        for note in notes:
+            Logger.warning("DRPID %s: %s", drpid, note)
+        apply_ferc_keywords(
+            fields,
+            str(record.get("title") or ""),
+            str(record.get("summary") or ""),
+        )
+        result.update(fields)
+        if fields:
+            Logger.info("Inferred metadata for DRPID %s: %s", drpid, fields)
 
     def _dataset_id(self, url: str) -> int | None:
         """Return the catalog id for a landing-page URL."""

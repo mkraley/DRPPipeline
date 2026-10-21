@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from interactive_collector.metadata_inference_text import readable_header
+
 _STATE_PAIRS: tuple[tuple[str, str], ...] = (
     ("AL", "Alabama"), ("AK", "Alaska"), ("AZ", "Arizona"), ("AR", "Arkansas"),
     ("CA", "California"), ("CO", "Colorado"), ("CT", "Connecticut"), ("DE", "Delaware"),
@@ -33,18 +35,21 @@ def geography_from_text(text: str) -> str:
 
 def is_state_header(header: str) -> bool:
     """True when a column header is a state field rather than a status field."""
-    lowered = header.lower()
+    lowered = readable_header(header).lower()
     if "status" in lowered:
         return False
-    return bool(re.search(r"\bstates?\b", header, re.IGNORECASE))
+    return bool(re.search(r"\bstates?\b", lowered, re.IGNORECASE))
+
+
+_STATE_SPLIT = re.compile(r"\s*(?:,|;|/|&|\band\b)\s*", re.IGNORECASE)
 
 
 def coverage_from_state_values(values: list[str]) -> str:
     """
     Return a geography string when the values are U.S. states.
 
-    A single state is named. Two to eight states are listed. More than eight
-    states become United States. Mixed or unrecognized values are ignored.
+    A cell may list several states. A single state is named. Two to eight
+    states are listed. More than eight states become United States.
     """
     nonempty = [value.strip() for value in values if value.strip()]
     if not nonempty:
@@ -53,20 +58,31 @@ def coverage_from_state_values(values: list[str]) -> str:
     seen: set[str] = set()
     recognized = 0
     for value in nonempty:
-        name = _state_name(value)
-        if not name:
+        found = _names_in_cell(value)
+        if not found:
             continue
         recognized += 1
-        if name not in seen:
-            seen.add(name)
-            names.append(name)
+        for name in found:
+            if name not in seen:
+                seen.add(name)
+                names.append(name)
+    if len(names) > 8:
+        return "United States"
     if recognized / len(nonempty) < 0.8:
         return ""
     if len(names) == 1:
         return names[0]
-    if len(names) <= 8:
-        return "; ".join(names)
-    return "United States"
+    return "; ".join(names)
+
+
+def _names_in_cell(value: str) -> list[str]:
+    """Return state names found in one cell, including comma-separated lists."""
+    parts = [part.strip() for part in _STATE_SPLIT.split(value) if part.strip()]
+    names = [name for name in (_state_name(part) for part in parts) if name]
+    if names:
+        return names
+    single = _state_name(value)
+    return [single] if single else []
 
 
 def _state_name(value: str) -> str:

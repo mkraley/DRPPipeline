@@ -10,7 +10,7 @@ from interactive_collector.metadata_inference_places import (
     coverage_from_state_values,
     is_state_header,
 )
-from interactive_collector.metadata_inference_text import data_types_from_text
+from interactive_collector.metadata_inference_text import data_types_from_text, readable_header
 from interactive_collector.table_preview import TablePreview
 
 _DATE_WORD = re.compile(r"\b(date|year|quarter|month)\b", re.IGNORECASE)
@@ -25,14 +25,15 @@ def keep_value_column(header: str) -> bool:
 
 def is_date_header(header: str) -> bool:
     """True for date, year, quarter, or month columns that are not update stamps."""
-    if _IGNORE_DATE.search(header):
+    text = readable_header(header)
+    if _IGNORE_DATE.search(text):
         return False
-    return bool(_DATE_WORD.search(header))
+    return bool(_DATE_WORD.search(text))
 
 
 def is_keyword_header(header: str) -> bool:
     """True for an explicit keyword, subject, topic, or tag column."""
-    return bool(_KEYWORD_HEADER.search(header))
+    return bool(_KEYWORD_HEADER.search(readable_header(header)))
 
 
 def apply_preview(preview: TablePreview, fields: dict[str, str]) -> None:
@@ -84,16 +85,11 @@ def combined_year_months(preview: TablePreview) -> list[str]:
 
 
 def keywords_from_preview(preview: TablePreview) -> str:
-    """Join keyword-column values with phrases taken from headers and categories."""
-    from interactive_collector.metadata_inference_keywords import keywords_from_table
-
+    """Join values from a column labeled keywords, subjects, topics, or tags."""
     values: list[str] = []
     for index, header in enumerate(preview.headers):
         if is_keyword_header(header):
             values.extend(preview.columns.get(index, []))
-    values.extend(
-        part.strip() for part in keywords_from_table(preview).split(";") if part.strip()
-    )
     return join_terms(values)
 
 
@@ -158,12 +154,14 @@ def _year_month_indexes(preview: TablePreview) -> tuple[int | None, int | None]:
 
 def _is_year_header(header: str) -> bool:
     """True for a Year column that is not also a month column."""
-    return bool(re.search(r"\byear\b", header, re.IGNORECASE)) and "month" not in header.lower()
+    text = readable_header(header)
+    return bool(re.search(r"\byear\b", text, re.IGNORECASE)) and "month" not in text.lower()
 
 
 def _is_month_header(header: str) -> bool:
     """True for a Month column that is not also a year column."""
-    return bool(re.search(r"\bmonth\b", header, re.IGNORECASE)) and "year" not in header.lower()
+    text = readable_header(header)
+    return bool(re.search(r"\bmonth\b", text, re.IGNORECASE)) and "year" not in text.lower()
 
 
 def _header_index(preview: TablePreview, predicate: Callable[[str], bool]) -> int | None:

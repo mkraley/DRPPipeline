@@ -11,6 +11,7 @@ from pathlib import Path
 
 from collectors.UsfsMetadataExtractor import DATA_TYPE_GIS
 
+from interactive_collector.metadata_inference_dates import align_coverage_dates
 from interactive_collector.metadata_inference_places import geography_from_text
 from interactive_collector.metadata_inference_tables import (
     apply_preview,
@@ -53,6 +54,9 @@ def infer_project_metadata(
         apply_preview(preview, fields)
     if _folder_has_gis(folder):
         merge_data_type(fields, DATA_TYPE_GIS)
+    start, end = align_coverage_dates(fields.get("time_start", ""), fields.get("time_end", ""))
+    fields["time_start"] = start
+    fields["time_end"] = end
     filled = {name: fields[name] for name in _FIELD_NAMES if fields.get(name)}
     return filled, notes
 

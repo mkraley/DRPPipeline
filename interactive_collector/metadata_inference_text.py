@@ -61,6 +61,11 @@ def plain_text(value: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def readable_header(header: str) -> str:
+    """Turn underscores into spaces so a column name matches whole words."""
+    return (header or "").replace("_", " ")
+
+
 def dates_from_text(text: str) -> tuple[str, str]:
     """
     Return start and end dates stated in prose.
