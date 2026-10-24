@@ -55,7 +55,7 @@ class TestEqrCollector(unittest.TestCase):
         huge = EqrZipLink("CSV_2018_Q4.zip", "https://example.test/CSV/CSV_2018_Q4.zip", 2 * _GIB)
         other = EqrZipLink("CSV_2021_Q1.zip", "https://example.test/CSV/CSV_2021_Q1.zip", 10)
         pages = MagicMock()
-        pages.url_to_pdf.side_effect = lambda _url, path: path.write_bytes(b"%PDF") or True
+        pages.url_html_to_pdf.side_effect = lambda _url, _html, path: path.write_bytes(b"%PDF") or True
         collector = EqrCollector(
             page_downloader=pages,
             link_source=lambda: [small, huge, other],
@@ -83,7 +83,8 @@ class TestEqrCollector(unittest.TestCase):
         self.assertTrue(rows["CSV_2013_Q3.zip"].downloaded)
         self.assertFalse(rows["CSV_2018_Q4.zip"].downloaded)
         self.assertNotIn("CSV_2021_Q1.zip", rows)
-        pages.url_to_pdf.assert_called_once()
+        pages.url_html_to_pdf.assert_called_once()
+        pages.url_to_pdf.assert_not_called()
 
     def test_ferc_collector_sends_eqr_urls_to_the_eqr_collector(self) -> None:
         """A catalog lookup does not run for an EQR year-range URL."""

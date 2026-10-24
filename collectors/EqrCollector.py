@@ -11,6 +11,7 @@ import requests
 from collectors.BudgetedDownload import BudgetedDownload
 from collectors.CollectorBase import CollectorBase
 from collectors.EqrDictionary import DICTIONARY_NAME, dictionary_url_from_html
+from collectors.EqrLandingPage import save_explanation_pdf
 from collectors.EqrProjectRange import EXPLAIN_URL, EqrProjectRange, range_from_source_url
 from collectors.EqrZipCatalog import EqrZipCatalog
 from collectors.EqrZipLink import EqrZipLink, links_for_range
@@ -92,7 +93,7 @@ class EqrCollector:
         """Save the explanation PDF and the V3.5 data dictionary."""
         pages, owns_pages = self._pages()
         try:
-            _save_pdf(pages, drpid, folder)
+            _save_pdf(pages, drpid, folder, self._explain_html)
             _save_dictionary(folder, self._explain_html, self._download_file, drpid)
         finally:
             if owns_pages:
@@ -130,13 +131,12 @@ def _with_size(link: EqrZipLink) -> EqrZipLink:
     return link.with_size(zip_content_length(link.url))
 
 
-def _save_pdf(pages: Any, drpid: int, folder: Path) -> None:
-    """Print the EQR explanation page when the PDF is not already saved."""
-    dest = folder / LANDING_PDF_NAME
-    if dest.is_file() and dest.stat().st_size > 0:
-        return
-    if not pages.url_to_pdf(EXPLAIN_URL, dest):
-        abort_project(drpid, f"Failed to save landing page PDF: {EXPLAIN_URL}")
+def _save_pdf(pages: Any, drpid: int, folder: Path, html: str | None) -> None:
+    """Print the fetched EQR explanation page, replacing a security-check PDF."""
+    try:
+        save_explanation_pdf(pages, folder, html, _fetch_explain_html)
+    except ValueError as exc:
+        abort_project(drpid, str(exc))
 
 
 def _save_dictionary(

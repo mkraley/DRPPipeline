@@ -200,6 +200,34 @@ class TestUsfsPageDownloader(unittest.TestCase):
         mock_page.locator.return_value.first.evaluate.assert_called_once()
 
     @patch.object(UsfsPageDownloader, "_ensure_browser", return_value=True)
+    def test_url_html_to_pdf_keeps_stylesheets_and_images(self, _mock_ensure: MagicMock) -> None:
+        """The document HTML is supplied, and CSS and image requests still load."""
+        downloader = UsfsPageDownloader()
+        mock_page = MagicMock()
+        downloader._session.new_page = MagicMock(return_value=mock_page)
+
+        def _pdf(**kwargs: object) -> None:
+            Path(str(kwargs["path"])).write_bytes(b"%PDF")
+
+        mock_page.pdf.side_effect = _pdf
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "landing.pdf"
+            ok = downloader.url_html_to_pdf("https://www.ferc.gov/eqr", "<html></html>", dest)
+        self.assertTrue(ok)
+        handler = mock_page.route.call_args.args[1]
+        document = MagicMock()
+        document.request.resource_type = "document"
+        document.request.url = "https://www.ferc.gov/eqr?check=1"
+        handler(document)
+        document.fulfill.assert_called_once()
+        stylesheet = MagicMock()
+        stylesheet.request.resource_type = "stylesheet"
+        stylesheet.request.url = "https://www.ferc.gov/theme.css"
+        handler(stylesheet)
+        stylesheet.continue_.assert_called_once()
+        stylesheet.fulfill.assert_not_called()
+
+    @patch.object(UsfsPageDownloader, "_ensure_browser", return_value=True)
     def test_url_to_titled_pdf_uses_page_title(self, _mock_ensure: MagicMock) -> None:
         """HTML resource PDFs are named from the document title."""
         downloader = UsfsPageDownloader()

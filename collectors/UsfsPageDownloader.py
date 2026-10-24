@@ -33,6 +33,25 @@ def _is_inline_document_url(url: str) -> bool:
     return suffix in _INLINE_DOCUMENT_SUFFIXES
 
 
+def _serve_document_html(page: Any, url: str, html: str) -> None:
+    """Answer the document request with ``html`` and let every asset load."""
+    target = _document_key(url)
+
+    def fulfill(route: Any) -> None:
+        request = route.request
+        if request.resource_type == "document" and _document_key(request.url) == target:
+            route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html)
+            return
+        route.continue_()
+
+    page.route("**/*", fulfill)
+
+
+def _document_key(url: str) -> str:
+    """Return a URL without its query or fragment, for document matching."""
+    return url.split("#", 1)[0].split("?", 1)[0].rstrip("/")
+
+
 def _unique_pdf_path(path: Path) -> Path:
     """Return ``path``, or ``stem_2.pdf`` / ``stem_3.pdf`` if it already exists."""
     if not path.exists():
@@ -257,6 +276,31 @@ class UsfsPageDownloader:
             return pdf_path.is_file() and pdf_path.stat().st_size > 0
         except Exception as exc:
             Logger.error("Failed to convert HTML to PDF (%s): %s", html_path, exc)
+            return False
+        finally:
+            with suppress(Exception):
+                page.close()
+
+    def url_html_to_pdf(self, url: str, html: str, pdf_path: Path) -> bool:
+        """
+        Print ``url`` using ``html`` as the document.
+
+        Stylesheets, scripts, and images still load from their own addresses.
+        """
+        if not self._ensure_browser():
+            return False
+        page = self._session.new_page()
+        if page is None:
+            return False
+        try:
+            page.set_default_timeout(_PRINT_TIMEOUT_MS)
+            _serve_document_html(page, url, html)
+            page.goto(url, wait_until="load", timeout=_LOAD_TIMEOUT_MS)
+            page.wait_for_timeout(_SETTLE_MS)
+            pdf_path.parent.mkdir(parents=True, exist_ok=True)
+            return self._write_page_pdf(page, pdf_path) is not None
+        except Exception as exc:
+            Logger.error("Failed to render HTML for %s: %s", url, exc)
             return False
         finally:
             with suppress(Exception):
