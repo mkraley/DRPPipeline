@@ -74,7 +74,9 @@ class ResumeDownload:
     ) -> None:
         """Download pending rows and set ``downloaded`` when all are present."""
         store = ProjectFileStore.from_storage()
-        pending = store.list_pending_downloads(drpid)
+        from collectors.EqrTokenRefresh import pending_after_eqr_refresh
+
+        pending = pending_after_eqr_refresh(drpid, store)
         status = (project.get("status") or "").strip()
         if status == STATUS_UPLOADED_LARGE and any(row.size_bytes is None for row in pending):
             reporter.error("uploaded - large still has a file with an unknown size")

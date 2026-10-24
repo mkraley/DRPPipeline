@@ -56,3 +56,14 @@ class TestProjectFileStore(unittest.TestCase):
         self.assertEqual(uploaded["a.bin"], True)
         self.assertTrue(all(row.downloaded for row in rows))
         self.assertEqual(self.store.list_pending_uploads(7)[0].relative_path, "sub/b.bin")
+
+    def test_update_source_url_keeps_the_file_pending(self) -> None:
+        """A refreshed download URL does not mark the file downloaded."""
+        self.store.replace_for_project(
+            7,
+            [ProjectFileRow(7, "CSV_2021_Q1.zip", 10, "https://example.com/old", False, False)],
+        )
+        self.store.update_source_url(7, "CSV_2021_Q1.zip", "https://example.com/new")
+        pending = self.store.list_pending_downloads(7)
+        self.assertEqual(pending[0].source_url, "https://example.com/new")
+        self.assertFalse(pending[0].downloaded)

@@ -67,7 +67,7 @@ DRPPipeline/
 | Module | Purpose |
 |--------|--------|
 | **source** | Sources candidate URLs into the DB (spreadsheet, ADC Figshare API, BTS ROSA P, SSA Data.gov catalog, NPS IRMA DataStore, or FERC data catalog; selected by `source` in config). |
-| **collect** | Collects sourced projects into local folders (Socrata, catalog.data.gov, CMS, USFS, ADC, BTS, SSA, NPS IRMA, FERC, etc.; selected by `source` in config). The FERC collector also infers keywords, time range, data types, and geographic coverage. |
+| **collect** | Collects sourced projects into local folders (Socrata, catalog.data.gov, CMS, USFS, ADC, BTS, SSA, NPS IRMA, FERC, etc.; selected by `source` in config). The FERC collector also infers keywords, time range, data types, and geographic coverage. Electric Quarterly Report CSV zips are sourced as seven year-range projects, each under 25 GiB, with ``python scripts/source_eqr_projects.py``. |
 | **collect_interactively** | Flask app for manual collection: browse URLs, save PDFs, update metadata. Under active development; not managed by the orchestration MCP. |
 | **upload** | Uploads collected data to DataLumos via browser automation. |
 | **publish** | Runs DataLumos publish workflow; also updates source inventory|

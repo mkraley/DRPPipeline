@@ -1,6 +1,10 @@
 """
 FERC collector for DRP Pipeline.
 
+Catalog datasets save a landing page, table, details, and dictionary.
+An Electric Quarterly Report URL with ``start`` and ``end`` quarters saves
+that year range of CSV zips instead.
+
 For each sourced dataset landing page, saves:
 
 * ``landing_page.pdf``
@@ -74,6 +78,9 @@ class FercCollector(CollectorBase):
         """Collect one dataset into its project folder."""
         if not self.validate_url(drpid, url):
             return {}
+        eqr_result = self._collect_eqr(url, drpid, record)
+        if eqr_result is not None:
+            return eqr_result
         dataset_id = self._dataset_id(url)
         if dataset_id is None:
             abort_project(drpid, f"FERC catalog has no dataset for {url}")
@@ -99,6 +106,15 @@ class FercCollector(CollectorBase):
         self.finalize_folder_stats(result, folder)
         self._apply_inferred_metadata(result, record, folder, drpid)
         return result
+
+    def _collect_eqr(self, url: str, drpid: int, record: dict[str, Any]) -> dict[str, Any] | None:
+        """Collect an EQR year-range project, or return None for a catalog dataset."""
+        from collectors.EqrCollector import EqrCollector
+        from collectors.EqrProjectRange import range_from_source_url
+
+        if range_from_source_url(url) is None:
+            return None
+        return EqrCollector(page_downloader=self._page_downloader).collect(url, drpid, record)
 
     def _apply_inferred_metadata(
         self,

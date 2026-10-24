@@ -142,6 +142,18 @@ class ProjectFileStore:
         )
         self._connection.commit()
 
+    def update_source_url(self, drpid: int, relative_path: str, source_url: str) -> None:
+        """Replace the download URL for one file row."""
+        self._connection.execute(
+            """
+            UPDATE project_files
+            SET source_url = ?
+            WHERE drpid = ? AND relative_path = ?
+            """,
+            (source_url, int(drpid), relative_path),
+        )
+        self._connection.commit()
+
     def mark_uploaded(self, drpid: int, relative_paths: list[str]) -> None:
         """Mark files that the first or resume upload has sent."""
         self._connection.executemany(

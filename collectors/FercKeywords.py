@@ -14,6 +14,10 @@ from __future__ import annotations
 _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("page 3", ("Form 552", "natural gas", "price indexes")),
     ("form 552", ("Form 552", "natural gas", "natural gas industry", "prices")),
+    (
+        "electric quarterly",
+        ("Electric Quarterly Report", "electric utilities", "prices", "market-based rates"),
+    ),
     ("oil assessment", ("oil industry", "petroleum industry", "regulation", "annual charges")),
     ("oil debit", ("oil industry", "petroleum industry", "regulation", "annual charges")),
     ("electric assessment", ("electric utilities", "electricity", "regulation", "annual charges")),
@@ -59,6 +63,7 @@ _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
 FREE_TEXT_TERMS = frozenset(
     {
         "Form 552",
+        "Electric Quarterly Report",
         "Form 549B",
         "Form 549D",
         "Form 556",
