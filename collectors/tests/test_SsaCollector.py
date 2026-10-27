@@ -8,8 +8,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from collectors.DataGovFileDownloader import CATALOG_PDF_NAME
 from collectors.SsaCollector import SsaCollector
-from collectors.SsaFileDownloader import CATALOG_PDF_NAME
 from utils.Args import Args
 from utils.Logger import Logger
 
@@ -36,7 +36,7 @@ class TestSsaCollector(unittest.TestCase):
         """Restore argv."""
         sys.argv = self._original_argv
 
-    @patch("collectors.SsaCollector.record_error")
+    @patch("collectors.DataGovCollector.record_error")
     def test_collect_rejects_non_catalog_url(self, mock_error: MagicMock) -> None:
         """Non-catalog URLs are rejected before fetch."""
         self.collector._page_downloader = MagicMock()
@@ -45,8 +45,8 @@ class TestSsaCollector(unittest.TestCase):
         mock_error.assert_called()
 
     @patch("utils.IcpsrGeographicNormalizer.normalize_geographic_metadata")
-    @patch("collectors.SsaCollector.create_output_folder")
-    @patch("collectors.SsaCollector.UsfsPageDownloader")
+    @patch("collectors.DataGovCollector.create_output_folder")
+    @patch("collectors.DataGovCollector.UsfsPageDownloader")
     def test_collect_downloads_zip_and_saves_pdf(
         self,
         _mock_downloader_cls: MagicMock,
@@ -107,8 +107,8 @@ class TestSsaCollector(unittest.TestCase):
         finally:
             shutil.rmtree(folder, ignore_errors=True)
 
-    @patch("collectors.SsaCollector.record_error")
-    @patch("collectors.SsaCollector.create_output_folder")
+    @patch("collectors.DataGovCollector.record_error")
+    @patch("collectors.DataGovCollector.create_output_folder")
     def test_collect_html_only_saves_pdfs(
         self,
         mock_create_folder: MagicMock,
@@ -153,8 +153,8 @@ class TestSsaCollector(unittest.TestCase):
         finally:
             shutil.rmtree(folder, ignore_errors=True)
 
-    @patch("collectors.SsaCollector.record_error")
-    @patch("collectors.SsaCollector.create_output_folder")
+    @patch("collectors.DataGovCollector.record_error")
+    @patch("collectors.DataGovCollector.create_output_folder")
     def test_collect_errors_when_no_resources(
         self,
         mock_create_folder: MagicMock,

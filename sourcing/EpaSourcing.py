@@ -15,8 +15,8 @@ from sourcing.DataGovCatalogClient import DataGovCatalogClient
 from sourcing.DataGovSourcing import DataGovSourcing
 from utils.Args import Args
 
-AGENCY = "U.S. Environmental Protection Agency"
-OFFICE = "U.S. Environmental Protection Agency"
+AGENCY = "Environmental Protection Agency"
+OFFICE = "Environmental Protection Agency"
 DEFAULT_ORG_SLUG = "epa"
 
 

@@ -16,8 +16,8 @@ from utils.Logger import Logger
 SAMPLE_ROW = {
     "url": "https://catalog.data.gov/dataset/air-quality",
     "title": "Air Quality",
-    "agency": "U.S. Environmental Protection Agency",
-    "office": "U.S. Environmental Protection Agency",
+    "agency": "Environmental Protection Agency",
+    "office": "Environmental Protection Agency",
     "record_id": "air-quality",
     "identifier": "US-GOV-EPA-1",
 }
@@ -67,7 +67,7 @@ class TestDataGovSourcing(unittest.TestCase):
         self.assertEqual(projects[0]["title"], "Air Quality")
         self.assertEqual(
             projects[0]["agency"],
-            "U.S. Environmental Protection Agency",
+            "Environmental Protection Agency",
         )
         self.assertEqual(
             projects[0]["source_url"],

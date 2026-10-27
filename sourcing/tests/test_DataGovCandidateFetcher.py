@@ -19,8 +19,8 @@ from sourcing.DataGovCandidateFetcher import (
 from utils.Args import Args
 from utils.Logger import Logger
 
-_AGENCY = "U.S. Environmental Protection Agency"
-_OFFICE = "U.S. Environmental Protection Agency"
+_AGENCY = "Environmental Protection Agency"
+_OFFICE = "Environmental Protection Agency"
 
 
 def _result(
