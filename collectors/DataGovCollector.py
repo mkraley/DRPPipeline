@@ -14,6 +14,11 @@ from typing import Any
 from collectors.BtsMetadataExtractor import infer_data_types
 from collectors.BudgetedDownload import BudgetedDownload
 from collectors.CollectorBase import CollectorBase
+from collectors.DataGovArcGisExtent import first_arcgis_extent_from_urls
+from collectors.DataGovCoverage import (
+    bounding_box_from_spatial,
+    looks_like_coordinates,
+)
 from collectors.DataGovFileDownloader import (
     CATALOG_PDF_NAME,
     DataGovFileDownloader,
@@ -28,14 +33,11 @@ from utils.Errors import abort_project, record_error, record_warning
 from utils.IcpsrGeographicNormalizer import (
     GeographicNormalizeResult,
     log_geographic_normalization,
+    normalize_geographic_metadata,
 )
 from utils.Logger import Logger
 from utils.file_utils import create_output_folder, format_file_size
 from utils.inventory_status import STATUS_COLLECTED
-from collectors.DataGovCoverage import (
-    bounding_box_from_spatial,
-    looks_like_coordinates,
-)
 
 _FETCH_TIMEOUT_SEC = 120
 
@@ -126,6 +128,7 @@ class DataGovCollector(CollectorBase):
         parsed = self._fetch_catalog(page_downloader, url, drpid)
         if parsed is None:
             return {}
+        self._enrich_geographic_from_arcgis(parsed)
         self._record_geographic_normalization(drpid, parsed)
         if not parsed.get("title"):
             abort_project(
@@ -294,6 +297,36 @@ class DataGovCollector(CollectorBase):
             result.get("file_size"),
         )
 
+    def _enrich_geographic_from_arcgis(self, parsed: dict[str, Any]) -> None:
+        """
+        When catalog spatial is missing, infer coverage from ArcGIS service extent.
+
+        MapServer / FeatureServer ``fullExtent`` values are converted to WGS84 and
+        normalized through the ICPSR thesaurus (same path as catalog coordinates).
+        """
+        if parsed.get("geographic_coverage"):
+            return
+        urls = [
+            str(entry.url)
+            for entry in list(parsed.get("_download_files") or [])
+            + list(parsed.get("_html_resources") or [])
+            if getattr(entry, "url", None)
+        ]
+        bbox = first_arcgis_extent_from_urls(urls)
+        if bbox is None:
+            return
+        geo = normalize_geographic_metadata(bounding_box=bbox)
+        if geo.geographic_coverage:
+            parsed["geographic_coverage"] = geo.geographic_coverage
+        if geo.warnings:
+            existing = list(parsed.get("_geographic_warnings") or [])
+            existing.extend(geo.warnings)
+            parsed["_geographic_warnings"] = existing
+        parsed["_raw_spatial"] = (
+            f"{bbox['west']},{bbox['south']},{bbox['east']},{bbox['north']}"
+        )
+        parsed["_geographic_bbox"] = bbox
+
     def _record_geographic_normalization(
         self,
         drpid: int,
@@ -302,18 +335,24 @@ class DataGovCollector(CollectorBase):
         """Log ICPSR geographic normalization and surface review warnings."""
         raw_spatial = parsed.get("_raw_spatial")
         warnings = list(parsed.get("_geographic_warnings") or [])
-        if raw_spatial is None and not warnings:
+        bbox = parsed.get("_geographic_bbox")
+        if isinstance(bbox, dict):
+            pass
+        elif raw_spatial is not None:
+            bbox = bounding_box_from_spatial(raw_spatial)
+        else:
+            bbox = None
+        if raw_spatial is None and not warnings and not parsed.get("geographic_coverage"):
             return
         raw_text = str(raw_spatial or "").strip()
         extent = "" if looks_like_coordinates(raw_text) else raw_text
-        bbox = bounding_box_from_spatial(raw_spatial) if raw_spatial is not None else None
         log_geographic_normalization(
             GeographicNormalizeResult(
                 geographic_coverage=str(parsed.get("geographic_coverage") or ""),
                 warnings=warnings,
             ),
             geographic_extent_description=extent,
-            bounding_box=bbox,
+            bounding_box=bbox if isinstance(bbox, dict) else None,
             context=f"DRPID {drpid}",
         )
         for warning in warnings:

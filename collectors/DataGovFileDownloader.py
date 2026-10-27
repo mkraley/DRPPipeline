@@ -5,8 +5,16 @@ Download Data.gov catalog files with the shared 1 GB collector budget.
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
+
+import requests
 
 from collectors.BudgetedDownload import BudgetedDownload
+from collectors.DataGovArcGisExtent import (
+    arcgis_json_url,
+    is_arcgis_hub_or_item_page,
+    is_arcgis_map_or_feature_server,
+)
 from collectors.DataGovMetadataExtractor import DataGovDownloadFile, filename_from_url
 from collectors.PlannedFile import PlannedFile
 from collectors.SsaCompleteMetadata import COMPLETE_METADATA_HEADING_SELECTOR
@@ -15,6 +23,7 @@ from utils.Errors import abort_project, record_error
 from utils.Logger import Logger
 from utils.collector_status import pending_download_summary_note
 from utils.file_utils import format_file_size, sanitize_filename
+from utils.url_utils import requests_verify
 
 CATALOG_PDF_NAME = "catalog_page.pdf"
 
@@ -251,19 +260,86 @@ class DataGovFileDownloader:
         folder_path: Path,
         resources: list[DataGovDownloadFile],
     ) -> list[str]:
-        """Print HTML landing pages to PDFs named from each page title."""
+        """
+        Save HTML / ArcGIS resources linked from the catalog page.
+
+        ArcGIS Hub and Geoplatform item pages are printed with SPA-aware waits
+        and screen media (default print CSS hides their content). MapServer /
+        FeatureServer endpoints are saved as JSON metadata instead of HTML
+        directory printouts. Other pages become titled PDFs.
+        """
         notes: list[str] = []
         for entry in resources:
+            if is_arcgis_map_or_feature_server(entry.url):
+                dest = self._save_arcgis_service_json(folder_path, entry)
+                if dest is None:
+                    abort_project(
+                        drpid,
+                        f"Failed to save ArcGIS service JSON: {entry.url}",
+                    )
+                Logger.info("Saved ArcGIS service JSON: %s", dest.name)
+                continue
             fallback = Path(filename_from_url(entry.url)).stem or "page"
             dest = page_downloader.url_to_titled_pdf(
                 entry.url,
                 folder_path,
                 fallback_stem=fallback,
+                spa_ready=is_arcgis_hub_or_item_page(entry.url),
             )
             if dest is None:
                 abort_project(drpid, f"Failed to save HTML resource PDF: {entry.url}")
             Logger.info("Saved HTML resource PDF: %s", dest.name)
         return notes
+
+    def _save_arcgis_service_json(
+        self,
+        folder_path: Path,
+        entry: DataGovDownloadFile,
+    ) -> Path | None:
+        """
+        Download MapServer/FeatureServer ``?f=json`` metadata to the project folder.
+
+        Args:
+            folder_path: Project output folder.
+            entry: Catalog HTML resource pointing at the service.
+
+        Returns:
+            Path to the written JSON file, or None on failure.
+        """
+        json_url = arcgis_json_url(entry.url)
+        dest = folder_path / _arcgis_json_filename(entry.url)
+        try:
+            response = requests.get(
+                json_url,
+                timeout=60,
+                verify=requests_verify(),
+                headers={"Accept": "application/json"},
+            )
+        except requests.RequestException as exc:
+            Logger.error("ArcGIS JSON download failed for %s: %s", json_url, exc)
+            return None
+        if response.status_code >= 400 or not response.content:
+            Logger.error(
+                "ArcGIS JSON download HTTP %s for %s",
+                response.status_code,
+                json_url,
+            )
+            return None
+        dest.write_bytes(response.content)
+        return dest
+
+
+def _arcgis_json_filename(service_url: str) -> str:
+    """Build a stable JSON filename from a MapServer/FeatureServer URL path."""
+    path = unquote(urlsplit(service_url).path).rstrip("/")
+    parts = [part for part in path.split("/") if part]
+    if len(parts) >= 2:
+        stem = "_".join(parts[-2:])
+    elif parts:
+        stem = parts[-1]
+    else:
+        stem = "arcgis_service"
+    return sanitize_filename(f"{stem}.json")
 
 
 def _extra_on_disk_bytes(folder_path: Path, known_names: set[str]) -> int:

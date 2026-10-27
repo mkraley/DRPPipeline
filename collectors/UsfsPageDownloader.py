@@ -15,11 +15,32 @@ from utils.url_utils import _fetch_html_with_playwright_page
 _NAVIGATION_WAIT = "commit"
 _NAVIGATION_TIMEOUT_MS = 30000
 _SETTLE_MS = 3000
+_SPA_SETTLE_MS = 10000
+_SPA_NETWORK_IDLE_TIMEOUT_MS = 30000
 _LOAD_TIMEOUT_MS = 35000
 _PRINT_TIMEOUT_MS = 90000
 _FILE_DOWNLOAD_TIMEOUT_MS = 600 * 1000
 _CONTENT_LENGTH_TIMEOUT_MS = 30_000
 _INLINE_DOCUMENT_SUFFIXES = frozenset({".xml", ".json", ".txt", ".csv"})
+_PDF_MARGINS = {"top": "0.5in", "right": "0.5in", "bottom": "0.5in", "left": "0.5in"}
+_OVERLAY_DISMISS_SELECTORS = (
+    "button:has-text('Accept')",
+    "button:has-text('Agree')",
+    "button:has-text('Got it')",
+    "button:has-text('OK')",
+    "[aria-label='Close']",
+    "button.close",
+    ".esri-popup__button--close",
+)
+_OVERLAY_HIDE_SELECTORS = (
+    ".esri-popup",
+    "[role='dialog']",
+    "calcite-modal",
+    "calcite-alert",
+    "calcite-sheet",
+    "#onetrust-banner-sdk",
+    ".onetrust-pc-dark-filter",
+)
 
 
 def _is_inline_document_url(url: str) -> bool:
@@ -228,6 +249,8 @@ class UsfsPageDownloader:
         url: str,
         dest_dir: Path,
         fallback_stem: str = "page",
+        *,
+        spa_ready: bool = False,
     ) -> Path | None:
         """
         Render ``url`` to a PDF named from the document ``<title>``.
@@ -236,6 +259,8 @@ class UsfsPageDownloader:
             url: Page to print.
             dest_dir: Folder that receives the PDF.
             fallback_stem: Filename stem when the page has no title.
+            spa_ready: When True, wait for SPA content, use screen media, and
+                dismiss common overlays before printing (ArcGIS Hub/item pages).
 
         Returns:
             Path of the written PDF, or None on failure.
@@ -246,14 +271,14 @@ class UsfsPageDownloader:
         if page is None:
             return None
         try:
-            self._prepare_page_for_pdf(page, url)
-            stem = sanitize_filename(str(page.title() or "").strip()) 
+            self._prepare_page_for_pdf(page, url, spa_ready=spa_ready)
+            stem = sanitize_filename(str(page.title() or "").strip())
             if stem == "Untitled":
                 stem = sanitize_filename(fallback_stem)
             filename = stem if stem.lower().endswith(".pdf") else f"{stem}.pdf"
             dest_dir.mkdir(parents=True, exist_ok=True)
             pdf_path = _unique_pdf_path(dest_dir / filename)
-            return self._write_page_pdf(page, pdf_path)
+            return self._write_page_pdf(page, pdf_path, spa_ready=spa_ready)
         except Exception as exc:
             Logger.error("Failed to render titled PDF from %s: %s", url, exc)
             return None
@@ -338,15 +363,44 @@ class UsfsPageDownloader:
         page: Any,
         url: str,
         open_details_selector: str | None = None,
+        *,
+        spa_ready: bool = False,
     ) -> None:
         """Load ``url`` and expand a ``<details>`` section when requested."""
         page.set_default_timeout(_PRINT_TIMEOUT_MS)
-        page.goto(url, wait_until=_NAVIGATION_WAIT, timeout=_NAVIGATION_TIMEOUT_MS)
-        page.wait_for_timeout(_SETTLE_MS)
+        wait_until = "domcontentloaded" if spa_ready else _NAVIGATION_WAIT
+        nav_timeout = 90000 if spa_ready else _NAVIGATION_TIMEOUT_MS
+        page.goto(url, wait_until=wait_until, timeout=nav_timeout)
+        page.wait_for_timeout(_SPA_SETTLE_MS if spa_ready else _SETTLE_MS)
         with suppress(Exception):
             page.wait_for_load_state("load", timeout=_LOAD_TIMEOUT_MS)
+        if spa_ready:
+            with suppress(Exception):
+                page.wait_for_load_state(
+                    "networkidle",
+                    timeout=_SPA_NETWORK_IDLE_TIMEOUT_MS,
+                )
+            self._dismiss_page_overlays(page)
         if open_details_selector:
             self._open_closest_details(page, open_details_selector)
+
+    def _dismiss_page_overlays(self, page: Any) -> None:
+        """Click common consent/close controls and hide leftover dialogs."""
+        for selector in _OVERLAY_DISMISS_SELECTORS:
+            with suppress(Exception):
+                locator = page.locator(selector)
+                if locator.count() > 0 and locator.first.is_visible():
+                    locator.first.click(timeout=1000)
+        page.wait_for_timeout(500)
+        hide_script = (
+            "selectors => { for (const sel of selectors) {"
+            " document.querySelectorAll(sel).forEach(el => {"
+            " el.style.setProperty('display','none','important');"
+            " el.style.setProperty('visibility','hidden','important');"
+            " }); } }"
+        )
+        with suppress(Exception):
+            page.evaluate(hide_script, list(_OVERLAY_HIDE_SELECTORS))
 
     def _open_closest_details(self, page: Any, selector: str) -> None:
         """Open the ``<details>`` ancestor of the first matching element."""
@@ -356,9 +410,26 @@ class UsfsPageDownloader:
                 " if (details) details.open = true; }"
             )
 
-    def _write_page_pdf(self, page: Any, pdf_path: Path) -> Path | None:
+    def _write_page_pdf(
+        self,
+        page: Any,
+        pdf_path: Path,
+        *,
+        spa_ready: bool = False,
+    ) -> Path | None:
         """Print the current page to ``pdf_path``."""
-        page.pdf(path=str(pdf_path), format="A4", print_background=True)
+        if spa_ready:
+            # ArcGIS Hub/item SPAs hide most content under print CSS.
+            with suppress(Exception):
+                page.emulate_media(media="screen")
+            page.pdf(
+                path=str(pdf_path),
+                format="Letter",
+                print_background=True,
+                margin=_PDF_MARGINS,
+            )
+        else:
+            page.pdf(path=str(pdf_path), format="A4", print_background=True)
         if pdf_path.is_file() and pdf_path.stat().st_size > 0:
             return pdf_path
         return None

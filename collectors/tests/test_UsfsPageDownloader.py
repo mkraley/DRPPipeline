@@ -3,7 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from collectors.UsfsPageDownloader import UsfsPageDownloader
 
@@ -248,6 +248,36 @@ class TestUsfsPageDownloader(unittest.TestCase):
         self.assertIsNotNone(dest)
         assert dest is not None
         self.assertEqual(dest.name, "Background_Information_for_Popular_Names.pdf")
+
+    @patch.object(UsfsPageDownloader, "_ensure_browser", return_value=True)
+    def test_url_to_titled_pdf_spa_ready_uses_screen_media(
+        self,
+        _mock_ensure: MagicMock,
+    ) -> None:
+        """SPA pages emulate screen media and dismiss overlays before print."""
+        downloader = UsfsPageDownloader()
+        mock_page = MagicMock()
+        mock_page.title.return_value = "ArcGIS Item"
+        mock_page.locator.return_value.count.return_value = 0
+        downloader._session.new_page = MagicMock(return_value=mock_page)
+
+        def _pdf(**kwargs: object) -> None:
+            Path(str(kwargs["path"])).write_bytes(b"%PDF")
+
+        mock_page.pdf.side_effect = _pdf
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = downloader.url_to_titled_pdf(
+                "https://epa.maps.arcgis.com/home/item.html?id=abc",
+                Path(tmp),
+                fallback_stem="item",
+                spa_ready=True,
+            )
+        self.assertIsNotNone(dest)
+        mock_page.emulate_media.assert_called_with(media="screen")
+        mock_page.wait_for_load_state.assert_any_call(
+            "networkidle",
+            timeout=ANY,
+        )
 
 
 if __name__ == "__main__":

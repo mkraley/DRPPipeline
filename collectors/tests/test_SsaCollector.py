@@ -68,7 +68,13 @@ class TestSsaCollector(unittest.TestCase):
             dest.write_bytes(b"PK\x03\x04")
             return 4, True
 
-        def _titled_pdf(url: str, dest_dir: Path, fallback_stem: str = "page") -> Path:
+        def _titled_pdf(
+            url: str,
+            dest_dir: Path,
+            fallback_stem: str = "page",
+            spa_ready: bool = False,
+        ) -> Path:
+            del spa_ready
             dest = dest_dir / "Background_Information_for_Popular_Names.pdf"
             dest.write_bytes(b"%PDF")
             return dest
@@ -133,7 +139,13 @@ class TestSsaCollector(unittest.TestCase):
         )
         page_downloader.url_to_pdf.return_value = True
 
-        def _titled_pdf(url: str, dest_dir: Path, fallback_stem: str = "page") -> Path:
+        def _titled_pdf(
+            url: str,
+            dest_dir: Path,
+            fallback_stem: str = "page",
+            spa_ready: bool = False,
+        ) -> Path:
+            del spa_ready
             dest = dest_dir / "Index.pdf"
             dest.write_bytes(b"%PDF")
             return dest
