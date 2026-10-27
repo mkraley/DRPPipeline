@@ -12,17 +12,19 @@ from urllib.parse import unquote, urlparse
 from bs4 import BeautifulSoup, Tag
 
 from collectors.BtsMetadataExtractor import infer_data_types
+from collectors.DataGovCoverage import (
+    catalog_temporal_fields,
+    normalize_catalog_geographic,
+)
 from collectors.SsaCatalogJsonLd import (
     format_from_encoding,
     json_ld_dataset,
     json_ld_downloads,
-    page_geographic,
     page_keywords,
     page_summary,
     page_title,
-    temporal_fields,
 )
-from collectors.SsaCompleteMetadata import coverage_from_complete_metadata
+from collectors.SsaCompleteMetadata import complete_metadata_rows
 from sourcing.DataGovCandidateFetcher import is_file_download, is_html_url
 
 
@@ -70,21 +72,25 @@ def parse_catalog_page(
     keywords = page_keywords(dataset)
     if keywords:
         result["keywords"] = keywords
-    complete = coverage_from_complete_metadata(soup)
-    geographic = complete.get("geographic_coverage") or page_geographic(dataset)
-    if geographic:
-        result["geographic_coverage"] = geographic
+    metadata_rows = complete_metadata_rows(soup)
+    raw_spatial = metadata_rows.get("spatial")
+    if raw_spatial is None or raw_spatial == "":
+        raw_spatial = dataset.get("spatial") or dataset.get("spatialCoverage")
+    if raw_spatial is not None and raw_spatial != "":
+        geo = normalize_catalog_geographic(raw_spatial)
+        if geo.geographic_coverage:
+            result["geographic_coverage"] = geo.geographic_coverage
+        if geo.warnings:
+            result["_geographic_warnings"] = list(geo.warnings)
+        result["_raw_spatial"] = raw_spatial
 
-    if complete.get("time_start") or complete.get("time_end"):
-        result.update(
-            {
-                key: complete[key]
-                for key in ("time_start", "time_end")
-                if complete.get(key)
-            }
+    result.update(
+        catalog_temporal_fields(
+            title=title,
+            dataset=dataset,
+            complete_rows=metadata_rows,
         )
-    else:
-        result.update(temporal_fields(title, dataset))
+    )
     identifier = str(dataset.get("identifier") or "").strip()
     if identifier:
         result["collection_notes"] = f"Identifier: {identifier}"

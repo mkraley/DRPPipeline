@@ -24,10 +24,18 @@ from collectors.PlannedFile import PlannedFile
 from collectors.UsfsPageDownloader import UsfsPageDownloader
 from sourcing.DataGovCandidateFetcher import slug_from_source_url
 from utils.Args import Args
-from utils.Errors import abort_project, record_error
+from utils.Errors import abort_project, record_error, record_warning
+from utils.IcpsrGeographicNormalizer import (
+    GeographicNormalizeResult,
+    log_geographic_normalization,
+)
 from utils.Logger import Logger
 from utils.file_utils import create_output_folder, format_file_size
 from utils.inventory_status import STATUS_COLLECTED
+from collectors.DataGovCoverage import (
+    bounding_box_from_spatial,
+    looks_like_coordinates,
+)
 
 _FETCH_TIMEOUT_SEC = 120
 
@@ -118,6 +126,7 @@ class DataGovCollector(CollectorBase):
         parsed = self._fetch_catalog(page_downloader, url, drpid)
         if parsed is None:
             return {}
+        self._record_geographic_normalization(drpid, parsed)
         if not parsed.get("title"):
             abort_project(
                 drpid,
@@ -284,6 +293,31 @@ class DataGovCollector(CollectorBase):
             result["num_files"],
             result.get("file_size"),
         )
+
+    def _record_geographic_normalization(
+        self,
+        drpid: int,
+        parsed: dict[str, Any],
+    ) -> None:
+        """Log ICPSR geographic normalization and surface review warnings."""
+        raw_spatial = parsed.get("_raw_spatial")
+        warnings = list(parsed.get("_geographic_warnings") or [])
+        if raw_spatial is None and not warnings:
+            return
+        raw_text = str(raw_spatial or "").strip()
+        extent = "" if looks_like_coordinates(raw_text) else raw_text
+        bbox = bounding_box_from_spatial(raw_spatial) if raw_spatial is not None else None
+        log_geographic_normalization(
+            GeographicNormalizeResult(
+                geographic_coverage=str(parsed.get("geographic_coverage") or ""),
+                warnings=warnings,
+            ),
+            geographic_extent_description=extent,
+            bounding_box=bbox,
+            context=f"DRPID {drpid}",
+        )
+        for warning in warnings:
+            record_warning(drpid, warning)
 
     def _warm_session(self, page_downloader: UsfsPageDownloader) -> None:
         """Open the warmup origin so cookies are available for file downloads."""

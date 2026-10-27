@@ -44,14 +44,12 @@ class TestSsaCollector(unittest.TestCase):
         self.assertEqual(result, {})
         mock_error.assert_called()
 
-    @patch("utils.IcpsrGeographicNormalizer.normalize_geographic_metadata")
     @patch("collectors.DataGovCollector.create_output_folder")
     @patch("collectors.DataGovCollector.UsfsPageDownloader")
     def test_collect_downloads_zip_and_saves_pdf(
         self,
         _mock_downloader_cls: MagicMock,
         mock_create_folder: MagicMock,
-        mock_normalize_geo: MagicMock,
     ) -> None:
         """Catalog PDF, HTML resource PDF, and ZIP file are saved."""
         folder = Path(__file__).parent / "_tmp_ssa_collect"
@@ -84,7 +82,6 @@ class TestSsaCollector(unittest.TestCase):
             result = self.collector._collect(_URL, 3, {"source_url": _URL})
             self.assertEqual(result["title"][:10], "Baby Names")
             self.assertEqual(result["geographic_coverage"], "United States")
-            mock_normalize_geo.assert_not_called()
             self.assertEqual(result["folder_path"], str(folder))
             self.assertIn("zip", result.get("extensions", ""))
             self.assertEqual(result["num_files"], 3)
