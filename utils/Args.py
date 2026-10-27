@@ -94,7 +94,9 @@ class Args(metaclass=ArgsMeta):
         "adc_request_delay": 0.1,  # Seconds between Figshare API calls during ADC sourcing
         "bts_request_delay": 0.1,  # Seconds between ROSA P catalog page fetches during BTS sourcing
         "ssa_request_delay": 0.1,  # Seconds between GSA Catalog API pages during SSA sourcing
-        "gsa_api_key": None,  # api.data.gov key for SSA catalog sourcing (GSA Catalog API)
+        "datagov_request_delay": None,  # Seconds between Data.gov catalog pages (falls back to ssa_request_delay)
+        "gsa_api_key": None,  # api.data.gov key for Data.gov catalog sourcing (GSA Catalog API)
+        "org_slug": None,  # Data.gov organization slug override (e.g. epa, ssa)
         "ferc_api_key": None,  # data.ferc.gov key for FERC catalog sourcing and collection
         "ferc_request_delay": 0.1,  # Seconds between FERC data-API pages during collection
         "nps_collection_id": 9688,  # IRMA Collection of IMD Programs

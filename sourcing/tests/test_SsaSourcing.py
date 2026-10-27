@@ -1,4 +1,4 @@
-"""Tests for SsaSourcing orchestrator module."""
+"""Tests for SsaSourcing thin wrapper."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ SAMPLE_ROW = {
 
 
 class TestSsaSourcing(unittest.TestCase):
-    """Tests for SSA batch sourcing module."""
+    """Tests for SSA sourcing wrapper over DataGovSourcing."""
 
     def setUp(self) -> None:
         """Create isolated Storage and Args for each test."""
@@ -48,9 +48,9 @@ class TestSsaSourcing(unittest.TestCase):
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
 
-    @patch("sourcing.SsaSourcing.DuplicateChecker")
+    @patch("sourcing.DataGovSourcing.DuplicateChecker")
     def test_run_inserts_sourced_row(self, mock_checker_cls: MagicMock) -> None:
-        """run(-1) creates a sourced record with metadata fields."""
+        """run(-1) creates a sourced record with SSA metadata fields."""
         mock_checker_cls.return_value.exists_in_storage.return_value = False
         fetcher = MagicMock()
         fetcher.list_dataset_rows.return_value = [dict(SAMPLE_ROW)]
@@ -62,62 +62,6 @@ class TestSsaSourcing(unittest.TestCase):
         self.assertEqual(len(projects), 1)
         self.assertEqual(projects[0]["title"], "Baby Names")
         self.assertEqual(projects[0]["agency"], "Social Security Administration")
-        self.assertEqual(
-            projects[0]["source_url"],
-            "https://catalog.data.gov/dataset/baby-names",
-        )
-
-    @patch("sourcing.SsaSourcing.DuplicateChecker")
-    def test_run_skips_already_sourced_slugs(self, mock_checker_cls: MagicMock) -> None:
-        """Pending batch skips catalog slugs already present in Storage URLs."""
-        mock_checker_cls.return_value.exists_in_storage.return_value = False
-        existing_url = "https://catalog.data.gov/dataset/keep-me"
-        self.storage.create_record(existing_url)
-        fetcher = MagicMock()
-        fetcher.list_dataset_rows.return_value = [
-            {**SAMPLE_ROW, "url": existing_url, "record_id": "keep-me"},
-            {
-                **SAMPLE_ROW,
-                "url": "https://catalog.data.gov/dataset/year-2025",
-                "record_id": "year-2025",
-            },
-        ]
-
-        SsaSourcing(fetcher=fetcher).run(-1)
-
-        projects = self.storage.list_eligible_projects("sourced", None)
-        self.assertEqual(len(projects), 1)
-        self.assertEqual(
-            projects[0]["source_url"],
-            "https://catalog.data.gov/dataset/year-2025",
-        )
-
-    @patch("sourcing.SsaSourcing.DuplicateChecker")
-    @patch.object(Args, "num_rows", 1)
-    def test_run_respects_num_rows_on_pending_batch(
-        self,
-        mock_checker_cls: MagicMock,
-    ) -> None:
-        """num_rows caps how many pending datasets are inserted per run."""
-        mock_checker_cls.return_value.exists_in_storage.return_value = False
-        fetcher = MagicMock()
-        fetcher.list_dataset_rows.return_value = [
-            {
-                **SAMPLE_ROW,
-                "url": "https://catalog.data.gov/dataset/a",
-                "record_id": "a",
-            },
-            {
-                **SAMPLE_ROW,
-                "url": "https://catalog.data.gov/dataset/b",
-                "record_id": "b",
-            },
-        ]
-
-        SsaSourcing(fetcher=fetcher).run(-1)
-
-        projects = self.storage.list_eligible_projects("sourced", None)
-        self.assertEqual(len(projects), 1)
 
 
 if __name__ == "__main__":

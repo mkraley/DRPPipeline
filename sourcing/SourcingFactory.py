@@ -8,6 +8,7 @@ from typing import Type
 
 from sourcing.AdcSourcing import AdcSourcing
 from sourcing.BtsSourcing import BtsSourcing
+from sourcing.EpaSourcing import EpaSourcing
 from sourcing.FercSourcing import FercSourcing
 from sourcing.NpsSourcing import NpsSourcing
 from sourcing.SsaSourcing import SsaSourcing
@@ -17,11 +18,21 @@ from utils.Args import Args
 
 _ADC_SOURCE = "adc"
 _BTS_SOURCE = "bts"
+_EPA_SOURCE = "epa"
 _FERC_SOURCE = "ferc"
 _NPS_SOURCE = "nps"
 _SSA_SOURCE = "ssa"
 _SPREADSHEET_SOURCES = frozenset({"ahrq", "cdc", "cms", "dol", "usfs"})
-_API_SOURCES = frozenset({_ADC_SOURCE, _BTS_SOURCE, _FERC_SOURCE, _NPS_SOURCE, _SSA_SOURCE})
+_API_SOURCES = frozenset(
+    {
+        _ADC_SOURCE,
+        _BTS_SOURCE,
+        _EPA_SOURCE,
+        _FERC_SOURCE,
+        _NPS_SOURCE,
+        _SSA_SOURCE,
+    }
+)
 
 
 def sourcing_class_for_source(source: str | None = None) -> Type[SourcingBase]:
@@ -32,9 +43,8 @@ def sourcing_class_for_source(source: str | None = None) -> Type[SourcingBase]:
         source: Source key from config; defaults to ``Args.source``.
 
     Returns:
-        ``AdcSourcing``, ``BtsSourcing``, ``FercSourcing``, ``NpsSourcing``, or
-        ``SsaSourcing`` for API catalogs; ``SpreadsheetSourcing`` for
-        sheet-based sources.
+        API catalog sourcing class (ADC, BTS, EPA, FERC, NPS, SSA) or
+        ``SpreadsheetSourcing`` for sheet-based sources.
     """
     key = (source if source is not None else getattr(Args, "source", None) or "")
     key = str(key).strip().lower()
@@ -42,6 +52,8 @@ def sourcing_class_for_source(source: str | None = None) -> Type[SourcingBase]:
         return AdcSourcing
     if key == _BTS_SOURCE:
         return BtsSourcing
+    if key == _EPA_SOURCE:
+        return EpaSourcing
     if key == _FERC_SOURCE:
         return FercSourcing
     if key == _NPS_SOURCE:

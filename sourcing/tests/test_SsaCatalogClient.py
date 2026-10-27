@@ -1,4 +1,4 @@
-"""Tests for SsaCatalogClient."""
+"""Tests for SsaCatalogClient thin wrapper."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from utils.Args import Args
 
 
 class TestSsaCatalogClient(unittest.TestCase):
-    """Tests for GSA Catalog API paging."""
+    """Tests for SSA defaults on the shared catalog client."""
 
     def setUp(self) -> None:
         """Initialize Args for client construction."""
@@ -29,46 +29,17 @@ class TestSsaCatalogClient(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.fetch_search_page()
 
-    @patch("sourcing.SsaCatalogClient.requests.get")
-    def test_fetch_search_page_sends_key_and_org(self, mock_get: MagicMock) -> None:
-        """First page requests SSA org with the configured API key."""
+    @patch("sourcing.DataGovCatalogClient.requests.get")
+    def test_defaults_to_ssa_org_slug(self, mock_get: MagicMock) -> None:
+        """Wrapper defaults org_slug to ssa."""
         response = MagicMock()
         response.status_code = 200
-        response.json.return_value = {"results": [], "sort": "last_harvested_date"}
+        response.json.return_value = {"results": []}
         mock_get.return_value = response
 
-        payload = SsaCatalogClient(api_key="test-key").fetch_search_page()
+        SsaCatalogClient(api_key="test-key").fetch_search_page()
 
-        self.assertEqual(payload["results"], [])
-        mock_get.assert_called_once()
-        kwargs = mock_get.call_args.kwargs
-        self.assertEqual(kwargs["headers"]["X-Api-Key"], "test-key")
-        self.assertEqual(kwargs["params"]["org_slug"], "ssa")
-        self.assertNotIn("after", kwargs["params"])
-
-    @patch("sourcing.SsaCatalogClient.requests.get")
-    def test_fetch_search_page_passes_after_cursor(self, mock_get: MagicMock) -> None:
-        """Subsequent pages send the after cursor."""
-        response = MagicMock()
-        response.status_code = 200
-        response.json.return_value = {"results": [{"slug": "x"}], "after": "next"}
-        mock_get.return_value = response
-
-        SsaCatalogClient(api_key="k").fetch_search_page(after="cursor-1")
-
-        self.assertEqual(mock_get.call_args.kwargs["params"]["after"], "cursor-1")
-
-    @patch("sourcing.SsaCatalogClient.requests.get")
-    def test_rate_limit_raises_runtime_error(self, mock_get: MagicMock) -> None:
-        """HTTP 429 becomes a RuntimeError."""
-        response = MagicMock()
-        response.status_code = 429
-        response.text = "Too Many Requests"
-        mock_get.return_value = response
-
-        with self.assertRaises(RuntimeError) as ctx:
-            SsaCatalogClient(api_key="k").fetch_search_page()
-        self.assertIn("429", str(ctx.exception))
+        self.assertEqual(mock_get.call_args.kwargs["params"]["org_slug"], "ssa")
 
 
 if __name__ == "__main__":

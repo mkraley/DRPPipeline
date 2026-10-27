@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from sourcing.AdcSourcing import AdcSourcing
 from sourcing.BtsSourcing import BtsSourcing
+from sourcing.EpaSourcing import EpaSourcing
 from sourcing.FercSourcing import FercSourcing
 from sourcing.NpsSourcing import NpsSourcing
 from sourcing.SsaSourcing import SsaSourcing
@@ -44,6 +45,10 @@ class TestSourcingFactory(unittest.TestCase):
     def test_ssa_source_returns_ssa_sourcing(self) -> None:
         """SSA source selects SsaSourcing."""
         self.assertIs(sourcing_class_for_source("ssa"), SsaSourcing)
+
+    def test_epa_source_returns_epa_sourcing(self) -> None:
+        """EPA source selects EpaSourcing."""
+        self.assertIs(sourcing_class_for_source("epa"), EpaSourcing)
 
     def test_nps_source_returns_nps_sourcing(self) -> None:
         """NPS source selects NpsSourcing."""
