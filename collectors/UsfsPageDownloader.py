@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
+from collectors.PageExpandForPdf import expand_read_more_and_load_more
 from collectors.PlaywrightSession import PlaywrightSession
 from utils.Logger import Logger
 from utils.file_utils import sanitize_filename
@@ -381,8 +382,10 @@ class UsfsPageDownloader:
                     timeout=_SPA_NETWORK_IDLE_TIMEOUT_MS,
                 )
             self._dismiss_page_overlays(page)
+            expand_read_more_and_load_more(page)
         if open_details_selector:
             self._open_closest_details(page, open_details_selector)
+            expand_read_more_and_load_more(page)
 
     def _dismiss_page_overlays(self, page: Any) -> None:
         """Click common consent/close controls and hide leftover dialogs."""

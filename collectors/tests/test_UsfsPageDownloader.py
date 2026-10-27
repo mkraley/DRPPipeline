@@ -177,8 +177,13 @@ class TestUsfsPageDownloader(unittest.TestCase):
         mock_page.request.get.assert_not_called()
         mock_restart.assert_called_once()
 
+    @patch("collectors.UsfsPageDownloader.expand_read_more_and_load_more")
     @patch.object(UsfsPageDownloader, "_ensure_browser", return_value=True)
-    def test_url_to_pdf_opens_details(self, _mock_ensure: MagicMock) -> None:
+    def test_url_to_pdf_opens_details(
+        self,
+        _mock_ensure: MagicMock,
+        mock_expand: MagicMock,
+    ) -> None:
         """Complete Metadata (or any details ancestor) is opened before print."""
         downloader = UsfsPageDownloader()
         mock_page = MagicMock()
@@ -249,10 +254,12 @@ class TestUsfsPageDownloader(unittest.TestCase):
         assert dest is not None
         self.assertEqual(dest.name, "Background_Information_for_Popular_Names.pdf")
 
+    @patch("collectors.UsfsPageDownloader.expand_read_more_and_load_more")
     @patch.object(UsfsPageDownloader, "_ensure_browser", return_value=True)
     def test_url_to_titled_pdf_spa_ready_uses_screen_media(
         self,
         _mock_ensure: MagicMock,
+        mock_expand: MagicMock,
     ) -> None:
         """SPA pages emulate screen media and dismiss overlays before print."""
         downloader = UsfsPageDownloader()
@@ -278,6 +285,7 @@ class TestUsfsPageDownloader(unittest.TestCase):
             "networkidle",
             timeout=ANY,
         )
+        mock_expand.assert_called_once_with(mock_page)
 
 
 if __name__ == "__main__":
