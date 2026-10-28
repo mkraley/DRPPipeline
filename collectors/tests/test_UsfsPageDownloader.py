@@ -254,12 +254,14 @@ class TestUsfsPageDownloader(unittest.TestCase):
         assert dest is not None
         self.assertEqual(dest.name, "Background_Information_for_Popular_Names.pdf")
 
+    @patch("collectors.UsfsPageDownloader.unclip_overflow_for_pdf")
     @patch("collectors.UsfsPageDownloader.expand_read_more_and_load_more")
     @patch.object(UsfsPageDownloader, "_ensure_browser", return_value=True)
     def test_url_to_titled_pdf_spa_ready_uses_screen_media(
         self,
         _mock_ensure: MagicMock,
         mock_expand: MagicMock,
+        mock_unclip: MagicMock,
     ) -> None:
         """SPA pages emulate screen media and dismiss overlays before print."""
         downloader = UsfsPageDownloader()
@@ -286,6 +288,7 @@ class TestUsfsPageDownloader(unittest.TestCase):
             timeout=ANY,
         )
         mock_expand.assert_called_once_with(mock_page)
+        mock_unclip.assert_called_once_with(mock_page)
 
 
 if __name__ == "__main__":

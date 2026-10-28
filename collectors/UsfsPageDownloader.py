@@ -8,6 +8,7 @@ from typing import Any, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
 from collectors.PageExpandForPdf import expand_read_more_and_load_more
+from collectors.PageUnclipForPdf import unclip_overflow_for_pdf
 from collectors.PlaywrightSession import PlaywrightSession
 from utils.Logger import Logger
 from utils.file_utils import sanitize_filename
@@ -425,6 +426,9 @@ class UsfsPageDownloader:
             # ArcGIS Hub/item SPAs hide most content under print CSS.
             with suppress(Exception):
                 page.emulate_media(media="screen")
+            # Expanded Read more / Load more text sits in overflow shells and
+            # sticky chrome; Chromium clips those at each page break otherwise.
+            unclip_overflow_for_pdf(page)
             page.pdf(
                 path=str(pdf_path),
                 format="Letter",
