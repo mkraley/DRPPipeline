@@ -15,13 +15,19 @@ from utils.Errors import PipelineFatal
 from utils.Logger import Logger
 from utils.SoftStop import SoftStop
 
+from datetime import datetime, timedelta
+
 from orchestration.Orchestrator import (
     Orchestrator,
     _BatchLevelCounter,
+    _batch_finish_status,
     _format_duration,
+    _format_eta_clock,
+    _format_wall_clock,
     _log_batch_summary,
     _log_orchestrator_progress,
     _merge_project_lists,
+    _orchestration_batch,
     _progress_timing_suffix,
     _projects_in_status_order,
     _stop_requested,
@@ -38,9 +44,13 @@ class TestOrchestrator(unittest.TestCase):
         sys.argv = ["test", "noop"]
         Args.initialize()
         Logger.initialize(log_level="WARNING")
+        # Avoid writing real debug/runs files during Orchestrator.run tests
+        self._run_status_patcher = patch("orchestration.Orchestrator.RunStatus")
+        self.mock_run_status = self._run_status_patcher.start()
 
     def tearDown(self) -> None:
         """Restore argv after each test."""
+        self._run_status_patcher.stop()
         sys.argv = self._original_argv
 
     def test_stop_requested_false_when_no_stop_file(self) -> None:
@@ -735,10 +745,27 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(cls.__name__, "AdcGlobusSurvey")
 
     def test_format_duration(self) -> None:
-        """Test human-readable duration formatting."""
-        self.assertEqual(_format_duration(12.34), "12.3s")
-        self.assertEqual(_format_duration(90.0), "1m 30.0s")
-        self.assertEqual(_format_duration(3661.0), "1h 1m 1.0s")
+        """Duration uses whole minutes/seconds (no tenths)."""
+        self.assertEqual(_format_duration(12.34), "12s")
+        self.assertEqual(_format_duration(90.0), "1m 30s")
+        self.assertEqual(_format_duration(3661.0), "1h 1m 1s")
+
+    def test_format_eta_clock(self) -> None:
+        """ETA remaining duration is H:MM."""
+        self.assertEqual(_format_eta_clock(60), "0:01")
+        self.assertEqual(_format_eta_clock(3661), "1:01")
+
+    def test_format_wall_clock_today_and_other_day(self) -> None:
+        """Wall clock is HH:MM today, or mm-dd HH:MM otherwise."""
+        today = datetime.now().replace(hour=15, minute=34, second=0, microsecond=0)
+        self.assertEqual(_format_wall_clock(today), "15:34")
+        other = (datetime.now() + timedelta(days=2)).replace(
+            hour=1, minute=34, second=0, microsecond=0
+        )
+        self.assertEqual(
+            _format_wall_clock(other),
+            f"{other.strftime('%m-%d')} 01:34",
+        )
 
     def test_progress_timing_suffix_n_a_before_first_completion(self) -> None:
         """No average/ETA until at least one project has finished."""
@@ -748,11 +775,12 @@ class TestOrchestrator(unittest.TestCase):
         )
 
     def test_progress_timing_suffix_avg_and_eta(self) -> None:
-        """ETA is average wall time times projects still remaining."""
+        """ETA is H:MM remaining plus wall-clock finish time."""
         # 4 done in 40s → 10s avg; 6 remaining → 60s ETA
+        fixed = datetime(2026, 10, 29, 14, 0, 0)
         self.assertEqual(
-            _progress_timing_suffix(4, 10, 40.0),
-            "avg_per_project=10.0s eta=1m 0.0s",
+            _progress_timing_suffix(4, 10, 40.0, now=fixed),
+            "avg_per_project=10s eta=0:01 (14:01)",
         )
 
     @patch("orchestration.Orchestrator.Logger")
@@ -773,6 +801,35 @@ class TestOrchestrator(unittest.TestCase):
         self.assertIn("avg_per_project=", msg)
         self.assertIn("eta=", msg)
         self.assertNotIn("avg_per_project=n/a", msg)
+        self.mock_run_status.update_progress.assert_called_once()
+        progress_line = self.mock_run_status.update_progress.call_args[0][0]
+        self.assertIn("3/10 projects", progress_line)
+        kwargs = self.mock_run_status.update_progress.call_args.kwargs
+        self.assertEqual(kwargs["errors"], 0)
+        self.assertEqual(kwargs["warnings"], 0)
+        self.assertIn("completed", kwargs)
+
+    def test_batch_finish_status_stopped_when_soft_stop(self) -> None:
+        """Soft-stop request maps to stopped even if an exception was raised."""
+        with patch.object(SoftStop, "requested", return_value=True):
+            self.assertEqual(_batch_finish_status(RuntimeError("x")), "stopped")
+            self.assertEqual(_batch_finish_status(None), "stopped")
+
+    def test_batch_finish_status_failed_or_completed(self) -> None:
+        """Without soft-stop, exceptions are failed and clean exit is completed."""
+        with patch.object(SoftStop, "requested", return_value=False):
+            self.assertEqual(_batch_finish_status(RuntimeError("x")), "failed")
+            self.assertEqual(_batch_finish_status(None), "completed")
+
+    def test_orchestration_batch_starts_and_finishes_run_status(self) -> None:
+        """_orchestration_batch writes RunStatus start and finish around the body."""
+        with _orchestration_batch("collect", total=4) as batch:
+            batch.note_project_finished()
+        self.mock_run_status.start.assert_called_once_with("collect", total=4)
+        self.mock_run_status.finish.assert_called_once()
+        finish_kwargs = self.mock_run_status.finish.call_args.kwargs
+        self.assertEqual(finish_kwargs["completed"], 1)
+        self.assertEqual(finish_kwargs["status"], "completed")
 
     def test_batch_level_counter(self) -> None:
         """Test WARNING and ERROR records are counted."""
@@ -816,8 +873,8 @@ class TestOrchestrator(unittest.TestCase):
         self.assertIn("completed=4", msg)
         self.assertIn("errors=2", msg)
         self.assertIn("warnings=1", msg)
-        self.assertIn("elapsed=40.0s", msg)
-        self.assertIn("avg_per_project=10.0s", msg)
+        self.assertIn("elapsed=40s", msg)
+        self.assertIn("avg_per_project=10s", msg)
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")

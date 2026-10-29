@@ -14,6 +14,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterator, Optional
 
@@ -28,6 +29,7 @@ from utils.Errors import (
     record_error,
 )
 from utils.Logger import Logger, _get_current_drpid
+from utils.RunStatus import RunStatus
 from utils.SoftStop import SoftStop
 
 
@@ -449,29 +451,62 @@ class _BatchStats:
 
 
 def _format_duration(seconds: float) -> str:
-    if seconds < 60:
-        return f"{seconds:.1f}s"
-    minutes, secs = divmod(seconds, 60)
+    """
+    Format a duration as whole minutes and seconds (no fractional seconds).
+
+    Examples: ``12s``, ``2m 59s``, ``1h 1m 1s``.
+    """
+    total_secs = max(0, int(round(seconds)))
+    if total_secs < 60:
+        return f"{total_secs}s"
+    minutes, secs = divmod(total_secs, 60)
     if minutes < 60:
-        return f"{int(minutes)}m {secs:.1f}s"
+        return f"{minutes}m {secs}s"
     hours, minutes = divmod(minutes, 60)
-    return f"{int(hours)}h {int(minutes)}m {secs:.1f}s"
+    return f"{hours}h {minutes}m {secs}s"
 
 
-def _progress_timing_suffix(completed: int, total: int, elapsed: float) -> str:
+def _format_eta_clock(seconds: float) -> str:
+    """Format remaining ETA as ``H:MM`` (hours:minutes, no seconds)."""
+    total_secs = max(0, int(round(seconds)))
+    hours, rem = divmod(total_secs, 3600)
+    minutes = rem // 60
+    return f"{hours}:{minutes:02d}"
+
+
+def _format_wall_clock(when: datetime) -> str:
+    """
+    Format a finish/wall time as ``HH:MM``, or ``mm-dd HH:MM`` if not today.
+    """
+    now = datetime.now()
+    clock = when.strftime("%H:%M")
+    if when.date() == now.date():
+        return clock
+    return f"{when.strftime('%m-%d')} {clock}"
+
+
+def _progress_timing_suffix(
+    completed: int,
+    total: int,
+    elapsed: float,
+    *,
+    now: datetime | None = None,
+) -> str:
     """
     Build ``avg_per_project=... eta=...`` for progress logs.
 
-    Average is wall-clock elapsed / completed. ETA is that average times the
-    number of projects not yet finished (``total - completed``).
+    Average is wall-clock elapsed / completed (whole minutes/seconds).
+    ETA is ``H:MM`` remaining plus the expected wall-clock finish in parens.
     """
     if completed <= 0 or elapsed <= 0:
         return "avg_per_project=n/a eta=n/a"
     avg = elapsed / completed
     remaining = max(0, total - completed)
+    eta_secs = avg * remaining
+    finish_at = (now or datetime.now()) + timedelta(seconds=eta_secs)
     return (
         f"avg_per_project={_format_duration(avg)} "
-        f"eta={_format_duration(avg * remaining)}"
+        f"eta={_format_eta_clock(eta_secs)} ({_format_wall_clock(finish_at)})"
     )
 
 
@@ -487,8 +522,17 @@ def _log_orchestrator_progress(
         total,
         batch.elapsed_seconds(),
     )
-    Logger.info(
-        f"Orchestrator progress: {display_index}/{total} projects {timing}"
+    progress_line = f"{display_index}/{total} projects {timing}"
+    Logger.info(f"Orchestrator progress: {progress_line}")
+    _run_status_safe(
+        RunStatus.update_progress,
+        progress_line,
+        display_index=display_index,
+        total=total,
+        completed=batch.projects_completed,
+        errors=batch.counter.errors,
+        warnings=batch.counter.warnings,
+        last_drpid=_get_current_drpid(),
     )
 
 
@@ -504,17 +548,64 @@ def _log_batch_summary(stats: _BatchStats, elapsed: float) -> None:
     )
 
 
+def _batch_finish_status(exc: BaseException | None) -> str:
+    """Map batch exit to a RunStatus status string."""
+    if SoftStop.requested():
+        return "stopped"
+    if exc is not None:
+        return "failed"
+    return "completed"
+
+
+def _run_status_safe(method: Any, *args: Any, **kwargs: Any) -> None:
+    """Call a RunStatus method; log and continue if the status file write fails."""
+    try:
+        method(*args, **kwargs)
+    except OSError as exc:
+        Logger.warning(f"RunStatus update failed (dashboard only): {exc}")
+
+
+def _dashboard_tracks_module(module: str) -> bool:
+    """Return False for modules the dashboard should ignore (noop/test/interactive)."""
+    return RunStatus.tracks_module(module)
+
+
 @contextmanager
-def _orchestration_batch(module: str) -> Iterator[_BatchStats]:
+def _orchestration_batch(
+    module: str,
+    total: int = 0,
+) -> Iterator[_BatchStats]:
+    """
+    Wrap a module batch: log summary and write RunStatus for the dashboard.
+
+    Args:
+        module: Module name for logs and status file.
+        total: Number of projects in the batch (1 for single-shot modules).
+    """
     counter = _BatchLevelCounter()
     Logger.get_logger().addFilter(counter)
     stats = _BatchStats(module=module, counter=counter)
     start = time.perf_counter()
+    track = _dashboard_tracks_module(module)
+    if track:
+        _run_status_safe(RunStatus.start, module, total=total)
+    caught: BaseException | None = None
     try:
         yield stats
+    except BaseException as exc:
+        caught = exc
+        raise
     finally:
         Logger.get_logger().removeFilter(counter)
         _log_batch_summary(stats, time.perf_counter() - start)
+        if track:
+            _run_status_safe(
+                RunStatus.finish,
+                completed=stats.projects_completed,
+                errors=stats.counter.errors,
+                warnings=stats.counter.warnings,
+                status=_batch_finish_status(caught),
+            )
 
 
 class Orchestrator:
@@ -607,7 +698,7 @@ class Orchestrator:
         Logger.debug(f"Orchestrator loaded module class={class_name!r}")
 
         if prereq is None:
-            with _orchestration_batch(module) as batch:
+            with _orchestration_batch(module, total=1) as batch:
                 module_instance.run(-1)
                 batch.note_project_finished()
         else:
@@ -753,7 +844,9 @@ class Orchestrator:
             max_workers = Args.max_workers or 1
             max_workers = max(1, int(max_workers))
 
-            with SoftStop.scope(), _orchestration_batch(module) as batch:
+            with SoftStop.scope(), _orchestration_batch(
+                module, total=len(projects)
+            ) as batch:
                 def run_one(proj: Dict[str, Any]) -> None:
                     drpid = proj["DRPID"]
                     source_url = proj.get("source_url", "")

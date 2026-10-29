@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DRP Pipeline Dashboard</title>
+  <style>
+    :root {
+      --bg: #1e1e1e;
+      --panel: #252526;
+      --border: #3c3c3c;
+      --text: #d4d4d4;
+      --muted: #9d9d9d;
+      --running: #3fa66b;
+      --stale: #c9a227;
+      --completed: #569cd6;
+      --stopped: #ce9178;
+      --failed: #f14c4c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 13px/1.45 Consolas, "Cascadia Mono", monospace;
+      background: var(--bg);
+      color: var(--text);
+      padding: 10px 12px 24px;
+    }
+    h1 {
+      font-size: 15px;
+      font-weight: 600;
+      margin: 0 0 4px;
+    }
+    .meta {
+      color: var(--muted);
+      margin-bottom: 14px;
+      font-size: 12px;
+    }
+    h2 {
+      font-size: 13px;
+      font-weight: 600;
+      margin: 16px 0 8px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 4px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: baseline;
+      margin-bottom: 4px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: #111;
+    }
+    .badge.running { background: var(--running); }
+    .badge.stale { background: var(--stale); }
+    .badge.completed { background: var(--completed); }
+    .badge.stopped { background: var(--stopped); }
+    .badge.failed { background: var(--failed); }
+    .cmd { word-break: break-all; }
+    .progress { color: #b5cea8; margin-top: 4px; }
+    .muted { color: var(--muted); }
+    .empty { color: var(--muted); font-style: italic; }
+    .stats-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .stats-list li {
+      display: flex;
+      gap: 10px;
+      align-items: baseline;
+      padding: 2px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .stats-list .label { white-space: nowrap; }
+    .stats-list .count {
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      min-width: 2ch;
+    }
+    .stats-header { margin-bottom: 8px; }
+    .error { color: var(--failed); }
+  </style>
+</head>
+<body>
+  <h1>DRP Pipeline</h1>
+  <div class="meta" id="refresh-meta">Loading…</div>
+
+  <h2>Batches</h2>
+  <div id="runs"></div>
+
+  <h2>Pipeline status</h2>
+  <div id="stats"></div>
+
+  <script>
+    const POLL_MS = 10000;
+
+    function esc(s) {
+      return String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function formatStart(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso;
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mi = String(d.getMinutes()).padStart(2, "0");
+      return `${mm}-${dd} ${hh}:${mi}`;
+    }
+
+    function badgeTitle(status) {
+      if (status === "stale") {
+        return "Status file still says running, but the process is gone";
+      }
+      return status;
+    }
+
+    function renderRuns(runs) {
+      const el = document.getElementById("runs");
+      if (!runs || !runs.length) {
+        el.innerHTML = '<div class="empty">No recent main.py batches</div>';
+        return;
+      }
+      el.innerHTML = runs.map((r) => {
+        const status = esc(r.status || "unknown");
+        const ended = r.ended_at
+          ? `<span class="muted">ended ${esc(formatStart(r.ended_at))}</span>`
+          : "";
+        const errors = Number(r.errors || 0);
+        const warnings = Number(r.warnings || 0);
+        return `
+          <div class="card">
+            <div class="row">
+              <span class="badge ${status}" title="${esc(badgeTitle(r.status))}">${status}</span>
+              <strong>${esc(r.module)}</strong>
+              <span class="muted">pid ${esc(r.pid)}${
+                r.terminal_pid ? ` · term ${esc(r.terminal_pid)}` : ""
+              }</span>
+            </div>
+            <div class="cmd">${esc(r.command_line)}</div>
+            <div class="row muted">
+              <span>started ${esc(formatStart(r.started_at))}</span>
+              ${ended}
+              <span>errors=${esc(errors)} warnings=${esc(warnings)}</span>
+            </div>
+            <div class="progress">${esc(r.progress_line || "")}</div>
+          </div>`;
+      }).join("");
+    }
+
+    function renderStats(stats) {
+      const el = document.getElementById("stats");
+      if (!stats) {
+        el.innerHTML = '<div class="empty">No stats</div>';
+        return;
+      }
+      if (stats.error) {
+        el.innerHTML = `<div class="card error">${esc(stats.error)}</div>`;
+        return;
+      }
+      const rows = (stats.by_status || []).map((r) => {
+        const label = r.label || r.status;
+        return `<li>
+          <span class="label">${esc(label)}</span>
+          <span class="count">${esc(r.count)}</span>
+        </li>`;
+      }).join("");
+      el.innerHTML = `
+        <div class="stats-header muted">
+          source=<strong>${esc(stats.source)}</strong>
+          db=<strong>${esc(stats.db_path)}</strong>
+        </div>
+        <div class="card">
+          <div class="row">
+            <span>total <strong>${esc(stats.total)}</strong></span>
+            <span>errors <strong>${esc(stats.with_errors)}</strong></span>
+            <span>warnings <strong>${esc(stats.with_warnings)}</strong></span>
+          </div>
+          <ul class="stats-list">
+            ${rows || '<li class="empty">No projects</li>'}
+          </ul>
+        </div>`;
+    }
+
+    async function refresh() {
+      const meta = document.getElementById("refresh-meta");
+      try {
+        const [runsRes, statsRes] = await Promise.all([
+          fetch("/api/runs", { cache: "no-store" }),
+          fetch("/api/stats", { cache: "no-store" }),
+        ]);
+        const runsBody = await runsRes.json();
+        const statsBody = await statsRes.json();
+        renderRuns(runsBody.runs || []);
+        renderStats(statsBody);
+        meta.textContent = "Updated " + new Date().toLocaleTimeString() + " · every 10s";
+      } catch (err) {
+        meta.textContent = "Refresh failed: " + err;
+      }
+    }
+
+    refresh();
+    setInterval(refresh, POLL_MS);
+  </script>
+</body>
+</html>
