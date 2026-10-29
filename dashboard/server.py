@@ -14,11 +14,23 @@ from typing import Any
 from urllib.parse import urlparse
 
 from dashboard.config_db import pipeline_stats
+from dashboard.cursor_terminals import (
+    list_pipeline_terminals,
+    merge_runs_with_terminals,
+)
 from utils.RunStatus import RunStatus
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 _DEFAULT_HOST = "127.0.0.1"
 _DEFAULT_PORT = 5055
+
+
+def dashboard_runs() -> list[dict[str, Any]]:
+    """Merge Orchestrator run files with Cursor terminal metadata."""
+    return merge_runs_with_terminals(
+        RunStatus.list_runs(),
+        list_pipeline_terminals(),
+    )
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -34,7 +46,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         """Dispatch GET requests to the dashboard API or static page."""
         path = urlparse(self.path).path
         if path == "/api/runs":
-            self._send_json({"runs": RunStatus.list_runs()})
+            self._send_json({"runs": dashboard_runs()})
             return
         if path == "/api/stats":
             self._send_json(pipeline_stats(self.config_path))

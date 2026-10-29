@@ -466,20 +466,28 @@ def _format_duration(seconds: float) -> str:
     return f"{hours}h {minutes}m {secs}s"
 
 
-def _format_eta_clock(seconds: float) -> str:
-    """Format remaining ETA as ``H:MM`` (hours:minutes, no seconds)."""
+def _format_eta_duration(seconds: float) -> str:
+    """
+    Format remaining ETA as ``8h 37m`` (hours and minutes, no seconds).
+
+    Under one hour: ``37m``.
+    """
     total_secs = max(0, int(round(seconds)))
     hours, rem = divmod(total_secs, 3600)
     minutes = rem // 60
-    return f"{hours}:{minutes:02d}"
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
 
 
 def _format_wall_clock(when: datetime) -> str:
     """
-    Format a finish/wall time as ``HH:MM``, or ``mm-dd HH:MM`` if not today.
+    Format a finish time as local 24h ``hhmm``, with ``mm-dd`` if not today.
+
+    Examples: ``2340``, ``10-30 2340``.
     """
     now = datetime.now()
-    clock = when.strftime("%H:%M")
+    clock = when.strftime("%H%M")
     if when.date() == now.date():
         return clock
     return f"{when.strftime('%m-%d')} {clock}"
@@ -496,7 +504,7 @@ def _progress_timing_suffix(
     Build ``avg_per_project=... eta=...`` for progress logs.
 
     Average is wall-clock elapsed / completed (whole minutes/seconds).
-    ETA is ``H:MM`` remaining plus the expected wall-clock finish in parens.
+    ETA is ``8h 37m (2340)``, or ``8h 37m (10-30 2340)`` if finish is not today.
     """
     if completed <= 0 or elapsed <= 0:
         return "avg_per_project=n/a eta=n/a"
@@ -506,7 +514,7 @@ def _progress_timing_suffix(
     finish_at = (now or datetime.now()) + timedelta(seconds=eta_secs)
     return (
         f"avg_per_project={_format_duration(avg)} "
-        f"eta={_format_eta_clock(eta_secs)} ({_format_wall_clock(finish_at)})"
+        f"eta={_format_eta_duration(eta_secs)} ({_format_wall_clock(finish_at)})"
     )
 
 

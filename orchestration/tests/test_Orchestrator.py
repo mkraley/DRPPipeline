@@ -22,7 +22,7 @@ from orchestration.Orchestrator import (
     _BatchLevelCounter,
     _batch_finish_status,
     _format_duration,
-    _format_eta_clock,
+    _format_eta_duration,
     _format_wall_clock,
     _log_batch_summary,
     _log_orchestrator_progress,
@@ -750,21 +750,22 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(_format_duration(90.0), "1m 30s")
         self.assertEqual(_format_duration(3661.0), "1h 1m 1s")
 
-    def test_format_eta_clock(self) -> None:
-        """ETA remaining duration is H:MM."""
-        self.assertEqual(_format_eta_clock(60), "0:01")
-        self.assertEqual(_format_eta_clock(3661), "1:01")
+    def test_format_eta_duration(self) -> None:
+        """ETA remaining duration is hours and minutes."""
+        self.assertEqual(_format_eta_duration(60), "1m")
+        self.assertEqual(_format_eta_duration(3661), "1h 1m")
+        self.assertEqual(_format_eta_duration(8 * 3600 + 37 * 60), "8h 37m")
 
     def test_format_wall_clock_today_and_other_day(self) -> None:
-        """Wall clock is HH:MM today, or mm-dd HH:MM otherwise."""
+        """Wall clock is hhmm today, or mm-dd hhmm otherwise."""
         today = datetime.now().replace(hour=15, minute=34, second=0, microsecond=0)
-        self.assertEqual(_format_wall_clock(today), "15:34")
+        self.assertEqual(_format_wall_clock(today), "1534")
         other = (datetime.now() + timedelta(days=2)).replace(
-            hour=1, minute=34, second=0, microsecond=0
+            hour=23, minute=40, second=0, microsecond=0
         )
         self.assertEqual(
             _format_wall_clock(other),
-            f"{other.strftime('%m-%d')} 01:34",
+            f"{other.strftime('%m-%d')} 2340",
         )
 
     def test_progress_timing_suffix_n_a_before_first_completion(self) -> None:
@@ -775,12 +776,21 @@ class TestOrchestrator(unittest.TestCase):
         )
 
     def test_progress_timing_suffix_avg_and_eta(self) -> None:
-        """ETA is H:MM remaining plus wall-clock finish time."""
+        """ETA is duration plus wall-clock finish as hhmm."""
         # 4 done in 40s → 10s avg; 6 remaining → 60s ETA
         fixed = datetime(2026, 10, 29, 14, 0, 0)
         self.assertEqual(
             _progress_timing_suffix(4, 10, 40.0, now=fixed),
-            "avg_per_project=10s eta=0:01 (14:01)",
+            "avg_per_project=10s eta=1m (1401)",
+        )
+
+    def test_progress_timing_suffix_eta_includes_date_when_not_today(self) -> None:
+        """Finish time on another day inserts mm-dd before hhmm."""
+        # 1 done in 1h → 1h avg; 8 remaining → 8h ETA from 20:00 → next day 04:00
+        fixed = datetime(2026, 10, 29, 20, 0, 0)
+        self.assertEqual(
+            _progress_timing_suffix(1, 9, 3600.0, now=fixed),
+            "avg_per_project=1h 0m 0s eta=8h 0m (10-30 0400)",
         )
 
     @patch("orchestration.Orchestrator.Logger")

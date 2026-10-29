@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 from dashboard.server import make_handler
 from utils.RunStatus import RunStatus
@@ -128,7 +129,8 @@ class TestDashboardServer(unittest.TestCase):
             total=2,
             command_line=["python", "main.py", "collect"],
         )
-        status, _, body = self._request("/api/runs")
+        with patch("dashboard.server.list_pipeline_terminals", return_value=[]):
+            status, _, body = self._request("/api/runs")
         self.assertEqual(status, 200)
         payload = json.loads(body.decode("utf-8"))
         self.assertEqual(len(payload["runs"]), 1)

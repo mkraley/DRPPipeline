@@ -125,7 +125,7 @@
       const dd = String(d.getDate()).padStart(2, "0");
       const hh = String(d.getHours()).padStart(2, "0");
       const mi = String(d.getMinutes()).padStart(2, "0");
-      return `${mm}-${dd} ${hh}:${mi}`;
+      return `${mm}-${dd} ${hh}${mi}`;
     }
 
     function badgeTitle(status) {
@@ -148,14 +148,18 @@
           : "";
         const errors = Number(r.errors || 0);
         const warnings = Number(r.warnings || 0);
+        const termId = r.terminal_pid || r.pid;
+        const pyPid =
+          r.terminal_pid && r.pid && r.terminal_pid !== r.pid
+            ? `<span class="muted">python ${esc(r.pid)}</span>`
+            : "";
         return `
           <div class="card">
             <div class="row">
               <span class="badge ${status}" title="${esc(badgeTitle(r.status))}">${status}</span>
-              <strong>${esc(r.module)}</strong>
-              <span class="muted">pid ${esc(r.pid)}${
-                r.terminal_pid ? ` · term ${esc(r.terminal_pid)}` : ""
-              }</span>
+              <strong>terminal ${esc(termId)}</strong>
+              <span>${esc(r.module)}</span>
+              ${pyPid}
             </div>
             <div class="cmd">${esc(r.command_line)}</div>
             <div class="row muted">
@@ -211,9 +215,14 @@
         ]);
         const runsBody = await runsRes.json();
         const statsBody = await statsRes.json();
-        renderRuns(runsBody.runs || []);
+        const runs = runsBody.runs || [];
+        renderRuns(runs);
         renderStats(statsBody);
-        meta.textContent = "Updated " + new Date().toLocaleTimeString() + " · every 10s";
+        const running = runs.filter((r) => r.status === "running").length;
+        meta.textContent =
+          "Updated " +
+          new Date().toLocaleTimeString() +
+          ` · ${runs.length} batch(es), ${running} running · every 10s`;
       } catch (err) {
         meta.textContent = "Refresh failed: " + err;
       }
