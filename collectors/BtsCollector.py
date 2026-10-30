@@ -119,12 +119,16 @@ class BtsCollector(CollectorBase):
 
         download_files: list[BtsDownloadFile] = parsed.get("_download_files", [])
         size_cache: dict[str, int | None] = {}
-        status_notes, skipped_large, inventory_bytes, inventory_exts = self._download_files(
-            drpid,
-            page_downloader,
-            folder_path,
-            download_files,
-            size_cache,
+        access_errors: dict[str, str] = {}
+        status_notes, skipped_large, inventory_bytes, inventory_exts, planned = (
+            self._download_files(
+                drpid,
+                page_downloader,
+                folder_path,
+                download_files,
+                size_cache,
+                access_errors,
+            )
         )
 
         extensions, _on_disk_bytes, _on_disk_files = self._folder_inventory(folder_path)
@@ -147,23 +151,14 @@ class BtsCollector(CollectorBase):
         result["download_date"] = date.today().isoformat()
         if status_notes:
             result["status_notes"] = "\n".join(status_notes)
-        status = BudgetedDownload().commit_inventory(
-            drpid,
-            folder_path,
-            [
-                PlannedFile(
-                    relative_path=self._destination_filename(entry),
-                    source_url=entry.url,
-                    size_bytes=size_cache.get(entry.url, entry.size_bytes),
-                )
-                for entry in download_files
-            ],
-        )
+        status = BudgetedDownload().commit_inventory(drpid, folder_path, planned)
         if status != STATUS_COLLECTED:
             result["status"] = status
         result["_skipped_large_file"] = status != STATUS_COLLECTED
         if status != STATUS_COLLECTED:
-            self._write_aria2_cmd(drpid, folder_path, download_files, size_cache)
+            self._write_aria2_cmd(
+                drpid, folder_path, download_files, size_cache, access_errors
+            )
 
         Logger.info(
             "BTS collection complete for DRPID %s: %s files, %s",
@@ -208,7 +203,8 @@ class BtsCollector(CollectorBase):
         folder_path: Path,
         files: list[BtsDownloadFile],
         size_cache: dict[str, int | None],
-    ) -> tuple[list[str], bool, int, set[str]]:
+        access_errors: dict[str, str],
+    ) -> tuple[list[str], bool, int, set[str], list[PlannedFile]]:
         """
         Download main and supporting files via Playwright.
 
@@ -217,16 +213,21 @@ class BtsCollector(CollectorBase):
 
         Returns:
             Tuple of status note lines, whether any large file was skipped,
-            estimated total inventory bytes, and catalog file extensions.
+            estimated total inventory bytes, catalog file extensions, and
+            planned files (including inaccessible ones).
         """
         notes: list[str] = []
         planned: list[PlannedFile] = []
         for entry in files:
+            size_bytes, access_error = self._probe_download(
+                page_downloader, entry, size_cache, access_errors
+            )
             planned.append(
                 PlannedFile(
                     relative_path=self._destination_filename(entry),
                     source_url=entry.url,
-                    size_bytes=self._expected_download_bytes(page_downloader, entry, size_cache),
+                    size_bytes=size_bytes,
+                    access_error=access_error,
                 )
             )
 
@@ -255,22 +256,56 @@ class BtsCollector(CollectorBase):
         )
         notes.extend(outcome.notes)
         summary_note = self._pending_download_summary_note(
-            page_downloader, folder_path, files, size_cache
+            page_downloader, folder_path, files, size_cache, access_errors
         )
-        if summary_note and not outcome.notes:
+        if summary_note and not outcome.deferred and not access_errors:
             notes.append(summary_note)
         inventory_bytes = self._catalog_inventory_bytes(
-            page_downloader, folder_path, files, size_cache
+            page_downloader, folder_path, files, size_cache, access_errors
         )
         inventory_exts = self._catalog_file_extensions(files)
         inventory_exts.add("pdf")
-        return notes, outcome.deferred, inventory_bytes, inventory_exts
+        return notes, outcome.deferred, inventory_bytes, inventory_exts, planned
+
+    def _probe_download(
+        self,
+        page_downloader: UsfsPageDownloader,
+        entry: BtsDownloadFile,
+        size_cache: dict[str, int | None],
+        access_errors: dict[str, str],
+    ) -> tuple[int | None, str | None]:
+        """
+        Return catalog or probed Content-Length and any access error.
+
+        Supporting files on ROSA P often omit size in HTML; probe the file URL
+        when the catalog did not provide a byte count.
+        """
+        if entry.url in access_errors:
+            return None, access_errors[entry.url]
+        if entry.url in size_cache:
+            return size_cache[entry.url], None
+        if entry.size_bytes is not None:
+            size_cache[entry.url] = entry.size_bytes
+            return entry.size_bytes, None
+        probe = page_downloader.probe_download(entry.url)
+        if probe.access_error:
+            access_errors[entry.url] = probe.access_error
+            size_cache[entry.url] = None
+            return None, probe.access_error
+        size = (
+            probe.size_bytes
+            if isinstance(probe.size_bytes, int) and probe.size_bytes >= 0
+            else None
+        )
+        size_cache[entry.url] = size
+        return size, None
 
     def _expected_download_bytes(
         self,
         page_downloader: UsfsPageDownloader,
         entry: BtsDownloadFile,
         size_cache: dict[str, int | None] | None = None,
+        access_errors: dict[str, str] | None = None,
     ) -> int | None:
         """
         Return catalog or probed Content-Length for a download candidate.
@@ -278,19 +313,12 @@ class BtsCollector(CollectorBase):
         Supporting files on ROSA P often omit size in HTML; probe the file URL
         when the catalog did not provide a byte count.
         """
-        if size_cache is not None and entry.url in size_cache:
-            return size_cache[entry.url]
-        if entry.size_bytes is not None:
-            result = entry.size_bytes
-        else:
-            probed_bytes = page_downloader.fetch_content_length(entry.url)
-            if isinstance(probed_bytes, int) and probed_bytes >= 0:
-                result = probed_bytes
-            else:
-                result = None
-        if size_cache is not None:
-            size_cache[entry.url] = result
-        return result
+        cache = size_cache if size_cache is not None else {}
+        errors = access_errors if access_errors is not None else {}
+        size, _access_error = self._probe_download(
+            page_downloader, entry, cache, errors
+        )
+        return size
 
     def _catalog_file_extensions(self, files: list[BtsDownloadFile]) -> set[str]:
         """Return extensions for catalog-listed download files."""
@@ -307,12 +335,14 @@ class BtsCollector(CollectorBase):
         folder_path: Path,
         files: list[BtsDownloadFile],
         size_cache: dict[str, int | None],
+        access_errors: dict[str, str] | None = None,
     ) -> int:
         """
         Estimate total project bytes including skipped and not-yet-downloaded files.
 
         Uses on-disk sizes when present and catalog or probed sizes otherwise.
         """
+        error_cache = access_errors if access_errors is not None else {}
         total_bytes = 0
         catalog_pdf = folder_path / _CATALOG_PDF_NAME
         if catalog_pdf.is_file():
@@ -323,10 +353,13 @@ class BtsCollector(CollectorBase):
             if dest.is_file():
                 total_bytes += dest.stat().st_size
                 continue
+            if entry.url in error_cache:
+                continue
             expected_bytes = self._expected_download_bytes(
                 page_downloader,
                 entry,
                 size_cache,
+                error_cache,
             )
             if expected_bytes is not None:
                 total_bytes += expected_bytes
@@ -338,12 +371,15 @@ class BtsCollector(CollectorBase):
         folder_path: Path,
         files: list[BtsDownloadFile],
         size_cache: dict[str, int | None],
+        access_errors: dict[str, str] | None = None,
     ) -> str:
         """Build a status_notes summary for catalog files still missing on disk."""
+        error_cache = access_errors if access_errors is not None else {}
         pending_entries = [
             entry
             for entry in files
-            if not (folder_path / self._destination_filename(entry)).is_file()
+            if entry.url not in error_cache
+            and not (folder_path / self._destination_filename(entry)).is_file()
         ]
         if not pending_entries:
             return ""
@@ -355,6 +391,7 @@ class BtsCollector(CollectorBase):
                 page_downloader,
                 entry,
                 size_cache,
+                error_cache,
             )
             if expected_bytes is None:
                 has_unknown_sizes = True
@@ -386,10 +423,12 @@ class BtsCollector(CollectorBase):
         folder_path: Path,
         files: list[BtsDownloadFile],
         size_cache: dict[str, int | None],
+        access_errors: dict[str, str] | None = None,
     ) -> None:
         """Export aria2 commands for catalog files still missing on disk."""
         from collectors.UsfsAria2Export import write_drpid_aria2_cmd
 
+        error_cache = access_errors if access_errors is not None else {}
         publication_files = [
             (
                 self._destination_filename(entry),
@@ -397,7 +436,8 @@ class BtsCollector(CollectorBase):
                 size_cache.get(entry.url, entry.size_bytes),
             )
             for entry in files
-            if not (folder_path / self._destination_filename(entry)).is_file()
+            if entry.url not in error_cache
+            and not (folder_path / self._destination_filename(entry)).is_file()
         ]
         cmd_path = write_drpid_aria2_cmd(
             drpid,

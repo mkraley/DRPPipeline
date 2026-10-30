@@ -42,7 +42,7 @@ _NEXT_BY_STATUS: dict[str, str | None] = {
     STATUS_RESIZE_WAIT: STATUS_RESIZED,
     STATUS_RESIZED: "resume_download",
     STATUS_DOWNLOADED: "resume_upload",
-    STATUS_FINISH_WAIT: "uploaded",
+    STATUS_FINISH_WAIT: "(manual set to uploaded)",
     "re-uploaded": "republish",
     "published": "publish",
     "updated_inventory": "verify_upload",

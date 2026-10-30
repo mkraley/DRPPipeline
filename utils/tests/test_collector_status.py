@@ -85,21 +85,44 @@ class TestCollectorStatus(unittest.TestCase):
     def test_resolve_inventory_large_file_status(self) -> None:
         """Inventory mode sets collected - large file when flagged."""
         result = {"folder_path": "C:\\Data\\1", "_skipped_large_file": True}
-        resolve_inventory_collected_status(result, has_errors=False)
+        resolve_inventory_collected_status(result, status_is_error=False)
         self.assertEqual(result["status"], "collected - large")
         self.assertNotIn("_skipped_large_file", result)
 
     def test_resolve_inventory_external_archive_status(self) -> None:
         """Inventory mode sets collected - external archive when flagged."""
         result = {"folder_path": "C:\\Data\\1", "_external_archive": True}
-        resolve_inventory_collected_status(result, has_errors=False)
+        resolve_inventory_collected_status(result, status_is_error=False)
         self.assertEqual(result["status"], STATUS_COLLECTED_EXTERNAL_ARCHIVE)
 
-    def test_resolve_inventory_skips_status_when_errors(self) -> None:
-        """Inventory mode does not set status when errors exist."""
+    def test_resolve_inventory_skips_status_when_error_status(self) -> None:
+        """Inventory mode does not overwrite an *-error status from record_error."""
         result = {"folder_path": "C:\\Data\\1", "status": "pending"}
-        resolve_inventory_collected_status(result, has_errors=True)
+        resolve_inventory_collected_status(result, status_is_error=True)
         self.assertNotIn("status", result)
+
+    def test_resolve_inventory_sets_collected_despite_stale_errors_text(self) -> None:
+        """Prior errors text left by --retry must not block collected."""
+        result = {"folder_path": "C:\\Data\\1", "_skipped_large_file": False}
+        resolve_inventory_collected_status(result, status_is_error=False)
+        self.assertEqual(result["status"], STATUS_COLLECTED)
+
+    @patch("utils.collector_status.Storage")
+    def test_merge_inventory_retry_with_stale_errors_sets_collected(
+        self, mock_storage: MagicMock
+    ) -> None:
+        """--retry leaves errors until finalize; merge still advances status."""
+        mock_storage.get.return_value = {
+            "status": "sourced",
+            "errors": "previous failure",
+        }
+        merge_result_to_storage(
+            43,
+            {"folder_path": "C:\\Data\\43", "_skipped_large_file": False},
+            status_mode="inventory",
+        )
+        fields = mock_storage.update_record.call_args[0][1]
+        self.assertEqual(fields["status"], STATUS_COLLECTED)
 
     def test_resolve_standard_collected_status(self) -> None:
         """Standard mode defaults to collected when folder_path is present."""

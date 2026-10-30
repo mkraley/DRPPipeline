@@ -289,7 +289,7 @@ class StorageSQLLite:
         self._connection.commit()
 
     def _fill_missing_next_steps(self) -> None:
-        """Set next_step from status on rows where it is still null."""
+        """Set next_step from status on rows where it is still null or stale."""
         assert self._connection is not None
         rows = self._connection.execute(
             "SELECT DRPID, status, status_notes FROM projects WHERE next_step IS NULL"
@@ -299,7 +299,17 @@ class StorageSQLLite:
                 "UPDATE projects SET next_step = ? WHERE DRPID = ?",
                 (next_step_for_status(status, notes), drpid),
             )
-        if rows:
+        # Refresh finish-wait rows that still point at the old next_step value.
+        stale_finish = self._connection.execute(
+            "SELECT DRPID, status_notes FROM projects "
+            "WHERE status = 'finish wait' AND next_step = 'uploaded'"
+        ).fetchall()
+        for drpid, notes in stale_finish:
+            self._connection.execute(
+                "UPDATE projects SET next_step = ? WHERE DRPID = ?",
+                (next_step_for_status("finish wait", notes), drpid),
+            )
+        if rows or stale_finish:
             self._connection.commit()
     
     def create_record(self, source_url: str) -> int:

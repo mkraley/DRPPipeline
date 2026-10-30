@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
+from collectors.ContentLengthProbe import ContentLengthProbe
 from collectors.UsfsPageDownloader import UsfsPageDownloader
 
 
@@ -55,7 +56,8 @@ class TestUsfsPageDownloader(unittest.TestCase):
         """ROSA P Content-Length uses Chrome-impersonated HEAD."""
         downloader = UsfsPageDownloader()
         with patch(
-            "utils.ChromeRangeDownload.probe_content_length", return_value=2024010110
+            "utils.ChromeRangeDownload.probe_download",
+            return_value=ContentLengthProbe(size_bytes=2024010110),
         ) as mock_probe:
             size = downloader.fetch_content_length(
                 "https://rosap.ntl.bts.gov/view/dot/7547/dot_7547_DS1.zip"
@@ -74,6 +76,41 @@ class TestUsfsPageDownloader(unittest.TestCase):
                 "https://www.fs.usda.gov/rds/archive/products/RDS/x.zip"
             )
         )
+
+    @patch.object(UsfsPageDownloader, "_ensure_browser", return_value=True)
+    def test_probe_download_marks_404_as_access_error(
+        self, mock_ensure: MagicMock
+    ) -> None:
+        """HTTP 404 must set access_error, not merely leave size unknown."""
+        downloader = UsfsPageDownloader()
+        mock_page = MagicMock()
+        mock_response = MagicMock()
+        mock_response.ok = False
+        mock_response.status = 404
+        mock_response.headers = {}
+        mock_page.request.head.return_value = mock_response
+        downloader._session.new_page = MagicMock(return_value=mock_page)
+
+        probe = downloader.probe_download(
+            "https://gaftp.epa.gov/missing.zip"
+        )
+
+        self.assertIsInstance(probe, ContentLengthProbe)
+        self.assertIsNone(probe.size_bytes)
+        self.assertEqual(probe.access_error, "HTTP 404")
+
+    def test_probe_download_rosap_uses_chrome_probe(self) -> None:
+        """ROSA P probe_download delegates to Chrome impersonation."""
+        downloader = UsfsPageDownloader()
+        expected = ContentLengthProbe(access_error="HTTP 403")
+        with patch(
+            "utils.ChromeRangeDownload.probe_download", return_value=expected
+        ) as mock_probe:
+            probe = downloader.probe_download(
+                "https://rosap.ntl.bts.gov/view/dot/7547/dot_7547_DS1.zip"
+            )
+        self.assertEqual(probe, expected)
+        mock_probe.assert_called_once()
 
     @patch.object(UsfsPageDownloader, "_restart_browser", return_value=True)
     def test_download_file_rosap_uses_chrome_ranges(

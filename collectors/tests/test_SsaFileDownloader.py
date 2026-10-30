@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from collectors.ContentLengthProbe import ContentLengthProbe
 from collectors.SsaFileDownloader import SsaFileDownloader, destination_filename
 from collectors.SsaMetadataExtractor import SsaDownloadFile
 from utils.Logger import Logger
@@ -36,7 +37,7 @@ class TestSsaFileDownloader(unittest.TestCase):
         folder.mkdir(exist_ok=True)
         downloader = SsaFileDownloader()
         try:
-            notes, skipped, _bytes, _exts = downloader.download_files(
+            notes, skipped, _bytes, _exts, _planned = downloader.download_files(
                 1,
                 page_downloader,
                 folder,
@@ -66,11 +67,12 @@ class TestSsaFileDownloader(unittest.TestCase):
 
         page_downloader.download_file.side_effect = _write
         page_downloader.fetch_content_length.return_value = 9
+        page_downloader.probe_download.return_value = ContentLengthProbe(size_bytes=9)
         folder = Path(__file__).parent / "_tmp_ssa_small"
         folder.mkdir(exist_ok=True)
         downloader = SsaFileDownloader()
         try:
-            notes, skipped, inventory_bytes, exts = downloader.download_files(
+            notes, skipped, inventory_bytes, exts, _planned = downloader.download_files(
                 1,
                 page_downloader,
                 folder,

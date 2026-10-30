@@ -10,6 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from collectors.InaccessibleDownloads import (
+    inaccessible_error_message,
+    inaccessible_status_notes,
+    partition_accessible,
+)
 from collectors.PlannedFile import PlannedFile, is_generated_sidecar
 from storage.ProjectFileStore import ProjectFileRow, ProjectFileStore
 from utils.collector_status import (
@@ -18,6 +23,7 @@ from utils.collector_status import (
     pending_download_summary_note,
     would_exceed_download_budget,
 )
+from utils.Errors import record_error
 from utils.inventory_status import (
     DEFERRED_COLLECT_STATUSES,
     classify_collected_status,
@@ -62,7 +68,12 @@ class BudgetedDownload:
         Returns:
             Notes for deferred files, and whether any file was deferred.
         """
-        notes, deferred = self._download_files(drpid, folder, files, download_one)
+        accessible, inaccessible = partition_accessible(files)
+        notes = _record_inaccessible(drpid, inaccessible, len(files))
+        dl_notes, deferred = self._download_files(
+            drpid, folder, accessible, download_one
+        )
+        notes.extend(dl_notes)
         if write_sidecars is not None:
             write_sidecars()
         return BudgetedDownloadResult(notes=notes, deferred=deferred)
@@ -76,6 +87,9 @@ class BudgetedDownload:
         """
         Classify the full inventory and store file rows for large/xlarge projects.
 
+        Inaccessible files (404/access denied) are excluded from unknown-size
+        classification so they do not force ``collected - xlarge``.
+
         Args:
             drpid: Project DRPID.
             folder: Project output folder.
@@ -84,7 +98,8 @@ class BudgetedDownload:
         Returns:
             ``collected``, ``collected - large``, or ``collected - xlarge``.
         """
-        known_bytes, has_unknown, rows = _inventory_rows(drpid, folder, files)
+        accessible, _inaccessible = partition_accessible(files)
+        known_bytes, has_unknown, rows = _inventory_rows(drpid, folder, accessible)
         status = classify_collected_status(known_bytes, has_unknown_size=has_unknown)
         store = _store_or_none()
         if store is None:
@@ -124,6 +139,22 @@ class BudgetedDownload:
             if download_budget_exhausted(downloaded_bytes) and files[index + 1 :]:
                 return _defer_notes(files[index + 1 :]), True
         return [], False
+
+
+def _record_inaccessible(
+    drpid: int,
+    inaccessible: list[PlannedFile],
+    total_files: int,
+) -> list[str]:
+    """Record inaccessible downloads as errors and return status_notes lines."""
+    if not inaccessible:
+        return []
+    message = inaccessible_error_message(inaccessible, total_files)
+    notes = inaccessible_status_notes(inaccessible)
+    if message:
+        record_error(drpid, message)
+        notes = [message, *notes]
+    return notes
 
 
 def _store_or_none() -> ProjectFileStore | None:
@@ -218,6 +249,8 @@ def _file_inventory(
 ) -> tuple[int | None, bool, bool]:
     """Return size contribution, completeness, and unknown-size flag."""
     dest = planned.destination(folder)
+    if planned.access_error:
+        return None, False, False
     if planned.size_bytes is not None:
         complete = _is_complete(dest, planned.size_bytes)
         return planned.size_bytes, complete, False

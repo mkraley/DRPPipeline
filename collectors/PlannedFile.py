@@ -25,6 +25,8 @@ class PlannedFile:
     relative_path: str
     source_url: str
     size_bytes: int | None = None
+    # Set when HEAD/probe shows the URL is not downloadable (404, 403, …).
+    access_error: str | None = None
 
     def destination(self, folder: Path) -> Path:
         """Return the on-disk path for this file under ``folder``."""

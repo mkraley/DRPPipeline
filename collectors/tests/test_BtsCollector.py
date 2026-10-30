@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
 from collectors.BtsCollector import BtsCollector, _CATALOG_PDF_NAME
+from collectors.ContentLengthProbe import ContentLengthProbe
 from utils.Args import Args
 from utils.Logger import Logger
 from utils.collector_status import MAX_DOWNLOAD_BYTES, STATUS_COLLECTED_LARGE_FILE
@@ -56,6 +57,8 @@ class TestBtsCollector(unittest.TestCase):
         page_downloader = MagicMock()
         page_downloader.fetch_page_html.return_value = (200, _FIXTURE.read_text(encoding="utf-8"), None, False)
         page_downloader.url_to_pdf.return_value = True
+        page_downloader.probe_download.return_value = ContentLengthProbe(size_bytes=8)
+
         def _fake_download(_url: str, dest: Path) -> tuple[int, bool]:
             dest.write_bytes(b"x" * 8)
             return 8, True
@@ -110,6 +113,7 @@ class TestBtsCollector(unittest.TestCase):
             False,
         )
         page_downloader.url_to_pdf.return_value = True
+        page_downloader.probe_download.return_value = ContentLengthProbe(size_bytes=8)
 
         def _fake_download(_url: str, dest: Path) -> tuple[int, bool]:
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -145,6 +149,7 @@ class TestBtsCollector(unittest.TestCase):
         page_downloader = MagicMock()
         page_downloader.fetch_page_html.return_value = (200, _FIXTURE.read_text(encoding="utf-8"), None, False)
         page_downloader.url_to_pdf.return_value = True
+        page_downloader.probe_download.return_value = ContentLengthProbe(size_bytes=16)
 
         def _fake_download(url: str, dest: Path) -> tuple[int, bool]:
             dest.write_bytes(b"x" * 16)
@@ -176,6 +181,7 @@ class TestBtsCollector(unittest.TestCase):
         """Supporting files without catalog size log probed Content-Length."""
         page_downloader = MagicMock()
         page_downloader.fetch_content_length.return_value = 2048
+        page_downloader.probe_download.return_value = ContentLengthProbe(size_bytes=2048)
 
         def _write_download(_url: str, dest: Path) -> tuple[int, bool]:
             dest.write_bytes(b"x" * 128)
@@ -185,6 +191,7 @@ class TestBtsCollector(unittest.TestCase):
         folder = Path(__file__).parent / "_tmp_bts_dl_probe"
         folder.mkdir(exist_ok=True)
         size_cache: dict[str, int | None] = {}
+        access_errors: dict[str, str] = {}
         try:
             from collectors.BtsMetadataExtractor import BtsDownloadFile
 
@@ -202,8 +209,9 @@ class TestBtsCollector(unittest.TestCase):
                     )
                 ],
                 size_cache,
+                access_errors,
             )
-            page_downloader.fetch_content_length.assert_called_once()
+            page_downloader.probe_download.assert_called_once()
             mock_logger.info.assert_any_call(
                 "Downloading %s file: %s (%s)",
                 "supporting",
@@ -226,6 +234,7 @@ class TestBtsCollector(unittest.TestCase):
         folder = Path(__file__).parent / "_tmp_bts_dl_log"
         folder.mkdir(exist_ok=True)
         size_cache: dict[str, int | None] = {}
+        access_errors: dict[str, str] = {}
         try:
             from collectors.BtsMetadataExtractor import BtsDownloadFile
 
@@ -243,6 +252,7 @@ class TestBtsCollector(unittest.TestCase):
                     )
                 ],
                 size_cache,
+                access_errors,
             )
             mock_logger.info.assert_any_call(
                 "Downloading %s file: %s (%s)",
@@ -259,23 +269,27 @@ class TestBtsCollector(unittest.TestCase):
         folder = Path(__file__).parent / "_tmp_bts_large"
         folder.mkdir(exist_ok=True)
         size_cache: dict[str, int | None] = {}
+        access_errors: dict[str, str] = {}
         try:
             from collectors.BtsMetadataExtractor import BtsDownloadFile
 
-            notes, skipped_large, inventory_bytes, _exts = self.collector._download_files(
-                6,
-                page_downloader,
-                folder,
-                [
-                    BtsDownloadFile(
-                        label="Main document",
-                        url="https://rosap.ntl.bts.gov/view/dot/78551/dot_78551_DS1.zip",
-                        filename="dot_78551_DS1.zip",
-                        size_bytes=MAX_DOWNLOAD_BYTES + 1,
-                        is_main=True,
-                    )
-                ],
-                size_cache,
+            notes, skipped_large, inventory_bytes, _exts, _planned = (
+                self.collector._download_files(
+                    6,
+                    page_downloader,
+                    folder,
+                    [
+                        BtsDownloadFile(
+                            label="Main document",
+                            url="https://rosap.ntl.bts.gov/view/dot/78551/dot_78551_DS1.zip",
+                            filename="dot_78551_DS1.zip",
+                            size_bytes=MAX_DOWNLOAD_BYTES + 1,
+                            is_main=True,
+                        )
+                    ],
+                    size_cache,
+                    access_errors,
+                )
             )
             page_downloader.download_file.assert_not_called()
             self.assertTrue(skipped_large)
@@ -291,6 +305,7 @@ class TestBtsCollector(unittest.TestCase):
         folder = Path(__file__).parent / "_tmp_bts_cumulative"
         folder.mkdir(exist_ok=True)
         size_cache: dict[str, int | None] = {}
+        access_errors: dict[str, str] = {}
         try:
             from collectors.BtsMetadataExtractor import BtsDownloadFile
 
@@ -306,35 +321,39 @@ class TestBtsCollector(unittest.TestCase):
 
             page_downloader.download_file.side_effect = _fake_download
             page_downloader.fetch_content_length.return_value = None
+            page_downloader.probe_download.return_value = ContentLengthProbe()
 
-            notes, skipped_large, inventory_bytes, _exts = self.collector._download_files(
-                6,
-                page_downloader,
-                folder,
-                [
-                    BtsDownloadFile(
-                        label="Main document",
-                        url="https://rosap.ntl.bts.gov/view/dot/1/first.zip",
-                        filename="first.zip",
-                        size_bytes=first_size,
-                        is_main=True,
-                    ),
-                    BtsDownloadFile(
-                        label="Supporting",
-                        url="https://rosap.ntl.bts.gov/view/dot/1/second.zip",
-                        filename="second.zip",
-                        size_bytes=second_size,
-                        is_main=False,
-                    ),
-                    BtsDownloadFile(
-                        label="Supporting",
-                        url="https://rosap.ntl.bts.gov/view/dot/1/third.zip",
-                        filename="third.zip",
-                        size_bytes=1024,
-                        is_main=False,
-                    ),
-                ],
-                size_cache,
+            notes, skipped_large, inventory_bytes, _exts, _planned = (
+                self.collector._download_files(
+                    6,
+                    page_downloader,
+                    folder,
+                    [
+                        BtsDownloadFile(
+                            label="Main document",
+                            url="https://rosap.ntl.bts.gov/view/dot/1/first.zip",
+                            filename="first.zip",
+                            size_bytes=first_size,
+                            is_main=True,
+                        ),
+                        BtsDownloadFile(
+                            label="Supporting",
+                            url="https://rosap.ntl.bts.gov/view/dot/1/second.zip",
+                            filename="second.zip",
+                            size_bytes=second_size,
+                            is_main=False,
+                        ),
+                        BtsDownloadFile(
+                            label="Supporting",
+                            url="https://rosap.ntl.bts.gov/view/dot/1/third.zip",
+                            filename="third.zip",
+                            size_bytes=1024,
+                            is_main=False,
+                        ),
+                    ],
+                    size_cache,
+                    access_errors,
+                )
             )
 
             self.assertTrue(skipped_large)

@@ -191,12 +191,18 @@ class DataGovCollector(CollectorBase):
             )
             return
         size_cache: dict[str, int | None] = {}
+        access_errors: dict[str, str] = {}
         notes = self._file_downloader.save_html_resource_pdfs(
             drpid, page_downloader, folder_path, html_resources
         )
-        skipped_large, inventory_bytes, inventory_exts, file_notes = (
+        skipped_large, inventory_bytes, inventory_exts, file_notes, planned = (
             self._download_data_files(
-                drpid, page_downloader, folder_path, download_files, size_cache
+                drpid,
+                page_downloader,
+                folder_path,
+                download_files,
+                size_cache,
+                access_errors,
             )
         )
         notes.extend(file_notes)
@@ -212,6 +218,8 @@ class DataGovCollector(CollectorBase):
             inventory_bytes,
             inventory_exts,
             size_cache,
+            access_errors,
+            planned,
         )
 
     def _download_data_files(
@@ -221,19 +229,25 @@ class DataGovCollector(CollectorBase):
         folder_path: Path,
         download_files: list[DataGovDownloadFile],
         size_cache: dict[str, int | None],
-    ) -> tuple[bool, int, set[str], list[str]]:
+        access_errors: dict[str, str],
+    ) -> tuple[bool, int, set[str], list[str], list[PlannedFile]]:
         """Download catalog files, or tally PDF-only inventory when none exist."""
         if not download_files:
             inventory_bytes = self._file_downloader.inventory_bytes(
-                page_downloader, folder_path, [], size_cache
+                page_downloader, folder_path, [], size_cache, access_errors
             )
-            return False, inventory_bytes, {"pdf"}, []
-        notes, skipped_large, inventory_bytes, inventory_exts = (
+            return False, inventory_bytes, {"pdf"}, [], []
+        notes, skipped_large, inventory_bytes, inventory_exts, planned = (
             self._file_downloader.download_files(
-                drpid, page_downloader, folder_path, download_files, size_cache
+                drpid,
+                page_downloader,
+                folder_path,
+                download_files,
+                size_cache,
+                access_errors,
             )
         )
-        return skipped_large, inventory_bytes, inventory_exts, notes
+        return skipped_large, inventory_bytes, inventory_exts, notes, planned
 
     def _finish_inventory(
         self,
@@ -248,6 +262,8 @@ class DataGovCollector(CollectorBase):
         inventory_bytes: int,
         inventory_exts: set[str],
         size_cache: dict[str, int | None],
+        access_errors: dict[str, str],
+        planned: list[PlannedFile],
     ) -> None:
         """Fill inventory fields after downloads complete."""
         del skipped_large
@@ -270,24 +286,26 @@ class DataGovCollector(CollectorBase):
         result["download_date"] = date.today().isoformat()
         if notes:
             result["status_notes"] = "\n".join(notes)
+        inventory_files = planned or [
+            PlannedFile(
+                relative_path=destination_filename(entry),
+                source_url=entry.url,
+                size_bytes=size_cache.get(entry.url, entry.size_bytes),
+                access_error=access_errors.get(entry.url),
+            )
+            for entry in download_files
+        ]
         status = BudgetedDownload().commit_inventory(
             drpid,
             folder_path,
-            [
-                PlannedFile(
-                    relative_path=destination_filename(entry),
-                    source_url=entry.url,
-                    size_bytes=size_cache.get(entry.url, entry.size_bytes),
-                )
-                for entry in download_files
-            ],
+            inventory_files,
         )
         if status != STATUS_COLLECTED:
             result["status"] = status
         result["_skipped_large_file"] = status != STATUS_COLLECTED
         if status != STATUS_COLLECTED:
             self._file_downloader.write_aria2_cmd(
-                drpid, folder_path, download_files, size_cache
+                drpid, folder_path, download_files, size_cache, access_errors
             )
         Logger.info(
             "%s collection complete for DRPID %s: %s files, %s",

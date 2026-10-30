@@ -475,6 +475,21 @@ class TestStorageSQLLite(unittest.TestCase):
         self.storage.update_record(drpid, {"status": "dupe_in_DL"})
         self.assertNotIn("next_step", self.storage.get(drpid))
 
+    def test_fill_missing_next_steps_refreshes_finish_wait(self) -> None:
+        """Stale finish-wait next_step ``uploaded`` becomes the manual action."""
+        self.storage.initialize(db_path=self.test_db_path)
+        drpid = self.storage.create_record("https://example.com/finish")
+        assert self.storage._connection is not None
+        self.storage._connection.execute(
+            "UPDATE projects SET status = ?, next_step = ? WHERE DRPID = ?",
+            ("finish wait", "uploaded", drpid),
+        )
+        self.storage._connection.commit()
+        self.storage._fill_missing_next_steps()
+        record = self.storage.get(drpid)
+        assert record is not None
+        self.assertEqual(record["next_step"], "(manual set to uploaded)")
+
     def test_last_change_set_on_create_and_update(self) -> None:
         """Creating or updating a project stores the local processing time."""
         self.storage.initialize(db_path=self.test_db_path)

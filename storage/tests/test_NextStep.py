@@ -41,7 +41,10 @@ class TestNextStep(unittest.TestCase):
         """Manual gates and unknown statuses are '?'."""
         self.assertEqual(next_step_for_status(None), "?")
         self.assertEqual(next_step_for_status(""), "?")
-        self.assertEqual(next_step_for_status("finish wait"), "uploaded")
+        self.assertEqual(
+            next_step_for_status("finish wait"),
+            "(manual set to uploaded)",
+        )
         self.assertEqual(next_step_for_status("collected - large"), "upload")
         self.assertEqual(next_step_for_status("collected - xlarge"), "upload")
         self.assertEqual(next_step_for_status("uploaded - large"), "resume_download")

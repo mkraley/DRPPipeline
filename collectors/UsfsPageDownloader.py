@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
+from collectors.ContentLengthProbe import ContentLengthProbe
+from collectors.InaccessibleDownloads import access_error_for_status
 from collectors.PageExpandForPdf import expand_read_more_and_load_more
 from collectors.PageUnclipForPdf import unclip_overflow_for_pdf
 from collectors.PlaywrightSession import PlaywrightSession
@@ -202,39 +204,54 @@ class UsfsPageDownloader:
             with suppress(Exception):
                 page.close()
 
-    def fetch_content_length(self, url: str) -> int | None:
+    def probe_download(self, url: str) -> ContentLengthProbe:
         """
-        Return Content-Length for a URL when the server reports it.
+        Probe a download URL for Content-Length and accessibility.
 
         ROSA P uses Chrome-impersonated HEAD (Playwright API requests get 403).
+        HTTP 401/403/404/410 set ``access_error`` so callers do not treat the
+        file as unknown-size / xlarge.
         """
         from utils.ChromeRangeDownload import (
-            probe_content_length,
+            probe_download,
             requires_chrome_range_download,
         )
 
         if requires_chrome_range_download(url):
-            return probe_content_length(url)
+            return probe_download(url)
 
         if not self._ensure_browser():
-            return None
+            return ContentLengthProbe()
         page = self._session.new_page()
         if page is None:
-            return None
+            return ContentLengthProbe()
         try:
             response = page.request.head(url, timeout=_CONTENT_LENGTH_TIMEOUT_MS)
+            status = int(getattr(response, "status", 0) or 0)
+            access_error = access_error_for_status(status)
+            if access_error:
+                return ContentLengthProbe(access_error=access_error)
             if not response.ok:
-                return None
+                return ContentLengthProbe()
             content_length = response.headers.get("content-length")
             if not content_length:
-                return None
-            return int(content_length)
+                return ContentLengthProbe()
+            return ContentLengthProbe(size_bytes=int(content_length))
         except (TypeError, ValueError, OSError) as exc:
             Logger.debug("Content-Length probe failed for %s: %s", url, exc)
-            return None
+            return ContentLengthProbe()
         finally:
             with suppress(Exception):
                 page.close()
+
+    def fetch_content_length(self, url: str) -> int | None:
+        """
+        Return Content-Length for a URL when the server reports it.
+
+        Prefer ``probe_download`` when access errors must be distinguished from
+        unknown size.
+        """
+        return self.probe_download(url).size_bytes
 
     def url_to_pdf(
         self,

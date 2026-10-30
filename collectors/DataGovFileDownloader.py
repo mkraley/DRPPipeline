@@ -10,6 +10,7 @@ from urllib.parse import unquote, urlsplit
 import requests
 
 from collectors.BudgetedDownload import BudgetedDownload
+from collectors.ContentLengthProbe import ContentLengthProbe
 from collectors.DataGovArcGisExtent import (
     arcgis_json_url,
     is_arcgis_hub_or_item_page,
@@ -65,7 +66,8 @@ class DataGovFileDownloader:
         folder_path: Path,
         files: list[DataGovDownloadFile],
         size_cache: dict[str, int | None],
-    ) -> tuple[list[str], bool, int, set[str]]:
+        access_errors: dict[str, str] | None = None,
+    ) -> tuple[list[str], bool, int, set[str], list[PlannedFile]]:
         """
         Download catalog files until the cumulative 1 GB budget is reached.
 
@@ -75,12 +77,17 @@ class DataGovFileDownloader:
             folder_path: Project output folder.
             files: Catalog file entries.
             size_cache: Mutable URL-to-size map.
+            access_errors: Mutable URL-to-access-error map (404/403/…).
 
         Returns:
-            Status notes, large-skip flag, inventory bytes, and extensions.
+            Status notes, large-skip flag, inventory bytes, extensions, and
+            planned files (including inaccessible ones).
         """
         notes: list[str] = []
-        planned = self._planned_files(page_downloader, files, size_cache)
+        error_cache = access_errors if access_errors is not None else {}
+        planned = self._planned_files(
+            page_downloader, files, size_cache, error_cache
+        )
 
         def download_one(item: PlannedFile, dest: Path) -> bool:
             self._log_download(item.filename(), item.size_bytes)
@@ -99,48 +106,82 @@ class DataGovFileDownloader:
             drpid, folder_path, planned, download_one
         )
         notes.extend(outcome.notes)
-        summary = self._pending_summary(page_downloader, folder_path, files, size_cache)
-        if summary and not outcome.notes:
+        summary = self._pending_summary(
+            page_downloader, folder_path, files, size_cache, error_cache
+        )
+        if summary and not outcome.deferred and not any(
+            item.access_error for item in planned
+        ):
             notes.append(summary)
         inventory_bytes = self.inventory_bytes(
-            page_downloader, folder_path, files, size_cache
+            page_downloader, folder_path, files, size_cache, error_cache
         )
         inventory_exts = catalog_file_extensions(files)
-        return notes, outcome.deferred, inventory_bytes, inventory_exts
+        return notes, outcome.deferred, inventory_bytes, inventory_exts, planned
 
     def _planned_files(
         self,
         page_downloader: UsfsPageDownloader,
         files: list[DataGovDownloadFile],
         size_cache: dict[str, int | None],
+        access_errors: dict[str, str],
     ) -> list[PlannedFile]:
         """Probe sizes and return shared planned-file records."""
         planned: list[PlannedFile] = []
         for entry in files:
+            probe = self.probe_entry(
+                page_downloader, entry, size_cache, access_errors
+            )
             planned.append(
                 PlannedFile(
                     relative_path=destination_filename(entry),
                     source_url=entry.url,
-                    size_bytes=self.expected_bytes(page_downloader, entry, size_cache),
+                    size_bytes=probe.size_bytes,
+                    access_error=probe.access_error,
                 )
             )
         return planned
+
+    def probe_entry(
+        self,
+        page_downloader: UsfsPageDownloader,
+        entry: DataGovDownloadFile,
+        size_cache: dict[str, int | None],
+        access_errors: dict[str, str],
+    ) -> ContentLengthProbe:
+        """Return catalog size or probed Content-Length / access error."""
+        if entry.url in access_errors:
+            return ContentLengthProbe(access_error=access_errors[entry.url])
+        if entry.url in size_cache:
+            return ContentLengthProbe(size_bytes=size_cache[entry.url])
+        if entry.size_bytes is not None:
+            size_cache[entry.url] = entry.size_bytes
+            return ContentLengthProbe(size_bytes=entry.size_bytes)
+        probe = page_downloader.probe_download(entry.url)
+        if probe.access_error:
+            access_errors[entry.url] = probe.access_error
+            size_cache[entry.url] = None
+            return probe
+        size = (
+            probe.size_bytes
+            if isinstance(probe.size_bytes, int) and probe.size_bytes >= 0
+            else None
+        )
+        size_cache[entry.url] = size
+        return ContentLengthProbe(size_bytes=size)
 
     def expected_bytes(
         self,
         page_downloader: UsfsPageDownloader,
         entry: DataGovDownloadFile,
         size_cache: dict[str, int | None],
+        access_errors: dict[str, str] | None = None,
     ) -> int | None:
         """Return catalog or probed Content-Length for a file."""
-        if entry.url in size_cache:
-            return size_cache[entry.url]
-        result = entry.size_bytes
-        if result is None:
-            probed = page_downloader.fetch_content_length(entry.url)
-            result = probed if isinstance(probed, int) and probed >= 0 else None
-        size_cache[entry.url] = result
-        return result
+        error_cache = access_errors if access_errors is not None else {}
+        return self.probe_entry(
+            page_downloader, entry, size_cache, error_cache
+        ).size_bytes
 
     def inventory_bytes(
         self,
@@ -148,8 +189,10 @@ class DataGovFileDownloader:
         folder_path: Path,
         files: list[DataGovDownloadFile],
         size_cache: dict[str, int | None],
+        access_errors: dict[str, str] | None = None,
     ) -> int:
         """Estimate total project bytes including files not yet on disk."""
+        error_cache = access_errors if access_errors is not None else {}
         total_bytes = 0
         catalog_pdf = folder_path / CATALOG_PDF_NAME
         if catalog_pdf.is_file():
@@ -161,7 +204,11 @@ class DataGovFileDownloader:
             if dest.is_file():
                 total_bytes += dest.stat().st_size
                 continue
-            expected = self.expected_bytes(page_downloader, entry, size_cache)
+            if entry.url in error_cache:
+                continue
+            expected = self.expected_bytes(
+                page_downloader, entry, size_cache, error_cache
+            )
             if expected is not None:
                 total_bytes += expected
         total_bytes += _extra_on_disk_bytes(folder_path, known_names)
@@ -173,10 +220,12 @@ class DataGovFileDownloader:
         folder_path: Path,
         files: list[DataGovDownloadFile],
         size_cache: dict[str, int | None],
+        access_errors: dict[str, str] | None = None,
     ) -> None:
         """Export aria2 commands for catalog files still missing on disk."""
         from collectors.UsfsAria2Export import write_drpid_aria2_cmd
 
+        error_cache = access_errors if access_errors is not None else {}
         pending = [
             (
                 destination_filename(entry),
@@ -184,7 +233,8 @@ class DataGovFileDownloader:
                 size_cache.get(entry.url, entry.size_bytes),
             )
             for entry in files
-            if not (folder_path / destination_filename(entry)).is_file()
+            if entry.url not in error_cache
+            and not (folder_path / destination_filename(entry)).is_file()
         ]
         cmd_path = write_drpid_aria2_cmd(drpid, folder_path, pending, min_bytes=0)
         if cmd_path:
@@ -216,19 +266,24 @@ class DataGovFileDownloader:
         folder_path: Path,
         files: list[DataGovDownloadFile],
         size_cache: dict[str, int | None],
+        access_errors: dict[str, str] | None = None,
     ) -> str:
         """Build a status_notes summary for catalog files still missing on disk."""
+        error_cache = access_errors if access_errors is not None else {}
         pending = [
             entry
             for entry in files
-            if not (folder_path / destination_filename(entry)).is_file()
+            if entry.url not in error_cache
+            and not (folder_path / destination_filename(entry)).is_file()
         ]
         if not pending:
             return ""
         pending_bytes = 0
         has_unknown = False
         for entry in pending:
-            expected = self.expected_bytes(page_downloader, entry, size_cache)
+            expected = self.expected_bytes(
+                page_downloader, entry, size_cache, error_cache
+            )
             if expected is None:
                 has_unknown = True
             else:

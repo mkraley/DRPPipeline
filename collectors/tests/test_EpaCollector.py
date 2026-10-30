@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from collectors.ContentLengthProbe import ContentLengthProbe
 from collectors.EpaCollector import EpaCollector
 from sourcing.EpaSourcing import AGENCY
 from utils.Args import Args
@@ -70,6 +71,7 @@ class TestEpaCollector(unittest.TestCase):
         )
         page_downloader.url_to_pdf.return_value = True
         page_downloader.fetch_content_length.return_value = 4
+        page_downloader.probe_download.return_value = ContentLengthProbe(size_bytes=4)
 
         def _write(url: str, dest: Path) -> tuple[int, bool]:
             dest.write_bytes(b"a,b\n")

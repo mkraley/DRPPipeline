@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from collectors.ContentLengthProbe import ContentLengthProbe
 from collectors.DataGovFileDownloader import CATALOG_PDF_NAME
 from collectors.SsaCollector import SsaCollector
 from utils.Args import Args
@@ -82,6 +83,7 @@ class TestSsaCollector(unittest.TestCase):
         page_downloader.download_file.side_effect = _write
         page_downloader.url_to_titled_pdf.side_effect = _titled_pdf
         page_downloader.fetch_content_length.return_value = 4
+        page_downloader.probe_download.return_value = ContentLengthProbe(size_bytes=4)
         self.collector._page_downloader = page_downloader
 
         try:

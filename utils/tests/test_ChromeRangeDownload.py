@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from collectors.ContentLengthProbe import ContentLengthProbe
 from utils.ChromeRangeDownload import (
     ONE_GIB,
     POST_1GIB_CHUNK_BYTES,
@@ -13,6 +14,7 @@ from utils.ChromeRangeDownload import (
     _shrink_chunk_size,
     download_via_chrome_ranges,
     probe_content_length,
+    probe_download,
     referer_for_file_url,
     requires_chrome_range_download,
 )
@@ -111,6 +113,17 @@ class TestChromeRangeDownload(unittest.TestCase):
             session=session,
         )
         self.assertEqual(size, 2024010110)
+        session.head.assert_not_called()
+
+    def test_probe_download_marks_404_as_access_error(self) -> None:
+        """HTTP 404 from the Range probe sets access_error."""
+        session = MagicMock()
+        session.get.return_value = _FakeResponse(404, {}, b"missing")
+        probe = probe_download(
+            "https://rosap.ntl.bts.gov/view/dot/1/missing.zip",
+            session=session,
+        )
+        self.assertEqual(probe, ContentLengthProbe(access_error="HTTP 404"))
         session.head.assert_not_called()
 
     @unittest.skipUnless(_curl_cffi_installed(), "curl_cffi is not installed")

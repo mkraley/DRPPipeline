@@ -114,6 +114,69 @@ def _close_session(session: Any | None) -> None:
         close()
 
 
+def probe_download(url: str, *, session: Any | None = None) -> "ContentLengthProbe":
+    """
+    Probe remote size via Range ``bytes=0-0`` Content-Range (preferred) or HEAD.
+
+    HTTP 401/403/404/410 set ``access_error`` so callers do not treat the file
+    as unknown-size / xlarge.
+
+    Args:
+        url: File URL.
+        session: Optional existing curl_cffi session.
+    """
+    from collectors.ContentLengthProbe import ContentLengthProbe
+    from collectors.InaccessibleDownloads import access_error_for_status
+
+    owns_session = session is None
+    client = session or _chrome_session()
+    referer = referer_for_file_url(url)
+    try:
+        ranged = client.get(
+            url,
+            headers={"Referer": referer, "Range": "bytes=0-0"},
+            allow_redirects=True,
+            timeout=60,
+        )
+        ranged_status = int(getattr(ranged, "status_code", 0) or 0)
+        access_error = access_error_for_status(ranged_status)
+        content_range = ranged.headers.get("Content-Range") or ranged.headers.get(
+            "content-range"
+        )
+        ranged.close()
+        if access_error:
+            return ContentLengthProbe(access_error=access_error)
+        if content_range and "/" in content_range:
+            total_raw = content_range.rsplit("/", 1)[-1].strip()
+            if total_raw != "*":
+                return ContentLengthProbe(size_bytes=int(total_raw))
+
+        response = client.head(
+            url,
+            headers={"Referer": referer},
+            allow_redirects=True,
+            timeout=60,
+        )
+        head_status = int(getattr(response, "status_code", 0) or 0)
+        access_error = access_error_for_status(head_status)
+        if access_error:
+            return ContentLengthProbe(access_error=access_error)
+        if response.status_code >= 400:
+            return ContentLengthProbe()
+        raw = response.headers.get("Content-Length") or response.headers.get(
+            "content-length"
+        )
+        if not raw:
+            return ContentLengthProbe()
+        return ContentLengthProbe(size_bytes=int(raw))
+    except (TypeError, ValueError, OSError) as exc:
+        Logger.debug("Chrome size probe failed for %s: %s", url, exc)
+        return ContentLengthProbe()
+    finally:
+        if owns_session:
+            _close_session(client)
+
+
 def probe_content_length(url: str, *, session: Any | None = None) -> Optional[int]:
     """
     Return remote size via Range ``bytes=0-0`` Content-Range (preferred) or HEAD.
@@ -125,45 +188,7 @@ def probe_content_length(url: str, *, session: Any | None = None) -> Optional[in
     Returns:
         Size in bytes, or None when unavailable.
     """
-    owns_session = session is None
-    client = session or _chrome_session()
-    referer = referer_for_file_url(url)
-    try:
-        ranged = client.get(
-            url,
-            headers={"Referer": referer, "Range": "bytes=0-0"},
-            allow_redirects=True,
-            timeout=60,
-        )
-        content_range = ranged.headers.get("Content-Range") or ranged.headers.get(
-            "content-range"
-        )
-        ranged.close()
-        if content_range and "/" in content_range:
-            total_raw = content_range.rsplit("/", 1)[-1].strip()
-            if total_raw != "*":
-                return int(total_raw)
-
-        response = client.head(
-            url,
-            headers={"Referer": referer},
-            allow_redirects=True,
-            timeout=60,
-        )
-        if response.status_code >= 400:
-            return None
-        raw = response.headers.get("Content-Length") or response.headers.get(
-            "content-length"
-        )
-        if not raw:
-            return None
-        return int(raw)
-    except (TypeError, ValueError, OSError) as exc:
-        Logger.debug("Chrome size probe failed for %s: %s", url, exc)
-        return None
-    finally:
-        if owns_session:
-            _close_session(client)
+    return probe_download(url, session=session).size_bytes
 
 
 def _initial_chunk_size(offset: int, configured: int) -> int:

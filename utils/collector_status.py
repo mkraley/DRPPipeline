@@ -180,20 +180,25 @@ def resolve_standard_collected_status(
 def resolve_inventory_collected_status(
     result: dict[str, Any],
     *,
-    has_errors: bool,
+    status_is_error: bool,
 ) -> None:
     """
     Set ``result['status']`` for inventory-style collectors (ADC, USFS).
 
     Pops ``_skipped_large_file`` and ``_external_archive`` flags from ``result``.
 
+    Uses the current Storage status (not the errors text) to decide whether to
+    skip advancement. ``--retry`` leaves prior error text until success, so a
+    non-empty errors field must not block ``collected`` after a good run.
+
     Args:
         result: Mutable collection result dict.
-        has_errors: Whether Storage already has a non-empty errors field.
+        status_is_error: True when Storage status is already an ``*-error``
+            value (typically from ``record_error`` during this collect).
     """
     skipped_large = bool(result.pop("_skipped_large_file", False))
     external_archive = bool(result.pop("_external_archive", False))
-    if has_errors:
+    if status_is_error:
         result.pop("status", None)
         return
     if not result.get("folder_path"):
@@ -231,8 +236,10 @@ def merge_result_to_storage(
     if status_mode == "notes_only":
         pass
     elif status_mode == "inventory":
-        has_errors = bool(str(current.get("errors") or "").strip())
-        resolve_inventory_collected_status(result, has_errors=has_errors)
+        resolve_inventory_collected_status(
+            result,
+            status_is_error=is_error_status(previous_status),
+        )
     else:
         resolve_standard_collected_status(result, previous_status=previous_status)
 
