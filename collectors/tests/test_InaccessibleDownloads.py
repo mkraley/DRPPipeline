@@ -35,8 +35,12 @@ class TestInaccessibleDownloads(unittest.TestCase):
             PlannedFile("a.zip", "https://ex/a", access_error="HTTP 404"),
             PlannedFile("b.zip", "https://ex/b", access_error="HTTP 403"),
         ]
-        self.assertIn("All 2", inaccessible_error_message(files, 2) or "")
-        self.assertIn("1 of 3", inaccessible_error_message(files[:1], 3) or "")
+        all_msg = inaccessible_error_message(files, 2) or ""
+        some_msg = inaccessible_error_message(files[:1], 3) or ""
+        self.assertIn("All 2", all_msg)
+        self.assertIn("none were successfully accessed", all_msg)
+        self.assertIn("1 of 3", some_msg)
+        self.assertIn("2 were successfully accessed", some_msg)
 
     def test_partition_and_notes(self) -> None:
         """Inaccessible files are split out and described per file."""

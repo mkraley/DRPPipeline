@@ -58,6 +58,36 @@ def inaccessible_status_notes(inaccessible: list[PlannedFile]) -> list[str]:
     ]
 
 
+def access_outcome_message(
+    failed_count: int,
+    total_count: int,
+    *,
+    subject: str = "download file(s)",
+    reason: str = "404/access denied",
+) -> str | None:
+    """
+    Build an error that states failures and whether any files succeeded.
+
+    Args:
+        failed_count: Number of files that could not be accessed/saved.
+        total_count: Total files in the same attempt group.
+        subject: Noun phrase for the file group (e.g. ``download file(s)``).
+        reason: Short cause label inside parentheses.
+    """
+    if failed_count <= 0 or total_count <= 0:
+        return None
+    succeeded = max(total_count - failed_count, 0)
+    if failed_count >= total_count:
+        return (
+            f"All {failed_count} {subject} inaccessible ({reason}); "
+            f"none were successfully accessed"
+        )
+    return (
+        f"{failed_count} of {total_count} {subject} inaccessible ({reason}); "
+        f"{succeeded} were successfully accessed"
+    )
+
+
 def inaccessible_error_message(
     inaccessible: list[PlannedFile],
     total_files: int,
@@ -69,15 +99,9 @@ def inaccessible_error_message(
         inaccessible: Files that failed access checks.
         total_files: Total catalog download files for the project.
     """
-    count = len(inaccessible)
-    if count <= 0:
-        return None
-    if count >= total_files:
-        return (
-            f"All {count} download file(s) inaccessible "
-            f"(404/access denied)"
-        )
-    return (
-        f"{count} of {total_files} download file(s) inaccessible "
-        f"(404/access denied)"
+    return access_outcome_message(
+        len(inaccessible),
+        total_files,
+        subject="download file(s)",
+        reason="404/access denied",
     )

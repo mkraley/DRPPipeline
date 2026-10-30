@@ -20,7 +20,8 @@ from collectors.DataGovMetadataExtractor import DataGovDownloadFile, filename_fr
 from collectors.PlannedFile import PlannedFile
 from collectors.SsaCompleteMetadata import COMPLETE_METADATA_HEADING_SELECTOR
 from collectors.UsfsPageDownloader import UsfsPageDownloader
-from utils.Errors import abort_project, record_error
+from collectors.InaccessibleDownloads import access_outcome_message
+from utils.Errors import record_error
 from utils.Logger import Logger
 from utils.collector_status import pending_download_summary_note
 from utils.file_utils import format_file_size, sanitize_filename
@@ -324,14 +325,15 @@ class DataGovFileDownloader:
         directory printouts. Other pages become titled PDFs.
         """
         notes: list[str] = []
+        failures: list[str] = []
         for entry in resources:
             if is_arcgis_map_or_feature_server(entry.url):
                 dest = self._save_arcgis_service_json(folder_path, entry)
                 if dest is None:
-                    abort_project(
-                        drpid,
-                        f"Failed to save ArcGIS service JSON: {entry.url}",
-                    )
+                    detail = f"Failed to save ArcGIS service JSON: {entry.url}"
+                    failures.append(detail)
+                    notes.append(detail)
+                    continue
                 Logger.info("Saved ArcGIS service JSON: %s", dest.name)
                 continue
             fallback = Path(filename_from_url(entry.url)).stem or "page"
@@ -342,8 +344,24 @@ class DataGovFileDownloader:
                 spa_ready=is_arcgis_hub_or_item_page(entry.url),
             )
             if dest is None:
-                abort_project(drpid, f"Failed to save HTML resource PDF: {entry.url}")
+                detail = f"Failed to save HTML resource PDF: {entry.url}"
+                failures.append(detail)
+                notes.append(detail)
+                continue
             Logger.info("Saved HTML resource PDF: %s", dest.name)
+        if failures:
+            summary = access_outcome_message(
+                len(failures),
+                len(resources),
+                subject="HTML/ArcGIS resource(s)",
+                reason="save failed",
+            )
+            message = summary or failures[0]
+            if len(failures) == 1 and summary:
+                message = f"{summary}: {failures[0]}"
+            elif len(failures) > 1 and summary:
+                message = f"{summary}\n" + "\n".join(failures)
+            record_error(drpid, message)
         return notes
 
     def _save_arcgis_service_json(

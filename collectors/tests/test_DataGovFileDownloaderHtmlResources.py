@@ -98,6 +98,82 @@ class TestDataGovFileDownloaderHtmlResources(unittest.TestCase):
         self.assertEqual(written[0].read_bytes(), b'{"fullExtent":{"xmin":1}}')
         self.assertIn("f=json", mock_get.call_args.args[0])
 
+    @patch("collectors.DataGovFileDownloader.record_error")
+    @patch("collectors.DataGovFileDownloader.requests.get")
+    def test_arcgis_json_failure_notes_success_count(
+        self,
+        mock_get: MagicMock,
+        mock_record_error: MagicMock,
+    ) -> None:
+        """Resource save failures continue and report whether any succeeded."""
+        import requests
+
+        mock_get.side_effect = [
+            MagicMock(status_code=200, content=b'{"ok":1}'),
+            requests.exceptions.ConnectionError("DNS failed"),
+        ]
+        page_downloader = MagicMock()
+        notes = self.downloader.save_html_resource_pdfs(
+            29,
+            page_downloader,
+            self.folder,
+            [
+                DataGovDownloadFile(
+                    label="ok",
+                    url=(
+                        "https://gispub.epa.gov/arcgis/rest/services/"
+                        "OEI/FRS_Wastewater/MapServer"
+                    ),
+                    filename="MapServer",
+                ),
+                DataGovDownloadFile(
+                    label="bad",
+                    url=(
+                        "https://igeo.epa.gov/arcgis/rest/services/"
+                        "OEI/FRS_ESF3/MapServer"
+                    ),
+                    filename="MapServer",
+                ),
+            ],
+        )
+        self.assertTrue(any("FRS_ESF3" in note for note in notes))
+        mock_record_error.assert_called_once()
+        message = mock_record_error.call_args[0][1]
+        self.assertIn("1 of 2", message)
+        self.assertIn("1 were successfully accessed", message)
+        self.assertEqual(len(list(self.folder.glob("*.json"))), 1)
+
+    @patch("collectors.DataGovFileDownloader.record_error")
+    def test_all_html_resource_failures_note_none_accessed(
+        self,
+        mock_record_error: MagicMock,
+    ) -> None:
+        """When every HTML resource fails, the error says none succeeded."""
+        page_downloader = MagicMock()
+        page_downloader.url_to_titled_pdf.return_value = None
+        notes = self.downloader.save_html_resource_pdfs(
+            29,
+            page_downloader,
+            self.folder,
+            [
+                DataGovDownloadFile(
+                    label="a",
+                    url="https://example.com/a",
+                    filename="a.html",
+                ),
+                DataGovDownloadFile(
+                    label="b",
+                    url="https://example.com/b",
+                    filename="b.html",
+                ),
+            ],
+        )
+        self.assertEqual(len(notes), 2)
+        mock_record_error.assert_called_once()
+        message = mock_record_error.call_args[0][1]
+        self.assertIn("All 2", message)
+        self.assertIn("none were successfully accessed", message)
+
 
 if __name__ == "__main__":
     unittest.main()
