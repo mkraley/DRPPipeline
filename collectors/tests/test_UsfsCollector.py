@@ -205,7 +205,6 @@ class TestUsfsCollector(unittest.TestCase):
         self.assertNotIn("_skipped_large_file", update)
 
     @patch("collectors.UsfsCollector.record_warning")
-    @patch("collectors.UsfsAria2Export.write_drpid_aria2_cmd")
     @patch("collectors.UsfsCollector.create_output_folder")
     @patch("collectors.UsfsCollector._fetch_usfs_page_body")
     @patch("collectors.UsfsCollector.Storage")
@@ -214,7 +213,6 @@ class TestUsfsCollector(unittest.TestCase):
         mock_storage: MagicMock,
         mock_fetch: MagicMock,
         mock_create_folder: MagicMock,
-        mock_write_cmd: MagicMock,
         mock_record_warning: MagicMock,
     ) -> None:
         mock_storage.get.return_value = {
@@ -261,7 +259,6 @@ class TestUsfsCollector(unittest.TestCase):
                 {},
             )
 
-        mock_write_cmd.assert_not_called()
         mock_record_warning.assert_any_call(
             177,
             f"Data available via external archive (not downloaded): {external_url}",
@@ -277,22 +274,20 @@ class TestUsfsCollector(unittest.TestCase):
         except OSError:
             pass
 
-    @patch("collectors.UsfsAria2Export.write_drpid_aria2_cmd")
     @patch("collectors.UsfsCollector.create_output_folder")
     @patch("collectors.UsfsCollector._fetch_usfs_page_body")
     @patch("collectors.UsfsCollector.Storage")
-    def test_collect_writes_aria2_cmd_when_large_file_skipped(
+    def test_collect_defers_large_file_without_writing_aria2_cmd(
         self,
         mock_storage: MagicMock,
         mock_fetch: MagicMock,
         mock_create_folder: MagicMock,
-        mock_write_cmd: MagicMock,
     ) -> None:
+        """Large deferred files are marked in status; no aria2_inputs .cmd is written."""
         mock_storage.get.return_value = {"source_url": "https://www.fs.usda.gov/rds/archive/catalog/RDS-2020-0001"}
         folder = Path(__file__).parent / "_tmp_usfs_aria2_collect"
         folder.mkdir(exist_ok=True)
         mock_create_folder.return_value = folder
-        mock_write_cmd.return_value = folder.parent / "DRP000001.cmd"
         big = MAX_DOWNLOAD_BYTES + 1
         detail_html = "<html><head><title>T</title></head><body><h1>T</h1></body></html>"
         mock_fetch.return_value = (200, detail_html, "text/html", False)
@@ -323,17 +318,21 @@ class TestUsfsCollector(unittest.TestCase):
             return_value="",
         ), patch(
             "collectors.UsfsCollector.normalize_geographic_metadata",
-        ) as mock_geo:
+        ) as mock_geo, patch(
+            "collectors.UsfsAria2Export.write_drpid_aria2_cmd",
+        ) as mock_write_cmd:
             mock_geo.return_value.geographic_coverage = ""
             mock_geo.return_value.warnings = []
             collector._page_downloader = page_downloader
-            collector._collect(
+            result = collector._collect(
                 "https://www.fs.usda.gov/rds/archive/catalog/RDS-2020-0001",
                 1,
                 {},
             )
 
-        mock_write_cmd.assert_called_once()
+        mock_write_cmd.assert_not_called()
+        self.assertTrue(result.get("_skipped_large_file"))
+        self.assertIn("large", str(result.get("status") or "").lower())
         try:
             for f in folder.iterdir():
                 f.unlink(missing_ok=True)

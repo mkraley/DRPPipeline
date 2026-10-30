@@ -303,10 +303,6 @@ class DataGovCollector(CollectorBase):
         if status != STATUS_COLLECTED:
             result["status"] = status
         result["_skipped_large_file"] = status != STATUS_COLLECTED
-        if status != STATUS_COLLECTED:
-            self._file_downloader.write_aria2_cmd(
-                drpid, folder_path, download_files, size_cache, access_errors
-            )
         Logger.info(
             "%s collection complete for DRPID %s: %s files, %s",
             self._source_label,

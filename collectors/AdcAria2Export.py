@@ -1,7 +1,7 @@
 """
 Build Windows aria2c command files for large ADC publication downloads.
 
-Used by AdcCollector when files are skipped (>1 GB).
+Optional helper for manual ``.cmd`` export; collect/upload keep lines in memory.
 """
 
 from __future__ import annotations

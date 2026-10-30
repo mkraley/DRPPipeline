@@ -15,16 +15,13 @@ from typing import Any, Dict, List, Sequence, Tuple
 
 from collectors.UsfsAria2Export import (
     DEFAULT_ARIA2_MAX_ATTEMPTS,
-    DEFAULT_ARIA2_OUTPUT_DIR,
     MAX_DOWNLOAD_BYTES,
+    aria2_cmd_download_parts,
+    build_drpid_aria2_lines,
     download_exported_cmd_line,
     download_failure_message,
-    drpid_cmd_path,
     entries_for_publication_files,
     out_name_from_aria2_cmd_line,
-    parse_aria2c_lines_from_cmd_file,
-    write_drpid_aria2_cmd,
-    aria2_cmd_download_parts,
 )
 from collectors.UsfsMetadataExtractor import parse_data_access_links
 from storage import Storage
@@ -261,30 +258,25 @@ def large_files_on_disk(drpid: int, project: Dict[str, Any]) -> List[str]:
     return [entry.out_name for entry in entries if (folder / entry.out_name).is_file()]
 
 
-def ensure_aria2_cmd(drpid: int, project: Dict[str, Any]) -> Tuple[Path, List[str]]:
+def build_aria2_lines(drpid: int, project: Dict[str, Any]) -> List[str]:
     """
-    Ensure ``aria2_inputs/DRP######.cmd`` exists and return its aria2c lines.
+    Build bare ``aria2c`` download lines in memory for a project.
 
-    Creates the batch file from the USFS catalog when missing or empty.
+    Uses the USFS/catalog publication list when present; otherwise skip notes
+    (including NPS product subfolders). Does not write ``aria2_inputs/``.
     """
-    cmd_path = drpid_cmd_path(drpid, DEFAULT_ARIA2_OUTPUT_DIR)
-    if cmd_path.is_file():
-        lines = parse_aria2c_lines_from_cmd_file(cmd_path)
-        if lines:
-            return cmd_path, lines
-
     source_url = get_field(project, "source_url")
     if not source_url:
-        return cmd_path, []
+        return []
 
     status, body, _, _ = fetch_page_body(source_url)
     if status != 200 or not body:
         Logger.warning(
-            "Could not fetch catalog for DRPID=%s to build aria2 cmd (status=%s)",
+            "Could not fetch catalog for DRPID=%s to build aria2 lines (status=%s)",
             drpid,
             status,
         )
-        return cmd_path, []
+        return []
 
     links = parse_data_access_links(body, source_url)
     folder = resolve_output_folder(drpid, get_field(project, "folder_path") or None)
@@ -293,37 +285,25 @@ def ensure_aria2_cmd(drpid: int, project: Dict[str, Any]) -> Tuple[Path, List[st
     publication_files = links.get("publication_files", [])
     from_skip_notes = False
     if not publication_files:
-        from collectors.NpsAria2Export import write_nps_aria2_cmd_from_notes
+        from collectors.NpsAria2Export import build_nps_aria2_lines_from_notes
         from collectors.SkipNoteFiles import parse_skip_note_download_targets
 
         targets = parse_skip_note_download_targets(get_field(project, "status_notes"))
         if _skip_targets_need_subfolders(targets):
-            write_nps_aria2_cmd_from_notes(
-                drpid,
-                folder,
-                get_field(project, "status_notes"),
-                output_dir=DEFAULT_ARIA2_OUTPUT_DIR,
+            return build_nps_aria2_lines_from_notes(
+                folder, get_field(project, "status_notes")
             )
-            if not cmd_path.is_file():
-                return cmd_path, []
-            return cmd_path, parse_aria2c_lines_from_cmd_file(cmd_path)
         publication_files = [
             (name, url, size_bytes) for name, url, size_bytes, _folder in targets
         ]
         from_skip_notes = bool(publication_files)
 
-    write_drpid_aria2_cmd(
-        drpid,
+    return build_drpid_aria2_lines(
         folder,
         publication_files,
-        output_dir=DEFAULT_ARIA2_OUTPUT_DIR,
         user_agent=BROWSER_HEADERS["User-Agent"],
         min_bytes=0 if from_skip_notes else MAX_DOWNLOAD_BYTES,
     )
-
-    if not cmd_path.is_file():
-        return cmd_path, []
-    return cmd_path, parse_aria2c_lines_from_cmd_file(cmd_path)
 
 
 def _skip_targets_need_subfolders(
@@ -455,7 +435,7 @@ class UploadLargeFiles:
             return
 
         try:
-            _, aria2_lines = ensure_aria2_cmd(drpid, project)
+            aria2_lines = build_aria2_lines(drpid, project)
             download_paths = planned_download_paths(aria2_lines)
 
             if aria2_lines:

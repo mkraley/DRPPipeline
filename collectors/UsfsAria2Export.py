@@ -1,8 +1,8 @@
 """
-Build Windows aria2c command files for large USFS publication downloads.
+Build aria2c command lines for large publication downloads.
 
-Used by UsfsCollector when files are skipped (>1 GB) and by
-scripts/export_usfs_aria2_input.py for batch export.
+Upload and collect keep lines in memory. Use
+``scripts/export_usfs_aria2_input.py`` when you need a ``.cmd`` file on disk.
 """
 
 from __future__ import annotations
@@ -466,6 +466,19 @@ def format_windows_command(
     )
 
 
+def format_aria2c_lines(
+    entries: Iterable[Aria2Entry],
+    user_agent: str,
+    *,
+    referer: str | None = None,
+) -> List[str]:
+    """Return bare ``aria2c ...`` lines for in-memory download (no ``.cmd`` file)."""
+    return [
+        format_windows_command(entry, user_agent, referer=referer)
+        for entry in entries
+    ]
+
+
 def format_windows_commands(
     entries: Iterable[Aria2Entry],
     user_agent: str,
@@ -494,6 +507,32 @@ def format_windows_commands(
     return "\n".join(lines) + "\n"
 
 
+def build_drpid_aria2_lines(
+    folder_path: Path,
+    publication_files: Sequence[PublicationFile],
+    *,
+    min_bytes: int = MAX_DOWNLOAD_BYTES,
+    missing_only: bool = True,
+    user_agent: str | None = None,
+    referer: str | None = None,
+) -> List[str]:
+    """
+    Build bare ``aria2c`` lines for missing large publication files.
+
+    Does not write anything under ``aria2_inputs/``.
+    """
+    entries = entries_for_publication_files(
+        publication_files,
+        folder_path,
+        min_bytes=min_bytes,
+        missing_only=missing_only,
+    )
+    if not entries:
+        return []
+    ua = user_agent or BROWSER_HEADERS["User-Agent"]
+    return format_aria2c_lines(entries, ua, referer=referer)
+
+
 def write_drpid_aria2_cmd(
     drpid: int,
     folder_path: Path,
@@ -507,6 +546,9 @@ def write_drpid_aria2_cmd(
     """
     Write ``DRP######.cmd`` for missing large publication files.
 
+    Prefer :func:`build_drpid_aria2_lines` in the pipeline; use this from
+    ``scripts/export_usfs_aria2_input.py`` when a batch file is needed by hand.
+
     Returns the path written, or None if there was nothing to export.
     """
     entries = entries_for_publication_files(
@@ -515,15 +557,7 @@ def write_drpid_aria2_cmd(
         min_bytes=min_bytes,
         missing_only=missing_only,
     )
-    if not entries:
-        return None
-
-    out_dir = output_dir or DEFAULT_ARIA2_OUTPUT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{output_folder_name(drpid)}.cmd"
-    ua = user_agent or BROWSER_HEADERS["User-Agent"]
-    out_path.write_text(format_windows_commands(entries, ua, drpid=drpid), encoding="utf-8")
-    return out_path
+    return write_aria2_entries(drpid, entries, output_dir=output_dir, user_agent=user_agent)
 
 
 def write_aria2_entries(

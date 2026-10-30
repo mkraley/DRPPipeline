@@ -1,9 +1,11 @@
 """
-Export Windows aria2c command lines for USFS publication downloads missing on disk.
+Write optional ``aria2_inputs/*.cmd`` batch files for manual large-file downloads.
 
-Fetches catalog pages for the given DRPIDs and writes ``.cmd`` batch files with
-one complete ``aria2c`` command per large file (default: catalog size >= 1 GB
-and not yet present in the project folder).
+Collect and upload build aria2 commands in memory and do not write these files.
+Use this script when you want a runnable ``.cmd`` (catalog + skip-note URLs).
+
+Fetches catalog pages for the given DRPIDs and writes one complete ``aria2c``
+command per large file (default: catalog size >= 1 GB and not yet on disk).
 
 Run from repo root:
     python scripts/export_usfs_aria2_input.py --drpids 9,17,19,20

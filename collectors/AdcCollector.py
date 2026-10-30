@@ -165,9 +165,6 @@ class AdcCollector(CollectorBase):
         if status_notes:
             result["status_notes"] = "\n".join(status_notes)
 
-        if status != STATUS_COLLECTED:
-            self._write_aria2_cmd(drpid, folder_path, files)
-
         Logger.info(
             "ADC collection complete for DRPID %s: %s files, %s",
             drpid,
@@ -326,28 +323,6 @@ class AdcCollector(CollectorBase):
         notes.extend(outcome.notes)
         total_bytes = _adc_inventory_bytes(folder_path, planned)
         return notes, total_bytes, exts, outcome.deferred
-
-    def _write_aria2_cmd(
-        self,
-        drpid: int,
-        folder_path: Path,
-        files: list[dict[str, Any]],
-    ) -> None:
-        """Export aria2 commands for skipped large files."""
-        from collectors.AdcAria2Export import write_drpid_aria2_cmd
-
-        inventory_files = [
-            (
-                str(file_row.get("name") or "file"),
-                str(file_row.get("url") or ""),
-                file_row.get("size_bytes") if isinstance(file_row.get("size_bytes"), int) else None,
-            )
-            for file_row in files
-        ]
-        cmd_path = write_drpid_aria2_cmd(drpid, folder_path, inventory_files)
-        if cmd_path:
-            Logger.info("Wrote aria2 download commands for DRPID %s: %s", drpid, cmd_path)
-
 
 def _planned_adc_file(file_row: dict[str, Any]) -> PlannedFile:
     """Map one Figshare inventory row onto a shared planned file."""

@@ -103,11 +103,11 @@ class TestUploadLargeFilesHelpers(unittest.TestCase):
         self.assertEqual(paths[1].name, "LAVO_Soil_Survey_Report.zip")
 
 
-class TestEnsureAria2CmdSkipNoteFallback(unittest.TestCase):
-    """ensure_aria2_cmd builds commands from status_notes for non-USFS sources."""
+class TestBuildAria2LinesSkipNoteFallback(unittest.TestCase):
+    """build_aria2_lines builds commands from status_notes for non-USFS sources."""
 
     def setUp(self) -> None:
-        """Use DRP prefix so aria2 cmd paths match test fixtures."""
+        """Use DRP prefix so folder names match test fixtures."""
         self._original_argv = sys.argv.copy()
         sys.argv = ["test", "noop"]
         Args.initialize()
@@ -122,7 +122,7 @@ class TestEnsureAria2CmdSkipNoteFallback(unittest.TestCase):
     def test_uses_status_notes_when_catalog_empty(
         self, _mock_fetch: MagicMock, _mock_parse: MagicMock
     ) -> None:
-        from upload.UploadLargeFiles import ensure_aria2_cmd
+        from upload.UploadLargeFiles import build_aria2_lines
 
         notes = (
             "Skipped download (>1GB): A01L4_1.zip (2.9 GB) - "
@@ -130,16 +130,14 @@ class TestEnsureAria2CmdSkipNoteFallback(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp) / "DRP000157"
-            out_dir = Path(tmp) / "aria2_inputs"
             project = {
                 "source_url": "https://agdatacommons.nal.usda.gov/articles/dataset/x/1",
                 "folder_path": str(folder),
                 "status_notes": notes,
             }
-            with patch("upload.UploadLargeFiles.DEFAULT_ARIA2_OUTPUT_DIR", out_dir):
-                cmd_path, lines = ensure_aria2_cmd(157, project)
+            lines = build_aria2_lines(157, project)
 
-            self.assertTrue(cmd_path.is_file())
+            self.assertFalse((Path(tmp) / "aria2_inputs").exists())
             joined = "\n".join(lines)
             self.assertIn("43634028", joined)
             self.assertIn("A01L4_1.zip", joined)
@@ -150,7 +148,7 @@ class TestEnsureAria2CmdSkipNoteFallback(unittest.TestCase):
         self, _mock_fetch: MagicMock, _mock_parse: MagicMock
     ) -> None:
         """Skip-note fallback exports deferred files under 1 GB each for aria2."""
-        from upload.UploadLargeFiles import ensure_aria2_cmd
+        from upload.UploadLargeFiles import build_aria2_lines
 
         notes = (
             "Skipped download (>1GB): part2.zip (400.0 MB) - "
@@ -160,16 +158,13 @@ class TestEnsureAria2CmdSkipNoteFallback(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp) / "DRP000158"
-            out_dir = Path(tmp) / "aria2_inputs"
             project = {
                 "source_url": "https://rosap.ntl.bts.gov/view/dot/158",
                 "folder_path": str(folder),
                 "status_notes": notes,
             }
-            with patch("upload.UploadLargeFiles.DEFAULT_ARIA2_OUTPUT_DIR", out_dir):
-                cmd_path, lines = ensure_aria2_cmd(158, project)
+            lines = build_aria2_lines(158, project)
 
-            self.assertTrue(cmd_path.is_file())
             joined = "\n".join(lines)
             self.assertIn("part2.zip", joined)
             self.assertIn("readme.txt", joined)
@@ -239,7 +234,7 @@ class TestUploadLargeFilesRun(unittest.TestCase):
                 "file_size": "30.0 GB",
             },
         )
-        with patch("upload.UploadLargeFiles.ensure_aria2_cmd", return_value=(Path("x.cmd"), [])), patch(
+        with patch("upload.UploadLargeFiles.build_aria2_lines", return_value=[]), patch(
             "upload.UploadLargeFiles.large_files_on_disk", return_value=[]
         ), patch("upload.UploadIssueReporter.record_error") as mock_error:
             self.module.run(drpid)
@@ -248,14 +243,14 @@ class TestUploadLargeFilesRun(unittest.TestCase):
         self.assertIn("No large files", messages)
 
     @patch("upload.UploadLargeFiles.Storage")
-    @patch("upload.UploadLargeFiles.ensure_aria2_cmd", return_value=(Path("x.cmd"), []))
+    @patch("upload.UploadLargeFiles.build_aria2_lines", return_value=[])
     @patch("upload.UploadLargeFiles.large_files_on_disk", return_value=["big.zip"])
     @patch.object(UploadLargeFiles, "_upload_files_to_existing_project")
     def test_run_uploads_on_disk_files_and_sets_finish_wait(
         self,
         mock_upload: MagicMock,
         mock_on_disk: MagicMock,
-        mock_ensure_cmd: MagicMock,
+        _mock_build_lines: MagicMock,
         mock_storage: MagicMock,
     ) -> None:
         folder = self.temp_dir / "data"

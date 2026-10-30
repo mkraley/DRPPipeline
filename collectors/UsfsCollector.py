@@ -251,21 +251,6 @@ class UsfsCollector(CollectorBase):
                 result["status"] = status
             result["_skipped_large_file"] = status != STATUS_COLLECTED
             skipped_large = status != STATUS_COLLECTED
-        if skipped_large:
-            from collectors.UsfsAria2Export import write_drpid_aria2_cmd
-
-            cmd_path = write_drpid_aria2_cmd(
-                drpid,
-                folder_path,
-                links.get("publication_files", []),
-            )
-            if cmd_path:
-                Logger.info(
-                    "Wrote aria2 download commands for DRPID %s: %s",
-                    drpid,
-                    cmd_path,
-                )
-
         Logger.info(
             "USFS collection complete for DRPID %s: %s files, %s",
             drpid,

@@ -155,11 +155,6 @@ class BtsCollector(CollectorBase):
         if status != STATUS_COLLECTED:
             result["status"] = status
         result["_skipped_large_file"] = status != STATUS_COLLECTED
-        if status != STATUS_COLLECTED:
-            self._write_aria2_cmd(
-                drpid, folder_path, download_files, size_cache, access_errors
-            )
-
         Logger.info(
             "BTS collection complete for DRPID %s: %s files, %s",
             drpid,
@@ -416,37 +411,6 @@ class BtsCollector(CollectorBase):
             if dest.is_file():
                 total_bytes += dest.stat().st_size
         return total_bytes
-
-    def _write_aria2_cmd(
-        self,
-        drpid: int,
-        folder_path: Path,
-        files: list[BtsDownloadFile],
-        size_cache: dict[str, int | None],
-        access_errors: dict[str, str] | None = None,
-    ) -> None:
-        """Export aria2 commands for catalog files still missing on disk."""
-        from collectors.UsfsAria2Export import write_drpid_aria2_cmd
-
-        error_cache = access_errors if access_errors is not None else {}
-        publication_files = [
-            (
-                self._destination_filename(entry),
-                entry.url,
-                size_cache.get(entry.url, entry.size_bytes),
-            )
-            for entry in files
-            if entry.url not in error_cache
-            and not (folder_path / self._destination_filename(entry)).is_file()
-        ]
-        cmd_path = write_drpid_aria2_cmd(
-            drpid,
-            folder_path,
-            publication_files,
-            min_bytes=0,
-        )
-        if cmd_path:
-            Logger.info("Wrote aria2 download commands for DRPID %s: %s", drpid, cmd_path)
 
     def _destination_filename(self, entry: BtsDownloadFile) -> str:
         """Build a stable on-disk filename for a catalog file entry."""

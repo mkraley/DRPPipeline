@@ -1,8 +1,9 @@
 """
-Build Windows aria2c command files for IRMA Digital Files that were not downloaded.
+Build aria2c command lines for IRMA Digital Files that were not downloaded.
 
 Each command uses ``-d`` for the product subfolder so a later download lands
-beside the files already collected for that Product.
+beside the files already collected for that Product. Pipeline code keeps lines
+in memory; write helpers exist for optional ``.cmd`` export scripts.
 """
 
 from __future__ import annotations
@@ -11,13 +12,38 @@ from pathlib import Path
 
 from collectors.NpsDownloadPlan import NpsPlannedFile, planned_file_dest
 from collectors.SkipNoteFiles import SkipTarget, parse_skip_note_download_targets
-from collectors.UsfsAria2Export import Aria2Entry, write_aria2_entries
+from collectors.UsfsAria2Export import Aria2Entry, format_aria2c_lines, write_aria2_entries
 from utils.url_utils import BROWSER_HEADERS
 
 IRMA_REFERER = "https://irma.nps.gov/"
 # One connection: IRMA returns from the requested start through EOF, so extra
 # split connections log errorCode 8 Invalid range header and then abort.
 _IRMA_CONNECTIONS = 1
+
+
+def build_nps_aria2_lines(
+    folder_path: Path,
+    files: list[NpsPlannedFile],
+) -> list[str]:
+    """Return bare ``aria2c`` lines for planned IRMA files missing on disk."""
+    return format_aria2c_lines(
+        entries_for_planned_files(folder_path, files),
+        BROWSER_HEADERS["User-Agent"],
+        referer=IRMA_REFERER,
+    )
+
+
+def build_nps_aria2_lines_from_notes(
+    folder_path: Path,
+    status_notes: str | None,
+) -> list[str]:
+    """Return bare ``aria2c`` lines from skip notes (product subfolders)."""
+    targets = parse_skip_note_download_targets(status_notes)
+    return format_aria2c_lines(
+        entries_for_skip_targets(folder_path, targets),
+        BROWSER_HEADERS["User-Agent"],
+        referer=IRMA_REFERER,
+    )
 
 
 def write_nps_aria2_cmd(

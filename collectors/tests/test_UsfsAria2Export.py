@@ -13,6 +13,7 @@ from collectors.UsfsAria2Export import (
     MAX_DOWNLOAD_BYTES,
     aria2_argv_for_download,
     aria2_cmd_download_parts,
+    build_drpid_aria2_lines,
     download_exported_cmd_line,
     entries_for_publication_files,
     format_windows_command,
@@ -377,6 +378,27 @@ class TestUsfsAria2Export(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 _run_aria2_argv(["aria2c"])
         mock_proc.terminate.assert_called_once()
+
+    def test_build_drpid_aria2_lines_does_not_write_cmd(self) -> None:
+        """In-memory builder returns aria2c lines without creating aria2_inputs files."""
+        folder = Path(__file__).parent / "_tmp_aria2_build_lines"
+        folder.mkdir(exist_ok=True)
+        out_probe = Path(__file__).parent / "_tmp_aria2_should_not_exist"
+        big = MAX_DOWNLOAD_BYTES + 1
+        try:
+            lines = build_drpid_aria2_lines(
+                folder,
+                [("big.zip", "https://example.com/big.zip", big)],
+            )
+            self.assertEqual(len(lines), 1)
+            self.assertTrue(lines[0].startswith("aria2c "))
+            self.assertIn("big.zip", lines[0])
+            self.assertFalse(out_probe.exists())
+        finally:
+            if folder.is_dir():
+                for p in folder.iterdir():
+                    p.unlink(missing_ok=True)
+                folder.rmdir()
 
     def test_write_drpid_aria2_cmd(self) -> None:
         folder = Path(__file__).parent / "_tmp_aria2_write"

@@ -436,8 +436,6 @@ class NpsCollector(CollectorBase):
             folder_path,
             [_planned_from_nps(entry) for entry in sized],
         )
-        if skipped_large or status != STATUS_COLLECTED:
-            self._write_aria2_cmd(drpid, folder_path, sized)
         result = self._inventory_result(
             record, folder_path, notes, status != STATUS_COLLECTED, sized
         )
@@ -464,19 +462,6 @@ class NpsCollector(CollectorBase):
             result.get("file_size"),
         )
         return result
-
-    def _write_aria2_cmd(
-        self,
-        drpid: int,
-        folder_path: Path,
-        files: list[NpsPlannedFile],
-    ) -> None:
-        """Write aria2 commands that download missing files into product folders."""
-        from collectors.NpsAria2Export import write_nps_aria2_cmd
-
-        cmd_path = write_nps_aria2_cmd(drpid, folder_path, files)
-        if cmd_path:
-            Logger.info("Wrote aria2 download commands for DRPID %s: %s", drpid, cmd_path)
 
     def _inventory_result(
         self,

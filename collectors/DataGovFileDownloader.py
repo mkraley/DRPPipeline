@@ -264,32 +264,6 @@ class DataGovFileDownloader:
         total_bytes += _extra_on_disk_bytes(folder_path, known_names)
         return total_bytes
 
-    def write_aria2_cmd(
-        self,
-        drpid: int,
-        folder_path: Path,
-        files: list[DataGovDownloadFile],
-        size_cache: dict[str, int | None],
-        access_errors: dict[str, str] | None = None,
-    ) -> None:
-        """Export aria2 commands for catalog files still missing on disk."""
-        from collectors.UsfsAria2Export import write_drpid_aria2_cmd
-
-        error_cache = access_errors if access_errors is not None else {}
-        pending = [
-            (
-                destination_filename(entry),
-                entry.url,
-                size_cache.get(entry.url, entry.size_bytes),
-            )
-            for entry in files
-            if entry.url not in error_cache
-            and not (folder_path / destination_filename(entry)).is_file()
-        ]
-        cmd_path = write_drpid_aria2_cmd(drpid, folder_path, pending, min_bytes=0)
-        if cmd_path:
-            Logger.info("Wrote aria2 download commands for DRPID %s: %s", drpid, cmd_path)
-
     def _log_download(self, filename: str, expected_bytes: int | None) -> None:
         """Log a download start line."""
         if expected_bytes is not None:
