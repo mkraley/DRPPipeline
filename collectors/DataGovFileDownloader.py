@@ -4,6 +4,7 @@ Download Data.gov catalog files with the shared 1 GB collector budget.
 
 from __future__ import annotations
 
+from contextlib import suppress
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -17,10 +18,10 @@ from collectors.DataGovArcGisExtent import (
     is_arcgis_map_or_feature_server,
 )
 from collectors.DataGovMetadataExtractor import DataGovDownloadFile, filename_from_url
+from collectors.InaccessibleDownloads import access_outcome_message
 from collectors.PlannedFile import PlannedFile
 from collectors.SsaCompleteMetadata import COMPLETE_METADATA_HEADING_SELECTOR
 from collectors.UsfsPageDownloader import UsfsPageDownloader
-from collectors.InaccessibleDownloads import access_outcome_message
 from utils.Errors import record_error
 from utils.Logger import Logger
 from utils.collector_status import pending_download_summary_note
@@ -28,6 +29,54 @@ from utils.file_utils import format_file_size, sanitize_filename
 from utils.url_utils import requests_verify
 
 CATALOG_PDF_NAME = "catalog_page.pdf"
+
+
+def prefer_socrata_export_files(
+    files: list[DataGovDownloadFile],
+) -> list[DataGovDownloadFile]:
+    """
+    Prefer ``export.*`` over ``query.*`` for the same Socrata view id.
+
+    Energy Star / Socrata catalogs often list query.json (can hang), query.xml
+    (multi-GB), and export.csv (the browser download). Keep the export when
+    present so collect does not burn the budget on redundant query dumps.
+    """
+    export_views: set[str] = set()
+    for entry in files:
+        view_id = _socrata_view_id(entry.url)
+        if view_id and _socrata_resource_name(entry.url).startswith("export."):
+            export_views.add(view_id)
+    if not export_views:
+        return files
+    kept: list[DataGovDownloadFile] = []
+    for entry in files:
+        view_id = _socrata_view_id(entry.url)
+        name = _socrata_resource_name(entry.url)
+        if view_id in export_views and name.startswith("query."):
+            with suppress(Exception):
+                Logger.info(
+                    "Skipping redundant Socrata %s; export exists for view %s",
+                    name,
+                    view_id,
+                )
+            continue
+        kept.append(entry)
+    return kept
+
+
+def _socrata_view_id(url: str) -> str | None:
+    """Return the Socrata view id from an ``/views/{id}/...`` API URL."""
+    parts = [part for part in urlsplit(url).path.split("/") if part]
+    for index, part in enumerate(parts):
+        if part == "views" and index + 1 < len(parts):
+            return parts[index + 1]
+    return None
+
+
+def _socrata_resource_name(url: str) -> str:
+    """Return the final path segment (lowercased) for a Socrata API URL."""
+    path = unquote(urlsplit(url).path).rstrip("/")
+    return path.rsplit("/", 1)[-1].lower() if path else ""
 
 
 def destination_filename(entry: DataGovDownloadFile) -> str:
@@ -86,6 +135,7 @@ class DataGovFileDownloader:
         """
         notes: list[str] = []
         error_cache = access_errors if access_errors is not None else {}
+        files = prefer_socrata_export_files(files)
         planned = self._planned_files(
             page_downloader, files, size_cache, error_cache
         )

@@ -133,18 +133,19 @@ class TestUsfsPageDownloader(unittest.TestCase):
         mock_chrome.assert_called_once()
         mock_restart.assert_not_called()
 
-    @patch.object(UsfsPageDownloader, "_restart_browser", return_value=True)
-    def test_download_file_xml_uses_api_request(
-        self, mock_restart: MagicMock
+    @patch("utils.download_with_progress.download_via_url")
+    def test_download_file_xml_streams_via_requests(
+        self, mock_stream: MagicMock
     ) -> None:
-        """XML is fetched with Playwright GET because Chromium will not download it."""
+        """XML/CSV/JSON stream via requests instead of buffering in Playwright."""
         downloader = UsfsPageDownloader()
-        mock_page = MagicMock()
-        mock_response = MagicMock()
-        mock_response.ok = True
-        mock_response.body.return_value = b"<report/>"
-        mock_page.request.get.return_value = mock_response
-        downloader._session.new_page = MagicMock(return_value=mock_page)
+
+        def _write(url: str, dest: Path, **_kwargs: object) -> tuple[int, bool]:
+            del url
+            dest.write_bytes(b"<report/>")
+            return 9, True
+
+        mock_stream.side_effect = _write
         with tempfile.TemporaryDirectory() as tmp:
             dest = Path(tmp) / "report.xml"
             size, ok = downloader.download_file(
@@ -155,22 +156,21 @@ class TestUsfsPageDownloader(unittest.TestCase):
             self.assertTrue(ok)
             self.assertEqual(size, 9)
             self.assertEqual(dest.read_bytes(), b"<report/>")
-        mock_page.request.get.assert_called_once()
-        mock_page.expect_download.assert_not_called()
-        mock_restart.assert_called_once()
+        mock_stream.assert_called_once()
 
-    @patch.object(UsfsPageDownloader, "_restart_browser", return_value=True)
-    def test_download_file_json_uses_api_request(
-        self, mock_restart: MagicMock
+    @patch("utils.download_with_progress.download_via_url")
+    def test_download_file_json_streams_via_requests(
+        self, mock_stream: MagicMock
     ) -> None:
-        """JSON is fetched with Playwright GET, not expect_download."""
+        """JSON streams via requests, not expect_download."""
         downloader = UsfsPageDownloader()
-        mock_page = MagicMock()
-        mock_response = MagicMock()
-        mock_response.ok = True
-        mock_response.body.return_value = b'{"ok":true}'
-        mock_page.request.get.return_value = mock_response
-        downloader._session.new_page = MagicMock(return_value=mock_page)
+
+        def _write(url: str, dest: Path, **_kwargs: object) -> tuple[int, bool]:
+            del url
+            dest.write_bytes(b'{"ok":true}')
+            return 11, True
+
+        mock_stream.side_effect = _write
         with tempfile.TemporaryDirectory() as tmp:
             dest = Path(tmp) / "data.json"
             size, ok = downloader.download_file(
@@ -180,8 +180,7 @@ class TestUsfsPageDownloader(unittest.TestCase):
             self.assertTrue(ok)
             self.assertEqual(size, 11)
             self.assertEqual(dest.read_bytes(), b'{"ok":true}')
-        mock_page.expect_download.assert_not_called()
-        mock_restart.assert_called_once()
+        mock_stream.assert_called_once()
 
     @patch.object(UsfsPageDownloader, "_restart_browser", return_value=True)
     def test_download_file_zip_uses_expect_download(

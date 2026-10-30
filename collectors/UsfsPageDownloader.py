@@ -146,7 +146,50 @@ class UsfsPageDownloader:
     def _download_via_api_request(
         self, url: str, destination_path: Path
     ) -> Tuple[int, bool]:
-        """GET the URL through Playwright's request context and write bytes."""
+        """
+        Stream CSV/XML/JSON/TXT to disk (do not buffer the whole body).
+
+        Socrata ``export.csv`` / ``query.xml`` responses are often hundreds of MB
+        with no useful Content-Length. Playwright ``response.body()`` loads the
+        entire payload into memory and hangs or fails; streaming via requests
+        matches browser download behavior.
+        """
+        import requests
+
+        from utils.download_with_progress import download_via_url
+
+        timeout_sec = max(_FILE_DOWNLOAD_TIMEOUT_MS // 1000, 60)
+        try:
+            written, ok = download_via_url(
+                url,
+                destination_path,
+                progress_interval_mb=50.0,
+                resume=True,
+                timeout_sec=timeout_sec,
+            )
+            if ok and written > 0:
+                return written, True
+        except requests.HTTPError as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status in (401, 403):
+                Logger.info(
+                    "Streaming download got HTTP %s for %s; trying Playwright GET",
+                    status,
+                    url,
+                )
+                return self._download_via_playwright_body(url, destination_path)
+            Logger.error("Streaming download HTTP error for %s: %s", url, exc)
+            return 0, False
+        except Exception as exc:
+            Logger.error("Streaming download failed for %s: %s", url, exc)
+            return 0, False
+        # Empty/failed stream: fall back for small auth-walled documents.
+        return self._download_via_playwright_body(url, destination_path)
+
+    def _download_via_playwright_body(
+        self, url: str, destination_path: Path
+    ) -> Tuple[int, bool]:
+        """GET the URL through Playwright and write the full response body."""
         if not self._restart_browser():
             return 0, False
         page = self._session.new_page()
