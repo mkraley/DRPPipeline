@@ -480,15 +480,19 @@ def _format_eta_duration(seconds: float) -> str:
     return f"{minutes}m"
 
 
-def _format_wall_clock(when: datetime) -> str:
+def _format_wall_clock(when: datetime, *, today: datetime | None = None) -> str:
     """
     Format a finish time as local 24h ``hhmm``, with ``mm-dd`` if not today.
 
     Examples: ``2340``, ``10-30 2340``.
+
+    Args:
+        when: Absolute finish time.
+        today: Reference ``now`` for the date check (tests); defaults to local now.
     """
-    now = datetime.now()
+    reference = today or datetime.now()
     clock = when.strftime("%H%M")
-    if when.date() == now.date():
+    if when.date() == reference.date():
         return clock
     return f"{when.strftime('%m-%d')} {clock}"
 
@@ -511,10 +515,12 @@ def _progress_timing_suffix(
     avg = elapsed / completed
     remaining = max(0, total - completed)
     eta_secs = avg * remaining
-    finish_at = (now or datetime.now()) + timedelta(seconds=eta_secs)
+    reference = now or datetime.now()
+    finish_at = reference + timedelta(seconds=eta_secs)
     return (
         f"avg_per_project={_format_duration(avg)} "
-        f"eta={_format_eta_duration(eta_secs)} ({_format_wall_clock(finish_at)})"
+        f"eta={_format_eta_duration(eta_secs)} "
+        f"({_format_wall_clock(finish_at, today=reference)})"
     )
 
 
@@ -571,6 +577,33 @@ def _run_status_safe(method: Any, *args: Any, **kwargs: Any) -> None:
         method(*args, **kwargs)
     except OSError as exc:
         Logger.warning(f"RunStatus update failed (dashboard only): {exc}")
+
+
+def _project_dashboard_outcome(drpid: int) -> str:
+    """
+    Classify a finished project for the dashboard scatter color.
+
+    Returns:
+        ``error``, ``warning``, or ``ok`` from Storage after the project run.
+    """
+    record = Storage.get(drpid) or {}
+    if str(record.get("errors") or "").strip() or is_error_status(
+        record.get("status")
+    ):
+        return "error"
+    if str(record.get("warnings") or "").strip():
+        return "warning"
+    return "ok"
+
+
+def _record_dashboard_project(drpid: int, duration_sec: float) -> None:
+    """Append a per-project timing sample to the active RunStatus file."""
+    _run_status_safe(
+        RunStatus.record_project,
+        drpid,
+        duration_sec=duration_sec,
+        outcome=_project_dashboard_outcome(drpid),
+    )
 
 
 def _dashboard_tracks_module(module: str) -> bool:
@@ -862,6 +895,7 @@ class Orchestrator:
                     # Each thread gets its own module instance (and thus its own Playwright/browser)
                     instance = module_class()
                     project_finished = False
+                    started = time.perf_counter()
                     try:
                         Logger.info(
                             f"Orchestrator starting project module={module!r} "
@@ -886,6 +920,9 @@ class Orchestrator:
                     finally:
                         if project_finished:
                             _stamp_last_change(drpid)
+                            _record_dashboard_project(
+                                drpid, time.perf_counter() - started
+                            )
                         batch.note_project_finished()
                         Logger.info(
                             f"Orchestrator finished project module={module!r} DRPID={drpid}"
@@ -905,6 +942,7 @@ class Orchestrator:
                         source_url = proj.get("source_url", "")
                         Logger.set_current_drpid(drpid)
                         project_finished = False
+                        started = time.perf_counter()
                         try:
                             Logger.info(
                                 f"Orchestrator starting project module={module!r} "
@@ -929,6 +967,9 @@ class Orchestrator:
                         finally:
                             if project_finished:
                                 _stamp_last_change(drpid)
+                                _record_dashboard_project(
+                                    drpid, time.perf_counter() - started
+                                )
                                 batch.note_project_finished()
                                 Logger.info(
                                     f"Orchestrator finished project module={module!r} "

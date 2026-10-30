@@ -129,6 +129,7 @@ class TestDashboardServer(unittest.TestCase):
             total=2,
             command_line=["python", "main.py", "collect"],
         )
+        RunStatus.record_project(7, duration_sec=4.2, outcome="ok")
         with patch("dashboard.server.list_pipeline_terminals", return_value=[]):
             status, _, body = self._request("/api/runs")
         self.assertEqual(status, 200)
@@ -136,6 +137,10 @@ class TestDashboardServer(unittest.TestCase):
         self.assertEqual(len(payload["runs"]), 1)
         self.assertEqual(payload["runs"][0]["module"], "collect")
         self.assertEqual(payload["runs"][0]["status"], "running")
+        samples = payload["runs"][0]["project_samples"]
+        self.assertEqual(len(samples), 1)
+        self.assertEqual(samples[0]["drpid"], 7)
+        self.assertEqual(samples[0]["outcome"], "ok")
 
     def test_index_html(self) -> None:
         """Root path serves the dashboard HTML."""
@@ -145,6 +150,8 @@ class TestDashboardServer(unittest.TestCase):
         html = body.decode("utf-8")
         self.assertIn("DRP Pipeline", html)
         self.assertIn("/api/runs", html)
+        self.assertIn("renderTimingChart", html)
+        self.assertIn("project_samples", html)
 
     def test_unknown_path_404(self) -> None:
         """Unknown paths return 404."""

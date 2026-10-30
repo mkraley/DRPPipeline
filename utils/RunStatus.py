@@ -108,6 +108,8 @@ class RunStatus:
             "errors": 0,
             "warnings": 0,
             "last_drpid": None,
+            # Per-project timing for dashboard scatter (ok / warning / error).
+            "project_samples": [],
         }
         path = cls._runs_dir / f"{pid}.json"
         with cls._lock:
@@ -162,6 +164,39 @@ class RunStatus:
             cls._data["warnings"] = int(warnings)
             if last_drpid is not None:
                 cls._data["last_drpid"] = int(last_drpid)
+            cls._write_unlocked(cls._path, cls._data)
+
+    @classmethod
+    def record_project(
+        cls,
+        drpid: int,
+        *,
+        duration_sec: float,
+        outcome: str,
+    ) -> None:
+        """
+        Append one finished-project sample for the dashboard scatter plot.
+
+        Args:
+            drpid: Project DRPID.
+            duration_sec: Wall time spent on this project.
+            outcome: ``ok``, ``warning``, or ``error``.
+        """
+        label = outcome if outcome in {"ok", "warning", "error"} else "ok"
+        sample = {
+            "drpid": int(drpid),
+            "finished_at": datetime.now().isoformat(timespec="seconds"),
+            "duration_sec": round(max(0.0, float(duration_sec)), 3),
+            "outcome": label,
+        }
+        with cls._lock:
+            if not cls._path or not cls._data:
+                return
+            samples = cls._data.setdefault("project_samples", [])
+            if not isinstance(samples, list):
+                samples = []
+                cls._data["project_samples"] = samples
+            samples.append(sample)
             cls._write_unlocked(cls._path, cls._data)
 
     @classmethod

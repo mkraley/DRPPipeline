@@ -49,6 +49,42 @@
       padding: 8px 10px;
       margin-bottom: 8px;
     }
+    .card-body {
+      display: flex;
+      gap: 10px;
+      align-items: stretch;
+    }
+    .card-main {
+      flex: 1;
+      min-width: 0;
+    }
+    .card-chart {
+      flex: 0 0 168px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 2px;
+    }
+    .chart-label {
+      font-size: 10px;
+      color: var(--muted);
+      text-align: right;
+    }
+    .chart {
+      width: 168px;
+      height: 52px;
+      background: #1a1a1a;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      display: block;
+    }
+    .empty-chart {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: var(--muted);
+    }
     .row {
       display: flex;
       flex-wrap: wrap;
@@ -135,6 +171,79 @@
       return status;
     }
 
+    function formatDurationShort(sec) {
+      const total = Math.max(0, Math.round(Number(sec) || 0));
+      if (total < 60) return `${total}s`;
+      const m = Math.floor(total / 60);
+      const s = total % 60;
+      if (m < 60) return `${m}m ${s}s`;
+      const h = Math.floor(m / 60);
+      return `${h}h ${m % 60}m`;
+    }
+
+    function outcomeColor(outcome) {
+      if (outcome === "error") return "var(--failed)";
+      if (outcome === "warning") return "var(--stale)";
+      return "var(--running)";
+    }
+
+    function renderTimingChart(samples) {
+      if (!samples || !samples.length) {
+        return `
+          <div class="chart-label">duration × time</div>
+          <div class="chart empty-chart" title="Dots appear as each project finishes">no samples yet</div>`;
+      }
+      const points = samples
+        .map((s) => {
+          const t = Date.parse(s.finished_at || "");
+          const dur = Number(s.duration_sec);
+          if (!Number.isFinite(t) || !Number.isFinite(dur)) return null;
+          return {
+            t,
+            dur,
+            outcome: s.outcome || "ok",
+            drpid: s.drpid,
+          };
+        })
+        .filter(Boolean);
+      if (!points.length) {
+        return `
+          <div class="chart-label">duration × time</div>
+          <div class="chart empty-chart">no samples yet</div>`;
+      }
+      const w = 168;
+      const h = 52;
+      const padL = 2;
+      const padR = 4;
+      const padT = 4;
+      const padB = 4;
+      let minT = Math.min(...points.map((p) => p.t));
+      let maxT = Math.max(...points.map((p) => p.t));
+      let maxDur = Math.max(...points.map((p) => p.dur), 1);
+      if (maxT <= minT) maxT = minT + 1000;
+      const xSpan = maxT - minT;
+      const dots = points
+        .map((p) => {
+          const x = padL + ((p.t - minT) / xSpan) * (w - padL - padR);
+          const y = padT + (1 - p.dur / maxDur) * (h - padT - padB);
+          const title = `DRPID ${p.drpid}: ${formatDurationShort(p.dur)} (${p.outcome})`;
+          return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4"
+            fill="${outcomeColor(p.outcome)}" title="${esc(title)}">
+            <title>${esc(title)}</title>
+          </circle>`;
+        })
+        .join("");
+      return `
+        <div class="chart-label">0–${esc(formatDurationShort(maxDur))} · ${points.length} proj</div>
+        <svg class="chart" viewBox="0 0 ${w} ${h}" role="img"
+          aria-label="Project duration over batch time">
+          <line x1="${padL}" y1="${(h - padB).toFixed(1)}"
+            x2="${(w - padR).toFixed(1)}" y2="${(h - padB).toFixed(1)}"
+            stroke="#3c3c3c" stroke-width="1"/>
+          ${dots}
+        </svg>`;
+    }
+
     function renderRuns(runs) {
       const el = document.getElementById("runs");
       if (!runs || !runs.length) {
@@ -155,19 +264,24 @@
             : "";
         return `
           <div class="card">
-            <div class="row">
-              <span class="badge ${status}" title="${esc(badgeTitle(r.status))}">${status}</span>
-              <strong>terminal ${esc(termId)}</strong>
-              <span>${esc(r.module)}</span>
-              ${pyPid}
+            <div class="card-body">
+              <div class="card-main">
+                <div class="row">
+                  <span class="badge ${status}" title="${esc(badgeTitle(r.status))}">${status}</span>
+                  <strong>terminal ${esc(termId)}</strong>
+                  <span>${esc(r.module)}</span>
+                  ${pyPid}
+                </div>
+                <div class="cmd">${esc(r.command_line)}</div>
+                <div class="row muted">
+                  <span>started ${esc(formatStart(r.started_at))}</span>
+                  ${ended}
+                  <span>errors=${esc(errors)} warnings=${esc(warnings)}</span>
+                </div>
+                <div class="progress">${esc(r.progress_line || "")}</div>
+              </div>
+              <div class="card-chart">${renderTimingChart(r.project_samples)}</div>
             </div>
-            <div class="cmd">${esc(r.command_line)}</div>
-            <div class="row muted">
-              <span>started ${esc(formatStart(r.started_at))}</span>
-              ${ended}
-              <span>errors=${esc(errors)} warnings=${esc(warnings)}</span>
-            </div>
-            <div class="progress">${esc(r.progress_line || "")}</div>
           </div>`;
       }).join("");
     }

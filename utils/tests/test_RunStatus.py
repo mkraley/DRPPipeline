@@ -213,3 +213,26 @@ class TestRunStatus(unittest.TestCase):
         RunStatus.update_progress("1/1", display_index=1, total=1, completed=1)
         RunStatus.finish(completed=0, errors=0, warnings=0, status="completed")
         self.assertEqual(list(self.runs_dir.glob("*.json")), [])
+
+    def test_record_project_appends_samples(self) -> None:
+        """record_project stores duration and outcome for the dashboard chart."""
+        RunStatus.start("collect", total=3, command_line=["main.py", "collect"])
+        RunStatus.record_project(10, duration_sec=12.5, outcome="ok")
+        RunStatus.record_project(11, duration_sec=3.0, outcome="warning")
+        RunStatus.record_project(12, duration_sec=40.0, outcome="error")
+        data = json.loads(
+            (self.runs_dir / f"{os.getpid()}.json").read_text(encoding="utf-8-sig")
+        )
+        samples = data["project_samples"]
+        self.assertEqual(len(samples), 3)
+        self.assertEqual(samples[0]["drpid"], 10)
+        self.assertEqual(samples[0]["duration_sec"], 12.5)
+        self.assertEqual(samples[0]["outcome"], "ok")
+        self.assertEqual(samples[1]["outcome"], "warning")
+        self.assertEqual(samples[2]["outcome"], "error")
+        self.assertTrue(samples[0]["finished_at"])
+
+    def test_record_project_without_start_is_noop(self) -> None:
+        """record_project is ignored when no active run file exists."""
+        RunStatus.record_project(1, duration_sec=1.0, outcome="ok")
+        self.assertEqual(list(self.runs_dir.glob("*.json")), [])
