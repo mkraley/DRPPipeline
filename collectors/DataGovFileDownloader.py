@@ -18,7 +18,6 @@ from collectors.DataGovArcGisExtent import (
     is_arcgis_map_or_feature_server,
 )
 from collectors.DataGovMetadataExtractor import DataGovDownloadFile, filename_from_url
-from collectors.InaccessibleDownloads import access_outcome_message
 from collectors.PlannedFile import PlannedFile
 from collectors.SsaCompleteMetadata import COMPLETE_METADATA_HEADING_SELECTOR
 from collectors.UsfsPageDownloader import UsfsPageDownloader
@@ -26,7 +25,7 @@ from utils.Errors import record_error
 from utils.Logger import Logger
 from utils.collector_status import pending_download_summary_note
 from utils.file_utils import format_file_size, sanitize_filename
-from utils.url_utils import requests_verify
+from utils.url_utils import BROWSER_HEADERS, requests_verify
 
 CATALOG_PDF_NAME = "catalog_page.pdf"
 
@@ -369,50 +368,96 @@ class DataGovFileDownloader:
         """
         Save HTML / ArcGIS resources linked from the catalog page.
 
-        ArcGIS Hub and Geoplatform item pages are printed with SPA-aware waits
-        and screen media (default print CSS hides their content). MapServer /
-        FeatureServer endpoints are saved as JSON metadata instead of HTML
-        directory printouts. Other pages become titled PDFs.
+        ArcGIS Hub and Geoplatform item pages are printed with SPA-aware waits.
+        MapServer / FeatureServer endpoints are saved as JSON. Other HTML docs
+        (READMEs, etc.) are downloaded as ``.html`` files, not print-to-PDF.
         """
         notes: list[str] = []
         failures: list[str] = []
         for entry in resources:
-            if is_arcgis_map_or_feature_server(entry.url):
-                dest = self._save_arcgis_service_json(folder_path, entry)
-                if dest is None:
-                    detail = f"Failed to save ArcGIS service JSON: {entry.url}"
-                    failures.append(detail)
-                    notes.append(detail)
-                    continue
-                Logger.info("Saved ArcGIS service JSON: %s", dest.name)
-                continue
-            fallback = Path(filename_from_url(entry.url)).stem or "page"
-            dest = page_downloader.url_to_titled_pdf(
-                entry.url,
-                folder_path,
-                fallback_stem=fallback,
-                spa_ready=is_arcgis_hub_or_item_page(entry.url),
+            dest, detail = self._save_one_html_resource(
+                page_downloader, folder_path, entry
             )
             if dest is None:
-                detail = f"Failed to save HTML resource PDF: {entry.url}"
-                failures.append(detail)
-                notes.append(detail)
+                failures.append(detail or f"Failed to save HTML resource: {entry.url}")
+                notes.append(failures[-1])
                 continue
-            Logger.info("Saved HTML resource PDF: %s", dest.name)
+            Logger.info("Saved HTML/ArcGIS resource: %s", dest.name)
         if failures:
-            summary = access_outcome_message(
-                len(failures),
-                len(resources),
-                subject="HTML/ArcGIS resource(s)",
-                reason="save failed",
+            record_error(
+                drpid,
+                _html_resource_failure_message(failures, len(resources)),
             )
-            message = summary or failures[0]
-            if len(failures) == 1 and summary:
-                message = f"{summary}: {failures[0]}"
-            elif len(failures) > 1 and summary:
-                message = f"{summary}\n" + "\n".join(failures)
-            record_error(drpid, message)
         return notes
+
+    def _save_one_html_resource(
+        self,
+        page_downloader: UsfsPageDownloader,
+        folder_path: Path,
+        entry: DataGovDownloadFile,
+    ) -> tuple[Path | None, str | None]:
+        """
+        Save one catalog HTML/ArcGIS resource.
+
+        ArcGIS Map/FeatureServer → JSON. Hub/item pages → print PDF.
+        Other ``.html`` docs (e.g. DATA_README.html) → raw HTML download.
+        """
+        if is_arcgis_map_or_feature_server(entry.url):
+            dest = self._save_arcgis_service_json(folder_path, entry)
+            if dest is None:
+                return None, f"Failed to save ArcGIS service JSON: {entry.url}"
+            return dest, None
+        fallback = Path(filename_from_url(entry.url)).stem or "page"
+        spa = is_arcgis_hub_or_item_page(entry.url)
+        dest = page_downloader.url_to_titled_pdf(
+            entry.url,
+            folder_path,
+            fallback_stem=fallback,
+            spa_ready=spa,
+        )
+        if dest is not None:
+            return dest, None
+        # READMEs and other static HTML often fail print-to-PDF; save the file.
+        dest = self._save_static_html_file(folder_path, entry)
+        if dest is None:
+            return None, f"Failed to save HTML resource: {entry.url}"
+        Logger.info(
+            "Print-to-PDF failed for %s; saved raw HTML as %s",
+            entry.url,
+            dest.name,
+        )
+        return dest, None
+
+    def _save_static_html_file(
+        self,
+        folder_path: Path,
+        entry: DataGovDownloadFile,
+    ) -> Path | None:
+        """Download a static HTML document (README, etc.) without print-to-PDF."""
+        name = destination_filename(entry)
+        if Path(name).suffix.lower() not in {".html", ".htm"}:
+            stem = Path(filename_from_url(entry.url)).stem or "page"
+            name = sanitize_filename(f"{stem}.html")
+        dest = folder_path / name
+        try:
+            response = requests.get(
+                entry.url,
+                timeout=120,
+                verify=requests_verify(),
+                headers={**BROWSER_HEADERS, "Accept": "text/html,*/*"},
+            )
+        except requests.RequestException as exc:
+            Logger.error("HTML file download failed for %s: %s", entry.url, exc)
+            return None
+        if response.status_code >= 400 or not response.content:
+            Logger.error(
+                "HTML file download HTTP %s for %s",
+                response.status_code,
+                entry.url,
+            )
+            return None
+        dest.write_bytes(response.content)
+        return dest
 
     def _save_arcgis_service_json(
         self,
@@ -450,6 +495,30 @@ class DataGovFileDownloader:
             return None
         dest.write_bytes(response.content)
         return dest
+
+
+def _html_resource_failure_message(failures: list[str], total: int) -> str:
+    """
+    Summarize HTML/ArcGIS save failures without implying data downloads failed.
+
+    Args:
+        failures: Per-resource failure detail lines.
+        total: Number of HTML/ArcGIS resources attempted.
+    """
+    failed = len(failures)
+    if failed >= total:
+        summary = (
+            f"All {failed} HTML/ArcGIS resource(s) failed to save; "
+            f"data-file downloads continued separately"
+        )
+    else:
+        summary = (
+            f"{failed} of {total} HTML/ArcGIS resource(s) failed to save; "
+            f"{total - failed} resource(s) saved"
+        )
+    if failed == 1:
+        return f"{summary}: {failures[0]}"
+    return summary + "\n" + "\n".join(failures)
 
 
 def _arcgis_json_filename(service_url: str) -> str:

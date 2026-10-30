@@ -29,12 +29,14 @@ class TestDataGovFileDownloaderHtmlResources(unittest.TestCase):
     def test_prints_arcgis_hub_and_item_pages_with_spa_ready(self) -> None:
         """Hub/item pages use SPA-aware titled PDF rendering."""
         page_downloader = MagicMock()
+
         def _titled_pdf(
             url: str,
             dest_dir: Path,
             fallback_stem: str = "page",
             spa_ready: bool = False,
         ) -> Path:
+            del url, spa_ready
             dest = dest_dir / f"{fallback_stem}.pdf"
             dest.write_bytes(b"%PDF")
             return dest
@@ -98,14 +100,46 @@ class TestDataGovFileDownloaderHtmlResources(unittest.TestCase):
         self.assertEqual(written[0].read_bytes(), b'{"fullExtent":{"xmin":1}}')
         self.assertIn("f=json", mock_get.call_args.args[0])
 
+    @patch("collectors.DataGovFileDownloader.requests.get")
+    def test_falls_back_to_raw_html_when_pdf_fails(
+        self, mock_get: MagicMock
+    ) -> None:
+        """When print-to-PDF fails, DATA_README.html is saved as raw HTML."""
+        response = MagicMock()
+        response.status_code = 200
+        response.content = b"<!DOCTYPE html><html><body>readme</body></html>"
+        mock_get.return_value = response
+        page_downloader = MagicMock()
+        page_downloader.url_to_titled_pdf.return_value = None
+        notes = self.downloader.save_html_resource_pdfs(
+            191,
+            page_downloader,
+            self.folder,
+            [
+                DataGovDownloadFile(
+                    label="README",
+                    url=(
+                        "https://pasteur.epa.gov/uploads/10.23719/1531881/"
+                        "DATA_README.html"
+                    ),
+                    filename="DATA_README.html",
+                )
+            ],
+        )
+        self.assertEqual(notes, [])
+        page_downloader.url_to_titled_pdf.assert_called_once()
+        dest = self.folder / "DATA_README.html"
+        self.assertTrue(dest.is_file())
+        self.assertIn(b"readme", dest.read_bytes())
+
     @patch("collectors.DataGovFileDownloader.record_error")
     @patch("collectors.DataGovFileDownloader.requests.get")
-    def test_arcgis_json_failure_notes_success_count(
+    def test_arcgis_json_failure_notes_partial_success(
         self,
         mock_get: MagicMock,
         mock_record_error: MagicMock,
     ) -> None:
-        """Resource save failures continue and report whether any succeeded."""
+        """Resource save failures continue and report partial resource success."""
         import requests
 
         mock_get.side_effect = [
@@ -140,15 +174,18 @@ class TestDataGovFileDownloaderHtmlResources(unittest.TestCase):
         mock_record_error.assert_called_once()
         message = mock_record_error.call_args[0][1]
         self.assertIn("1 of 2", message)
-        self.assertIn("1 were successfully accessed", message)
+        self.assertIn("1 resource(s) saved", message)
         self.assertEqual(len(list(self.folder.glob("*.json"))), 1)
 
     @patch("collectors.DataGovFileDownloader.record_error")
-    def test_all_html_resource_failures_note_none_accessed(
+    @patch("collectors.DataGovFileDownloader.requests.get")
+    def test_all_html_resource_failures_note_data_downloads_continue(
         self,
+        mock_get: MagicMock,
         mock_record_error: MagicMock,
     ) -> None:
-        """When every HTML resource fails, the error says none succeeded."""
+        """All HTML failures still note that data downloads continue separately."""
+        mock_get.return_value = MagicMock(status_code=500, content=b"")
         page_downloader = MagicMock()
         page_downloader.url_to_titled_pdf.return_value = None
         notes = self.downloader.save_html_resource_pdfs(
@@ -158,12 +195,12 @@ class TestDataGovFileDownloaderHtmlResources(unittest.TestCase):
             [
                 DataGovDownloadFile(
                     label="a",
-                    url="https://example.com/a",
+                    url="https://example.com/a.html",
                     filename="a.html",
                 ),
                 DataGovDownloadFile(
                     label="b",
-                    url="https://example.com/b",
+                    url="https://example.com/b.html",
                     filename="b.html",
                 ),
             ],
@@ -172,7 +209,8 @@ class TestDataGovFileDownloaderHtmlResources(unittest.TestCase):
         mock_record_error.assert_called_once()
         message = mock_record_error.call_args[0][1]
         self.assertIn("All 2", message)
-        self.assertIn("none were successfully accessed", message)
+        self.assertIn("data-file downloads continued separately", message)
+        self.assertNotIn("none were successfully accessed", message)
 
 
 if __name__ == "__main__":
