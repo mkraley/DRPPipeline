@@ -24,6 +24,8 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.trial_elapsed import finish_timing, format_trial_elapsed, lap, new_clock, total_ms
+
 MIN_TRIAL_DRPID = 2500
 
 
@@ -107,39 +109,71 @@ def _load_project(config: Path, drpid: int) -> tuple[dict[str, Any] | None, str]
 def _execute_trial(drpid: int, project: dict[str, Any]) -> int:
     """Create the DataLumos project and write metadata. Storage is not updated."""
     from upload.DataLumosBrowserSession import DataLumosBrowserSession
-    from upload.DataLumosDepositClient import DataLumosDepositClient
     from upload.DepositMetadata import trial_metadata_from_project
-    from upload.DepositMetadataWriter import DepositMetadataWriter
-    from upload.deposit_field_match import match_fields
 
     metadata = trial_metadata_from_project(project)
     print(f"DRPID={drpid} status={project.get('status')!r} title={metadata.title!r}")
     print("Storage will not be updated.")
     log_path = REPO_ROOT / "debug" / f"deposit_trial_{drpid}.jsonl"
+    clock = new_clock()
+    phases: dict[str, int] = {}
     session = DataLumosBrowserSession()
-    path = ""
+    created: list[str] = []
     try:
-        page = session.ensure_browser()
-        session.ensure_authenticated()
-        client = DataLumosDepositClient(page, log_path=log_path)
-        client.ensure_deposit_page()
-        path = client.create_project(metadata.title)
-        DepositMetadataWriter(client).fill_metadata(path, metadata)
-        written = match_fields(client.get_attributes(path))
+        written = _deposit_project(session, metadata, log_path, clock, phases, created)
     except Exception as exc:
+        path = created[-1] if created else ""
         print(f"DRPID={drpid}: FAIL — {exc}", file=sys.stderr)
         if path:
             print(f"Partial DataLumos project: {path}", file=sys.stderr)
+        finish_timing(log_path, clock, phases)
         return 1
     finally:
         session.close()
-    _print_result(drpid, path, log_path, written)
+    _print_result(drpid, created[-1], log_path, written, clock, phases)
     return 0
 
 
-def _print_result(drpid: int, path: str, log_path: Path, written: dict[str, Any]) -> None:
-    """Print the created path and the attributes read back after the posts."""
+def _deposit_project(
+    session: Any,
+    metadata: Any,
+    log_path: Path,
+    clock: dict[str, float],
+    phases: dict[str, int],
+    created: list[str],
+) -> dict[str, Any]:
+    """Log in, create the project, write metadata, and read the attributes back."""
+    from upload.DataLumosDepositClient import DataLumosDepositClient
+    from upload.DepositMetadataWriter import DepositMetadataWriter
+    from upload.deposit_field_match import match_fields
+
+    page = session.ensure_browser()
+    session.ensure_authenticated()
+    lap(clock, phases, "login")
+    client = DataLumosDepositClient(page, log_path=log_path)
+    client.ensure_deposit_page()
+    lap(clock, phases, "workspace")
+    path = client.create_project(metadata.title)
+    created.append(path)
+    lap(clock, phases, "create")
+    DepositMetadataWriter(client).fill_metadata(path, metadata)
+    lap(clock, phases, "metadata")
+    written = match_fields(client.get_attributes(path))
+    lap(clock, phases, "readBack")
+    return written
+
+
+def _print_result(
+    drpid: int,
+    path: str,
+    log_path: Path,
+    written: dict[str, Any],
+    clock: dict[str, float],
+    phases: dict[str, int],
+) -> None:
+    """Print the created path, elapsed time, and the attributes read back."""
     print(f"DRPID={drpid}: created {path}")
+    print(format_trial_elapsed(total_ms(clock), phases))
     print(f"Request log: {log_path}")
     for field, attr in sorted(written.items()):
         print(f"  {field}: label={attr.label!r} value={attr.value!r}")
@@ -147,6 +181,7 @@ def _print_result(drpid: int, path: str, log_path: Path, written: dict[str, Any]
         "Database was not modified. Delete the TRIAL project from the "
         "DataLumos workspace when finished."
     )
+    finish_timing(log_path, clock, phases)
 
 
 if __name__ == "__main__":

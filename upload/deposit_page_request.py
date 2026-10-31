@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit
@@ -70,18 +71,26 @@ def append_deposit_log(
     body_text: str,
 ) -> None:
     """Append one redacted request summary. Query values are omitted."""
+    append_deposit_record(
+        log_path,
+        {
+            "method": method,
+            "path": urlsplit(url).path,
+            "status": status,
+            "elapsedMs": elapsed_ms,
+            "responseBytes": len(body_text.encode("utf-8")),
+        },
+    )
+
+
+def append_deposit_record(log_path: Path | None, record: dict[str, Any]) -> None:
+    """Append one JSON object with a local timestamp. Query values are omitted."""
     if log_path is None:
         return
-    record = {
-        "method": method,
-        "path": urlsplit(url).path,
-        "status": status,
-        "elapsedMs": elapsed_ms,
-        "responseBytes": len(body_text.encode("utf-8")),
-    }
+    stamped = {"at": datetime.now().astimezone().isoformat(timespec="seconds"), **record}
     log_path.parent.mkdir(parents=True, exist_ok=True)
     new_file = not log_path.exists()
-    line = json.dumps(record, ensure_ascii=False) + "\n"
+    line = json.dumps(stamped, ensure_ascii=False) + "\n"
     with log_path.open("a", encoding="utf-8") as handle:
         if new_file:
             handle.write("\ufeff")

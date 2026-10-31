@@ -13,16 +13,10 @@ from upload.DepositMetadata import DepositMetadata
 from upload.DepositMetadataWriter import DepositMetadataWriter
 from upload.deposit_page_request import AJAX_JS
 from upload.tests.deposit_attribute_samples import sample_payload
-from utils.Logger import Logger
 
 
 class TestDataLumosDepositClient(unittest.TestCase):
     """Request shape for create, post, and log redaction."""
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        """Initialize logging so thesaurus warnings can be recorded."""
-        Logger.initialize(log_level="WARNING", log_file=False)
 
     def test_ajax_keeps_the_token_in_the_page(self) -> None:
         """The page script sets the bearer header and does not return the token."""
@@ -60,6 +54,7 @@ class TestDataLumosDepositClient(unittest.TestCase):
         self.assertNotIn("eyJ", logged)
         self.assertNotIn("label=", logged)
         self.assertIn("/deposit/postProperty", logged)
+        self.assertIn('"at"', logged)
 
     def test_fill_posts_summary_without_a_second_attribute_load(self) -> None:
         """One getAttributes is followed by the summary post and nothing else."""

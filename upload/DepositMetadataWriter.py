@@ -16,7 +16,6 @@ from upload.DepositAttribute import (
 )
 from upload.DepositMetadata import DepositMetadata
 from upload.deposit_field_match import match_fields
-from utils.Logger import Logger
 
 
 class DepositMetadataWriter:
@@ -159,10 +158,6 @@ class DepositMetadataWriter:
         for suggestion in self._client.suggest_subject_terms(term):
             if suggestion.casefold() == wanted:
                 return suggestion
-        Logger.warning(
-            "Subject term %r is not in the DataLumos thesaurus; posting it as entered",
-            term,
-        )
         return term
 
     def _require(
