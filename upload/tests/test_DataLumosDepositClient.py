@@ -13,10 +13,16 @@ from upload.DepositMetadata import DepositMetadata
 from upload.DepositMetadataWriter import DepositMetadataWriter
 from upload.deposit_page_request import AJAX_JS
 from upload.tests.deposit_attribute_samples import sample_payload
+from utils.Logger import Logger
 
 
 class TestDataLumosDepositClient(unittest.TestCase):
     """Request shape for create, post, and log redaction."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Initialize logging so thesaurus warnings can be recorded."""
+        Logger.initialize(log_level="WARNING", log_file=False)
 
     def test_ajax_keeps_the_token_in_the_page(self) -> None:
         """The page script sets the bearer header and does not return the token."""
@@ -136,16 +142,20 @@ class TestDataLumosDepositClient(unittest.TestCase):
         self.assertIn("No deposit attribute for agency", str(caught.exception))
         self.assertIn("Summary", str(caught.exception))
 
-    def test_keyword_must_match_a_suggestion(self) -> None:
-        """Subject terms are posted only when suggestSubjectTerms returns them."""
+    def test_unlisted_subject_term_is_posted_as_entered(self) -> None:
+        """A term missing from suggestSubjectTerms is still posted, as a select2 tag."""
         page = MagicMock()
+        calls: list[dict[str, object]] = []
 
         def evaluate(_script: str, request: dict[str, object]) -> dict[str, object]:
+            calls.append(request)
             url = str(request["url"])
             if "getAttributes" in url:
                 return {"status": 200, "body": json.dumps(sample_payload()), "elapsedMs": 1}
+            if "suggestSubjectTerms" in url and "public" in url:
+                return {"status": 200, "body": json.dumps(["Public health"]), "elapsedMs": 1}
             if "suggestSubjectTerms" in url:
-                return {"status": 200, "body": json.dumps(["Other term"]), "elapsedMs": 1}
+                return {"status": 200, "body": "[]", "elapsedMs": 1}
             return {"status": 200, "body": "{}", "elapsedMs": 1}
 
         page.evaluate.side_effect = evaluate
@@ -155,16 +165,19 @@ class TestDataLumosDepositClient(unittest.TestCase):
             investigators=(),
             summary="",
             original_url="",
-            keywords=("Public health",),
+            keywords=("public health", "categorical evaluation"),
             geography=(),
             time_start="",
             time_end="",
             data_types=(),
             notes="",
         )
-        with self.assertRaises(RuntimeError) as caught:
-            DepositMetadataWriter(DataLumosDepositClient(page)).fill_metadata("/datalumos/9", metadata)
-        self.assertIn("Public health", str(caught.exception))
+        DepositMetadataWriter(DataLumosDepositClient(page)).fill_metadata("/datalumos/9", metadata)
+        posted = next(call for call in calls if "postProperty" in str(call["url"]))
+        self.assertEqual(
+            posted["data"]["value"],
+            "Public health~~categorical evaluation~~",
+        )
 
 
 if __name__ == "__main__":

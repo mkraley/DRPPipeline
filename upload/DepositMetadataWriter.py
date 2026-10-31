@@ -16,6 +16,7 @@ from upload.DepositAttribute import (
 )
 from upload.DepositMetadata import DepositMetadata
 from upload.deposit_field_match import match_fields
+from utils.Logger import Logger
 
 
 class DepositMetadataWriter:
@@ -149,12 +150,20 @@ class DepositMetadataWriter:
         self._client.post_property(path, scalar_data_id(attr), tilde_join(wire), attr.label)
 
     def _resolve_subject_term(self, term: str) -> str:
-        """Return the thesaurus string for ``term``, or raise when it is absent."""
+        """
+        Return the thesaurus spelling when the term is listed, otherwise the text as entered.
+
+        Subject Terms select2 allows tags that are not in the suggestion list.
+        """
         wanted = term.casefold()
         for suggestion in self._client.suggest_subject_terms(term):
             if suggestion.casefold() == wanted:
                 return suggestion
-        raise RuntimeError(f"Subject term {term!r} was not returned by suggestSubjectTerms")
+        Logger.warning(
+            "Subject term %r is not in the DataLumos thesaurus; posting it as entered",
+            term,
+        )
+        return term
 
     def _require(
         self,
