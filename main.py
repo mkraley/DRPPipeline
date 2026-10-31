@@ -28,6 +28,8 @@ MODULES
   collect_interactively Browser-assisted collector for sites that block automation
                         (use --external-archive for collected - external archive projects)
   upload                Upload collected datasets to DataLumos
+                        (deposit API for the project and metadata; --ui-upload
+                        keeps the browser form)
   upload_large_files    Legacy download/upload for uploaded - large file (default <25GB)
   resume_download       Download deferred files (uploaded - large, or resized)
   resume_upload         Upload files added by resume_download (status downloaded)
@@ -55,6 +57,11 @@ COMMON OPTIONS
 
 USFS COLLECTOR
   --usfs-metadata-only    Metadata and page PDFs only; skip publication downloads; keep output folder
+
+UPLOAD
+  --ui-upload             Create the project and fill metadata in the browser form.
+                          Default posts them through the deposit API. Files still
+                          upload from the project page.
 
 INTERACTIVE COLLECTOR
   --external-archive      Load projects with status collected - external archive (default: sourced)

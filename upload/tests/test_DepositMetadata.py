@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import unittest
 
-from upload.DepositMetadata import trial_metadata_from_project
+from upload.DepositMetadata import metadata_from_project, trial_metadata_from_project
 
 
 class TestDepositMetadata(unittest.TestCase):
     """Title prefix and the same field cleanup the uploader applies."""
+
+    def test_production_title_is_not_prefixed(self) -> None:
+        """Production deposits use the prepared title with no trial marker."""
+        metadata = metadata_from_project({"title": "River gauges", "summary": "A set."})
+        self.assertNotIn("TRIAL", metadata.title)
+        self.assertIn("River gauges", metadata.title)
 
     def test_title_is_prefixed_with_trial(self) -> None:
         """The DataLumos title is marked so the deposit can be deleted later."""

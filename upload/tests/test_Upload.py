@@ -256,6 +256,74 @@ class TestDataLumosUploader(unittest.TestCase):
         )
 
 
+    def test_default_upload_saves_id_before_metadata(self) -> None:
+        """The deposit API stores datalumos_id before posting the rest of the form."""
+        order: list[str] = []
+        project = {"title": "River gauges", "summary": "A set."}
+        self.uploader._session = MagicMock()
+        reporter = UploadIssueReporter(2501)
+
+        def create(got_project: dict, got_reporter: UploadIssueReporter) -> str:
+            order.append("create")
+            self.assertEqual(got_project["title"], "River gauges")
+            self.assertIs(got_reporter, reporter)
+            return "259600"
+
+        def save(drpid: int, fields: dict) -> None:
+            order.append("save")
+            self.assertEqual(drpid, 2501)
+            self.assertEqual(fields, {"datalumos_id": "259600"})
+
+        def fill(workspace_id: str, got_project: dict) -> None:
+            order.append("fill")
+            self.assertEqual(workspace_id, "259600")
+            self.assertEqual(got_project["title"], "River gauges")
+
+        with patch("upload.DepositProjectUpload.DepositProjectUpload") as deposit_cls:
+            deposit = deposit_cls.return_value
+            deposit.create.side_effect = create
+            deposit.fill.side_effect = fill
+            with patch("upload.DataLumosUploader.Storage.update_record", side_effect=save):
+                result = self.uploader._upload_project(project, 2501, reporter)
+        self.assertEqual(result, "259600")
+        self.assertEqual(order, ["create", "save", "fill"])
+
+    def test_ui_upload_uses_the_form(self) -> None:
+        """--ui-upload keeps project creation on the browser form."""
+        Args._config["upload_via_ui"] = True
+        reporter = UploadIssueReporter(1)
+        with patch.object(
+            self.uploader, "_upload_project_via_form", return_value="9"
+        ) as form_upload:
+            with patch.object(self.uploader, "_upload_project_via_api") as api_upload:
+                result = self.uploader._upload_project({}, 1, reporter)
+        self.assertEqual(result, "9")
+        form_upload.assert_called_once()
+        api_upload.assert_not_called()
+
+    def test_api_upload_opens_the_project_before_files(self) -> None:
+        """Files still need the project page after the deposit API creates it."""
+        project = {
+            "title": "River gauges",
+            "summary": "A set.",
+            "folder_path": str(self.temp_dir),
+        }
+        self.uploader._session = MagicMock()
+        with patch("upload.DepositProjectUpload.DepositProjectUpload") as deposit_cls:
+            deposit_cls.return_value.create.return_value = "42"
+            with patch("upload.DataLumosUploader.Storage.update_record"):
+                with patch.object(self.uploader, "_open_project_page") as open_page:
+                    with patch(
+                        "upload.DataLumosFileUploader.DataLumosFileUploader"
+                    ) as file_cls:
+                        file_cls.return_value.uses_zip_import.return_value = False
+                        file_cls.return_value.count_upload_batches.return_value = 0
+                        self.uploader._upload_project(project, 1, UploadIssueReporter(1))
+        open_page.assert_called_once()
+        self.assertEqual(open_page.call_args.args[1], "42")
+        file_cls.return_value.upload_files.assert_called_once_with(str(self.temp_dir))
+
+
 class TestDataLumosUploaderValidation(unittest.TestCase):
     """Additional validation tests."""
 

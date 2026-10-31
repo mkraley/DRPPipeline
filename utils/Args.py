@@ -137,6 +137,8 @@ class Args(metaclass=ArgsMeta):
         "datalumos_password": None,  # Required for upload; set in config file
         "upload_headless": False,  # Run browser in headless mode for upload
         "upload_timeout": 60000,  # Default timeout in ms for upload operations
+        # When True, upload creates the project and fills metadata in the browser form.
+        "upload_via_ui": False,
         # Browser viewport; when upload_record_video_dir is set, record_video_size matches this
         "upload_viewport_width": 1920,
         "upload_viewport_height": 1080,
@@ -348,6 +350,13 @@ class Args(metaclass=ArgsMeta):
                 "uploaded - large file (default 25GB). A bare number is gigabytes, "
                 "for example 40 or 40GB. uploaded - expanded is not capped.",
             ),
+            ui_upload: bool = typer.Option(
+                False,
+                "--ui-upload",
+                help="Create the DataLumos project and fill metadata through the "
+                "browser form. The default posts them through the deposit API. "
+                "File upload still uses the project page.",
+            ),
         ) -> None:
             """Callback to capture Typer parsed values."""
             parsed_values["module"] = module
@@ -398,6 +407,8 @@ class Args(metaclass=ArgsMeta):
                 except ValueError as exc:
                     raise typer.BadParameter(str(exc)) from exc
                 parsed_values["max_project_size"] = text
+            if ui_upload:
+                parsed_values["upload_via_ui"] = True
 
         # Use a single @app.command() so the first positional (module) is not treated as a
         # subcommand. A Group would require the first token to match a subcommand.

@@ -339,6 +339,20 @@ class TestArgs(unittest.TestCase):
         Args.initialize()
         self.assertTrue(Args.retry)
 
+    def test_upload_uses_deposit_api_unless_ui_upload_is_set(self) -> None:
+        """The deposit API is the default upload path."""
+        import sys
+        sys.argv = ["test", "upload"]
+        Args._initialized = False
+        Args.initialize()
+        self.assertFalse(Args.upload_via_ui)
+
+        Args._initialized = False
+        Args._config = {}
+        sys.argv = ["test", "upload", "--ui-upload"]
+        Args.initialize()
+        self.assertTrue(Args.upload_via_ui)
+
     def test_ids_incompatible_with_num_rows_and_start(self) -> None:
         """--ids cannot be combined with -n or --start."""
         import sys

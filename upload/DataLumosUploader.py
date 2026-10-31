@@ -6,6 +6,7 @@ Coordinates browser lifecycle, authentication, form filling, and file uploads.
 """
 
 import re
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -14,7 +15,6 @@ from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from upload.UploadIssueReporter import UploadIssueReporter
 from utils.Args import Args
 from utils.Errors import ProjectAbort
-from utils.PrincipalInvestigators import deserialize_investigators
 from utils.project_utils import get_field
 from utils.inventory_status import skips_upload_file_count, upload_status_for_collected
 from utils.Logger import Logger
@@ -102,8 +102,10 @@ class DataLumosUploader:
     Upload module that uploads collected project data to DataLumos.
     
     Implements ModuleProtocol. For each eligible project (``collected`` or
-    ``collected - large file``), this module: authenticates, creates project,
-    fills form fields, and updates Storage with datalumos_id.
+    ``collected - large file``), this module: authenticates, creates the
+    project, posts metadata, uploads files, and updates Storage with
+    datalumos_id. Creation and metadata use the deposit API unless
+    ``--ui-upload`` selects the browser form.
 
     Not eligible: ``collected - external archive``, ``collected - file pending``,
     or other collected variants.
@@ -196,101 +198,102 @@ class DataLumosUploader:
         """
         Upload a project to DataLumos.
 
-        Navigates to workspace, creates a new project, saves datalumos_id to
-        Storage, then fills the form.
+        The deposit API creates the project and posts metadata. ``--ui-upload``
+        keeps the browser form. Files still upload from the project page.
 
         Returns:
             The DataLumos workspace ID.
         """
+        if Args.upload_via_ui:
+            Logger.info("Uploading via the DataLumos form")
+            return self._upload_project_via_form(project, drpid, reporter)
+        return self._upload_project_via_api(project, drpid, reporter)
+
+    def _upload_project_via_api(
+        self,
+        project: Dict[str, Any],
+        drpid: int,
+        reporter: UploadIssueReporter,
+    ) -> str:
+        """Create and fill through the deposit API, then upload files."""
         page = self._session.ensure_browser()
         self._session.ensure_authenticated(reporter=reporter)
+        from upload.DepositProjectUpload import DepositProjectUpload
 
-        from upload.DataLumosFormFiller import DataLumosFormFiller
+        deposit = DepositProjectUpload(page)
+        started = time.perf_counter()
+        try:
+            workspace_id = deposit.create(project, reporter)
+            Logger.info(f"Created project with workspace ID: {workspace_id}")
+            Storage.update_record(drpid, {"datalumos_id": workspace_id})
+            deposit.fill(workspace_id, project)
+        finally:
+            Logger.info(
+                "Deposit API create and metadata took %.1fs",
+                time.perf_counter() - started,
+            )
+        self._upload_folder(page, project, reporter, workspace_id)
+        return workspace_id
 
-        form_filler = DataLumosFormFiller(
+    def _upload_project_via_form(
+        self,
+        project: Dict[str, Any],
+        drpid: int,
+        reporter: UploadIssueReporter,
+    ) -> str:
+        """Create the project and fill metadata by clicking the workspace form."""
+        page = self._session.ensure_browser()
+        self._session.ensure_authenticated(reporter=reporter)
+        from upload.FormProjectUpload import FormProjectUpload
+
+        workspace_id = FormProjectUpload(page, self.WORKSPACE_URL).create_and_fill(
+            project, drpid, reporter
+        )
+        self._upload_folder(page, project, reporter)
+        return workspace_id
+
+    def _upload_folder(
+        self,
+        page: Any,
+        project: Dict[str, Any],
+        reporter: UploadIssueReporter,
+        workspace_id: Optional[str] = None,
+    ) -> None:
+        """Upload the project folder from the open project page."""
+        folder_path = get_field(project, "folder_path")
+        if not folder_path:
+            return
+        if workspace_id:
+            self._open_project_page(page, workspace_id, reporter)
+        from upload.DataLumosFileUploader import DataLumosFileUploader
+
+        file_uploader = DataLumosFileUploader(
             page, timeout=Args.upload_timeout, reporter=reporter
         )
+        used_zip = file_uploader.uses_zip_import(folder_path)
+        file_uploader.upload_files(folder_path)
+        _warn_if_num_files_mismatch(
+            reporter,
+            project,
+            file_uploader.count_upload_batches(folder_path),
+            used_zip=used_zip,
+        )
 
-        Logger.info("Navigating to DataLumos workspace")
-        page.goto(self.WORKSPACE_URL, wait_until="domcontentloaded")
+    def _open_project_page(
+        self,
+        page: Any,
+        workspace_id: str,
+        reporter: UploadIssueReporter,
+    ) -> None:
+        """Open the project workspace so the file modal can run."""
+        from upload.DataLumosAuthenticator import wait_for_human_verification
         from upload.UploadLargeFiles import WORKSPACE_LOAD_TIMEOUT_MS
 
+        Logger.info(f"Opening DataLumos project {workspace_id} for file upload")
+        page.goto(self._project_url(workspace_id), wait_until="domcontentloaded")
         page.wait_for_load_state("networkidle", timeout=WORKSPACE_LOAD_TIMEOUT_MS)
-
-        from upload.DataLumosAuthenticator import wait_for_human_verification
         wait_for_human_verification(page, timeout=60000, reporter=reporter)
 
-        new_project_btn = page.locator(".btn > span:nth-child(3)")
-        form_filler.wait_for_obscuring_elements()
-        new_project_btn.click()
-
-        form_filler.fill_title(get_field(project, "title"))
-
-        wait_for_human_verification(page, timeout=60000, reporter=reporter)
-
-        workspace_id = self._extract_workspace_id(page.url)
-        if not workspace_id:
-            raise RuntimeError(f"Could not extract workspace ID from URL: {page.url}")
-
-        Logger.info(f"Created project with workspace ID: {workspace_id}")
-        Storage.update_record(drpid, {"datalumos_id": workspace_id})
-
-        form_filler.expand_all_sections()
-        
-        agencies = _agency_values_for_upload(
-            get_field(project, "agency"),
-            get_field(project, "office"),
-        )
-        if agencies:
-            form_filler.fill_agency(agencies)
-        investigators = deserialize_investigators(
-            get_field(project, "principal_investigators")
-        )
-        if investigators:
-            form_filler.fill_principal_investigators(investigators)
-        
-        form_filler.fill_summary(get_field(project, "summary"))
-        form_filler.fill_original_url(get_field(project, "source_url"))
-
-        keywords_raw = get_field(project, "keywords")
-        if keywords_raw:
-            form_filler.fill_keywords(self._parse_keywords(keywords_raw))
-        
-        geographic = get_field(project, "geographic_coverage")
-        if geographic:
-            form_filler.fill_geographic_coverage(geographic)
-        
-        time_start = get_field(project, "time_start")
-        time_end = get_field(project, "time_end")
-        if time_start or time_end:
-            form_filler.fill_time_period(time_start or None, time_end or None)
-        
-        data_types = get_field(project, "data_types")
-        if data_types:
-            form_filler.fill_data_types(data_types)
-        
-        notes = get_field(project, "collection_notes")
-        download_date = get_field(project, "download_date")
-        if notes or download_date:
-            form_filler.fill_collection_notes(notes, download_date or None)
-        
-        folder_path = get_field(project, "folder_path")
-        if folder_path:
-            from upload.DataLumosFileUploader import DataLumosFileUploader
-            file_uploader = DataLumosFileUploader(
-                page, timeout=Args.upload_timeout, reporter=reporter
-            )
-            used_zip = file_uploader.uses_zip_import(folder_path)
-            file_uploader.upload_files(folder_path)
-            _warn_if_num_files_mismatch(
-                reporter,
-                project,
-                file_uploader.count_upload_batches(folder_path),
-                used_zip=used_zip,
-            )
-
-        return workspace_id
-    
     def _extract_workspace_id(self, url: str) -> Optional[str]:
         """Extract workspace ID from DataLumos URL."""
         match = re.search(r"/datalumos/(\d+)", url)

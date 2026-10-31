@@ -1,8 +1,8 @@
 """
-Build the metadata payload for a DataLumos deposit trial from a Storage row.
+Build the metadata payload for a DataLumos deposit from a Storage row.
 
-The trial title is prefixed with ``TRIAL``. Values otherwise follow the same
-preparation the uploader uses before it clicks the workspace form.
+Production titles are prepared the same way as the workspace form. The trial
+helper prefixes the title with ``TRIAL``.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ _CDC_AGENCY = (
 
 @dataclass(frozen=True)
 class DepositMetadata:
-    """Metadata the trial writes after the project is created."""
+    """Metadata written after the project is created."""
 
     title: str
     agencies: tuple[str, ...]
@@ -43,6 +43,19 @@ class DepositMetadata:
     notes: str
 
 
+def metadata_from_project(project: dict[str, Any]) -> DepositMetadata:
+    """
+    Prepare one Storage project for a production deposit.
+
+    Args:
+        project: Row from Storage. Read only; this function does not write it.
+
+    Returns:
+        Field values ready to post, with the normal DataLumos title.
+    """
+    return _from_project(project, prepare_datalumos_title(get_field(project, "title")))
+
+
 def trial_metadata_from_project(project: dict[str, Any]) -> DepositMetadata:
     """
     Prepare one Storage project for a deposit-API trial.
@@ -55,12 +68,17 @@ def trial_metadata_from_project(project: dict[str, Any]) -> DepositMetadata:
     """
     raw_title = get_field(project, "title")
     titled = prepare_datalumos_title(f"TRIAL {raw_title}" if raw_title else "TRIAL")
+    return _from_project(project, titled)
+
+
+def _from_project(project: dict[str, Any], title: str) -> DepositMetadata:
+    """Build metadata for a title that is already prepared."""
     start, end = align_upload_time_period(
         get_field(project, "time_start"),
         get_field(project, "time_end"),
     )
     return DepositMetadata(
-        title=titled,
+        title=title,
         agencies=tuple(_agencies(project)),
         investigators=tuple(_investigators(get_field(project, "principal_investigators"))),
         summary=_html_or_blank(get_field(project, "summary")),

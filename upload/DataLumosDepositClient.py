@@ -42,7 +42,7 @@ class DataLumosDepositClient:
         self._log_path = log_path
         self._ready = False
 
-    def ensure_deposit_page(self) -> None:
+    def ensure_deposit_page(self, reporter: Any = None) -> None:
         """Open the workspace far enough to load jQuery and the page token."""
         if self._ready:
             return
@@ -50,7 +50,7 @@ class DataLumosDepositClient:
 
         Logger.info("Opening DataLumos workspace for deposit API calls")
         self._page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
-        wait_for_human_verification(self._page, timeout=60000)
+        wait_for_human_verification(self._page, timeout=60000, reporter=reporter)
         self._page.wait_for_function(
             "() => typeof jwtToken === 'string' && jwtToken.length > 0 && "
             "typeof $ !== 'undefined' && typeof $.ajax === 'function'",
