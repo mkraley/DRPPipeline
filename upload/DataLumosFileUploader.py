@@ -15,7 +15,7 @@ import tempfile
 import time
 import zipfile
 from pathlib import Path
-from typing import List, Optional, TYPE_CHECKING
+from typing import Any, List, Optional, TYPE_CHECKING
 
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
@@ -26,7 +26,8 @@ if TYPE_CHECKING:
     from upload.UploadIssueReporter import UploadIssueReporter
 
 
-# Files larger than this wait two hours for DataLumos to accept the upload.
+# Files dropped together before waiting for their queue lines.
+PARALLEL_FILE_UPLOADS = 4
 LARGE_UPLOAD_BYTES = 5 * 1024**3
 LARGE_UPLOAD_QUEUE_TIMEOUT_MS = 2 * 60 * 60 * 1000
 
@@ -298,7 +299,7 @@ class DataLumosFileUploader:
         self._close_modal(use_zip=True)
 
     def _upload_via_upload_files(self, files: List[Path]) -> None:
-        """Open Upload Files modal and upload files one-by-one via drop zone."""
+        """Open Upload Files modal and upload files in groups of four."""
         Logger.info(f"Uploading {len(files)} file(s) via Upload Files")
         self._wait_for_obscuring_elements()
 
@@ -322,29 +323,55 @@ class DataLumosFileUploader:
 
         file_input = self._page.locator(f"#{input_id}")
         try:
-            for idx, path in enumerate(paths):
-                file_input.set_input_files(str(path))
-                if use_zip:
-                    upload_btn = self._page.locator("#uploadButton")
-                    upload_btn.click()
-                    self._wait_until_queued_count(
-                        use_zip=True,
-                        expected=1,
-                        total_files=1,
-                        file_size_bytes=path.stat().st_size,
-                    )
-                else:
-                    size_bytes = path.stat().st_size
-                    self._wait_until_queued_count(
-                        use_zip=False,
-                        expected=idx + 1,
-                        total_files=len(paths),
-                        file_size_bytes=size_bytes,
-                    )
+            if use_zip:
+                self._drop_zip(file_input, paths)
+            else:
+                self._drop_regular_files(file_input, paths)
         except Exception as e:
             self._remove_injected_input()
             raise RuntimeError(f"Error uploading '{paths[0].name if paths else '?'}': {e}") from e
         self._remove_injected_input()
+
+    def _drop_zip(self, file_input: Any, paths: List[Path]) -> None:
+        """Upload one zip and wait for its extraction line."""
+        for path in paths:
+            file_input.set_input_files(str(path))
+            self._page.locator("#uploadButton").click()
+            self._wait_until_queued_count(
+                use_zip=True,
+                expected=1,
+                total_files=1,
+                file_size_bytes=path.stat().st_size,
+            )
+
+    def _drop_regular_files(self, file_input: Any, paths: List[Path]) -> None:
+        """Drop up to four files, then wait until each has a queue line."""
+        total = len(paths)
+        start = 0
+        while start < total:
+            batch = paths[start:start + PARALLEL_FILE_UPLOADS]
+            self._announce_file_batch(batch, start, total)
+            for path in batch:
+                file_input.set_input_files(str(path))
+            self._wait_until_queued_count(
+                use_zip=False,
+                expected=start + len(batch),
+                total_files=total,
+                file_size_bytes=max(path.stat().st_size for path in batch),
+                seen=start,
+                log_start=False,
+            )
+            start += len(batch)
+
+    def _announce_file_batch(self, batch: List[Path], start: int, total: int) -> None:
+        """Log each file in a parallel drop before any of them are waited on."""
+        for offset, path in enumerate(batch, start=start + 1):
+            Logger.info(
+                "uploading file %s of %s (%s)",
+                offset,
+                total,
+                format_file_size(path.stat().st_size),
+            )
 
     def _import_modal_visible(self, use_zip: bool) -> bool:
         """Return True when the import/upload modal is open on the page."""
@@ -540,18 +567,20 @@ class DataLumosFileUploader:
         total_files: int | None,
         file_size_bytes: int | None,
         wait_phrases: tuple[str, ...],
+        *,
+        log_start: bool = True,
     ) -> int:
         """Log the file being uploaded and return the wait timeout in milliseconds."""
-        if total_files is not None and file_size_bytes is not None:
+        if log_start and total_files is not None and file_size_bytes is not None:
             Logger.info(
                 "uploading file %s of %s (%s)",
                 expected,
                 total_files,
                 format_file_size(file_size_bytes),
             )
-        elif total_files is not None:
+        elif log_start and total_files is not None:
             Logger.info("uploading file %s of %s", expected, total_files)
-        else:
+        elif log_start:
             Logger.info(
                 "Waiting for upload acceptance after file %s (looking for: %s)",
                 expected,
@@ -573,7 +602,10 @@ class DataLumosFileUploader:
         *,
         total_files: int | None = None,
         file_size_bytes: int | None = None,
+        seen: int | None = None,
+        log_start: bool = True,
     ) -> None:
+        """Wait until ``expected`` queue lines are visible, logging each new one."""
         if expected <= 0:
             return
         modal_sel = self._upload_modal_selector(use_zip)
@@ -582,20 +614,20 @@ class DataLumosFileUploader:
         else:
             wait_phrases = FILE_PER_FILE_QUEUE_PHRASES
         timeout_ms = self._announce_queue_wait(
-            expected, total_files, file_size_bytes, wait_phrases
+            expected,
+            total_files,
+            file_size_bytes,
+            wait_phrases,
+            log_start=log_start,
         )
+        acknowledged = expected - 1 if seen is None else seen
         deadline = time.monotonic() + timeout_ms / 1000.0
         while time.monotonic() < deadline:
             # Short busy poll only; large uploads keep #busy visible for a long time.
             self._wait_for_obscuring_elements(max_wait_ms=2000)
             n = self._per_file_queue_signal_count(use_zip)
+            acknowledged = self._log_new_queue_lines(acknowledged, n, expected, modal_sel)
             if n >= expected:
-                Logger.info(
-                    "Upload acceptance detected for file %s (%s queue signal(s) in %s)",
-                    expected,
-                    n,
-                    modal_sel,
-                )
                 return
             # Single-file only: some DataLumos builds show a batch message instead of queue text.
             if expected == 1 and not use_zip and self._has_batch_upload_status(use_zip):
@@ -611,6 +643,24 @@ class DataLumosFileUploader:
             f"Upload did not reach {expected} queue signal(s) within {timeout_ms} ms "
             f"(phrases={wait_phrases!r} in {modal_sel}; visible status={status_preview!r})"
         )
+
+    def _log_new_queue_lines(
+        self,
+        acknowledged: int,
+        visible: int,
+        expected: int,
+        modal_sel: str,
+    ) -> int:
+        """Log one acceptance line for each new queue signal, up to ``expected``."""
+        while acknowledged < visible and acknowledged < expected:
+            acknowledged += 1
+            Logger.info(
+                "Upload acceptance detected for file %s (%s queue signal(s) in %s)",
+                acknowledged,
+                visible,
+                modal_sel,
+            )
+        return acknowledged
 
     def wait_for_upload_completion(self, file_count: int) -> None:
         """

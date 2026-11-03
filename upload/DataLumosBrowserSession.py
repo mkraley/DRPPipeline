@@ -5,7 +5,9 @@ Provides ensure_browser(), ensure_authenticated(), reauthenticate(), and close()
 using Args for config.
 """
 
+import atexit
 import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -20,6 +22,9 @@ from utils.Logger import Logger
 
 if TYPE_CHECKING:
     from upload.UploadIssueReporter import UploadIssueReporter
+
+# Keycloak sessions outlive a project. Sign in again on this cadence.
+LOGIN_MAX_AGE_SECONDS = 30 * 60
 
 
 class DataLumosBrowserSession:
@@ -39,12 +44,23 @@ class DataLumosBrowserSession:
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
         self._authenticated = False
+        self._authenticated_at: float | None = None
+        self._exit_registered = False
 
     def ensure_browser(self) -> Page:
         """Ensure browser is initialized and return the page."""
-        if self._page is not None:
+        if self._page is not None and _page_still_open(self._page):
             return self._page
+        if self._page is not None or self._browser is not None:
+            self.close()
+        self._start_browser()
+        if not self._exit_registered:
+            atexit.register(self.close)
+            self._exit_registered = True
+        return self._page
 
+    def _start_browser(self) -> None:
+        """Launch Chromium and open one page."""
         Logger.debug("Initializing Playwright browser")
         self._playwright = sync_playwright().start()
         launch_args = [
@@ -89,12 +105,14 @@ class DataLumosBrowserSession:
         self._page = self._context.new_page()
         if not Args.upload_headless:
             keep_browser_window_minimized(self._page)
-        return self._page
 
     def ensure_authenticated(self, reporter: Optional["UploadIssueReporter"] = None) -> None:
         """Ensure user is authenticated to DataLumos. Reads Args for credentials."""
-        if self._authenticated:
+        if self._authenticated and not _login_expired(self._authenticated_at):
             return
+        if _login_expired(self._authenticated_at):
+            Logger.info("DataLumos login is older than 30 minutes; signing in again")
+            self._authenticated = False
 
         from upload.DataLumosAuthenticator import DataLumosAuthenticator
 
@@ -111,6 +129,7 @@ class DataLumosBrowserSession:
 
         authenticator.authenticate(Args.datalumos_username, Args.datalumos_password)
         self._authenticated = True
+        self._authenticated_at = time.monotonic()
 
     def reauthenticate(self, reporter: Optional["UploadIssueReporter"] = None) -> None:
         """
@@ -163,6 +182,7 @@ class DataLumosBrowserSession:
             self._playwright = None
 
         self._authenticated = False
+        self._authenticated_at = None
         Logger.debug("Browser resources cleaned up")
 
     def _abandon(self) -> None:
@@ -178,4 +198,26 @@ class DataLumosBrowserSession:
         self._browser = None
         self._playwright = None
         self._authenticated = False
+        self._authenticated_at = None
         Logger.debug("Browser resources abandoned after interrupt")
+
+
+def _page_still_open(page: Page) -> bool:
+    """Return True when the page is still usable. Non-boolean results count as open."""
+    checker = getattr(page, "is_closed", None)
+    if not callable(checker):
+        return True
+    try:
+        closed = checker()
+    except Exception:
+        return False
+    if not isinstance(closed, bool):
+        return True
+    return not closed
+
+
+def _login_expired(authenticated_at: float | None) -> bool:
+    """Return True when a recorded login is at least 30 minutes old."""
+    if authenticated_at is None:
+        return False
+    return time.monotonic() - authenticated_at >= LOGIN_MAX_AGE_SECONDS

@@ -16,12 +16,19 @@ from urllib.parse import urlsplit
 from playwright.sync_api import Page
 
 from upload.DepositAttribute import DepositAttribute, flatten_attributes
+from upload.deposit_direct import (
+    deposit_request,
+    open_workspace_for_token,
+    page_token,
+    parse_body,
+    prepare_deposit_token,
+    project_path,
+)
 from upload.deposit_field_match import suggestion_texts
 from upload.deposit_page_request import (
     AJAX_JS,
     DEPOSIT_SERVER,
     HOME_PATH,
-    WORKSPACE_URL,
     append_deposit_log,
     encode_query,
     redact_secrets,
@@ -41,22 +48,13 @@ class DataLumosDepositClient:
         self._page = page
         self._log_path = log_path
         self._ready = False
+        self._token: str | None = None
 
     def ensure_deposit_page(self, reporter: Any = None) -> None:
-        """Open the workspace far enough to load jQuery and the page token."""
+        """Prepare a bearer token, rendering the workspace only when it is missing."""
         if self._ready:
             return
-        from upload.DataLumosAuthenticator import wait_for_human_verification
-
-        Logger.info("Opening DataLumos workspace for deposit API calls")
-        self._page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=120000)
-        wait_for_human_verification(self._page, timeout=60000, reporter=reporter)
-        self._page.wait_for_function(
-            "() => typeof jwtToken === 'string' && jwtToken.length > 0 && "
-            "typeof $ !== 'undefined' && typeof $.ajax === 'function'",
-            timeout=120000,
-        )
-        self._page.evaluate("() => window.stop()")
+        self._token = prepare_deposit_token(self._page, reporter)
         self._ready = True
 
     def create_project(self, title: str) -> str:
@@ -79,7 +77,7 @@ class DataLumosDepositClient:
             f"{DEPOSIT_SERVER}/createProject?newProject={encode_query(payload)}"
             "&prjType=general"
         )
-        return _project_path(self._call("POST", url, content_type="application/json"))
+        return project_path(self._call("POST", url, content_type="application/json"))
 
     def get_attributes(self, path: str) -> list[DepositAttribute]:
         """Load project attributes once. The caller decides whether to refresh."""
@@ -153,8 +151,10 @@ class DataLumosDepositClient:
             request["data"] = data
         if content_type:
             request["contentType"] = content_type
-        result = self._page.evaluate(AJAX_JS, request)
+        result = self._dispatch(method, url, data, content_type, request)
         status = int(result.get("status") or 0)
+        if status == 401:
+            self._forget_token()
         body_text = redact_secrets(str(result.get("body") or ""))
         append_deposit_log(
             self._log_path, method, url, status, result.get("elapsedMs"), body_text
@@ -162,26 +162,39 @@ class DataLumosDepositClient:
         if status < 200 or status >= 300:
             path = urlsplit(url).path
             raise RuntimeError(f"Deposit {method} {path} failed ({status}): {body_text[:300]}")
-        return _parse_body(body_text)
+        return parse_body(body_text)
 
+    def _dispatch(
+        self,
+        method: str,
+        url: str,
+        data: dict[str, str] | None,
+        content_type: str | None,
+        request: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Call through the browser request context, or the page when that is rejected."""
+        if not self._token:
+            return self._page.evaluate(AJAX_JS, request)
+        try:
+            result = deposit_request(self._page, self._token, method, url, data, content_type)
+        except Exception:
+            Logger.info("Deposit request failed; opening the workspace and retrying")
+            result = {"status": 0, "body": "", "elapsedMs": 0}
+        status = int(result.get("status") or 0)
+        if status not in (0, 403):
+            return result
+        Logger.info("Deposit request was rejected; opening the workspace and retrying")
+        open_workspace_for_token(self._page, None)
+        refreshed = page_token(self._page)
+        if refreshed:
+            self._token = refreshed
+        return self._page.evaluate(AJAX_JS, request)
 
-def _project_path(body: Any) -> str:
-    """Read ``/datalumos/{id}`` from a createProject response."""
-    if not isinstance(body, dict):
-        raise RuntimeError(f"createProject returned an unexpected body: {body!r}"[:300])
-    new_path = str(body.get("newPath") or "").strip()
-    if not new_path and body.get("id"):
-        new_path = f"{HOME_PATH}/{body.get('id')}"
-    if not new_path.startswith(f"{HOME_PATH}/"):
-        raise RuntimeError(f"createProject did not return a project path: {body!r}"[:300])
-    return new_path
-
-
-def _parse_body(body_text: str) -> Any:
-    """Return JSON when the body parses, otherwise the raw text."""
-    if not body_text.strip():
-        return None
-    try:
-        return json.loads(body_text)
-    except json.JSONDecodeError:
-        return body_text
+    def _forget_token(self) -> None:
+        """Drop a rejected token so the next project reads a new one."""
+        self._token = None
+        self._ready = False
+        try:
+            self._page.evaluate("() => { window.jwtToken = ''; }")
+        except Exception:
+            return

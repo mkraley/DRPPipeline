@@ -462,6 +462,7 @@ class TestOrchestrator(unittest.TestCase):
             Orchestrator.run("upload")
         mock_upload_instance.run.assert_has_calls([call(30), call(4), call(8)])
         self.assertEqual(mock_upload_instance.run.call_count, 3)
+        mock_upload_instance.close.assert_called_once()
 
     @patch("orchestration.Orchestrator._find_module_class")
     @patch("storage.Storage")

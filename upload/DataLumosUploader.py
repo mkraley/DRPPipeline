@@ -164,8 +164,10 @@ class DataLumosUploader:
         except Exception as e:
             reporter.error(f"Upload failed: {e}")
             raise
-        finally:
-            self._session.close()
+
+    def close(self) -> None:
+        """Close the browser kept open across the projects in this batch."""
+        self._session.close()
     
     def _validate_project(self, project: Dict[str, Any]) -> list[str]:
         """Validate required fields. Returns list of error messages."""

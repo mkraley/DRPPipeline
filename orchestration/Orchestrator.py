@@ -33,6 +33,13 @@ from utils.RunStatus import RunStatus
 from utils.SoftStop import SoftStop
 
 
+def _close_module(instance: Any) -> None:
+    """Close a module that keeps a browser open across the projects in a batch."""
+    close = getattr(instance, "close", None)
+    if callable(close):
+        close()
+
+
 # Registry mapping module names to their class names and prerequisites
 MODULES: Dict[str, Dict[str, Any]] = {
     "noop": {
@@ -928,54 +935,58 @@ class Orchestrator:
                             f"Orchestrator finished project module={module!r} DRPID={drpid}"
                         )
                         Logger.clear_current_drpid()
+                        _close_module(instance)
 
                 n_projects = len(projects)
                 if max_workers <= 1:
-                    # Single-threaded: reuse one instance
-                    for idx, proj in enumerate(projects, 1):
-                        if _finish_if_stopping():
-                            return
-                        _log_orchestrator_progress(
-                            batch, display_index=idx, total=n_projects
-                        )
-                        drpid = proj["DRPID"]
-                        source_url = proj.get("source_url", "")
-                        Logger.set_current_drpid(drpid)
-                        project_finished = False
-                        started = time.perf_counter()
-                        try:
-                            Logger.info(
-                                f"Orchestrator starting project module={module!r} "
-                                f"DRPID={drpid} ({idx}/{n_projects}) source_url={source_url!r}"
+                    # Single-threaded: reuse one instance, then close its browser.
+                    try:
+                        for idx, proj in enumerate(projects, 1):
+                            if _finish_if_stopping():
+                                return
+                            _log_orchestrator_progress(
+                                batch, display_index=idx, total=n_projects
                             )
-                            if retry:
-                                _prepare_retry_project(proj)
-                            module_instance.run(drpid)
-                            if retry:
-                                _finalize_retry_project(drpid)
-                            project_finished = True
-                        except (KeyboardInterrupt, PipelineFatal):
-                            raise
-                        except ProjectAbort:
-                            project_finished = True
-                        except Exception as exc:
-                            record_error(
-                                drpid,
-                                f"Orchestrator module={module!r} DRPID={drpid} exception: {exc}",
-                            )
-                            project_finished = True
-                        finally:
-                            if project_finished:
-                                _stamp_last_change(drpid)
-                                _record_dashboard_project(
-                                    drpid, time.perf_counter() - started
-                                )
-                                batch.note_project_finished()
+                            drpid = proj["DRPID"]
+                            source_url = proj.get("source_url", "")
+                            Logger.set_current_drpid(drpid)
+                            project_finished = False
+                            started = time.perf_counter()
+                            try:
                                 Logger.info(
-                                    f"Orchestrator finished project module={module!r} "
-                                    f"DRPID={drpid} ({idx}/{n_projects})"
+                                    f"Orchestrator starting project module={module!r} "
+                                    f"DRPID={drpid} ({idx}/{n_projects}) source_url={source_url!r}"
                                 )
-                            Logger.clear_current_drpid()
+                                if retry:
+                                    _prepare_retry_project(proj)
+                                module_instance.run(drpid)
+                                if retry:
+                                    _finalize_retry_project(drpid)
+                                project_finished = True
+                            except (KeyboardInterrupt, PipelineFatal):
+                                raise
+                            except ProjectAbort:
+                                project_finished = True
+                            except Exception as exc:
+                                record_error(
+                                    drpid,
+                                    f"Orchestrator module={module!r} DRPID={drpid} exception: {exc}",
+                                )
+                                project_finished = True
+                            finally:
+                                if project_finished:
+                                    _stamp_last_change(drpid)
+                                    _record_dashboard_project(
+                                        drpid, time.perf_counter() - started
+                                    )
+                                    batch.note_project_finished()
+                                    Logger.info(
+                                        f"Orchestrator finished project module={module!r} "
+                                        f"DRPID={drpid} ({idx}/{n_projects})"
+                                    )
+                                Logger.clear_current_drpid()
+                    finally:
+                        _close_module(module_instance)
                 else:
                     Logger.info(f"Orchestrator running with max_workers={max_workers}")
                     with ThreadPoolExecutor(max_workers=max_workers) as executor:

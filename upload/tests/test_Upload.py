@@ -233,6 +233,13 @@ class TestDataLumosUploader(unittest.TestCase):
             7,
             {"datalumos_id": "12345", "status": "uploaded"},
         )
+        uploader._session.close.assert_not_called()
+
+    def test_close_closes_the_shared_browser(self) -> None:
+        """The batch closes the browser once, not after every project."""
+        self.uploader._session = MagicMock()
+        self.uploader.close()
+        self.uploader._session.close.assert_called_once()
 
     @patch("upload.DataLumosUploader.Storage")
     @patch.object(DataLumosUploader, "_upload_project", return_value="12345")

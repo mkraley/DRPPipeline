@@ -423,3 +423,43 @@ class TestDataLumosFileUploader(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             uploader._wait_for_obscuring_elements(max_wait_ms=60000)
         self.assertIn("busy overlay", str(ctx.exception).lower())
+
+    def test_regular_files_drop_four_before_waiting(self) -> None:
+        """Six files are dropped as four, then the remaining two."""
+        uploader = DataLumosFileUploader(MagicMock())
+        files = [Path(f"f{index}.txt") for index in range(6)]
+        file_input = MagicMock()
+        with unittest.mock.patch.object(Path, "stat") as stat, \
+             unittest.mock.patch.object(uploader, "_wait_until_queued_count") as wait, \
+             unittest.mock.patch.object(uploader, "_announce_file_batch"):
+            stat.return_value.st_size = 100
+            uploader._drop_regular_files(file_input, files)
+        self.assertEqual(file_input.set_input_files.call_count, 6)
+        self.assertEqual(wait.call_args_list[0].kwargs["expected"], 4)
+        self.assertEqual(wait.call_args_list[0].kwargs["seen"], 0)
+        self.assertEqual(wait.call_args_list[1].kwargs["expected"], 6)
+        self.assertEqual(wait.call_args_list[1].kwargs["seen"], 4)
+
+    def test_wait_logs_each_new_queue_line(self) -> None:
+        """A jump in the queue count still logs one acceptance line per file."""
+        uploader = DataLumosFileUploader(MagicMock(), upload_wait_timeout=2000)
+        counts = iter([1, 2, 4])
+        with unittest.mock.patch.object(uploader, "_wait_for_obscuring_elements"), \
+             unittest.mock.patch.object(
+                 uploader, "_per_file_queue_signal_count", side_effect=lambda _use_zip: next(counts)
+             ), \
+             unittest.mock.patch.object(uploader._page, "wait_for_timeout"), \
+             unittest.mock.patch("upload.DataLumosFileUploader.Logger") as mock_logger:
+            uploader._wait_until_queued_count(
+                use_zip=False,
+                expected=4,
+                total_files=4,
+                seen=0,
+                log_start=False,
+            )
+        logged = [
+            call.args[1]
+            for call in mock_logger.info.call_args_list
+            if call.args and call.args[0].startswith("Upload acceptance detected for file")
+        ]
+        self.assertEqual(logged, [1, 2, 3, 4])

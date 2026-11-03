@@ -175,5 +175,54 @@ class TestDataLumosDepositClient(unittest.TestCase):
         )
 
 
+_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signaturepart"
+
+
+class TestDirectDepositCalls(unittest.TestCase):
+    """Production calls use the bearer token and do not render the workspace."""
+
+    def setUp(self) -> None:
+        """Logger is required once a deposit helper writes an info line."""
+        from utils.Logger import Logger
+
+        Logger.initialize(log_level="ERROR", log_file=False)
+
+    def test_create_uses_the_page_token_without_opening_the_workspace(self) -> None:
+        """A token already on the page is sent as a bearer header."""
+        page = MagicMock()
+        page.evaluate.return_value = _TOKEN
+        response = MagicMock()
+        response.status = 200
+        response.text.return_value = json.dumps(
+            {"id": 5, "newPath": "/datalumos/5", "action": "create"}
+        )
+        page.request.fetch.return_value = response
+        client = DataLumosDepositClient(page)
+        client.ensure_deposit_page()
+        path = client.create_project("River gauges")
+        self.assertEqual(path, "/datalumos/5")
+        page.goto.assert_not_called()
+        page.request.get.assert_not_called()
+        headers = page.request.fetch.call_args.kwargs["headers"]
+        self.assertEqual(headers["Authorization"], f"Bearer {_TOKEN}")
+        self.assertEqual(page.request.fetch.call_args.kwargs["method"], "POST")
+
+    def test_rejected_token_is_forgotten(self) -> None:
+        """A 401 drops the token so the next project does not reuse it."""
+        page = MagicMock()
+        response = MagicMock()
+        response.status = 401
+        response.text.return_value = "denied"
+        page.request.fetch.return_value = response
+        client = DataLumosDepositClient(page)
+        client._token = _TOKEN
+        client._ready = True
+        with self.assertRaises(RuntimeError) as caught:
+            client.create_project("River gauges")
+        self.assertNotIn(_TOKEN, str(caught.exception))
+        self.assertIsNone(client._token)
+        self.assertFalse(client._ready)
+
+
 if __name__ == "__main__":
     unittest.main()
