@@ -69,7 +69,7 @@ def _warn_if_num_files_mismatch(
     *,
     used_zip: bool = False,
 ) -> None:
-    """Stop this project when collected ``num_files`` does not match upload batch count.
+    """Stop this project before it is created when ``num_files`` does not match disk.
 
     Zip imports skip this check; publish later compares the full folder tree.
     Large-file projects also skip it: ``num_files`` includes catalog files that
@@ -206,10 +206,27 @@ class DataLumosUploader:
         Returns:
             The DataLumos workspace ID.
         """
+        self._reject_file_count_mismatch(project, reporter)
         if Args.upload_via_ui:
             Logger.info("Uploading via the DataLumos form")
             return self._upload_project_via_form(project, drpid, reporter)
         return self._upload_project_via_api(project, drpid, reporter)
+
+    def _reject_file_count_mismatch(
+        self,
+        project: Dict[str, Any],
+        reporter: UploadIssueReporter,
+    ) -> None:
+        """Stop before creating a project when disk files do not match ``num_files``."""
+        folder_path = get_field(project, "folder_path")
+        if not folder_path:
+            return
+        from upload.DataLumosFileUploader import folder_upload_plan
+
+        batches, used_zip = folder_upload_plan(folder_path)
+        _warn_if_num_files_mismatch(
+            reporter, project, batches, used_zip=used_zip
+        )
 
     def _upload_project_via_api(
         self,
@@ -272,14 +289,7 @@ class DataLumosUploader:
         file_uploader = DataLumosFileUploader(
             page, timeout=Args.upload_timeout, reporter=reporter
         )
-        used_zip = file_uploader.uses_zip_import(folder_path)
         file_uploader.upload_files(folder_path)
-        _warn_if_num_files_mismatch(
-            reporter,
-            project,
-            file_uploader.count_upload_batches(folder_path),
-            used_zip=used_zip,
-        )
 
     def _open_project_page(
         self,

@@ -109,6 +109,27 @@ JS_INJECT_FILE_INPUT = """
 """
 
 
+def folder_upload_plan(folder_path: str) -> tuple[int, bool]:
+    """
+    Return how many upload operations a folder needs, and whether that is a zip.
+
+    A folder with subfolders is one Import From Zip. Otherwise the count is the
+    regular files in the folder's top level.
+
+    Args:
+        folder_path: Project folder that would be passed to ``upload_files``.
+
+    Returns:
+        ``(operation count, uses zip)``. A missing folder is ``(0, False)``.
+    """
+    folder = Path(folder_path)
+    if not folder.exists() or not folder.is_dir():
+        return 0, False
+    if any(path.is_dir() for path in folder.iterdir()):
+        return 1, True
+    return len([path for path in folder.iterdir() if path.is_file()]), False
+
+
 def any_file_in_subfolder(project_folder: Path, files: List[Path]) -> bool:
     """Return True when any file is not a direct child of ``project_folder``."""
     root = project_folder.resolve()
@@ -327,10 +348,26 @@ class DataLumosFileUploader:
                 self._drop_zip(file_input, paths)
             else:
                 self._drop_regular_files(file_input, paths)
+            self._confirm_visible_queue_count(1 if use_zip else len(paths), use_zip)
         except Exception as e:
             self._remove_injected_input()
             raise RuntimeError(f"Error uploading '{paths[0].name if paths else '?'}': {e}") from e
         self._remove_injected_input()
+
+    def _confirm_visible_queue_count(self, expected: int, use_zip: bool) -> None:
+        """Raise when the open modal does not still show one completion line per file."""
+        if expected <= 0:
+            return
+        visible = self._per_file_queue_signal_count(use_zip)
+        if visible == expected:
+            Logger.info("Upload queue shows %s of %s file(s)", visible, expected)
+            return
+        if expected == 1 and not use_zip and self._has_batch_upload_status(use_zip):
+            Logger.info("Upload queue shows the batch processing message for 1 file")
+            return
+        raise RuntimeError(
+            f"Upload queue shows {visible} file(s) after sending {expected}."
+        )
 
     def _drop_zip(self, file_input: Any, paths: List[Path]) -> None:
         """Upload one zip and wait for its extraction line."""
@@ -439,12 +476,8 @@ class DataLumosFileUploader:
         Returns 1 when using Import From Zip (subfolders present), otherwise the count
         of regular files in the folder's top level (same scope as ``folder_extensions_and_size``).
         """
-        folder = Path(folder_path)
-        if not folder.exists() or not folder.is_dir():
-            return 0
-        if self._folder_has_subfolders(folder_path):
-            return 1
-        return len(self.get_file_paths(folder_path))
+        count, _used_zip = folder_upload_plan(folder_path)
+        return count
 
     def get_file_paths(self, folder_path: str) -> List[Path]:
         """

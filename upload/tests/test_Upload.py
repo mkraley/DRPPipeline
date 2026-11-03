@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from storage import Storage
 from utils.Args import Args
+from utils.Errors import ProjectAbort
 from utils.Logger import Logger
 
 from upload.DataLumosUploader import (
@@ -329,6 +330,22 @@ class TestDataLumosUploader(unittest.TestCase):
         open_page.assert_called_once()
         self.assertEqual(open_page.call_args.args[1], "42")
         file_cls.return_value.upload_files.assert_called_once_with(str(self.temp_dir))
+
+    def test_file_count_mismatch_stops_before_create(self) -> None:
+        """A disk count that differs from num_files does not create a project."""
+        (self.temp_dir / "only.txt").write_text("x", encoding="utf-8")
+        project = {
+            "title": "River gauges",
+            "summary": "A set.",
+            "folder_path": str(self.temp_dir),
+            "num_files": 3,
+        }
+        self.uploader._session = MagicMock()
+        with patch("upload.DepositProjectUpload.DepositProjectUpload") as deposit_cls:
+            with self.assertRaises(ProjectAbort):
+                self.uploader._upload_project(project, 1, UploadIssueReporter(1))
+        deposit_cls.assert_not_called()
+        self.uploader._session.ensure_browser.assert_not_called()
 
 
 class TestDataLumosUploaderValidation(unittest.TestCase):

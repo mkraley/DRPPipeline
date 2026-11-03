@@ -17,6 +17,7 @@ from upload.DataLumosFileUploader import (
     LARGE_UPLOAD_QUEUE_TIMEOUT_MS,
     DataLumosFileUploader,
     any_file_in_subfolder,
+    folder_upload_plan,
     queue_wait_timeout_ms,
     zip_files_with_relative_paths,
 )
@@ -463,3 +464,24 @@ class TestDataLumosFileUploader(unittest.TestCase):
             if call.args and call.args[0].startswith("Upload acceptance detected for file")
         ]
         self.assertEqual(logged, [1, 2, 3, 4])
+
+    def test_folder_upload_plan_counts_top_level_files(self) -> None:
+        """A flat folder reports one operation per file and is not a zip."""
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "a.txt").write_text("a", encoding="utf-8")
+            (Path(tmp) / "b.txt").write_text("b", encoding="utf-8")
+            self.assertEqual(folder_upload_plan(tmp), (2, False))
+
+    def test_confirm_visible_queue_count_requires_every_file(self) -> None:
+        """The queue check fails when fewer completion lines remain than files sent."""
+        uploader = DataLumosFileUploader(MagicMock())
+        with unittest.mock.patch.object(uploader, "_per_file_queue_signal_count", return_value=3):
+            with self.assertRaises(RuntimeError) as ctx:
+                uploader._confirm_visible_queue_count(4, use_zip=False)
+        self.assertIn("shows 3", str(ctx.exception))
+
+    def test_confirm_visible_queue_count_accepts_a_full_queue(self) -> None:
+        """Four visible completion lines satisfy a four-file upload."""
+        uploader = DataLumosFileUploader(MagicMock())
+        with unittest.mock.patch.object(uploader, "_per_file_queue_signal_count", return_value=4):
+            uploader._confirm_visible_queue_count(4, use_zip=False)
