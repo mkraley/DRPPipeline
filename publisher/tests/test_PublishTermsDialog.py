@@ -252,10 +252,10 @@ class TestPublisherRetryReset(unittest.TestCase):
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_reset_navigates_to_project_url(self) -> None:
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    def test_reset_navigates_to_project_url(self, _mock_wait: MagicMock) -> None:
         """Retry reset returns to the workspace project URL."""
         page = MagicMock()
-        self.publisher._wait_for_busy = MagicMock()  # type: ignore[method-assign]
         self.publisher._reset_to_project_workspace(page, "252928")
         page.goto.assert_called_once()
         url = page.goto.call_args.args[0]

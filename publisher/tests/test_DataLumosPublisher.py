@@ -503,7 +503,51 @@ class TestDataLumosPublisher(unittest.TestCase):
             page,
             "https://www.datalumos.org/datalumos/workspace?goToPath=/datalumos/1#",
         )
-        page.wait_for_load_state.assert_called_once()
+        page.wait_for_function.assert_not_called()
+
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    def test_load_project_page_waits_for_publish_controls(
+        self, _mock_wait: MagicMock
+    ) -> None:
+        """A successful navigation waits for Storage Status, not network idle."""
+        page = MagicMock()
+        type(page).url = PropertyMock(
+            return_value="https://www.datalumos.org/datalumos/workspace?goToPath=/datalumos/9#"
+        )
+        self.publisher._load_project_page(
+            page,
+            "https://www.datalumos.org/datalumos/workspace?goToPath=/datalumos/9#",
+        )
+        page.wait_for_load_state.assert_not_called()
+        page.wait_for_function.assert_called_once()
+        self.assertEqual(page.wait_for_function.call_args.kwargs["arg"], "9")
+
+    def test_open_project_skips_reload_when_controls_are_visible(self) -> None:
+        """A project that already shows publish controls is not opened again."""
+        page = MagicMock()
+        page.evaluate.return_value = True
+        self.publisher._open_project_workspace(page, "239181")
+        page.goto.assert_not_called()
+
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    def test_run_keeps_the_browser_for_the_next_project(
+        self, _mock_wait: MagicMock
+    ) -> None:
+        """One publish does not close the browser used by the rest of the batch."""
+        drpid = Storage.create_record("https://example.com/test")
+        Storage.update_record(drpid, {"datalumos_id": "239181", "status": "uploaded"})
+        self.publisher._session.ensure_browser = MagicMock(return_value=MagicMock())
+        self.publisher._session.ensure_authenticated = MagicMock()
+        self.publisher._session.close = MagicMock()
+        self._pre_publish_gate_mock.return_value = "Aborting publish: mismatch"
+        self.publisher.run(drpid)
+        self.publisher._session.close.assert_not_called()
+
+    def test_close_closes_the_shared_browser(self) -> None:
+        """The batch closer shuts the browser the publisher kept open."""
+        self.publisher._session.close = MagicMock()
+        self.publisher.close()
+        self.publisher._session.close.assert_called_once()
 
     @patch.object(
         DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None

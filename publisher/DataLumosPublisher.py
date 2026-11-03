@@ -6,6 +6,7 @@ Coordinates browser lifecycle, authentication, and the publish workflow.
 Publish flow derived from chiara_upload.py (Selenium) → Playwright.
 """
 
+import re
 from typing import Any, Callable, Dict, List, Optional
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright, TimeoutError as PlaywrightTimeoutError
@@ -60,6 +61,37 @@ _UPLOAD_READINESS_JS = """
   };
 }
 """ % {"file_not_available": FILE_NOT_AVAILABLE_TEXT}
+
+# True when this project page shows Storage Status and a publish button.
+_PROJECT_READY_JS = """
+(workspaceId) => {
+  const url = window.location.href || "";
+  const onProject = url.indexOf("/datalumos/" + workspaceId) !== -1
+    && url.indexOf("reviewPublish") === -1;
+  if (!onProject) return false;
+  const rows = Array.from(document.querySelectorAll("div.row"));
+  let hasStorage = false;
+  for (const row of rows) {
+    const strong = row.querySelector("strong");
+    const label = strong ? (strong.innerText || "").trim() : "";
+    if (label.indexOf("Space") === 0 || label.indexOf("File/Folder") === 0) {
+      hasStorage = true;
+    }
+  }
+  const buttons = Array.from(document.querySelectorAll("button.btn-primary"));
+  const hasPublish = buttons.some((button) => {
+    const text = (button.innerText || "").toLowerCase();
+    return text.indexOf("publish project") !== -1;
+  });
+  return hasStorage && hasPublish;
+}
+"""
+
+
+def _workspace_id_from_project_url(project_url: str) -> str:
+    """Return the numeric DataLumos id embedded in a workspace URL."""
+    match = re.search(r"/datalumos/(\d+)", project_url)
+    return match.group(1) if match else ""
 
 
 def incomplete_upload_reason(result: object) -> Optional[str]:
@@ -195,8 +227,6 @@ class DataLumosPublisher:
         except Exception as e:
             record_error(drpid, f"Publish failed: {e}")
             raise
-        finally:
-            self._session.close()
 
         if not publish_ok:
             return
@@ -215,6 +245,10 @@ class DataLumosPublisher:
             )
 
         self._finalize_after_publish(drpid)
+
+    def close(self) -> None:
+        """Close the browser kept open across the projects in this batch."""
+        self._session.close()
 
     def _nominate_gwda(self, page: Page, source_url: str) -> Optional[str]:
         """
@@ -246,22 +280,28 @@ class DataLumosPublisher:
         Raises:
             RuntimeError: When the workspace still lands on the login-error page.
         """
+        if self._project_already_open(page, workspace_id):
+            Logger.info(
+                "DataLumos project %s is already open; not reloading the workspace",
+                workspace_id,
+            )
+            return
         project_url = self._project_url(workspace_id)
-        self._load_project_page(page, project_url)
-        if datalumos_session_error(page) is None:
+        if not self._load_project_page(page, project_url):
             return
         Logger.warning(
             "DataLumos rejected the session after login; signing in again"
         )
         self._session.reauthenticate()
-        self._load_project_page(page, project_url)
+        if not self._load_project_page(page, project_url):
+            return
         error = datalumos_session_error(page)
         if error:
             raise RuntimeError(error)
 
-    def _load_project_page(self, page: Page, project_url: str) -> None:
+    def _load_project_page(self, page: Page, project_url: str) -> bool:
         """
-        Navigate to a workspace URL and wait for human verification.
+        Navigate to a workspace URL and wait until its publish controls appear.
 
         A redirect to the login-error page can abort ``goto`` with
         ``net::ERR_ABORTED``. That abort is kept only when the resulting page
@@ -270,11 +310,21 @@ class DataLumosPublisher:
         Args:
             page: Playwright page.
             project_url: Workspace URL for one DataLumos project.
+
+        Returns:
+            True when the page is a login error and publish controls were not
+            waited for.
         """
         aborted = self._goto_workspace(page, project_url)
-        self._wait_for_workspace_settle(page)
-        if aborted is not None and datalumos_session_error(page) is None:
+        from upload.DataLumosAuthenticator import wait_for_human_verification
+
+        wait_for_human_verification(page, timeout=60000)
+        if datalumos_session_error(page) is not None:
+            return True
+        if aborted is not None:
             raise aborted
+        self._wait_for_project_chrome(page, project_url)
+        return False
 
     def _goto_workspace(self, page: Page, project_url: str) -> Optional[Exception]:
         """
@@ -293,17 +343,19 @@ class DataLumosPublisher:
             return exc
         return None
 
-    def _wait_for_workspace_settle(self, page: Page) -> None:
-        """Wait for network idle and any human-verification interstitial."""
+    def _project_already_open(self, page: Page, workspace_id: str) -> bool:
+        """Return True when this project page is already showing publish controls."""
         try:
-            page.wait_for_load_state("networkidle", timeout=120000)
-        except Exception as exc:
-            if "ERR_ABORTED" not in str(exc):
-                raise
-            Logger.warning("Workspace network-idle wait was aborted: %s", exc)
-        from upload.DataLumosAuthenticator import wait_for_human_verification
+            ready = page.evaluate(_PROJECT_READY_JS, workspace_id)
+        except Exception:
+            return False
+        return ready is True
 
-        wait_for_human_verification(page, timeout=60000)
+    def _wait_for_project_chrome(self, page: Page, project_url: str) -> None:
+        """Wait until Storage Status and a publish button are on this project."""
+        workspace_id = _workspace_id_from_project_url(project_url)
+        Logger.info("Waiting for DataLumos project %s to show publish controls", workspace_id)
+        page.wait_for_function(_PROJECT_READY_JS, arg=workspace_id, timeout=120000)
 
     def _pre_publish_abort_label(self) -> str:
         """
@@ -627,9 +679,14 @@ class DataLumosPublisher:
         if not workspace_id:
             page.wait_for_timeout(5000)
             return
-        page.goto(self._project_url(workspace_id), wait_until="domcontentloaded")
-        page.wait_for_load_state("networkidle", timeout=120000)
-        self._wait_for_busy(page)
+        project_url = self._project_url(workspace_id)
+        if self._project_already_open(page, workspace_id):
+            Logger.info(
+                "DataLumos project %s is already open; not reloading the workspace",
+                workspace_id,
+            )
+            return
+        self._load_project_page(page, project_url)
 
     def _click_publish_entry_button(self, page: Page) -> None:
         """
