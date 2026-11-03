@@ -342,7 +342,7 @@ class UsfsPageDownloader:
             pdf_path = _unique_pdf_path(dest_dir / filename)
             return self._write_page_pdf(page, pdf_path, spa_ready=spa_ready)
         except Exception as exc:
-            Logger.error("Failed to render titled PDF from %s: %s", url, exc)
+            Logger.warning("Failed to render titled PDF from %s: %s", url, exc)
             return None
         finally:
             with suppress(Exception):

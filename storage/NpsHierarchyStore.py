@@ -43,6 +43,23 @@ CREATE INDEX IF NOT EXISTS idx_nps_products_drpid ON nps_products(drpid);
 """
 
 
+def source_uses_nps_hierarchy() -> bool:
+    """
+    Return True when this run should use ``nps_projects`` and ``nps_products``.
+
+    A named source other than NPS does not get those tables. An unset source
+    still does, so NPS unit tests can open the store without a source name.
+    """
+    from utils.Args import Args
+
+    if not getattr(Args, "_initialized", False):
+        return True
+    source = str(Args._config.get("source") or "").strip().casefold()
+    if not source:
+        return True
+    return source == "nps"
+
+
 class NpsHierarchyStore:
     """Read and write NPS hierarchy rows on a Storage SQLite connection."""
 
@@ -75,11 +92,13 @@ class NpsHierarchyStore:
     @staticmethod
     def ensure_schema(connection: sqlite3.Connection) -> None:
         """
-        Create NPS hierarchy tables and indexes when missing.
+        Create NPS hierarchy tables and indexes when this source is NPS.
 
         Args:
             connection: Open SQLite connection.
         """
+        if not source_uses_nps_hierarchy():
+            return
         connection.executescript(_SCHEMA_SQL)
         connection.commit()
 

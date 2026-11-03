@@ -48,6 +48,21 @@ class TestNpsHierarchyStore(unittest.TestCase):
         names = [row[0] for row in cursor.fetchall()]
         self.assertEqual(names, ["nps_products", "nps_projects"])
 
+    def test_other_sources_do_not_create_nps_tables(self) -> None:
+        """EPA and other named sources leave nps_projects and nps_products uncreated."""
+        connection = self.storage.sqlite_connection()
+        connection.executescript(
+            "DROP TABLE IF EXISTS nps_products; DROP TABLE IF EXISTS nps_projects;"
+        )
+        connection.commit()
+        Args._config["source"] = "epa"
+        NpsHierarchyStore.from_storage()
+        cursor = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name IN ('nps_projects', 'nps_products')"
+        )
+        self.assertEqual(cursor.fetchall(), [])
+
     def test_upsert_and_replace_products(self) -> None:
         """Project upsert and product replace persist expected columns."""
         drpid = self.storage.create_record(

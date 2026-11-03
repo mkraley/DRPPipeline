@@ -131,6 +131,10 @@ def workspace_storage_mismatches(page: Page, project: dict[str, Any]) -> list[st
 
 def nps_product_folder_count(drpid: int) -> int:
     """Return how many NPS product folders belong to ``drpid``."""
+    from storage.NpsHierarchyStore import source_uses_nps_hierarchy
+
+    if not source_uses_nps_hierarchy():
+        return 0
     try:
         from storage.NpsHierarchyStore import NpsHierarchyStore
 

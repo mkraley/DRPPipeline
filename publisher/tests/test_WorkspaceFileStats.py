@@ -7,9 +7,11 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from publisher.WorkspaceFileStats import (
     _open_workspace_folder,
+    nps_product_folder_count,
     workspace_file_stats_from_page,
     workspace_storage_mismatches,
 )
+from utils.Args import Args
 from utils.Logger import Logger
 
 
@@ -205,6 +207,14 @@ class TestWorkspaceFileStats(unittest.TestCase):
         _open_workspace_folder(page, "Analyzing_Population_Trends")
         self.assertEqual(cell.click.call_count, 2)
         busy.first.wait_for.assert_called()
+
+    def test_product_folder_count_skips_store_for_other_sources(self) -> None:
+        """A non-NPS source does not open the hierarchy store."""
+        Args._initialized = True
+        Args._config["source"] = "epa"
+        with patch("storage.NpsHierarchyStore.NpsHierarchyStore.from_storage") as store:
+            self.assertEqual(nps_product_folder_count(4), 0)
+        store.assert_not_called()
 
     @patch("publisher.WorkspaceFileStats.nps_product_folder_count", return_value=1)
     def test_storage_status_counts_files_plus_product_folders(

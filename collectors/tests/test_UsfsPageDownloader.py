@@ -7,6 +7,7 @@ from unittest.mock import ANY, MagicMock, patch
 
 from collectors.ContentLengthProbe import ContentLengthProbe
 from collectors.UsfsPageDownloader import UsfsPageDownloader
+from utils.Logger import Logger
 
 
 class TestUsfsPageDownloader(unittest.TestCase):
@@ -289,6 +290,27 @@ class TestUsfsPageDownloader(unittest.TestCase):
         self.assertIsNotNone(dest)
         assert dest is not None
         self.assertEqual(dest.name, "Background_Information_for_Popular_Names.pdf")
+
+    @patch.object(UsfsPageDownloader, "_ensure_browser", return_value=True)
+    def test_url_to_titled_pdf_warns_when_render_fails(
+        self, _mock_ensure: MagicMock
+    ) -> None:
+        """A failed print is a warning because callers can save the HTML instead."""
+        Logger.initialize(log_level="WARNING")
+        downloader = UsfsPageDownloader()
+        downloader._session.new_page = MagicMock(return_value=MagicMock())
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            downloader,
+            "_prepare_page_for_pdf",
+            side_effect=Exception("Page.goto: Download is starting"),
+        ), patch("collectors.UsfsPageDownloader.Logger") as mock_logger:
+            dest = downloader.url_to_titled_pdf(
+                "https://pasteur.epa.gov/uploads/10.23719/1531881/DATA_README.html",
+                Path(tmp),
+            )
+        self.assertIsNone(dest)
+        mock_logger.warning.assert_called_once()
+        mock_logger.error.assert_not_called()
 
     @patch("collectors.UsfsPageDownloader.unclip_overflow_for_pdf")
     @patch("collectors.UsfsPageDownloader.expand_read_more_and_load_more")
