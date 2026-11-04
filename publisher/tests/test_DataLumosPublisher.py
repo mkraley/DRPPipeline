@@ -521,33 +521,23 @@ class TestDataLumosPublisher(unittest.TestCase):
         page.wait_for_load_state.assert_not_called()
         page.wait_for_function.assert_called_once()
         self.assertEqual(page.wait_for_function.call_args.kwargs["arg"], "9")
+        self.assertEqual(page.wait_for_function.call_args.kwargs["timeout"], 300000)
 
-    @patch("publisher.DataLumosPublisher.WorkspaceListOpener")
-    def test_wait_opens_the_project_from_the_list_when_controls_do_not_appear(
-        self, opener_cls: MagicMock
-    ) -> None:
-        """A page that stays on the project list is opened from that list."""
+    def test_wait_for_project_page_does_not_search_the_workspace_list(self) -> None:
+        """A slow project page is a timeout on the goToPath URL, not a list search."""
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
         page = MagicMock()
-        page.url = "https://www.datalumos.org/datalumos/workspace?goToPath=/datalumos/9#"
-        page.wait_for_function.side_effect = [
-            PlaywrightTimeoutError("probe"),
-            None,
-        ]
-        opener_cls.return_value.open_if_list_showing.return_value = True
-        self.publisher._wait_for_project_chrome(
-            page,
-            "https://www.datalumos.org/datalumos/workspace?goToPath=/datalumos/9#",
+        page.url = (
+            "https://www.datalumos.org/datalumos/workspace"
+            "?goToLevel=project&goToPath=/datalumos/9#"
         )
-        opener_cls.return_value.open_if_list_showing.assert_called_once_with(page, "9")
-        self.assertEqual(page.wait_for_function.call_count, 2)
-        self.assertEqual(
-            page.wait_for_function.call_args_list[0].kwargs["timeout"], 20000
-        )
-        self.assertEqual(
-            page.wait_for_function.call_args_list[1].kwargs["timeout"], 120000
-        )
+        page.wait_for_function.side_effect = PlaywrightTimeoutError("still workspace")
+        with self.assertRaises(RuntimeError) as caught:
+            self.publisher._wait_for_project_chrome(page, page.url)
+        self.assertIn("url=" + page.url, str(caught.exception))
+        self.assertEqual(page.wait_for_function.call_args.kwargs["timeout"], 300000)
+        page.locator.assert_not_called()
 
     def test_open_project_skips_reload_when_controls_are_visible(self) -> None:
         """A project that already shows publish controls is not opened again."""
