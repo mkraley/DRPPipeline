@@ -26,6 +26,7 @@ from publisher.GWDANominator import GWDANominator
 from publisher.PublishTermsDialog import PublishTermsDialog
 from publisher.sheet_only_status import resolve_sheet_only_config
 from publisher.WorkspaceFileStats import workspace_storage_mismatches
+from publisher.WorkspaceListOpener import WorkspaceListOpener
 
 
 # Published / Download Location URL template (``version`` is V1 on first publish, V2 on republish)
@@ -61,6 +62,10 @@ _UPLOAD_READINESS_JS = """
   };
 }
 """ % {"file_not_available": FILE_NOT_AVAILABLE_TEXT}
+
+# Give a direct project URL this long before treating the page as the list.
+_PROJECT_CONTROLS_PROBE_MS = 20000
+_PROJECT_CONTROLS_TIMEOUT_MS = 120000
 
 # True when this project page shows Storage Status and a publish button.
 _PROJECT_READY_JS = """
@@ -355,7 +360,25 @@ class DataLumosPublisher:
         """Wait until Storage Status and a publish button are on this project."""
         workspace_id = _workspace_id_from_project_url(project_url)
         Logger.info("Waiting for DataLumos project %s to show publish controls", workspace_id)
-        page.wait_for_function(_PROJECT_READY_JS, arg=workspace_id, timeout=120000)
+        if self._publish_controls_ready(page, workspace_id, _PROJECT_CONTROLS_PROBE_MS):
+            return
+        WorkspaceListOpener().open_if_list_showing(page, workspace_id)
+        if self._publish_controls_ready(page, workspace_id, _PROJECT_CONTROLS_TIMEOUT_MS):
+            return
+        raise RuntimeError(
+            f"DataLumos project {workspace_id} did not show publish controls "
+            f"(url={page.url})"
+        )
+
+    def _publish_controls_ready(self, page: Page, workspace_id: str, timeout_ms: int) -> bool:
+        """Return True when this project shows Storage Status and Publish Project."""
+        try:
+            page.wait_for_function(
+                _PROJECT_READY_JS, arg=workspace_id, timeout=timeout_ms
+            )
+        except PlaywrightTimeoutError:
+            return False
+        return True
 
     def _pre_publish_abort_label(self) -> str:
         """
