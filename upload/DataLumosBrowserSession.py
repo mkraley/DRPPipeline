@@ -6,6 +6,7 @@ using Args for config.
 """
 
 import atexit
+import random
 import sys
 import time
 from pathlib import Path
@@ -25,6 +26,10 @@ if TYPE_CHECKING:
 
 # Keycloak sessions outlive a project. Sign in again on this cadence.
 LOGIN_MAX_AGE_SECONDS = 30 * 60
+# A failed sign-in is retried on the same project before that project is failed.
+LOGIN_MAX_ATTEMPTS = 3
+LOGIN_RETRY_MIN_SECONDS = 10
+LOGIN_RETRY_MAX_SECONDS = 60
 
 
 class DataLumosBrowserSession:
@@ -113,23 +118,74 @@ class DataLumosBrowserSession:
         if _login_expired(self._authenticated_at):
             Logger.info("DataLumos login is older than 30 minutes; signing in again")
             self._authenticated = False
+        self._require_credentials()
+        self._sign_in_with_retries(reporter)
 
+    def _require_credentials(self) -> None:
+        """Raise when the DataLumos username or password is missing."""
+        if Args.datalumos_username and Args.datalumos_password:
+            return
+        raise RuntimeError(
+            "DataLumos credentials not configured. "
+            "Set datalumos_username and datalumos_password in config."
+        )
+
+    def _sign_in_with_retries(self, reporter: Optional["UploadIssueReporter"]) -> None:
+        """Sign in, pausing and retrying this project after a transient failure."""
+        last_error: Exception | None = None
+        for attempt in range(1, LOGIN_MAX_ATTEMPTS + 1):
+            try:
+                self._authenticate_once(reporter)
+            except RuntimeError as exc:
+                last_error = exc
+                self._pause_before_login_retry(attempt, exc)
+                continue
+            self._note_login_success(attempt)
+            return
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("DataLumos sign-in failed")
+
+    def _authenticate_once(self, reporter: Optional["UploadIssueReporter"]) -> None:
+        """Run one sign-in against the current page."""
         from upload.DataLumosAuthenticator import DataLumosAuthenticator
 
         page = self.ensure_browser()
-        authenticator = DataLumosAuthenticator(
+        DataLumosAuthenticator(
             page, timeout=Args.upload_timeout, reporter=reporter
-        )
+        ).authenticate(Args.datalumos_username, Args.datalumos_password)
 
-        if not Args.datalumos_username or not Args.datalumos_password:
-            raise RuntimeError(
-                "DataLumos credentials not configured. "
-                "Set datalumos_username and datalumos_password in config."
+    def _pause_before_login_retry(self, attempt: int, exc: BaseException) -> None:
+        """Log a failed sign-in and wait before another try on this project."""
+        if attempt >= LOGIN_MAX_ATTEMPTS:
+            Logger.error(
+                "DataLumos sign-in failed %s times on this project: %s",
+                LOGIN_MAX_ATTEMPTS,
+                exc,
             )
+            return
+        delay = random.randint(LOGIN_RETRY_MIN_SECONDS, LOGIN_RETRY_MAX_SECONDS)
+        Logger.warning(
+            "DataLumos sign-in attempt %s of %s failed (%s); "
+            "retrying this project in %s seconds",
+            attempt,
+            LOGIN_MAX_ATTEMPTS,
+            exc,
+            delay,
+        )
+        time.sleep(delay)
 
-        authenticator.authenticate(Args.datalumos_username, Args.datalumos_password)
+    def _note_login_success(self, attempt: int) -> None:
+        """Record a successful sign-in and say when it took more than one try."""
         self._authenticated = True
         self._authenticated_at = time.monotonic()
+        if attempt == 1:
+            return
+        Logger.info(
+            "DataLumos sign-in succeeded on attempt %s of %s",
+            attempt,
+            LOGIN_MAX_ATTEMPTS,
+        )
 
     def reauthenticate(self, reporter: Optional["UploadIssueReporter"] = None) -> None:
         """

@@ -124,6 +124,50 @@ class TestDataLumosBrowserSession(unittest.TestCase):
         auth_cls.return_value.authenticate.assert_called_once()
         self.assertTrue(session._authenticated)
 
+    def test_failed_sign_in_retries_the_same_project(self) -> None:
+        """One failed sign-in waits and tries again before the project continues."""
+        session = self._session_with_credentials()
+        auth = MagicMock()
+        auth.authenticate.side_effect = [
+            RuntimeError("Could not find 'Sign in with Email' button"),
+            None,
+        ]
+        with patch(
+            "upload.DataLumosAuthenticator.DataLumosAuthenticator", return_value=auth
+        ), patch("upload.DataLumosBrowserSession.time.sleep") as sleep, patch(
+            "upload.DataLumosBrowserSession.random.randint", return_value=15
+        ):
+            session.ensure_authenticated()
+        self.assertEqual(auth.authenticate.call_count, 2)
+        sleep.assert_called_once_with(15)
+        self.assertTrue(session._authenticated)
+
+    def test_sign_in_fails_the_project_after_three_attempts(self) -> None:
+        """Three failed sign-ins stop this project and do not mark it logged in."""
+        session = self._session_with_credentials()
+        auth = MagicMock()
+        auth.authenticate.side_effect = RuntimeError(
+            "Could not find 'Sign in with Email' button"
+        )
+        with patch(
+            "upload.DataLumosAuthenticator.DataLumosAuthenticator", return_value=auth
+        ), patch("upload.DataLumosBrowserSession.time.sleep") as sleep, patch(
+            "upload.DataLumosBrowserSession.random.randint", return_value=20
+        ):
+            with self.assertRaises(RuntimeError):
+                session.ensure_authenticated()
+        self.assertEqual(auth.authenticate.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertFalse(session._authenticated)
+
+    def _session_with_credentials(self) -> DataLumosBrowserSession:
+        """Return a session whose page is open and whose login is configured."""
+        session = DataLumosBrowserSession()
+        session._page = MagicMock()
+        Args._config["datalumos_username"] = "user@example.com"
+        Args._config["datalumos_password"] = "secret"
+        return session
+
     def _browser_session(self) -> tuple:
         """Return a session whose Playwright objects are mocks."""
         page = MagicMock()

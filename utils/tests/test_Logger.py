@@ -3,6 +3,7 @@ Unit tests for Logger module.
 """
 
 import logging
+import os
 import sys
 import tempfile
 import unittest
@@ -10,7 +11,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from utils.Logger import Logger, _ColoredLevelFormatter
+from utils.Logger import Logger, _ColoredLevelFormatter, _DrpidFilter
 
 
 class TestLogger(unittest.TestCase):
@@ -162,6 +163,12 @@ class TestLogger(unittest.TestCase):
         self.assertIn("hello", result)
         self.assertTrue(hasattr(record, "colored_levelname"))
         self.assertIn("INFO", record.colored_levelname)
+
+    def test_log_record_includes_process_id(self) -> None:
+        """Each log line carries the OS process id so concurrent runs can be separated."""
+        record = logging.LogRecord("name", logging.INFO, "", 0, "hello", (), None)
+        _DrpidFilter().filter(record)
+        self.assertEqual(record.process_id, f"[P{os.getpid()}] ")
 
 
 if __name__ == "__main__":

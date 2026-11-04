@@ -23,6 +23,7 @@ Example usage:
 """
 
 import logging
+import os
 import sys
 import threading
 from pathlib import Path
@@ -86,13 +87,14 @@ class _ColoredLevelFormatter(logging.Formatter):
 
 
 class _DrpidFilter(logging.Filter):
-    """Add thread id and drpid to the log record (thread-local or record.extra)."""
+    """Add process id, thread id, and drpid to the log record."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         thread_id = getattr(record, "thread_id", None)
         if thread_id is None:
             thread_id = f"[T{_get_thread_id()}] "
         record.thread_id = thread_id
+        record.process_id = f"[P{os.getpid()}] "
         drpid = getattr(record, "drpid", None)
         if drpid is None:
             drpid = _get_current_drpid()
@@ -145,7 +147,7 @@ class Logger(metaclass=LoggerMeta):
 
         Logs to stdout and appends to files (default: drp_pipeline.log and err_warn.log in cwd).
         err_warn.log receives only WARNING, ERROR, and CRITICAL lines.
-        Format omits logger name and includes thread id (T1, T2, ...) and drpid when set via set_current_drpid().
+        Format omits logger name and includes the process id (P12345), thread id (T1, T2, ...), and drpid when set via set_current_drpid().
         When log_color is True and stdout is a TTY, the severity field is colored in the terminal only.
 
         Args:
@@ -161,7 +163,9 @@ class Logger(metaclass=LoggerMeta):
             return
 
         if log_format is None:
-            log_format = "%(asctime)s - %(levelname)s - %(thread_id)s%(drpid)s%(message)s"
+            log_format = (
+                "%(asctime)s - %(levelname)s - %(process_id)s%(thread_id)s%(drpid)s%(message)s"
+            )
 
         level = getattr(logging, log_level.upper(), logging.INFO)
         plain_formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
