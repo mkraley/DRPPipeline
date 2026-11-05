@@ -150,8 +150,28 @@ class TestDashboardServer(unittest.TestCase):
         html = body.decode("utf-8")
         self.assertIn("DRP Pipeline", html)
         self.assertIn("/api/runs", html)
+        self.assertIn("/api/throughput", html)
+        self.assertIn('id="throughput"', html)
         self.assertIn("renderTimingChart", html)
         self.assertIn("project_samples", html)
+
+    def test_api_throughput(self) -> None:
+        """ /api/throughput returns the hourly completion series."""
+        sample = {
+            "hours": ["11-05 15"],
+            "series": {
+                "upload_ok": [2],
+                "upload_fail": [1],
+                "publish_ok": [4],
+                "publish_fail": [0],
+            },
+            "source": "drp_pipeline.log",
+        }
+        with patch("dashboard.server.throughput_payload", return_value=sample):
+            status, headers, body = self._request("/api/throughput")
+        self.assertEqual(status, 200)
+        self.assertIn("application/json", headers.get("content-type", ""))
+        self.assertEqual(json.loads(body.decode("utf-8")), sample)
 
     def test_unknown_path_404(self) -> None:
         """Unknown paths return 404."""

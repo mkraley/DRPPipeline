@@ -18,11 +18,13 @@ from dashboard.cursor_terminals import (
     list_pipeline_terminals,
     merge_runs_with_terminals,
 )
+from dashboard.hourly_throughput import HourlyThroughput
 from utils.RunStatus import RunStatus
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 _DEFAULT_HOST = "127.0.0.1"
 _DEFAULT_PORT = 5055
+_throughput: HourlyThroughput | None = None
 
 
 def dashboard_runs() -> list[dict[str, Any]]:
@@ -31,6 +33,14 @@ def dashboard_runs() -> list[dict[str, Any]]:
         RunStatus.list_runs(),
         list_pipeline_terminals(),
     )
+
+
+def throughput_payload() -> dict[str, Any]:
+    """Return upload and publish completions for the last 48 wall-clock hours."""
+    global _throughput
+    if _throughput is None:
+        _throughput = HourlyThroughput(Path.cwd() / "drp_pipeline.log")
+    return _throughput.series()
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -50,6 +60,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/stats":
             self._send_json(pipeline_stats(self.config_path))
+            return
+        if path == "/api/throughput":
+            self._send_json(throughput_payload())
             return
         if path in ("/", "/index.html"):
             self._send_file(_STATIC_DIR / "index.html", "text/html; charset=utf-8")
