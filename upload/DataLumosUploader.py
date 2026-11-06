@@ -108,7 +108,8 @@ class DataLumosUploader:
     ``--ui-upload`` selects the browser form.
 
     Not eligible: ``collected - external archive``, ``collected - file pending``,
-    or other collected variants.
+    or other collected variants. Files are posted to the deposit API. ``--ui-upload``
+    still fills the form and uses the project-page file modal.
 
     Prerequisites: status in (``collected``, ``collected - large file``) and no errors
     Success status: ``uploaded``, or ``uploaded - large file`` when the large-file
@@ -200,8 +201,8 @@ class DataLumosUploader:
         """
         Upload a project to DataLumos.
 
-        The deposit API creates the project and posts metadata. ``--ui-upload``
-        keeps the browser form. Files still upload from the project page.
+        The deposit API creates the project, posts metadata, and uploads files.
+        ``--ui-upload`` keeps the browser form and the project-page file modal.
 
         Returns:
             The DataLumos workspace ID.
@@ -279,12 +280,13 @@ class DataLumosUploader:
         reporter: UploadIssueReporter,
         workspace_id: Optional[str] = None,
     ) -> None:
-        """Upload the project folder from the open project page."""
+        """Upload the project folder. The API path does not open the project page."""
         folder_path = get_field(project, "folder_path")
         if not folder_path:
             return
         if workspace_id:
-            self._open_project_page(page, workspace_id, reporter)
+            self._upload_folder_via_api(page, workspace_id, folder_path)
+            return
         from upload.DataLumosFileUploader import DataLumosFileUploader
 
         file_uploader = DataLumosFileUploader(
@@ -292,31 +294,13 @@ class DataLumosUploader:
         )
         file_uploader.upload_files(folder_path)
 
-    def _open_project_page(
-        self,
-        page: Any,
-        workspace_id: str,
-        reporter: UploadIssueReporter,
-    ) -> None:
-        """Open the project workspace until the Upload button is visible.
+    def _upload_folder_via_api(self, page: Any, workspace_id: str, folder_path: str) -> None:
+        """POST the folder through the same deposit calls the Upload button makes."""
+        from upload.DepositFileUpload import DepositFileUpload
 
-        The file modal needs this page. Waiting for the network to go idle
-        holds the project for minutes after the button is already there.
-        """
-        from upload.DataLumosAuthenticator import wait_for_human_verification
-        from upload.DataLumosFileUploader import UPLOAD_BTN_SELECTOR
-
-        Logger.info(f"Opening DataLumos project {workspace_id} for file upload")
-        page.goto(
-            self._project_url(workspace_id),
-            wait_until="domcontentloaded",
-            timeout=Args.upload_timeout,
-        )
-        wait_for_human_verification(page, timeout=60000, reporter=reporter)
-        page.locator(UPLOAD_BTN_SELECTOR).first.wait_for(
-            state="visible",
-            timeout=Args.upload_timeout,
-        )
+        upload = DepositFileUpload(page, self._session.deposit_token)
+        upload.upload_folder(workspace_id, folder_path)
+        self._session.keep_deposit_token(upload.token)
 
     def _extract_workspace_id(self, url: str) -> Optional[str]:
         """Extract workspace ID from DataLumos URL."""

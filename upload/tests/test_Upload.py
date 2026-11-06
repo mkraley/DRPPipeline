@@ -13,7 +13,6 @@ from utils.Args import Args
 from utils.Errors import ProjectAbort
 from utils.Logger import Logger
 
-from upload.DataLumosFileUploader import UPLOAD_BTN_SELECTOR
 from upload.DataLumosUploader import (
     DataLumosUploader,
     _agency_values_for_upload,
@@ -310,27 +309,24 @@ class TestDataLumosUploader(unittest.TestCase):
         form_upload.assert_called_once()
         api_upload.assert_not_called()
 
-    def test_api_upload_opens_the_project_before_files(self) -> None:
-        """Files still need the project page after the deposit API creates it."""
+    def test_api_upload_posts_files_without_opening_the_project(self) -> None:
+        """Files go out as deposit posts. The project page is not opened."""
         project = {
             "title": "River gauges",
             "summary": "A set.",
             "folder_path": str(self.temp_dir),
         }
         self.uploader._session = MagicMock()
+        self.uploader._session.deposit_token = "jwt-saved"
+        page = self.uploader._session.ensure_browser.return_value
         with patch("upload.DepositProjectUpload.DepositProjectUpload") as deposit_cls:
             deposit_cls.return_value.create.return_value = "42"
             with patch("upload.DataLumosUploader.Storage.update_record"):
-                with patch.object(self.uploader, "_open_project_page") as open_page:
-                    with patch(
-                        "upload.DataLumosFileUploader.DataLumosFileUploader"
-                    ) as file_cls:
-                        file_cls.return_value.uses_zip_import.return_value = False
-                        file_cls.return_value.count_upload_batches.return_value = 0
-                        self.uploader._upload_project(project, 1, UploadIssueReporter(1))
-        open_page.assert_called_once()
-        self.assertEqual(open_page.call_args.args[1], "42")
-        file_cls.return_value.upload_files.assert_called_once_with(str(self.temp_dir))
+                with patch("upload.DepositFileUpload.DepositFileUpload") as file_cls:
+                    self.uploader._upload_project(project, 1, UploadIssueReporter(1))
+        page.goto.assert_not_called()
+        file_cls.assert_called_once_with(page, "jwt-saved")
+        file_cls.return_value.upload_folder.assert_called_once_with("42", str(self.temp_dir))
 
     def test_later_project_reuses_the_saved_deposit_token(self) -> None:
         """The second project sends the token saved from the first."""
@@ -349,19 +345,6 @@ class TestDataLumosUploader(unittest.TestCase):
         )
         self.uploader._session.keep_deposit_token.assert_called_once_with(
             "jwt-from-first-project"
-        )
-
-    def test_project_page_waits_for_the_upload_button(self) -> None:
-        """The project page is ready when Upload is visible, not when the network idles."""
-        page = MagicMock()
-        with patch("upload.DataLumosAuthenticator.wait_for_human_verification"):
-            self.uploader._open_project_page(page, "261479", UploadIssueReporter(1))
-        self.assertEqual(page.goto.call_args.kwargs["wait_until"], "domcontentloaded")
-        page.wait_for_load_state.assert_not_called()
-        page.locator.assert_called_with(UPLOAD_BTN_SELECTOR)
-        page.locator.return_value.first.wait_for.assert_called_once_with(
-            state="visible",
-            timeout=Args.upload_timeout,
         )
 
     def test_file_count_mismatch_stops_before_create(self) -> None:
