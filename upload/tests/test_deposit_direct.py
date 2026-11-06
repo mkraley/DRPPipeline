@@ -56,6 +56,9 @@ class TestDepositDirect(unittest.TestCase):
             token = prepare_deposit_token(page)
         self.assertEqual(token, _TOKEN)
         page.goto.assert_called_once()
+        waited_for = page.wait_for_function.call_args.args[0]
+        self.assertIn("jwtToken", waited_for)
+        self.assertNotIn("$.ajax", waited_for)
 
     def test_workspace_html_without_a_token_returns_empty(self) -> None:
         """HTML that is not the deposit page does not invent a token."""

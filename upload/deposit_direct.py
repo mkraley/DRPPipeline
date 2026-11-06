@@ -65,15 +65,18 @@ def workspace_html_token(page: Page) -> str:
 
 
 def open_workspace_for_token(page: Page, reporter: Any = None) -> None:
-    """Render the workspace until its token and jQuery exist, then stop the load."""
+    """Render the workspace until ``jwtToken`` exists, then stop the load.
+
+    Deposit calls send that bearer token themselves. The workspace no longer
+    defines jQuery, so waiting for ``$.ajax`` never finishes.
+    """
     from upload.DataLumosAuthenticator import wait_for_human_verification
 
     Logger.info("Opening DataLumos workspace for deposit API calls")
     page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=_REQUEST_TIMEOUT_MS)
     wait_for_human_verification(page, timeout=60000, reporter=reporter)
     page.wait_for_function(
-        "() => typeof jwtToken === 'string' && jwtToken.length > 0 && "
-        "typeof $ !== 'undefined' && typeof $.ajax === 'function'",
+        "() => typeof jwtToken === 'string' && jwtToken.length > 0",
         timeout=_REQUEST_TIMEOUT_MS,
     )
     page.evaluate("() => window.stop()")
