@@ -25,7 +25,6 @@ from utils.project_folder_cleanup import (
 from publisher.GWDANominator import GWDANominator
 from publisher.PublishTermsDialog import PublishTermsDialog
 from publisher.sheet_only_status import resolve_sheet_only_config
-from publisher.WorkspaceFileStats import workspace_storage_mismatches
 
 
 # Published / Download Location URL template (``version`` is V1 on first publish, V2 on republish)
@@ -137,13 +136,11 @@ class DataLumosPublisher:
     """
     Publisher module that publishes uploaded projects in DataLumos.
 
-    Implements ModuleProtocol. For each eligible project (status
+    Implements ModuleProtocol.     For each eligible project (status
     ``uploaded``), this module: nominates the source URL to GWDA, authenticates,
-    navigates to the project, verifies
-    workspace file count/size against the database, runs the publish workflow
-    (Publish Project → review → Proceed to Publish → terms dialog → Publish
-    Data → Back to Project), and updates Storage with published_url and
-    status="published".
+    checks ``viewStorage`` against the database, POSTs ``/deposit/publish``
+    with the terms-dialog answers, and updates Storage with published_url and
+    status="published" only after the public view URL responds.
 
     Prerequisites: status ``uploaded`` (plus sheet-only statuses) and no errors
     Success status: status="published"; status="updated_inventory" after Google Sheet update (if configured).
@@ -194,8 +191,6 @@ class DataLumosPublisher:
                 record_error(drpid, gwda_error)
                 return
             self._session.ensure_authenticated()
-            self._open_project_workspace(page, str(workspace_id))
-
             Logger.info(
                 "Checking workspace Storage Status against database for DRPID=%s",
                 drpid,
@@ -204,27 +199,20 @@ class DataLumosPublisher:
             if gate_error:
                 record_error(drpid, gate_error)
             else:
-                upload_issue = self._uploads_incomplete_on_project_page(page)
-                if upload_issue:
-                    record_error(
-                        drpid,
-                        f"Skipping publish for DRPID={drpid}: uploads incomplete — {upload_issue}",
-                    )
+                success, error_message = self._publish_workspace(page, drpid)
+                if not success:
+                    record_error(drpid, error_message or "Publish workflow failed")
                 else:
-                    success, error_message = self._publish_workspace(page, drpid)
-                    if not success:
-                        record_error(drpid, error_message or "Publish workflow failed")
-                    else:
-                        published_url = self._published_view_url(workspace_id)
-                        Storage.update_record(drpid, {
-                            "published_url": published_url,
-                            "status": "published",
-                        })
-                        Logger.info(
-                            f"Publish completed for DRPID={drpid}, "
-                            f"published_url={published_url}"
-                        )
-                        publish_ok = True
+                    published_url = self._published_view_url(workspace_id)
+                    Storage.update_record(drpid, {
+                        "published_url": published_url,
+                        "status": "published",
+                    })
+                    Logger.info(
+                        f"Publish completed for DRPID={drpid}, "
+                        f"published_url={published_url}"
+                    )
+                    publish_ok = True
         except ProjectAbort:
             return
         except Exception as e:
@@ -413,7 +401,14 @@ class DataLumosPublisher:
         Returns:
             Combined error message when mismatched; None when inventory matches.
         """
-        errors = self._workspace_inventory_mismatches(page, project)
+        try:
+            errors = self._workspace_inventory_mismatches(page, project)
+        except RuntimeError as exc:
+            if "(401)" not in str(exc):
+                raise
+            Logger.warning("DataLumos rejected the deposit token; signing in again")
+            self._session.reauthenticate()
+            errors = self._workspace_inventory_mismatches(page, project)
         if not errors:
             Logger.info(
                 "DRPID %s: workspace inventory matches database; proceeding to %s",
@@ -433,16 +428,24 @@ class DataLumosPublisher:
         project: Dict[str, Any],
     ) -> List[str]:
         """
-        Compare Storage Status to ``num_files`` plus product folders and ``file_size``.
+        Compare ``viewStorage`` to ``num_files`` plus product folders and ``file_size``.
 
         Args:
-            page: Playwright page on the DataLumos project workspace.
+            page: Playwright page whose cookie jar is logged into DataLumos.
             project: Storage project record.
 
         Returns:
             Human-readable mismatch messages; empty when inventory matches.
         """
-        return workspace_storage_mismatches(page, project)
+        from publisher.DataLumosPublishClient import DataLumosPublishClient
+        from publisher.WorkspaceFileStats import mismatches_for_storage_status
+
+        workspace_id = str(get_field(project, "datalumos_id") or "")
+        if not workspace_id:
+            return ["missing datalumos_id"]
+        client = DataLumosPublishClient(page)
+        status = client.storage_status(workspace_id)
+        return mismatches_for_storage_status(status, project)
 
     def _finalize_after_publish(self, drpid: int) -> None:
         """
@@ -473,6 +476,15 @@ class DataLumosPublisher:
             ``V1`` for first publish; republisher overrides to ``V2``.
         """
         return "V1"
+
+    def _version_title(self) -> str | None:
+        """
+        Optional version title sent with the publish POST.
+
+        Returns:
+            None for a first publish. Republish sets a title.
+        """
+        return None
 
     def _update_sheet_if_configured(
         self,
@@ -666,30 +678,41 @@ class DataLumosPublisher:
             pass
         return None
 
-    def _publish_workspace(self, page: Page, drpid: int) -> tuple[bool, Optional[str]]:
+    def _publish_workspace(
+        self,
+        page: Page,
+        drpid: int,
+        *,
+        retried: bool = False,
+    ) -> tuple[bool, Optional[str]]:
         """
-        Execute the publish workflow (from chiara_upload.publish_workspace).
-        Retry once after returning to the project workspace on failure.
+        Publish through the deposit API. A rejected token signs in once and retries.
 
         Returns:
             (True, None) on success, (False, error_message) on failure.
         """
+        try:
+            return self._publish_over_http(page, drpid)
+        except RuntimeError as exc:
+            if retried or "(401)" not in str(exc):
+                return False, str(exc)
+            Logger.warning("DataLumos rejected the deposit token; signing in again")
+            self._session.reauthenticate()
+            return self._publish_workspace(page, drpid, retried=True)
+
+    def _publish_over_http(self, page: Page, drpid: int) -> tuple[bool, Optional[str]]:
+        """POST publish, then require the public view URL to respond."""
+        from publisher.DataLumosPublishClient import DataLumosPublishClient
+
         project = Storage.get(drpid) or {}
-        workspace_id = get_field(project, "datalumos_id") or ""
-
-        for attempt in range(2):
-            if attempt > 0:
-                Logger.info("Publish workflow failed, retrying after workspace reset...")
-                self._reset_to_project_workspace(page, workspace_id)
-
-            try:
-                return self._run_publish_flow_once(page, drpid)
-            except Exception as e:
-                error_msg = str(e)
-                Logger.warning(f"Publish attempt {attempt + 1} failed: {error_msg}")
-                if attempt == 1:
-                    return False, error_msg
-        return False, "Publish workflow failed after retry"
+        workspace_id = str(get_field(project, "datalumos_id") or "")
+        client = DataLumosPublishClient(page)
+        client.ensure_ready()
+        client.publish_project(workspace_id, self._version_title())
+        view_url = self._published_view_url(workspace_id)
+        if client.view_is_public(view_url):
+            return True, None
+        return False, f"Published view URL was not available: {view_url}"
 
     def _reset_to_project_workspace(self, page: Page, workspace_id: str) -> None:
         """

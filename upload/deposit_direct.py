@@ -86,11 +86,12 @@ def deposit_request(
     url: str,
     data: Optional[dict[str, str]] = None,
     content_type: Optional[str] = None,
+    body: Optional[str] = None,
 ) -> dict[str, Any]:
     """Perform one deposit request with the browser cookie jar and bearer token."""
     headers = {"Authorization": f"Bearer {token}"}
     started = time.perf_counter()
-    response = _send(page, method, url, headers, data, content_type)
+    response = _send(page, method, url, headers, data, content_type, body)
     elapsed_ms = round((time.perf_counter() - started) * 1000)
     return {"status": response.status, "body": response.text(), "elapsedMs": elapsed_ms}
 
@@ -124,10 +125,14 @@ def _send(
     headers: dict[str, str],
     data: Optional[dict[str, str]],
     content_type: Optional[str],
+    body: Optional[str] = None,
 ) -> Any:
     """Send one request. Form fields stay in the body, not the query string."""
     if method.upper() == "GET":
         return page.request.get(url, headers=headers, timeout=_REQUEST_TIMEOUT_MS)
+    if body is not None:
+        headers["Content-Type"] = content_type or "application/json"
+        return page.request.post(url, headers=headers, data=body, timeout=_REQUEST_TIMEOUT_MS)
     if data is not None:
         return page.request.post(url, headers=headers, form=data, timeout=_REQUEST_TIMEOUT_MS)
     if content_type:

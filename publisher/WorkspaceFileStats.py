@@ -103,7 +103,27 @@ def workspace_storage_mismatches(page: Page, project: dict[str, Any]) -> list[st
     ``num_files + product_count``. A space label like ``< 0.01 GB`` matches any
     database size strictly below that threshold.
     """
-    status = workspace_storage_status_from_page(page)
+    return mismatches_for_storage_status(workspace_storage_status_from_page(page), project)
+
+
+def storage_status_from_api(payload: object) -> WorkspaceStorageStatus:
+    """Build a storage status from a ``viewStorage`` JSON object."""
+    if not isinstance(payload, dict):
+        return WorkspaceStorageStatus(error="invalid_storage_response")
+    count = _file_folder_count(payload.get("fileFolderUsed"))
+    space = str(payload.get("storageUsedDisplay") or "").strip()
+    if count is None:
+        return WorkspaceStorageStatus(space_label=space, error="unparseable_file_folder_count")
+    if not space:
+        return WorkspaceStorageStatus(file_folder_count=count, error="storage_status_not_found")
+    return WorkspaceStorageStatus(space_label=space, file_folder_count=count)
+
+
+def mismatches_for_storage_status(
+    status: WorkspaceStorageStatus,
+    project: dict[str, Any],
+) -> list[str]:
+    """Compare one storage status to ``num_files`` plus product folders and ``file_size``."""
     if status.error:
         return [f"DataLumos page error: {status.error}"]
     expected_files = _expected_file_folder_count(project)
@@ -127,6 +147,19 @@ def workspace_storage_mismatches(page: Page, project: dict[str, Any]) -> list[st
             f"size={expected_size or '?'}/{status.space_label or '?'}"
         )
     return errors
+
+
+def _file_folder_count(raw: object) -> Optional[int]:
+    """Return a file/folder count when ``raw`` is a whole number."""
+    if isinstance(raw, bool) or raw is None:
+        return None
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, float) and raw.is_integer():
+        return int(raw)
+    if isinstance(raw, str) and raw.strip().isdigit():
+        return int(raw.strip())
+    return None
 
 
 def nps_product_folder_count(drpid: int) -> int:

@@ -68,5 +68,33 @@ class TestDepositDirect(unittest.TestCase):
         page.evaluate.assert_not_called()
 
 
+class TestDepositRequestBody(unittest.TestCase):
+    """JSON publish bodies use the request data, not a form."""
+
+    def test_json_body_is_posted_as_data(self) -> None:
+        """A publish body is sent as JSON data."""
+        from upload.deposit_direct import deposit_request
+
+        page = MagicMock()
+        response = MagicMock()
+        response.status = 200
+        response.text.return_value = '{"ok": true}'
+        page.request.post.return_value = response
+
+        deposit_request(
+            page,
+            "jwt",
+            "POST",
+            "https://deposit.icpsr.umich.edu/deposit/publish",
+            content_type="application/json",
+            body='{"agreed": true}',
+        )
+
+        kwargs = page.request.post.call_args.kwargs
+        self.assertEqual(kwargs["data"], '{"agreed": true}')
+        self.assertNotIn("form", kwargs)
+        self.assertEqual(kwargs["headers"]["Content-Type"], "application/json")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -346,22 +346,29 @@ class TestDataLumosPublisher(unittest.TestCase):
             self.publisher._pre_publish_gate(MagicMock(), {"num_files": 5}, 7)
         )
 
-    @patch(
-        "publisher.DataLumosPublisher.workspace_storage_mismatches",
-        return_value=["inventory mismatch: files=5/4 size=1.0 MB/500 KB"],
-    )
+    @patch("publisher.DataLumosPublishClient.DataLumosPublishClient.storage_status")
     def test_workspace_inventory_mismatches_uses_storage_status(
         self,
-        mock_mismatches: MagicMock,
+        mock_status: MagicMock,
     ) -> None:
-        """Workspace inventory check uses the Storage Status panel."""
+        """Inventory check uses viewStorage file count and space, not the file table."""
+        from publisher.WorkspaceFileStats import WorkspaceStorageStatus
+
+        mock_status.return_value = WorkspaceStorageStatus(
+            space_label="< 0.01 GB",
+            file_folder_count=4,
+        )
         errors = self.publisher._workspace_inventory_mismatches(
             MagicMock(),
-            {"num_files": 5, "file_size": "1000"},
+            {
+                "DRPID": 7,
+                "datalumos_id": "9",
+                "num_files": 5,
+                "file_size": "1 KB",
+            },
         )
-        self.assertTrue(any("inventory mismatch" in e for e in errors))
         self.assertTrue(any("files=5/4" in e for e in errors))
-        mock_mismatches.assert_called_once()
+        mock_status.assert_called_once_with("9")
 
     @patch.object(DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None)
     @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
@@ -399,30 +406,21 @@ class TestDataLumosPublisher(unittest.TestCase):
         self.assertEqual(record.get("status"), "uploaded-error")
         self.assertIn("Aborting publish", record.get("errors") or "")
 
-    @patch.object(DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None)
-    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
-    @patch.object(DataLumosPublisher, "_publish_workspace")
-    def test_run_signs_in_again_when_workspace_hits_login_error(
-        self,
-        mock_publish: MagicMock,
-        mock_wait_for_human: MagicMock,
-        mock_upload_check: MagicMock,
-    ) -> None:
-        """A profile-retrieval page triggers one fresh login, then publish continues."""
+    def test_run_signs_in_again_when_deposit_token_is_rejected(self) -> None:
+        """A 401 signs in once and the second publish attempt is kept."""
         drpid = Storage.create_record("https://example.com/test")
         Storage.update_record(drpid, {"datalumos_id": "239181", "status": "uploaded"})
         mock_page = MagicMock()
-        type(mock_page).url = PropertyMock(
-            side_effect=[
-                "https://www.datalumos.org/datalumos/loginError?code=MYDATA_PROFILE_RETRIEVAL_FAILED",
-                "https://www.datalumos.org/datalumos/workspace?goToPath=/datalumos/239181#",
-            ]
-        )
         self.publisher._session.ensure_browser = MagicMock(return_value=mock_page)
         self.publisher._session.ensure_authenticated = MagicMock(return_value=None)
         self.publisher._session.reauthenticate = MagicMock(return_value=None)
         self.publisher._session.close = MagicMock(return_value=None)
-        mock_publish.return_value = (True, None)
+        self.publisher._publish_over_http = MagicMock(  # type: ignore[method-assign]
+            side_effect=[
+                RuntimeError("Deposit POST /publish failed (401)"),
+                (True, None),
+            ]
+        )
 
         with patch.object(Args, "google_sheet_id", None), patch.object(
             Args, "google_credentials", None
@@ -430,41 +428,32 @@ class TestDataLumosPublisher(unittest.TestCase):
             self.publisher.run(drpid)
 
         self.publisher._session.reauthenticate.assert_called_once()
-        mock_publish.assert_called_once_with(mock_page, drpid)
-        self.assertEqual(mock_page.goto.call_count, 2)
+        self.assertEqual(self.publisher._publish_over_http.call_count, 2)
+        record = Storage.get(drpid)
+        self.assertEqual(record.get("status"), "published")
+        mock_page.goto.assert_not_called()
 
-    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
-    @patch.object(DataLumosPublisher, "_publish_workspace")
-    def test_run_records_login_error_when_retry_still_fails(
-        self,
-        mock_publish: MagicMock,
-        mock_wait_for_human: MagicMock,
-    ) -> None:
-        """A second profile-retrieval failure is not stored as an inventory mismatch."""
+    def test_run_records_error_when_deposit_token_stays_rejected(self) -> None:
+        """A second 401 is stored as a publish error and does not mark the project published."""
         drpid = Storage.create_record("https://example.com/test")
         Storage.update_record(drpid, {"datalumos_id": "239181", "status": "uploaded"})
-        mock_page = MagicMock()
-        type(mock_page).url = PropertyMock(
-            return_value=(
-                "https://www.datalumos.org/datalumos/loginError"
-                "?code=MYDATA_PROFILE_RETRIEVAL_FAILED"
-            )
-        )
-        self.publisher._session.ensure_browser = MagicMock(return_value=mock_page)
+        self.publisher._session.ensure_browser = MagicMock(return_value=MagicMock())
         self.publisher._session.ensure_authenticated = MagicMock(return_value=None)
         self.publisher._session.reauthenticate = MagicMock(return_value=None)
         self.publisher._session.close = MagicMock(return_value=None)
+        self.publisher._publish_over_http = MagicMock(  # type: ignore[method-assign]
+            side_effect=RuntimeError("Deposit POST /publish failed (401)")
+        )
 
-        with self.assertRaises(RuntimeError):
-            self.publisher.run(drpid)
+        self.publisher.run(drpid)
 
-        mock_publish.assert_not_called()
-        self._pre_publish_gate_mock.assert_not_called()
+        self.publisher._session.reauthenticate.assert_called_once()
         record = Storage.get(drpid)
         self.assertEqual(record.get("status"), "uploaded-error")
         errors = record.get("errors") or ""
-        self.assertIn("profile retrieval failed", errors)
+        self.assertIn("(401)", errors)
         self.assertNotIn("does not match database", errors)
+        self.assertIsNone(record.get("published_url"))
 
     @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
     def test_load_project_page_keeps_abort_that_is_not_a_login_error(
@@ -605,34 +594,30 @@ class TestDataLumosPublisher(unittest.TestCase):
         finally:
             self._gwda_patch.start()
 
-    @patch.object(
-        DataLumosPublisher,
-        "_uploads_incomplete_on_project_page",
-        return_value="span contains 'File not available for download'",
-    )
-    @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
+    @patch.object(DataLumosPublisher, "_uploads_incomplete_on_project_page")
     @patch("publisher.DataLumosPublisher.DataLumosPublisher._publish_workspace")
-    def test_run_skips_publish_when_uploads_incomplete(
+    def test_run_does_not_mark_published_when_view_url_is_missing(
         self,
         mock_publish_workspace: MagicMock,
-        mock_wait_for_human: MagicMock,
         mock_upload_check: MagicMock,
     ) -> None:
-        """Incomplete uploads are an error: skip publish and mark the project."""
+        """A failed view-URL check records an error and leaves status unpublished."""
         drpid = Storage.create_record("https://example.com/test")
         Storage.update_record(drpid, {"datalumos_id": "239181", "status": "uploaded"})
-        mock_page = MagicMock()
-        self.publisher._session.ensure_browser = MagicMock(return_value=mock_page)
+        self.publisher._session.ensure_browser = MagicMock(return_value=MagicMock())
         self.publisher._session.ensure_authenticated = MagicMock(return_value=None)
         self.publisher._session.close = MagicMock(return_value=None)
+        mock_publish_workspace.return_value = (
+            False,
+            "Published view URL was not available: https://www.datalumos.org/example",
+        )
 
         self.publisher.run(drpid)
 
-        mock_upload_check.assert_called_once_with(mock_page)
-        mock_publish_workspace.assert_not_called()
+        mock_upload_check.assert_not_called()
         record = Storage.get(drpid)
         self.assertEqual(record.get("status"), "uploaded-error")
-        self.assertIn("uploads incomplete", record.get("errors") or "")
+        self.assertIn("view URL", record.get("errors") or "")
         self.assertIsNone(record.get("published_url"))
 
     @patch.object(

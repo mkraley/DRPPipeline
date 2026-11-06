@@ -53,6 +53,15 @@ class DataLumosRepublisher(DataLumosPublisher):
         """
         return None
 
+    def _version_title(self) -> str | None:
+        """
+        Version title sent with the republish POST.
+
+        Returns:
+            ``added missing file``.
+        """
+        return REPUBLISH_VERSION_TITLE
+
     def _published_view_url(self, workspace_id: str) -> str:
         """
         Build the V2 public view URL after re-publish.

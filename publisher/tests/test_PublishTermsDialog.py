@@ -262,8 +262,8 @@ class TestPublisherRetryReset(unittest.TestCase):
         self.assertIn("252928", url)
         self.assertIn("goToLevel=project", url)
 
-    def test_publish_workspace_resets_before_retry(self) -> None:
-        """Failed first attempt triggers workspace reset then second try."""
+    def test_publish_workspace_retries_once_after_rejected_token(self) -> None:
+        """A 401 signs in again and posts publish a second time."""
         from storage import Storage
 
         drpid = Storage.create_record("https://example.com")
@@ -271,19 +271,20 @@ class TestPublisherRetryReset(unittest.TestCase):
             drpid, {"status": "uploaded", "datalumos_id": "252928"}
         )
         page = MagicMock()
-        self.publisher._reset_to_project_workspace = MagicMock()  # type: ignore[method-assign]
-        self.publisher._run_publish_flow_once = MagicMock(  # type: ignore[method-assign]
-            side_effect=[RuntimeError("boom"), (True, None)]
+        self.publisher._session.reauthenticate = MagicMock()
+        self.publisher._publish_over_http = MagicMock(  # type: ignore[method-assign]
+            side_effect=[
+                RuntimeError("Deposit POST /publish failed (401)"),
+                (True, None),
+            ]
         )
 
         ok, err = self.publisher._publish_workspace(page, drpid)
 
         self.assertTrue(ok)
         self.assertIsNone(err)
-        self.assertEqual(self.publisher._run_publish_flow_once.call_count, 2)
-        self.publisher._reset_to_project_workspace.assert_called_once_with(
-            page, "252928"
-        )
+        self.assertEqual(self.publisher._publish_over_http.call_count, 2)
+        self.publisher._session.reauthenticate.assert_called_once()
 
 
 if __name__ == "__main__":

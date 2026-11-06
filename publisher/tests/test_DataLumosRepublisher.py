@@ -59,6 +59,7 @@ class TestDataLumosRepublisher(unittest.TestCase):
     def test_version_title_constant(self) -> None:
         """Version title text matches the product requirement."""
         self.assertEqual(REPUBLISH_VERSION_TITLE, "added missing file")
+        self.assertEqual(self.module._version_title(), REPUBLISH_VERSION_TITLE)
 
     def test_published_view_url_is_v2(self) -> None:
         """Republisher stores published_url pointing at version V2."""
@@ -226,22 +227,29 @@ class TestDataLumosRepublisher(unittest.TestCase):
         self.assertEqual(project["status"], "re-uploaded-error")
         self.assertIn("Aborting republish", project.get("errors") or "")
 
-    @patch(
-        "publisher.DataLumosPublisher.workspace_storage_mismatches",
-        return_value=["inventory mismatch: files=5/4 size=1.0 MB/500 KB"],
-    )
+    @patch("publisher.DataLumosPublishClient.DataLumosPublishClient.storage_status")
     def test_workspace_inventory_mismatches_uses_storage_status(
         self,
-        mock_mismatches: MagicMock,
+        mock_status: MagicMock,
     ) -> None:
-        """Workspace inventory check uses the Storage Status panel."""
+        """Inventory check uses viewStorage file count and space."""
+        from publisher.WorkspaceFileStats import WorkspaceStorageStatus
+
+        mock_status.return_value = WorkspaceStorageStatus(
+            space_label="< 0.01 GB",
+            file_folder_count=4,
+        )
         errors = self.module._workspace_inventory_mismatches(
             MagicMock(),
-            {"num_files": 5, "file_size": "1000"},
+            {
+                "DRPID": 7,
+                "datalumos_id": "9",
+                "num_files": 5,
+                "file_size": "1 KB",
+            },
         )
-        self.assertTrue(any("inventory mismatch" in e for e in errors))
-        self.assertTrue(any("files=5/4" in e for e in errors))
-        mock_mismatches.assert_called_once()
+        self.assertTrue(any("files=5/4" in error for error in errors))
+        mock_status.assert_called_once_with("9")
 
 
 if __name__ == "__main__":

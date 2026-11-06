@@ -320,5 +320,27 @@ class TestWorkspaceFileStats(unittest.TestCase):
                     self.assertEqual(len(errors), 1)
 
 
+class TestStorageStatusFromApi(unittest.TestCase):
+    """viewStorage JSON becomes the same status the page parser produced."""
+
+    def test_reads_file_count_and_space_label(self) -> None:
+        """fileFolderUsed and storageUsedDisplay are the inventory fields."""
+        from publisher.WorkspaceFileStats import storage_status_from_api
+
+        status = storage_status_from_api(
+            {"fileFolderUsed": 4, "storageUsedDisplay": "< 0.01 GB"}
+        )
+        self.assertEqual(status.file_folder_count, 4)
+        self.assertEqual(status.space_label, "< 0.01 GB")
+        self.assertIsNone(status.error)
+
+    def test_rejects_a_missing_space_label(self) -> None:
+        """A payload without storageUsedDisplay is an inventory error."""
+        from publisher.WorkspaceFileStats import storage_status_from_api
+
+        status = storage_status_from_api({"fileFolderUsed": 1})
+        self.assertEqual(status.error, "storage_status_not_found")
+
+
 if __name__ == "__main__":
     unittest.main()
