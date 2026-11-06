@@ -64,11 +64,14 @@ class TestDataLumosPublishClient(unittest.TestCase):
         checker.goto.return_value = response
         checker.url = "https://login.icpsr.umich.edu/realms/icpsr"
         client = DataLumosPublishClient(page)
-        with patch("publisher.DataLumosPublishClient.time.sleep"):
+        with patch("publisher.DataLumosPublishClient.time.sleep"), patch(
+            "publisher.DataLumosPublishClient.keep_browser_window_minimized"
+        ) as minimize:
             public = client.view_is_public(
                 "https://www.datalumos.org/datalumos/project/9/version/V1/view"
             )
         self.assertFalse(public)
+        minimize.assert_called_once_with(checker)
         self.assertEqual(checker.goto.call_count, _VIEW_ATTEMPTS)
         checker.close.assert_called_once()
 
@@ -83,11 +86,15 @@ class TestDataLumosPublishClient(unittest.TestCase):
         checker.url = "https://www.datalumos.org/datalumos/project/9/version/V1/view"
         checker.content.return_value = "<h2>Published Versions</h2>"
         client = DataLumosPublishClient(page)
-        self.assertTrue(
-            client.view_is_public(
-                "https://www.datalumos.org/datalumos/project/9/version/V1/view"
+        with patch(
+            "publisher.DataLumosPublishClient.keep_browser_window_minimized"
+        ) as minimize:
+            self.assertTrue(
+                client.view_is_public(
+                    "https://www.datalumos.org/datalumos/project/9/version/V1/view"
+                )
             )
-        )
+        minimize.assert_called_once_with(checker)
         checker.goto.assert_called_once()
 
     def test_log_keeps_the_publish_request_body(self) -> None:

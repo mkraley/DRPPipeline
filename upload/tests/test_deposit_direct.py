@@ -59,6 +59,25 @@ class TestDepositDirect(unittest.TestCase):
         waited_for = page.wait_for_function.call_args.args[0]
         self.assertIn("jwtToken", waited_for)
         self.assertNotIn("$.ajax", waited_for)
+        self.assertEqual(page.wait_for_function.call_args.kwargs["timeout"], 300000)
+
+    def test_document_token_skips_the_script_wait(self) -> None:
+        """A token already in the loaded document is used without waiting for script."""
+        page = MagicMock()
+        page.evaluate.side_effect = ["", None, None, _TOKEN]
+        page.content.return_value = f"var jwtToken = '{_TOKEN}';"
+        response = MagicMock()
+        response.status = 200
+        response.text.return_value = "<html>sign in</html>"
+        page.request.get.return_value = response
+        with patch("upload.DataLumosAuthenticator.wait_for_human_verification"):
+            token = prepare_deposit_token(page)
+        self.assertEqual(token, _TOKEN)
+        page.wait_for_function.assert_not_called()
+        page.evaluate.assert_any_call(
+            """(token) => { window.jwtToken = token; }""",
+            _TOKEN,
+        )
 
     def test_workspace_html_without_a_token_returns_empty(self) -> None:
         """HTML that is not the deposit page does not invent a token."""

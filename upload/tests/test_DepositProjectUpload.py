@@ -20,7 +20,7 @@ class TestDepositProjectUpload(unittest.TestCase):
             workspace_id = DepositProjectUpload(page).create(
                 {"title": "River gauges", "summary": "A set."}
             )
-        client_cls.assert_called_once_with(page, log_path=None)
+        client_cls.assert_called_once_with(page, log_path=None, token="")
         client.ensure_deposit_page.assert_called_once_with(None)
         title = client.create_project.call_args.args[0]
         self.assertNotIn("TRIAL", title)

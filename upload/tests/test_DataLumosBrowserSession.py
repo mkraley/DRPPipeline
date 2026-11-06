@@ -26,6 +26,14 @@ class TestDataLumosBrowserSession(unittest.TestCase):
         """Restore argv."""
         sys.argv = self._original_argv
 
+    def test_saved_deposit_token_is_cleared_when_the_browser_closes(self) -> None:
+        """A closed browser cannot reuse the previous bearer token."""
+        session = DataLumosBrowserSession()
+        session.keep_deposit_token("jwt-from-first-project")
+        self.assertEqual(session.deposit_token, "jwt-from-first-project")
+        session.close()
+        self.assertEqual(session.deposit_token, "")
+
     def test_reauthenticate_clears_flag_and_logs_in(self) -> None:
         """reauthenticate forces a fresh login even when already authenticated."""
         session = DataLumosBrowserSession()

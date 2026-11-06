@@ -12,7 +12,8 @@ import re
 import time
 from typing import Any, Optional
 
-from playwright.sync_api import Page
+from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from upload.deposit_page_request import HOME_PATH, WORKSPACE_URL
 from utils.Logger import Logger
@@ -21,6 +22,7 @@ _TOKEN_RE = re.compile(r"""var jwtToken = ['"]([^'"]+)['"]""")
 _TOKEN_ON_PAGE_JS = """() => (typeof jwtToken === "string" ? jwtToken : "")"""
 _INSTALL_TOKEN_JS = """(token) => { window.jwtToken = token; }"""
 _REQUEST_TIMEOUT_MS = 120000
+_TOKEN_RENDER_TIMEOUT_MS = 5 * 60 * 1000
 
 
 def prepare_deposit_token(page: Page, reporter: Any = None) -> str:
@@ -56,30 +58,84 @@ def workspace_html_token(page: Page) -> str:
     response = page.request.get(WORKSPACE_URL, timeout=_REQUEST_TIMEOUT_MS)
     if response.status != 200:
         return ""
-    match = _TOKEN_RE.search(response.text())
-    if not match:
-        return ""
-    token = match.group(1)
-    page.evaluate(_INSTALL_TOKEN_JS, token)
-    return token
+    return _install_html_token(page, response.text())
 
 
 def open_workspace_for_token(page: Page, reporter: Any = None) -> None:
     """Render the workspace until ``jwtToken`` exists, then stop the load.
 
-    Deposit calls send that bearer token themselves. The workspace no longer
-    defines jQuery, so waiting for ``$.ajax`` never finishes.
+    The document often contains the token before the script runs. When it
+    does not, the deposit app is given five minutes to assign ``jwtToken``.
+    Deposit calls send that bearer token themselves.
     """
     from upload.DataLumosAuthenticator import wait_for_human_verification
 
     Logger.info("Opening DataLumos workspace for deposit API calls")
     page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=_REQUEST_TIMEOUT_MS)
     wait_for_human_verification(page, timeout=60000, reporter=reporter)
-    page.wait_for_function(
-        "() => typeof jwtToken === 'string' && jwtToken.length > 0",
-        timeout=_REQUEST_TIMEOUT_MS,
-    )
+    if _install_document_token(page):
+        _stop_loading(page)
+        return
+    _wait_for_rendered_token(page)
+    _stop_loading(page)
+
+
+def _install_html_token(page: Page, html: str) -> str:
+    """Install ``jwtToken`` from ``html`` and return it, or return an empty string."""
+    token = _token_in_html(html)
+    if not token:
+        return ""
+    page.evaluate(_INSTALL_TOKEN_JS, token)
+    return token
+
+
+def _install_document_token(page: Page) -> bool:
+    """Install a token already present in the open document."""
+    try:
+        html = page.content()
+    except PlaywrightError:
+        return False
+    token = _install_html_token(page, html if isinstance(html, str) else "")
+    if not token:
+        return False
+    Logger.info("Read the deposit token from the open workspace document")
+    return True
+
+
+def _wait_for_rendered_token(page: Page) -> None:
+    """Wait until the deposit app assigns ``jwtToken``."""
+    url = _page_url(page)
+    Logger.info("Waiting up to 5 minutes for the deposit token (url=%s)", url)
+    try:
+        page.wait_for_function(
+            "() => typeof jwtToken === 'string' && jwtToken.length > 0",
+            timeout=_TOKEN_RENDER_TIMEOUT_MS,
+        )
+    except PlaywrightTimeoutError as exc:
+        raise RuntimeError(
+            f"Deposit token did not appear within 5 minutes (url={_page_url(page)})"
+        ) from exc
+
+
+def _token_in_html(html: str) -> str:
+    """Return the ``jwtToken`` assignment in ``html``, or an empty string."""
+    match = _TOKEN_RE.search(html or "")
+    if match is None:
+        return ""
+    return match.group(1)
+
+
+def _stop_loading(page: Page) -> None:
+    """Stop the workspace load once the token has been captured."""
     page.evaluate("() => window.stop()")
+
+
+def _page_url(page: Page) -> str:
+    """Return the current page URL, or an empty string when it cannot be read."""
+    try:
+        return str(page.url or "")
+    except PlaywrightError:
+        return ""
 
 
 def deposit_request(

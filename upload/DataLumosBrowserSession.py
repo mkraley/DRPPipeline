@@ -50,7 +50,21 @@ class DataLumosBrowserSession:
         self._page: Optional[Page] = None
         self._authenticated = False
         self._authenticated_at: float | None = None
+        self._deposit_token = ""
         self._exit_registered = False
+
+    @property
+    def deposit_token(self) -> str:
+        """Bearer token saved after the first workspace open in this session."""
+        return self._deposit_token
+
+    def keep_deposit_token(self, token: str) -> None:
+        """Remember a deposit bearer token for the rest of this browser session.
+
+        Later projects send this token themselves. A rejected token is stored
+        as empty so the next project can open the workspace once.
+        """
+        self._deposit_token = token or ""
 
     def ensure_browser(self) -> Page:
         """Ensure browser is initialized and return the page."""
@@ -239,6 +253,7 @@ class DataLumosBrowserSession:
 
         self._authenticated = False
         self._authenticated_at = None
+        self._deposit_token = ""
         Logger.debug("Browser resources cleaned up")
 
     def _abandon(self) -> None:
@@ -255,6 +270,7 @@ class DataLumosBrowserSession:
         self._playwright = None
         self._authenticated = False
         self._authenticated_at = None
+        self._deposit_token = ""
         Logger.debug("Browser resources abandoned after interrupt")
 
 

@@ -13,6 +13,7 @@ from utils.Args import Args
 from utils.Errors import ProjectAbort
 from utils.Logger import Logger
 
+from upload.DataLumosFileUploader import UPLOAD_BTN_SELECTOR
 from upload.DataLumosUploader import (
     DataLumosUploader,
     _agency_values_for_upload,
@@ -330,6 +331,38 @@ class TestDataLumosUploader(unittest.TestCase):
         open_page.assert_called_once()
         self.assertEqual(open_page.call_args.args[1], "42")
         file_cls.return_value.upload_files.assert_called_once_with(str(self.temp_dir))
+
+    def test_later_project_reuses_the_saved_deposit_token(self) -> None:
+        """The second project sends the token saved from the first."""
+        project = {"title": "River gauges", "summary": "A set."}
+        self.uploader._session = MagicMock()
+        self.uploader._session.deposit_token = "jwt-from-first-project"
+        with patch("upload.DepositProjectUpload.DepositProjectUpload") as deposit_cls:
+            deposit_cls.return_value.create.return_value = "9"
+            deposit_cls.return_value.token = "jwt-from-first-project"
+            with patch("upload.DataLumosUploader.Storage.update_record"):
+                result = self.uploader._upload_project(project, 1, UploadIssueReporter(1))
+        self.assertEqual(result, "9")
+        self.assertEqual(
+            deposit_cls.call_args.kwargs["token"],
+            "jwt-from-first-project",
+        )
+        self.uploader._session.keep_deposit_token.assert_called_once_with(
+            "jwt-from-first-project"
+        )
+
+    def test_project_page_waits_for_the_upload_button(self) -> None:
+        """The project page is ready when Upload is visible, not when the network idles."""
+        page = MagicMock()
+        with patch("upload.DataLumosAuthenticator.wait_for_human_verification"):
+            self.uploader._open_project_page(page, "261479", UploadIssueReporter(1))
+        self.assertEqual(page.goto.call_args.kwargs["wait_until"], "domcontentloaded")
+        page.wait_for_load_state.assert_not_called()
+        page.locator.assert_called_with(UPLOAD_BTN_SELECTOR)
+        page.locator.return_value.first.wait_for.assert_called_once_with(
+            state="visible",
+            timeout=Args.upload_timeout,
+        )
 
     def test_file_count_mismatch_stops_before_create(self) -> None:
         """A disk count that differs from num_files does not create a project."""

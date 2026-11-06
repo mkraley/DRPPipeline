@@ -23,10 +23,22 @@ from utils.title_utils import normalize_inventory_title
 class DepositProjectUpload:
     """Create one project and post its metadata without the workspace form."""
 
-    def __init__(self, page: Page) -> None:
-        """Args: page: Authenticated Playwright page."""
+    def __init__(self, page: Page, token: str = "") -> None:
+        """
+        Args:
+            page: Authenticated Playwright page.
+            token: Bearer token already read for this browser session.
+        """
         self._page = page
+        self._token = token
         self._deposit: DataLumosDepositClient | None = None
+
+    @property
+    def token(self) -> str:
+        """Bearer token after create, empty when the server rejected it."""
+        if self._deposit is None:
+            return self._token
+        return self._deposit.token
 
     def create(
         self,
@@ -55,7 +67,11 @@ class DepositProjectUpload:
     def _client(self, reporter: Optional[UploadIssueReporter] = None) -> DataLumosDepositClient:
         """Return the page client, opening the workspace on first use."""
         if self._deposit is None:
-            self._deposit = DataLumosDepositClient(self._page, log_path=None)
+            self._deposit = DataLumosDepositClient(
+                self._page,
+                log_path=None,
+                token=self._token,
+            )
             self._deposit.ensure_deposit_page(reporter)
         return self._deposit
 

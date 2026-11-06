@@ -18,8 +18,6 @@ from playwright.sync_api import Page
 from upload.DepositAttribute import DepositAttribute, flatten_attributes
 from upload.deposit_direct import (
     deposit_request,
-    open_workspace_for_token,
-    page_token,
     parse_body,
     prepare_deposit_token,
     project_path,
@@ -39,20 +37,31 @@ from utils.Logger import Logger
 class DataLumosDepositClient:
     """Deposit API calls for one authenticated Playwright page."""
 
-    def __init__(self, page: Page, log_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        page: Page,
+        log_path: Path | None = None,
+        token: str = "",
+    ) -> None:
         """
         Args:
             page: Playwright page that will be logged into DataLumos.
             log_path: Optional JSONL file for redacted request summaries.
+            token: Bearer token already read for this browser session.
         """
         self._page = page
         self._log_path = log_path
-        self._ready = False
-        self._token: str | None = None
+        self._token: str | None = token or None
+        self._ready = bool(self._token)
+
+    @property
+    def token(self) -> str:
+        """Bearer token for this client, empty after a rejected response."""
+        return self._token or ""
 
     def ensure_deposit_page(self, reporter: Any = None) -> None:
         """Prepare a bearer token, rendering the workspace only when it is missing."""
-        if self._ready:
+        if self._ready and self._token:
             return
         self._token = prepare_deposit_token(self._page, reporter)
         self._ready = True
@@ -172,23 +181,14 @@ class DataLumosDepositClient:
         content_type: str | None,
         request: dict[str, Any],
     ) -> dict[str, Any]:
-        """Call through the browser request context, or the page when that is rejected."""
+        """Call through the browser request context, or the page when no token is saved."""
         if not self._token:
             return self._page.evaluate(AJAX_JS, request)
         try:
-            result = deposit_request(self._page, self._token, method, url, data, content_type)
+            return deposit_request(self._page, self._token, method, url, data, content_type)
         except Exception:
-            Logger.info("Deposit request failed; opening the workspace and retrying")
-            result = {"status": 0, "body": "", "elapsedMs": 0}
-        status = int(result.get("status") or 0)
-        if status not in (0, 403):
-            return result
-        Logger.info("Deposit request was rejected; opening the workspace and retrying")
-        open_workspace_for_token(self._page, None)
-        refreshed = page_token(self._page)
-        if refreshed:
-            self._token = refreshed
-        return self._page.evaluate(AJAX_JS, request)
+            Logger.info("Deposit request failed")
+            return {"status": 0, "body": "", "elapsedMs": 0}
 
     def _forget_token(self) -> None:
         """Drop a rejected token so the next project reads a new one."""

@@ -32,6 +32,7 @@ from publisher.publish_terms import (
 )
 from upload.deposit_direct import deposit_request, parse_body, prepare_deposit_token
 from upload.deposit_page_request import append_deposit_record, redact_secrets
+from upload.minimize_browser_window import keep_browser_window_minimized
 from utils.Logger import Logger
 
 _VIEW_ATTEMPTS = 18
@@ -89,12 +90,14 @@ class DataLumosPublishClient:
         """
         Return True when a browser load of the view URL is the public project.
 
-        Uses a second page so the deposit token page stays put. Playwright's
-        request client is blocked by the DataLumos edge; a headed navigation is not.
-        The public page can appear after the publish POST returns, so this retries.
+        Uses a second page so the deposit token page stays put. That tab is
+        minimized, including after each reload. Playwright's request client is
+        blocked by the DataLumos edge; a headed navigation is not. The public
+        page can appear after the publish POST returns, so this retries.
         """
         checker = self._page.context.new_page()
         try:
+            keep_browser_window_minimized(checker)
             return self._view_becomes_public(checker, url)
         finally:
             checker.close()

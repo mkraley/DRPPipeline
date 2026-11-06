@@ -222,6 +222,17 @@ class TestDirectDepositCalls(unittest.TestCase):
         self.assertNotIn(_TOKEN, str(caught.exception))
         self.assertIsNone(client._token)
         self.assertFalse(client._ready)
+        self.assertEqual(client.token, "")
+
+    def test_saved_token_skips_opening_the_workspace(self) -> None:
+        """A token kept from the previous project does not render the workspace."""
+        page = MagicMock()
+        client = DataLumosDepositClient(page, token=_TOKEN)
+        client.ensure_deposit_page()
+        self.assertEqual(client.token, _TOKEN)
+        page.goto.assert_not_called()
+        page.evaluate.assert_not_called()
+        page.request.get.assert_not_called()
 
 
 if __name__ == "__main__":

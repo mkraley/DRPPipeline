@@ -239,7 +239,7 @@ class DataLumosUploader:
         self._session.ensure_authenticated(reporter=reporter)
         from upload.DepositProjectUpload import DepositProjectUpload
 
-        deposit = DepositProjectUpload(page)
+        deposit = DepositProjectUpload(page, token=self._session.deposit_token)
         started = time.perf_counter()
         try:
             workspace_id = deposit.create(project, reporter)
@@ -247,6 +247,7 @@ class DataLumosUploader:
             Storage.update_record(drpid, {"datalumos_id": workspace_id})
             deposit.fill(workspace_id, project)
         finally:
+            self._session.keep_deposit_token(deposit.token)
             Logger.info(
                 "Deposit API create and metadata took %.1fs",
                 time.perf_counter() - started,
@@ -297,14 +298,25 @@ class DataLumosUploader:
         workspace_id: str,
         reporter: UploadIssueReporter,
     ) -> None:
-        """Open the project workspace so the file modal can run."""
+        """Open the project workspace until the Upload button is visible.
+
+        The file modal needs this page. Waiting for the network to go idle
+        holds the project for minutes after the button is already there.
+        """
         from upload.DataLumosAuthenticator import wait_for_human_verification
-        from upload.UploadLargeFiles import WORKSPACE_LOAD_TIMEOUT_MS
+        from upload.DataLumosFileUploader import UPLOAD_BTN_SELECTOR
 
         Logger.info(f"Opening DataLumos project {workspace_id} for file upload")
-        page.goto(self._project_url(workspace_id), wait_until="domcontentloaded")
-        page.wait_for_load_state("networkidle", timeout=WORKSPACE_LOAD_TIMEOUT_MS)
+        page.goto(
+            self._project_url(workspace_id),
+            wait_until="domcontentloaded",
+            timeout=Args.upload_timeout,
+        )
         wait_for_human_verification(page, timeout=60000, reporter=reporter)
+        page.locator(UPLOAD_BTN_SELECTOR).first.wait_for(
+            state="visible",
+            timeout=Args.upload_timeout,
+        )
 
     def _extract_workspace_id(self, url: str) -> Optional[str]:
         """Extract workspace ID from DataLumos URL."""
