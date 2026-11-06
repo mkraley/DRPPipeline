@@ -43,15 +43,26 @@ _PUBLIC_VIEW_MARKER = "Published Versions"
 class DataLumosPublishClient:
     """Deposit API calls that publish one already-uploaded project."""
 
-    def __init__(self, page: Page, log_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        page: Page,
+        log_path: Path | None = None,
+        token: str = "",
+    ) -> None:
         """
         Args:
             page: Playwright page whose cookie jar is logged into DataLumos.
             log_path: Optional JSONL file for redacted request and response text.
+            token: Bearer token kept from an earlier project in this batch.
         """
         self._page = page
-        self._token = ""
+        self._token = token
         self._log_path = log_path
+
+    @property
+    def token(self) -> str:
+        """Bearer token for this batch, empty after DataLumos rejects it."""
+        return self._token
 
     def ensure_ready(self) -> None:
         """Read a bearer token, rendering the workspace only when it is missing."""

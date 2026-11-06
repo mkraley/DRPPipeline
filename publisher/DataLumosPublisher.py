@@ -151,6 +151,7 @@ class DataLumosPublisher:
     def __init__(self) -> None:
         """Initialize the DataLumos publisher. Config from Args."""
         self._session = DataLumosBrowserSession()
+        self._deposit_token = ""
 
     def run(self, drpid: int) -> None:
         """
@@ -437,15 +438,17 @@ class DataLumosPublisher:
         Returns:
             Human-readable mismatch messages; empty when inventory matches.
         """
-        from publisher.DataLumosPublishClient import DataLumosPublishClient
         from publisher.WorkspaceFileStats import mismatches_for_storage_status
 
         workspace_id = str(get_field(project, "datalumos_id") or "")
         if not workspace_id:
             return ["missing datalumos_id"]
-        client = DataLumosPublishClient(page)
-        status = client.storage_status(workspace_id)
-        return mismatches_for_storage_status(status, project)
+        client = self._publish_client(page)
+        try:
+            status = client.storage_status(workspace_id)
+            return mismatches_for_storage_status(status, project)
+        finally:
+            self._keep_deposit_token(client)
 
     def _finalize_after_publish(self, drpid: int) -> None:
         """
@@ -702,17 +705,28 @@ class DataLumosPublisher:
 
     def _publish_over_http(self, page: Page, drpid: int) -> tuple[bool, Optional[str]]:
         """POST publish, then require the public view URL to respond."""
-        from publisher.DataLumosPublishClient import DataLumosPublishClient
-
         project = Storage.get(drpid) or {}
         workspace_id = str(get_field(project, "datalumos_id") or "")
-        client = DataLumosPublishClient(page)
-        client.ensure_ready()
-        client.publish_project(workspace_id, self._version_title())
-        view_url = self._published_view_url(workspace_id)
-        if client.view_is_public(view_url):
-            return True, None
-        return False, f"Published view URL was not available: {view_url}"
+        client = self._publish_client(page)
+        try:
+            client.ensure_ready()
+            client.publish_project(workspace_id, self._version_title())
+            view_url = self._published_view_url(workspace_id)
+            if client.view_is_public(view_url):
+                return True, None
+            return False, f"Published view URL was not available: {view_url}"
+        finally:
+            self._keep_deposit_token(client)
+
+    def _publish_client(self, page: Page) -> "DataLumosPublishClient":
+        """Return a publish client that already has this batch's deposit token."""
+        from publisher.DataLumosPublishClient import DataLumosPublishClient
+
+        return DataLumosPublishClient(page, token=self._deposit_token)
+
+    def _keep_deposit_token(self, client: "DataLumosPublishClient") -> None:
+        """Remember the bearer token so the next project does not render the workspace."""
+        self._deposit_token = client.token
 
     def _reset_to_project_workspace(self, page: Page, workspace_id: str) -> None:
         """

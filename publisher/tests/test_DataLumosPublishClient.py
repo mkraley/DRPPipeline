@@ -124,6 +124,34 @@ class TestDataLumosPublishClient(unittest.TestCase):
         self.assertEqual(body["licenseId"], "15")
         self.assertIs(body["agreed"], True)
 
+    def test_saved_token_skips_opening_the_workspace(self) -> None:
+        """A token kept from the previous project is sent as-is."""
+        page = MagicMock()
+        with patch(
+            "publisher.DataLumosPublishClient.prepare_deposit_token"
+        ) as prepare, patch(
+            "publisher.DataLumosPublishClient.deposit_request",
+            return_value={
+                "status": 200,
+                "body": '{"fileFolderUsed": 1, "storageUsedDisplay": "< 0.01 GB"}',
+                "elapsedMs": 1,
+            },
+        ):
+            DataLumosPublishClient(page, token="jwt").storage_status("9")
+        prepare.assert_not_called()
+        page.goto.assert_not_called()
+
+    def test_rejected_token_is_forgotten(self) -> None:
+        """A 401 clears the token so the next attempt can sign in."""
+        client = DataLumosPublishClient(MagicMock(), token="jwt")
+        with self.assertRaises(RuntimeError):
+            client._accepted(
+                "GET",
+                "https://deposit.icpsr.umich.edu/deposit/viewStorage",
+                {"status": 401, "body": "", "elapsedMs": 1},
+            )
+        self.assertEqual(client.token, "")
+
 
 if __name__ == "__main__":
     unittest.main()

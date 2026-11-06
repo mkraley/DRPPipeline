@@ -370,6 +370,37 @@ class TestDataLumosPublisher(unittest.TestCase):
         self.assertTrue(any("files=5/4" in e for e in errors))
         mock_status.assert_called_once_with("9")
 
+    def test_later_project_reuses_the_saved_deposit_token(self) -> None:
+        """A token from the first project is passed in after GWDA leaves that page."""
+        from publisher.WorkspaceFileStats import WorkspaceStorageStatus
+
+        self.publisher._deposit_token = "jwt-from-first-project"
+        client = MagicMock()
+        client.token = "jwt-from-first-project"
+        client.storage_status.return_value = WorkspaceStorageStatus(
+            space_label="< 0.01 GB",
+            file_folder_count=1,
+        )
+        with patch(
+            "publisher.DataLumosPublishClient.DataLumosPublishClient",
+            return_value=client,
+        ) as constructor:
+            errors = self.publisher._workspace_inventory_mismatches(
+                MagicMock(),
+                {
+                    "DRPID": 8,
+                    "datalumos_id": "9",
+                    "num_files": 1,
+                    "file_size": "1 KB",
+                },
+            )
+        self.assertEqual(errors, [])
+        self.assertEqual(
+            constructor.call_args.kwargs["token"],
+            "jwt-from-first-project",
+        )
+        client.storage_status.assert_called_once_with("9")
+
     @patch.object(DataLumosPublisher, "_uploads_incomplete_on_project_page", return_value=None)
     @patch("upload.DataLumosAuthenticator.wait_for_human_verification")
     @patch.object(DataLumosPublisher, "_publish_workspace")
