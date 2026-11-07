@@ -65,6 +65,38 @@ def sidebar_labels(html: str) -> list[str]:
     return labels
 
 
+def published_sidebar_labels(html: str) -> list[str]:
+    """
+    Return sidebar labels that contain the (Published) mark.
+
+    Args:
+        html: ``ul.list-group`` markup from the DataLumos workspace.
+
+    Returns:
+        Matching labels in document order.
+    """
+    return [label for label in sidebar_labels(html) if is_published_entry(label)]
+
+
+def workspace_ids_from_sidebar(html: str) -> list[str]:
+    """
+    Return every project id present in the sidebar HTML.
+
+    Args:
+        html: ``ul.list-group`` markup from the DataLumos workspace.
+
+    Returns:
+        Numeric workspace ids in sidebar order. Rows without an id
+        (Workspace, Shared with me) are omitted.
+    """
+    ids: list[str] = []
+    for label in sidebar_labels(html):
+        workspace_id = workspace_id_from_entry(label)
+        if workspace_id:
+            ids.append(workspace_id)
+    return ids
+
+
 def unpublished_workspace_ids(html: str) -> list[str]:
     """
     Return project ids whose sidebar label is not marked (Published).

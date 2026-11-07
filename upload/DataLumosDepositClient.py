@@ -147,6 +147,23 @@ class DataLumosDepositClient:
         url = f"{DEPOSIT_SERVER}/suggestSubjectTerms?term={encode_query(term)}&page=1"
         return suggestion_texts(self._call("GET", url))
 
+    def delete_path(self, path: str) -> None:
+        """
+        Delete a deposit file, folder, or project via ``DELETE /deletePath``.
+
+        Args:
+            path: Resource path such as ``/datalumos/{id}`` for a project.
+
+        Raises:
+            RuntimeError: When the HTTP status is not 2xx, or the JSON body
+                includes an ``errorCode`` (e.g. published projects).
+        """
+        url = f"{DEPOSIT_SERVER}/deletePath?path={encode_query(path)}"
+        body = self._call("DELETE", url)
+        if isinstance(body, dict) and body.get("errorCode"):
+            message = body.get("errorMessage") or body.get("errorCode")
+            raise RuntimeError(f"Deposit DELETE /deletePath rejected {path}: {message}")
+
     def _call(
         self,
         method: str,

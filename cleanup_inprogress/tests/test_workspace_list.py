@@ -5,8 +5,10 @@ import unittest
 from cleanup_inprogress.workspace_list import (
     is_published_entry,
     project_url,
+    published_sidebar_labels,
     unpublished_workspace_ids,
     workspace_id_from_entry,
+    workspace_ids_from_sidebar,
 )
 
 
@@ -53,3 +55,24 @@ class TestWorkspaceList(unittest.TestCase):
             "</ul>"
         )
         self.assertEqual(unpublished_workspace_ids(html), ["255551"])
+
+    def test_published_sidebar_labels(self) -> None:
+        """(Published) labels are collected for the Hide-inactive error check."""
+        html = (
+            '<li><a href="#">datalumos-255475 (Published)</a></li>'
+            '<li><a href="#">datalumos-255551</a></li>'
+        )
+        labels = published_sidebar_labels(html)
+        self.assertEqual(len(labels), 1)
+        self.assertIn("(Published)", labels[0])
+
+    def test_workspace_ids_from_sidebar_includes_published(self) -> None:
+        """All project ids are returned, including published ones."""
+        html = (
+            '<li><a href="#">datalumos-255475 (Published)</a></li>'
+            '<li><a href="#">datalumos-255551</a></li>'
+        )
+        self.assertEqual(
+            workspace_ids_from_sidebar(html),
+            ["255475", "255551"],
+        )

@@ -117,6 +117,27 @@ class TestDepositRequestBody(unittest.TestCase):
         self.assertNotIn("form", kwargs)
         self.assertEqual(kwargs["headers"]["Content-Type"], "application/json")
 
+    def test_delete_uses_fetch_method(self) -> None:
+        """DELETE /deletePath is sent with method DELETE, not POST."""
+        from upload.deposit_direct import deposit_request
+
+        page = MagicMock()
+        response = MagicMock()
+        response.status = 200
+        response.text.return_value = ""
+        page.request.fetch.return_value = response
+
+        deposit_request(
+            page,
+            "jwt",
+            "DELETE",
+            "https://deposit.icpsr.umich.edu/deposit/deletePath?path=%2Fdatalumos%2F1",
+        )
+
+        kwargs = page.request.fetch.call_args.kwargs
+        self.assertEqual(kwargs["method"], "DELETE")
+        page.request.post.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

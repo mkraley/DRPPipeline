@@ -187,8 +187,13 @@ def _send(
     body: Optional[str] = None,
 ) -> Any:
     """Send one request. Form fields stay in the body, not the query string."""
-    if method.upper() == "GET":
+    method_upper = method.upper()
+    if method_upper == "GET":
         return page.request.get(url, headers=headers, timeout=_REQUEST_TIMEOUT_MS)
+    if method_upper == "DELETE":
+        return page.request.fetch(
+            url, method="DELETE", headers=headers, timeout=_REQUEST_TIMEOUT_MS
+        )
     if body is not None:
         headers["Content-Type"] = content_type or "application/json"
         return page.request.post(url, headers=headers, data=body, timeout=_REQUEST_TIMEOUT_MS)

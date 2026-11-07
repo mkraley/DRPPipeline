@@ -2,36 +2,36 @@
 Cleanup In Progress: delete DataLumos projects in 'Deposit In Progress' state.
 
 Implements ModuleProtocol.run(drpid) with drpid=-1 (single run, no Storage iteration).
-Uses DataLumosBrowserSession: navigate to workspace, Hide inactive, list projects,
-for each project verify status, open more dropdown, Delete Project, confirm.
+Opens the workspace once, snapshots the Hide-inactive sidebar, then deletes each
+candidate via the deposit ``DELETE /deletePath`` API (no per-project page opens).
 """
 
-import re
 from typing import List, Set
 
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import Locator, Page, TimeoutError as PlaywrightTimeoutError
 
+from cleanup_inprogress.workspace_list import (
+    published_sidebar_labels,
+    workspace_ids_from_sidebar,
+)
 from storage import Storage
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
+from upload.DataLumosDepositClient import DataLumosDepositClient
 from utils.Args import Args
 from utils.Logger import Logger
 
 
 WORKSPACE_URL = "https://www.datalumos.org/datalumos/workspace"
-PROJECT_URL_TEMPLATE = "https://www.datalumos.org/datalumos/workspace?goToLevel=project&goToPath=/datalumos/{workspace_id}"
-DEPOSIT_IN_PROGRESS_TEXT = "[Deposit In Progress]"
 _PROJECT_LIST = "ul.list-group"
-_PROJECT_STATUS = "xpath=//h1/following-sibling::span[3]"
-_PROJECT_LIST_TIMEOUT_MS = 120000
+_PROJECT_LIST_TIMEOUT_MS = 300000
 
 
 class CleanupInProgress:
     """
     Deletes DataLumos workspace projects in 'Deposit In Progress' state.
 
-    Implements ModuleProtocol. run(-1) is called once: authenticates, goes to
-    workspace, clicks Hide inactive, iterates ul.list-group items, and for each
-    project in Deposit In Progress deletes it via the more dropdown and confirmation.
+    Implements ModuleProtocol. run(-1) authenticates once, clicks Hide inactive,
+    snapshots the sidebar, and deletes each unprotected id via the deposit API.
     """
 
     def __init__(self) -> None:
@@ -40,13 +40,13 @@ class CleanupInProgress:
 
     def run(self, drpid: int) -> None:
         """
-        Run cleanup: find and delete all projects in Deposit In Progress.
+        Run cleanup: snapshot in-progress projects and delete them via API.
 
         Implements ModuleProtocol. drpid is ignored (use -1). Does not write Storage.
         Reads Storage only to resolve ``--keep-ids`` DRPIDs to DataLumos workspace IDs.
 
         Args:
-            drpid: Ignored; module runs once over the DataLumos UI.
+            drpid: Ignored; module runs once over the DataLumos workspace list.
         """
         Logger.info("Cleanup In Progress: starting")
         keep_workspace_ids = resolve_keep_workspace_ids(Args.keep_ids or [])
@@ -59,148 +59,133 @@ class CleanupInProgress:
         self._session.ensure_authenticated()
 
         try:
-            page.goto(WORKSPACE_URL, wait_until="domcontentloaded")
-            from upload.DataLumosAuthenticator import wait_for_human_verification
-            wait_for_human_verification(page, timeout=60000)
-            self._wait_for_project_list(page)
-
-            self._click_hide_inactive(page)
-            project_ids = self._get_project_ids_from_list(page)
-            Logger.info(f"Cleanup In Progress: found {len(project_ids)} project(s) in list")
-
-            for workspace_id in project_ids:
-                if workspace_id in keep_workspace_ids:
-                    Logger.info(
-                        "Cleanup In Progress: skipping protected deposit %s (--keep-ids)",
-                        workspace_id,
-                    )
-                    continue
-                self._process_one_project(page, workspace_id)
-
+            self._run_cleanup(page, keep_workspace_ids)
         finally:
             self._session.close()
         Logger.info("Cleanup In Progress: finished")
 
+    def _run_cleanup(self, page: Page, keep_workspace_ids: Set[str]) -> None:
+        """Hide inactive, snapshot ids, then API-delete unprotected projects."""
+        page.goto(WORKSPACE_URL, wait_until="domcontentloaded")
+        from upload.DataLumosAuthenticator import wait_for_human_verification
+
+        wait_for_human_verification(page, timeout=60000)
+        # Hide inactive first: the first ul.list-group is often a hidden empty
+        # placeholder until the filter shows active deposits.
+        self._click_hide_inactive(page)
+        if not self._wait_for_list_or_log(page):
+            return
+        project_ids = self._snapshot_project_ids(page)
+        if project_ids is None:
+            return
+        targets = [wid for wid in project_ids if wid not in keep_workspace_ids]
+        skipped = len(project_ids) - len(targets)
+        if skipped:
+            Logger.info(
+                "Cleanup In Progress: skipping %s protected deposit(s) (--keep-ids)",
+                skipped,
+            )
+        Logger.info(
+            "Cleanup In Progress: deleting %s project(s) via deposit API",
+            len(targets),
+        )
+        self._delete_via_api(page, targets)
+
+    def _wait_for_list_or_log(self, page: Page) -> bool:
+        """Wait for the visible list; log and return False on timeout."""
+        try:
+            self._wait_for_project_list(page)
+        except PlaywrightTimeoutError:
+            Logger.error(
+                "Cleanup In Progress: workspace project list did not become "
+                "visible within %sms (ul.list-group stayed hidden or empty)",
+                _PROJECT_LIST_TIMEOUT_MS,
+            )
+            return False
+        return True
+
+    def _snapshot_project_ids(self, page: Page) -> List[str] | None:
+        """
+        Read sidebar HTML once and return project ids.
+
+        Returns None when (Published) appears after Hide inactive — that is a
+        hard error and cleanup must not continue.
+        """
+        html = self._snapshot_list_html(page)
+        published = published_sidebar_labels(html)
+        if published:
+            Logger.error(
+                "Cleanup In Progress: (Published) still visible after Hide "
+                "inactive (%s label(s)); aborting without deletes. First: %s",
+                len(published),
+                published[0][:120],
+            )
+            return None
+        project_ids = workspace_ids_from_sidebar(html)
+        Logger.info(
+            "Cleanup In Progress: found %s project(s) in Hide-inactive list",
+            len(project_ids),
+        )
+        return project_ids
+
+    def _delete_via_api(self, page: Page, workspace_ids: List[str]) -> None:
+        """Delete each workspace id with DELETE /deletePath; continue on failure."""
+        client = DataLumosDepositClient(page, token=self._session.deposit_token)
+        client.ensure_deposit_page()
+        if client.token:
+            self._session.keep_deposit_token(client.token)
+        for workspace_id in workspace_ids:
+            self._delete_one(client, workspace_id)
+
+    def _delete_one(self, client: DataLumosDepositClient, workspace_id: str) -> None:
+        """Delete one project path; log success or failure without aborting."""
+        path = f"/datalumos/{workspace_id}"
+        try:
+            client.delete_path(path)
+        except Exception as exc:
+            Logger.error(
+                "Cleanup In Progress: failed to delete %s: %s",
+                workspace_id,
+                exc,
+            )
+            return
+        Logger.info("Cleanup In Progress: deleted project %s", workspace_id)
+
+    def _snapshot_list_html(self, page: Page) -> str:
+        """Return inner HTML of the visible project list, or empty string."""
+        list_group = self._project_list_locator(page)
+        if list_group.count() == 0:
+            list_group = page.locator(_PROJECT_LIST).filter(has=page.locator("li a"))
+        if list_group.count() == 0:
+            return ""
+        return list_group.first.inner_html() or ""
+
+    def _project_list_locator(self, page: Page) -> Locator:
+        """
+        Locator for the visible sidebar list that contains project links.
+
+        The workspace DOM can include a hidden empty ``ul.list-group`` before the
+        real list; prefer a visible list that already has ``li a`` children.
+        """
+        return page.locator(_PROJECT_LIST).filter(has=page.locator("li a")).locator(
+            "visible=true"
+        )
+
     def _wait_for_project_list(self, page: Page) -> None:
-        """Wait until the workspace project list is visible."""
-        page.locator(_PROJECT_LIST).first.wait_for(
+        """Wait until a visible workspace project list with links is present."""
+        self._project_list_locator(page).first.wait_for(
             state="visible",
             timeout=_PROJECT_LIST_TIMEOUT_MS,
         )
 
     def _click_hide_inactive(self, page: Page) -> None:
-        """Click the 'Hide inactive' radio so only active (e.g. In Progress) projects show."""
+        """Click the 'Hide inactive' radio so only active projects show."""
         hide_label = page.locator('label:has-text("Hide inactive")')
         try:
             hide_label.first.click(timeout=Args.upload_timeout)
             page.wait_for_timeout(1000)
         except PlaywrightTimeoutError:
             Logger.warning("Hide inactive control not found or not clickable")
-
-    def _get_project_ids_from_list(self, page: Page) -> List[str]:
-        """Return workspace IDs from ul.list-group > li > a; ID is in link text (e.g. datalumos-244787)."""
-        ids: List[str] = []
-        list_group = page.locator("ul.list-group")
-        if list_group.count() == 0:
-            return ids
-        items = list_group.locator("li")
-        count = items.count()
-        for idx in range(count):
-            li = items.nth(idx)
-            link = li.locator("a").first
-            if link.count() == 0:
-                continue
-            text = link.inner_text() or ""
-            match = re.search(r"datalumos-(\d+)", text)
-            if match:
-                ids.append(match.group(1))
-        return ids
-
-    def _process_one_project(self, page: Page, workspace_id: str) -> None:
-        """
-        Open project, verify Deposit In Progress, delete via dropdown and confirm.
-
-        On mismatch or disabled Delete: log error and return. Otherwise delete and re-apply Hide inactive.
-        """
-        project_url = PROJECT_URL_TEMPLATE.format(workspace_id=workspace_id)
-        try:
-            page.goto(project_url, wait_until="domcontentloaded")
-            page.locator(_PROJECT_STATUS).first.wait_for(
-                state="visible",
-                timeout=Args.upload_timeout,
-            )
-        except PlaywrightTimeoutError:
-            Logger.error(f"Cleanup In Progress: timeout loading project {workspace_id}")
-            return
-
-        if not self._confirm_deposit_in_progress(page, workspace_id):
-            return
-
-        if not self._open_more_dropdown(page, workspace_id):
-            return
-
-        # Dropdown ul is sibling of the more button; the li containing "Delete Project" has class="disabled" when disabled
-        delete_li_loc = page.locator(
-            "div.btn-group:has(button:has-text('more')) >> ul.dropdown-menu.dropdown-sm >> li:has-text('Delete Project')"
-        )
-        if delete_li_loc.count() == 0:
-            Logger.error(f"Cleanup In Progress: Delete Project menu item not found for {workspace_id}")
-            return
-        delete_li = delete_li_loc.first
-        if "disabled" in (delete_li.get_attribute("class") or ""):
-            Logger.error(f"Cleanup In Progress: Delete Project is disabled for {workspace_id}")
-            return
-
-        try:
-            delete_li.locator("a").first.click()
-            page.wait_for_timeout(500)
-        except PlaywrightTimeoutError:
-            Logger.error(f"Cleanup In Progress: could not click Delete Project for {workspace_id}")
-            return
-
-        confirm_btn = page.locator("#confirmationDialogYes")
-        try:
-            if confirm_btn.count() > 0:
-                confirm_btn.first.click()
-                page.wait_for_timeout(2000)
-        except PlaywrightTimeoutError:
-            Logger.error(f"Cleanup In Progress: could not confirm delete for {workspace_id}")
-            return
-
-        self._click_hide_inactive(page)
-        Logger.info(f"Cleanup In Progress: deleted project {workspace_id}")
-
-    def _open_more_dropdown(self, page: Page, workspace_id: str) -> bool:
-        """Open the 'more' dropdown by clicking the more button. Return False if not found."""
-        more_btn = page.locator("button:has-text('more')")
-        if more_btn.count() == 0:
-            Logger.error(f"Cleanup In Progress: more button not found for {workspace_id}")
-            return False
-        try:
-            more_btn.first.click()
-            page.wait_for_timeout(400)
-        except PlaywrightTimeoutError:
-            Logger.error(f"Cleanup In Progress: could not click more button for {workspace_id}")
-            return False
-        return True
-
-    def _confirm_deposit_in_progress(self, page: Page, workspace_id: str) -> bool:
-        """
-        Return True if the third sibling span of h1 has text [Deposit In Progress]; else log error and return False.
-        """
-        third_span = page.locator(_PROJECT_STATUS)
-        if third_span.count() == 0:
-            Logger.error(
-                f"Cleanup In Progress: project {workspace_id} has no third sibling span of h1 (wrong page?)"
-            )
-            return False
-        text = third_span.first.inner_text()
-        if DEPOSIT_IN_PROGRESS_TEXT not in (text or ""):
-            Logger.error(
-                f"Cleanup In Progress: project {workspace_id} status is not [Deposit In Progress]: {text!r}"
-            )
-            return False
-        return True
 
 
 def resolve_keep_workspace_ids(keep_drpids: List[int]) -> Set[str]:

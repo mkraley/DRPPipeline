@@ -11,12 +11,8 @@ from utils.Logger import Logger
 
 from cleanup_inprogress.CleanupInProgress import (
     CleanupInProgress,
-    PROJECT_URL_TEMPLATE,
     WORKSPACE_URL,
-    DEPOSIT_IN_PROGRESS_TEXT,
-    _PROJECT_LIST,
     _PROJECT_LIST_TIMEOUT_MS,
-    _PROJECT_STATUS,
     resolve_keep_workspace_ids,
 )
 
@@ -43,120 +39,79 @@ class TestCleanupInProgress(unittest.TestCase):
         Args._parsed_args = {}
 
     def test_constants(self) -> None:
-        """Test workspace URL and project URL template."""
+        """Workspace URL and list timeout are set for large Hide-inactive lists."""
         self.assertIn("datalumos/workspace", WORKSPACE_URL)
-        url = PROJECT_URL_TEMPLATE.format(workspace_id="244401")
-        self.assertIn("goToLevel=project", url)
-        self.assertIn("/datalumos/244401", url)
-        self.assertEqual(DEPOSIT_IN_PROGRESS_TEXT, "[Deposit In Progress]")
-
-    def test_confirm_deposit_in_progress_true(self) -> None:
-        """Test _confirm_deposit_in_progress returns True when third span has expected text."""
-        page = MagicMock()
-        third_span = MagicMock()
-        third_span.count.return_value = 1
-        third_span.first.inner_text.return_value = " [Deposit In Progress] "
-        page.locator.return_value = third_span
-
-        result = self.cleanup._confirm_deposit_in_progress(page, "123")
-        self.assertTrue(result)
-        page.locator.assert_called_once()
-        call_arg = page.locator.call_args[0][0]
-        self.assertIn("span[3]", call_arg)
-
-    def test_confirm_deposit_in_progress_false_no_span(self) -> None:
-        """Test _confirm_deposit_in_progress returns False when third span is missing."""
-        page = MagicMock()
-        third_span = MagicMock()
-        third_span.count.return_value = 0
-        page.locator.return_value = third_span
-
-        result = self.cleanup._confirm_deposit_in_progress(page, "456")
-        self.assertFalse(result)
-
-    def test_confirm_deposit_in_progress_false_wrong_text(self) -> None:
-        """Test _confirm_deposit_in_progress returns False when text is not [Deposit In Progress]."""
-        page = MagicMock()
-        third_span = MagicMock()
-        third_span.count.return_value = 1
-        third_span.first.inner_text.return_value = "Published"
-        page.locator.return_value = third_span
-
-        result = self.cleanup._confirm_deposit_in_progress(page, "789")
-        self.assertFalse(result)
-
-    def test_get_project_ids_from_list_empty(self) -> None:
-        """Test _get_project_ids_from_list returns empty list when no list-group."""
-        page = MagicMock()
-        list_group = MagicMock()
-        list_group.count.return_value = 0
-        page.locator.return_value = list_group
-
-        result = self.cleanup._get_project_ids_from_list(page)
-        self.assertEqual(result, [])
-        page.locator.assert_any_call("ul.list-group")
-
-    def test_get_project_ids_from_list_extracts_ids(self) -> None:
-        """Test _get_project_ids_from_list extracts workspace ID from link text (datalumos-244787)."""
-        page = MagicMock()
-        list_group = MagicMock()
-        list_group.count.return_value = 1
-        items = MagicMock()
-        items.count.return_value = 1
-        link = MagicMock()
-        link.count.return_value = 1
-        link.inner_text.return_value = "datalumos-244787"
-        li = MagicMock()
-        li.locator.return_value.first = link
-        items.nth.return_value = li
-        list_group.locator.return_value = items
-        page.locator.return_value = list_group
-
-        result = self.cleanup._get_project_ids_from_list(page)
-        self.assertEqual(result, ["244787"])
-
-    def test_get_project_ids_from_list_skips_li_without_datalumos_id_in_text(self) -> None:
-        """Test _get_project_ids_from_list skips li when link text has no datalumos-<id>."""
-        page = MagicMock()
-        list_group = MagicMock()
-        list_group.count.return_value = 1
-        items = MagicMock()
-        items.count.return_value = 1
-        link = MagicMock()
-        link.count.return_value = 1
-        link.inner_text.return_value = "Other label"
-        li = MagicMock()
-        li.locator.return_value.first = link
-        items.nth.return_value = li
-        list_group.locator.return_value = items
-        page.locator.return_value = list_group
-
-        result = self.cleanup._get_project_ids_from_list(page)
-        self.assertEqual(result, [])
+        self.assertGreaterEqual(_PROJECT_LIST_TIMEOUT_MS, 300000)
 
     @patch("upload.DataLumosAuthenticator.wait_for_human_verification", MagicMock())
     def test_run_calls_session_and_click_hide_inactive(self) -> None:
-        """Test run ensures browser, auth, goto workspace, click Hide inactive, then close."""
+        """Hide inactive runs before waiting for the visible project list."""
         mock_page = MagicMock()
         self.cleanup._session.ensure_browser = MagicMock(return_value=mock_page)
         self.cleanup._session.ensure_authenticated = MagicMock(return_value=None)
         self.cleanup._session.close = MagicMock(return_value=None)
-        self.cleanup._click_hide_inactive = MagicMock(return_value=None)
-        self.cleanup._get_project_ids_from_list = MagicMock(return_value=[])
+        order: list[str] = []
+
+        def _hide(_page: MagicMock) -> None:
+            order.append("hide")
+
+        def _wait(_page: MagicMock) -> None:
+            order.append("wait")
+
+        self.cleanup._click_hide_inactive = MagicMock(side_effect=_hide)
+        self.cleanup._wait_for_project_list = MagicMock(side_effect=_wait)
+        self.cleanup._snapshot_project_ids = MagicMock(return_value=[])
+        self.cleanup._delete_via_api = MagicMock()
 
         self.cleanup.run(-1)
 
         self.cleanup._session.ensure_browser.assert_called_once()
         self.cleanup._session.ensure_authenticated.assert_called_once()
         mock_page.goto.assert_called_once_with(WORKSPACE_URL, wait_until="domcontentloaded")
-        mock_page.wait_for_load_state.assert_not_called()
-        mock_page.locator.assert_any_call(_PROJECT_LIST)
-        mock_page.locator.return_value.first.wait_for.assert_called_once_with(
-            state="visible",
-            timeout=_PROJECT_LIST_TIMEOUT_MS,
+        self.assertEqual(order, ["hide", "wait"])
+        self.cleanup._snapshot_project_ids.assert_called_once_with(mock_page)
+        self.cleanup._delete_via_api.assert_called_once_with(mock_page, [])
+        self.cleanup._session.close.assert_called_once()
+
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification", MagicMock())
+    def test_run_returns_cleanly_when_project_list_times_out(self) -> None:
+        """A hidden/empty project list logs an error instead of crashing."""
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+        mock_page = MagicMock()
+        self.cleanup._session.ensure_browser = MagicMock(return_value=mock_page)
+        self.cleanup._session.ensure_authenticated = MagicMock(return_value=None)
+        self.cleanup._session.close = MagicMock(return_value=None)
+        self.cleanup._click_hide_inactive = MagicMock(return_value=None)
+        self.cleanup._wait_for_project_list = MagicMock(
+            side_effect=PlaywrightTimeoutError("hidden list")
         )
-        self.cleanup._click_hide_inactive.assert_called_once_with(mock_page)
-        self.cleanup._get_project_ids_from_list.assert_called_once_with(mock_page)
+        self.cleanup._snapshot_project_ids = MagicMock()
+        self.cleanup._delete_via_api = MagicMock()
+
+        self.cleanup.run(-1)
+
+        self.cleanup._snapshot_project_ids.assert_not_called()
+        self.cleanup._delete_via_api.assert_not_called()
+        self.cleanup._session.close.assert_called_once()
+
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification", MagicMock())
+    def test_run_aborts_when_published_visible_after_hide_inactive(self) -> None:
+        """(Published) after Hide inactive is a hard error; no API deletes."""
+        mock_page = MagicMock()
+        self.cleanup._session.ensure_browser = MagicMock(return_value=mock_page)
+        self.cleanup._session.ensure_authenticated = MagicMock(return_value=None)
+        self.cleanup._session.close = MagicMock(return_value=None)
+        self.cleanup._click_hide_inactive = MagicMock(return_value=None)
+        self.cleanup._wait_for_project_list = MagicMock(return_value=None)
+        self.cleanup._snapshot_list_html = MagicMock(
+            return_value='<li><a>datalumos-1 (Published)</a></li>'
+        )
+        self.cleanup._delete_via_api = MagicMock()
+
+        self.cleanup.run(-1)
+
+        self.cleanup._delete_via_api.assert_not_called()
         self.cleanup._session.close.assert_called_once()
 
     @patch("cleanup_inprogress.CleanupInProgress.resolve_keep_workspace_ids")
@@ -164,7 +119,7 @@ class TestCleanupInProgress(unittest.TestCase):
     def test_run_skips_protected_workspace_ids(
         self, mock_resolve: MagicMock
     ) -> None:
-        """Deposits listed via --keep-ids are not passed to _process_one_project."""
+        """Deposits listed via --keep-ids are not passed to the API delete loop."""
         Args._config["keep_ids"] = [1346]
         mock_resolve.return_value = {"261760"}
         mock_page = MagicMock()
@@ -172,15 +127,52 @@ class TestCleanupInProgress(unittest.TestCase):
         self.cleanup._session.ensure_authenticated = MagicMock(return_value=None)
         self.cleanup._session.close = MagicMock(return_value=None)
         self.cleanup._click_hide_inactive = MagicMock(return_value=None)
-        self.cleanup._get_project_ids_from_list = MagicMock(
+        self.cleanup._wait_for_project_list = MagicMock(return_value=None)
+        self.cleanup._snapshot_project_ids = MagicMock(
             return_value=["261760", "999001"]
         )
-        self.cleanup._process_one_project = MagicMock(return_value=None)
+        self.cleanup._delete_via_api = MagicMock()
 
         self.cleanup.run(-1)
 
         mock_resolve.assert_called_once_with([1346])
-        self.cleanup._process_one_project.assert_called_once_with(mock_page, "999001")
+        self.cleanup._delete_via_api.assert_called_once_with(mock_page, ["999001"])
+
+    @patch("cleanup_inprogress.CleanupInProgress.DataLumosDepositClient")
+    def test_delete_via_api_calls_delete_path_without_navigation(
+        self, mock_client_cls: MagicMock
+    ) -> None:
+        """API deletes use delete_path and never open project pages."""
+        page = MagicMock()
+        client = MagicMock()
+        client.token = "jwt"
+        mock_client_cls.return_value = client
+        self.cleanup._session.keep_deposit_token = MagicMock()
+
+        self.cleanup._delete_via_api(page, ["100", "200"])
+
+        mock_client_cls.assert_called_once()
+        client.ensure_deposit_page.assert_called_once()
+        self.assertEqual(
+            [call.args[0] for call in client.delete_path.call_args_list],
+            ["/datalumos/100", "/datalumos/200"],
+        )
+        page.goto.assert_not_called()
+
+    @patch("cleanup_inprogress.CleanupInProgress.DataLumosDepositClient")
+    def test_delete_one_failure_continues(
+        self, mock_client_cls: MagicMock
+    ) -> None:
+        """A rejected delete is logged and the next id is still attempted."""
+        page = MagicMock()
+        client = MagicMock()
+        client.token = ""
+        client.delete_path.side_effect = [RuntimeError("rejected"), None]
+        mock_client_cls.return_value = client
+
+        self.cleanup._delete_via_api(page, ["100", "200"])
+
+        self.assertEqual(client.delete_path.call_count, 2)
 
     @patch("cleanup_inprogress.CleanupInProgress.Storage")
     def test_resolve_keep_workspace_ids_maps_datalumos_id(
@@ -197,11 +189,6 @@ class TestCleanupInProgress(unittest.TestCase):
         self.assertEqual(result, {"261760"})
         self.assertEqual(mock_storage.get.call_count, 3)
 
-    def test_process_one_project_waits_for_status(self) -> None:
-        """Opening a project waits for its status text, not for the network to go idle."""
-        page = MagicMock()
-        self.cleanup._confirm_deposit_in_progress = MagicMock(return_value=False)
-        self.cleanup._process_one_project(page, "256298")
-        page.wait_for_load_state.assert_not_called()
-        page.locator.assert_any_call(_PROJECT_STATUS)
-        page.locator.return_value.first.wait_for.assert_called_once()
+
+if __name__ == "__main__":
+    unittest.main()

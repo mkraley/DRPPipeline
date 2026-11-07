@@ -234,6 +234,34 @@ class TestDirectDepositCalls(unittest.TestCase):
         page.evaluate.assert_not_called()
         page.request.get.assert_not_called()
 
+    def test_delete_path_issues_delete(self) -> None:
+        """Project delete uses DELETE /deletePath with the project path."""
+        page = MagicMock()
+        response = MagicMock()
+        response.status = 200
+        response.text.return_value = ""
+        page.request.fetch.return_value = response
+        client = DataLumosDepositClient(page, token=_TOKEN)
+        client.delete_path("/datalumos/9")
+        kwargs = page.request.fetch.call_args.kwargs
+        self.assertEqual(kwargs["method"], "DELETE")
+        self.assertIn("/deletePath?path=", page.request.fetch.call_args.args[0])
+        self.assertIn("%2Fdatalumos%2F9", page.request.fetch.call_args.args[0])
+
+    def test_delete_path_rejects_error_code_body(self) -> None:
+        """A 200 response with errorCode is treated as failure."""
+        page = MagicMock()
+        response = MagicMock()
+        response.status = 200
+        response.text.return_value = (
+            '{"errorCode":"FORBIDDEN","errorMessage":"Cannot delete published"}'
+        )
+        page.request.fetch.return_value = response
+        client = DataLumosDepositClient(page, token=_TOKEN)
+        with self.assertRaises(RuntimeError) as caught:
+            client.delete_path("/datalumos/9")
+        self.assertIn("Cannot delete published", str(caught.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
