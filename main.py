@@ -47,6 +47,8 @@ COMMON OPTIONS
   --start INT             Only process projects with DRPID >= this value
   --ids LIST              Comma-delimited DRPIDs (ranges ok, e.g. 5,7,10-12);
                           incompatible with -n and --start
+  --keep-ids LIST         clean_inprogress: DRPIDs whose DataLumos deposits
+                          must not be deleted (ranges ok)
   --retry                 Process <prereq>-error projects (ignore errors field);
                           clear errors on success
   -l, --log-level LEVEL   DEBUG, INFO, WARNING, ERROR (default: INFO)

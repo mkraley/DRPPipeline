@@ -121,6 +121,8 @@ class Args(metaclass=ArgsMeta):
         "start_drpid": None,  # If set, only projects with DRPID >= start_drpid (overrides start_row when set)
         "retry": False,  # If True, select prereq-error statuses and ignore errors field
         "ids": None,  # Optional list[int] of DRPIDs from --ids (ranges allowed)
+        # clean_inprogress: DRPIDs whose DataLumos deposits must not be deleted
+        "keep_ids": None,
         "db_path": 'drp_pipeline.db',
         "storage_implementation": "StorageSQLLite",
         "base_output_dir": r"C:\Documents\DataRescue\DRPData",
@@ -313,6 +315,13 @@ class Args(metaclass=ArgsMeta):
                 help="Comma-delimited DRPIDs to process (ranges allowed, e.g. 5,7,10-12). "
                 "Incompatible with -n/--num-rows and --start",
             ),
+            keep_ids: Optional[str] = typer.Option(
+                None,
+                "--keep-ids",
+                help="clean_inprogress: comma-delimited DRPIDs whose DataLumos "
+                "deposits must not be deleted even when still In Progress "
+                "(ranges allowed, e.g. 1346,1400-1402)",
+            ),
             retry: bool = typer.Option(
                 False,
                 "--retry",
@@ -376,6 +385,12 @@ class Args(metaclass=ArgsMeta):
                 from utils.drpid_list import parse_drpid_ids
 
                 parsed_values["ids"] = parse_drpid_ids(ids)
+            if keep_ids is not None:
+                from utils.drpid_list import parse_drpid_ids
+
+                parsed_values["keep_ids"] = parse_drpid_ids(
+                    keep_ids, flag="--keep-ids"
+                )
             if retry:
                 parsed_values["retry"] = True
             if db_path is not None:

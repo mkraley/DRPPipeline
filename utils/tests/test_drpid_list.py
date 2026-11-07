@@ -31,6 +31,12 @@ class TestParseDrpidIds(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_drpid_ids("0")
 
+    def test_flag_name_appears_in_errors(self) -> None:
+        """Custom flag name is included in ValueError messages."""
+        with self.assertRaises(ValueError) as ctx:
+            parse_drpid_ids("", flag="--keep-ids")
+        self.assertIn("--keep-ids", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

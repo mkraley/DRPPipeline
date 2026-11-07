@@ -7,10 +7,11 @@ for each project verify status, open more dropdown, Delete Project, confirm.
 """
 
 import re
-from typing import List
+from typing import List, Set
 
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
+from storage import Storage
 from upload.DataLumosBrowserSession import DataLumosBrowserSession
 from utils.Args import Args
 from utils.Logger import Logger
@@ -41,12 +42,19 @@ class CleanupInProgress:
         """
         Run cleanup: find and delete all projects in Deposit In Progress.
 
-        Implements ModuleProtocol. drpid is ignored (use -1). Does not read/write Storage.
+        Implements ModuleProtocol. drpid is ignored (use -1). Does not write Storage.
+        Reads Storage only to resolve ``--keep-ids`` DRPIDs to DataLumos workspace IDs.
 
         Args:
             drpid: Ignored; module runs once over the DataLumos UI.
         """
         Logger.info("Cleanup In Progress: starting")
+        keep_workspace_ids = resolve_keep_workspace_ids(Args.keep_ids or [])
+        if keep_workspace_ids:
+            Logger.info(
+                "Cleanup In Progress: protecting %s DataLumos deposit(s) via --keep-ids",
+                len(keep_workspace_ids),
+            )
         page = self._session.ensure_browser()
         self._session.ensure_authenticated()
 
@@ -61,6 +69,12 @@ class CleanupInProgress:
             Logger.info(f"Cleanup In Progress: found {len(project_ids)} project(s) in list")
 
             for workspace_id in project_ids:
+                if workspace_id in keep_workspace_ids:
+                    Logger.info(
+                        "Cleanup In Progress: skipping protected deposit %s (--keep-ids)",
+                        workspace_id,
+                    )
+                    continue
                 self._process_one_project(page, workspace_id)
 
         finally:
@@ -187,3 +201,35 @@ class CleanupInProgress:
             )
             return False
         return True
+
+
+def resolve_keep_workspace_ids(keep_drpids: List[int]) -> Set[str]:
+    """
+    Map ``--keep-ids`` DRPIDs to DataLumos workspace ID strings via Storage.
+
+    Logs a warning for each DRPID that is missing or has no ``datalumos_id``.
+    """
+    workspace_ids: Set[str] = set()
+    for drpid in keep_drpids:
+        record = Storage.get(drpid)
+        if not record:
+            Logger.warning(
+                "Cleanup In Progress: --keep-ids DRPID=%s not found in database",
+                drpid,
+            )
+            continue
+        raw = record.get("datalumos_id")
+        workspace_id = str(raw).strip() if raw is not None else ""
+        if not workspace_id:
+            Logger.warning(
+                "Cleanup In Progress: --keep-ids DRPID=%s has no datalumos_id; cannot protect",
+                drpid,
+            )
+            continue
+        workspace_ids.add(workspace_id)
+        Logger.info(
+            "Cleanup In Progress: will keep DRPID=%s (datalumos_id=%s)",
+            drpid,
+            workspace_id,
+        )
+    return workspace_ids

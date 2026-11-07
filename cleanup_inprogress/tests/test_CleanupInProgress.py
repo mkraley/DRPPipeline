@@ -17,6 +17,7 @@ from cleanup_inprogress.CleanupInProgress import (
     _PROJECT_LIST,
     _PROJECT_LIST_TIMEOUT_MS,
     _PROJECT_STATUS,
+    resolve_keep_workspace_ids,
 )
 
 
@@ -157,6 +158,44 @@ class TestCleanupInProgress(unittest.TestCase):
         self.cleanup._click_hide_inactive.assert_called_once_with(mock_page)
         self.cleanup._get_project_ids_from_list.assert_called_once_with(mock_page)
         self.cleanup._session.close.assert_called_once()
+
+    @patch("cleanup_inprogress.CleanupInProgress.resolve_keep_workspace_ids")
+    @patch("upload.DataLumosAuthenticator.wait_for_human_verification", MagicMock())
+    def test_run_skips_protected_workspace_ids(
+        self, mock_resolve: MagicMock
+    ) -> None:
+        """Deposits listed via --keep-ids are not passed to _process_one_project."""
+        Args._config["keep_ids"] = [1346]
+        mock_resolve.return_value = {"261760"}
+        mock_page = MagicMock()
+        self.cleanup._session.ensure_browser = MagicMock(return_value=mock_page)
+        self.cleanup._session.ensure_authenticated = MagicMock(return_value=None)
+        self.cleanup._session.close = MagicMock(return_value=None)
+        self.cleanup._click_hide_inactive = MagicMock(return_value=None)
+        self.cleanup._get_project_ids_from_list = MagicMock(
+            return_value=["261760", "999001"]
+        )
+        self.cleanup._process_one_project = MagicMock(return_value=None)
+
+        self.cleanup.run(-1)
+
+        mock_resolve.assert_called_once_with([1346])
+        self.cleanup._process_one_project.assert_called_once_with(mock_page, "999001")
+
+    @patch("cleanup_inprogress.CleanupInProgress.Storage")
+    def test_resolve_keep_workspace_ids_maps_datalumos_id(
+        self, mock_storage: MagicMock
+    ) -> None:
+        """resolve_keep_workspace_ids looks up datalumos_id for each DRPID."""
+        mock_storage.get.side_effect = lambda drpid: {
+            1346: {"datalumos_id": "261760"},
+            99: {"datalumos_id": None},
+            100: None,
+        }.get(drpid)
+
+        result = resolve_keep_workspace_ids([1346, 99, 100])
+        self.assertEqual(result, {"261760"})
+        self.assertEqual(mock_storage.get.call_count, 3)
 
     def test_process_one_project_waits_for_status(self) -> None:
         """Opening a project waits for its status text, not for the network to go idle."""

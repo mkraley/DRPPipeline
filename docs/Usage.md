@@ -558,6 +558,7 @@ python main.py collect_interactively
 python main.py upload --num-rows 5
 python main.py publish
 python main.py clean_inprogress --log-color
+python main.py clean_inprogress --keep-ids 1346
 ```
 
 ### Status dashboard
@@ -601,7 +602,7 @@ python scripts/infer_ferc_metadata.py --dry-run --ids 27,34
 | **resume_download** | Downloads catalog files deferred at collection. Accepts `uploaded - large` and `resized`. Success status is `downloaded`. A retry continues with files that are not yet complete. |
 | **resume_upload** | Uploads files added by `resume_download` to the existing DataLumos project. Accepts `downloaded`. Success status is `finish wait`. The operator then sets status to `uploaded` before `publish`. |
 | **publish** | Nominates the source URL to GWDA unless that URL is already on the GWDA list, then publishes on DataLumos over the deposit API and optionally updates Google Sheet. `GET /viewStorage` must match ``num_files`` (plus product folders) and ``file_size``. Publish Data is `POST /publish` with the terms-dialog answers (no disclosure, not sensitive, public download, no embargo, Public Domain Mark, deposit agreement). The public view URL is opened in the browser and must show the published project before status becomes `published`. The publish POST can return before that page is up, so the check retries for about 90 seconds. The log line `Deposit API publish took` is that POST and the terms reads. The browser stays open for the login token and GWDA, and signs in again after 30 minutes. That token is kept for the rest of the batch, so GWDA leaving the DataLumos page does not open the workspace again. A rejected deposit token signs in once and retries that project. Processes `status="uploaded"`. |
-| **clean_inprogress** | Deletes DataLumos projects in Deposit In Progress state (no DB changes). |
+| **clean_inprogress** | Deletes DataLumos projects in Deposit In Progress state (no DB writes). Use `--keep-ids` with DRPIDs (ranges ok) to skip deposits that still have a `datalumos_id` in the DB — those workspace projects are left alone even when still In Progress. |
 | **noop** | No-op; useful for testing. |
 
 ### Sourcing modes
