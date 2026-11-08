@@ -61,6 +61,21 @@ class TestDepositDirect(unittest.TestCase):
         self.assertNotIn("$.ajax", waited_for)
         self.assertEqual(page.wait_for_function.call_args.kwargs["timeout"], 300000)
 
+    def test_login_redirect_does_not_wait_for_a_token(self) -> None:
+        """A workspace open that lands on Keycloak asks for a new sign-in."""
+        page = MagicMock()
+        page.evaluate.return_value = ""
+        page.url = "https://login.icpsr.umich.edu/realms/icpsr"
+        response = MagicMock()
+        response.status = 200
+        response.text.return_value = "<html></html>"
+        page.request.get.return_value = response
+        with patch("upload.DataLumosAuthenticator.wait_for_human_verification"):
+            with self.assertRaises(RuntimeError) as caught:
+                prepare_deposit_token(page)
+        self.assertIn("login page", str(caught.exception))
+        page.wait_for_function.assert_not_called()
+
     def test_document_token_skips_the_script_wait(self) -> None:
         """A token already in the loaded document is used without waiting for script."""
         page = MagicMock()

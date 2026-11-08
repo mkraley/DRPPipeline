@@ -24,8 +24,6 @@ from utils.Logger import Logger
 if TYPE_CHECKING:
     from upload.UploadIssueReporter import UploadIssueReporter
 
-# Keycloak sessions outlive a project. Sign in again on this cadence.
-LOGIN_MAX_AGE_SECONDS = 30 * 60
 # A failed sign-in is retried on the same project before that project is failed.
 LOGIN_MAX_ATTEMPTS = 3
 LOGIN_RETRY_MIN_SECONDS = 10
@@ -49,7 +47,6 @@ class DataLumosBrowserSession:
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
         self._authenticated = False
-        self._authenticated_at: float | None = None
         self._deposit_token = ""
         self._exit_registered = False
 
@@ -126,12 +123,12 @@ class DataLumosBrowserSession:
             keep_browser_window_minimized(self._page)
 
     def ensure_authenticated(self, reporter: Optional["UploadIssueReporter"] = None) -> None:
-        """Ensure user is authenticated to DataLumos. Reads Args for credentials."""
-        if self._authenticated and not _login_expired(self._authenticated_at):
+        """Sign in once per batch, and again when the browser is on the login page."""
+        if self._authenticated and not self._on_login_page():
             return
-        if _login_expired(self._authenticated_at):
-            Logger.info("DataLumos login is older than 30 minutes; signing in again")
-            self._authenticated = False
+        if self._on_login_page():
+            Logger.info("DataLumos sent the browser to the login page; signing in again")
+            self._drop_login()
         self._require_credentials()
         self._sign_in_with_retries(reporter)
 
@@ -192,7 +189,6 @@ class DataLumosBrowserSession:
     def _note_login_success(self, attempt: int) -> None:
         """Record a successful sign-in and say when it took more than one try."""
         self._authenticated = True
-        self._authenticated_at = time.monotonic()
         if attempt == 1:
             return
         Logger.info(
@@ -205,11 +201,23 @@ class DataLumosBrowserSession:
         """
         Force a fresh DataLumos login, even when already marked authenticated.
 
-        Use after long operations (e.g. downloads) that may expire the session.
+        A rejected deposit call uses this. The saved bearer token is dropped
+        so the next deposit call reads a new one.
         """
         Logger.info("Re-authenticating with DataLumos")
-        self._authenticated = False
+        self._drop_login()
         self.ensure_authenticated(reporter=reporter)
+
+    def _on_login_page(self) -> bool:
+        """Return True when the open page is the DataLumos or Keycloak sign-in page."""
+        from upload.DataLumosAuthenticator import page_needs_login
+
+        return page_needs_login(self._page)
+
+    def _drop_login(self) -> None:
+        """Forget the sign-in and the bearer token saved for this browser."""
+        self._authenticated = False
+        self._deposit_token = ""
 
     def close(self) -> None:
         """
@@ -251,9 +259,7 @@ class DataLumosBrowserSession:
                 pass
             self._playwright = None
 
-        self._authenticated = False
-        self._authenticated_at = None
-        self._deposit_token = ""
+        self._drop_login()
         Logger.debug("Browser resources cleaned up")
 
     def _abandon(self) -> None:
@@ -268,9 +274,7 @@ class DataLumosBrowserSession:
         self._context = None
         self._browser = None
         self._playwright = None
-        self._authenticated = False
-        self._authenticated_at = None
-        self._deposit_token = ""
+        self._drop_login()
         Logger.debug("Browser resources abandoned after interrupt")
 
 
@@ -288,8 +292,7 @@ def _page_still_open(page: Page) -> bool:
     return not closed
 
 
-def _login_expired(authenticated_at: float | None) -> bool:
-    """Return True when a recorded login is at least 30 minutes old."""
-    if authenticated_at is None:
-        return False
-    return time.monotonic() - authenticated_at >= LOGIN_MAX_AGE_SECONDS
+def sign_in_required(exc: BaseException) -> bool:
+    """Return True when a deposit rejection or a login page needs a new sign-in."""
+    text = str(exc)
+    return "(401)" in text or "sent the browser to the login page" in text

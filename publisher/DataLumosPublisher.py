@@ -13,7 +13,7 @@ from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_
 
 from storage import Storage
 from upload.DataLumosAuthenticator import datalumos_session_error
-from upload.DataLumosBrowserSession import DataLumosBrowserSession
+from upload.DataLumosBrowserSession import DataLumosBrowserSession, sign_in_required
 from utils.Args import Args
 from utils.project_utils import get_field
 from utils.Errors import PipelineFatal, ProjectAbort, record_crash, record_error
@@ -405,7 +405,7 @@ class DataLumosPublisher:
         try:
             errors = self._workspace_inventory_mismatches(page, project)
         except RuntimeError as exc:
-            if "(401)" not in str(exc):
+            if not sign_in_required(exc):
                 raise
             Logger.warning("DataLumos rejected the deposit token; signing in again")
             self._session.reauthenticate()
@@ -697,7 +697,7 @@ class DataLumosPublisher:
         try:
             return self._publish_over_http(page, drpid)
         except RuntimeError as exc:
-            if retried or "(401)" not in str(exc):
+            if retried or not sign_in_required(exc):
                 return False, str(exc)
             Logger.warning("DataLumos rejected the deposit token; signing in again")
             self._session.reauthenticate()

@@ -347,6 +347,24 @@ class TestDataLumosUploader(unittest.TestCase):
             "jwt-from-first-project"
         )
 
+    def test_rejected_deposit_call_signs_in_and_retries_once(self) -> None:
+        """A 401 signs in and posts the project a second time."""
+        project = {"title": "River gauges", "summary": "A set."}
+        self.uploader._session = MagicMock()
+        self.uploader._session.deposit_token = "jwt-old"
+        with patch("upload.DepositProjectUpload.DepositProjectUpload") as deposit_cls:
+            deposit = deposit_cls.return_value
+            deposit.create.side_effect = [
+                RuntimeError("Deposit POST /deposit/createProject failed (401)"),
+                "9",
+            ]
+            deposit.token = "jwt-new"
+            with patch("upload.DataLumosUploader.Storage.update_record"):
+                result = self.uploader._upload_project(project, 1, UploadIssueReporter(1))
+        self.assertEqual(result, "9")
+        self.uploader._session.reauthenticate.assert_called_once()
+        self.assertEqual(deposit.create.call_count, 2)
+
     def test_file_count_mismatch_stops_before_create(self) -> None:
         """A disk count that differs from num_files does not create a project."""
         (self.temp_dir / "only.txt").write_text("x", encoding="utf-8")

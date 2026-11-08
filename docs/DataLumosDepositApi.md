@@ -20,7 +20,7 @@ The pipeline reads that value from the workspace document (or from the page once
 Authorization: Bearer {jwtToken}
 ```
 
-The browser cookie jar goes with the request. File uploads copy those cookies onto a separate HTTP client because the body is a streamed multipart file. A `401` drops the saved token so the next project signs in again. Tokens are not written to the log.
+The browser cookie jar goes with the request. File uploads copy those cookies onto a separate HTTP client because the body is a streamed multipart file. A rejected deposit call, or a page that has landed on the login site, signs in again and drops the saved token. Tokens are not written to the log.
 
 The same token is reused for every project in a batch. The workspace is opened again only when the page has no token, which happens after a fresh login and after the GWDA nomination leaves the browser on another site.
 

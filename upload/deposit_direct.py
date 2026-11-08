@@ -73,6 +73,10 @@ def open_workspace_for_token(page: Page, reporter: Any = None) -> None:
     Logger.info("Opening DataLumos workspace for deposit API calls")
     page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=_REQUEST_TIMEOUT_MS)
     wait_for_human_verification(page, timeout=60000, reporter=reporter)
+    from upload.DataLumosAuthenticator import page_needs_login
+
+    if page_needs_login(page):
+        raise RuntimeError("DataLumos sent the browser to the login page")
     if _install_document_token(page):
         _stop_loading(page)
         return

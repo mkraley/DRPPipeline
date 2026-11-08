@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from storage import Storage
-from upload.DataLumosBrowserSession import DataLumosBrowserSession
+from upload.DataLumosBrowserSession import DataLumosBrowserSession, sign_in_required
 from upload.UploadIssueReporter import UploadIssueReporter
 from utils.Args import Args
 from utils.Errors import ProjectAbort
@@ -238,14 +238,29 @@ class DataLumosUploader:
         """Create and fill through the deposit API, then upload files."""
         page = self._session.ensure_browser()
         self._session.ensure_authenticated(reporter=reporter)
+        try:
+            return self._post_project(page, project, drpid, reporter)
+        except RuntimeError as exc:
+            if not sign_in_required(exc):
+                raise
+            Logger.warning("DataLumos rejected the deposit token; signing in again")
+            self._session.reauthenticate(reporter=reporter)
+            return self._post_project(page, project, drpid, reporter)
+
+    def _post_project(
+        self,
+        page: Any,
+        project: Dict[str, Any],
+        drpid: int,
+        reporter: UploadIssueReporter,
+    ) -> str:
+        """Create the project when it has no id, post metadata, and upload files."""
         from upload.DepositProjectUpload import DepositProjectUpload
 
         deposit = DepositProjectUpload(page, token=self._session.deposit_token)
         started = time.perf_counter()
         try:
-            workspace_id = deposit.create(project, reporter)
-            Logger.info(f"Created project with workspace ID: {workspace_id}")
-            Storage.update_record(drpid, {"datalumos_id": workspace_id})
+            workspace_id = self._workspace_id(deposit, project, drpid, reporter)
             deposit.fill(workspace_id, project)
         finally:
             self._session.keep_deposit_token(deposit.token)
@@ -254,6 +269,23 @@ class DataLumosUploader:
                 time.perf_counter() - started,
             )
         self._upload_folder(page, project, reporter, workspace_id)
+        return workspace_id
+
+    def _workspace_id(
+        self,
+        deposit: Any,
+        project: Dict[str, Any],
+        drpid: int,
+        reporter: UploadIssueReporter,
+    ) -> str:
+        """Return the DataLumos id, creating the project when this row has none."""
+        workspace_id = get_field(project, "datalumos_id")
+        if workspace_id:
+            return workspace_id
+        workspace_id = deposit.create(project, reporter)
+        Logger.info("Created project with workspace ID: %s", workspace_id)
+        Storage.update_record(drpid, {"datalumos_id": workspace_id})
+        project["datalumos_id"] = workspace_id
         return workspace_id
 
     def _upload_project_via_form(

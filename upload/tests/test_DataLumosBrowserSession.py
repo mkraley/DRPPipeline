@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import sys
-import time
 import unittest
 from unittest.mock import MagicMock, patch
 
-from upload.DataLumosBrowserSession import LOGIN_MAX_AGE_SECONDS, DataLumosBrowserSession
+from upload.DataLumosBrowserSession import DataLumosBrowserSession, sign_in_required
 from utils.Args import Args
 from utils.Logger import Logger
 
@@ -38,6 +37,7 @@ class TestDataLumosBrowserSession(unittest.TestCase):
         """reauthenticate forces a fresh login even when already authenticated."""
         session = DataLumosBrowserSession()
         session._authenticated = True
+        session.keep_deposit_token("jwt-saved")
         session._page = MagicMock()
 
         def _ensure(**_kwargs: object) -> None:
@@ -49,6 +49,7 @@ class TestDataLumosBrowserSession(unittest.TestCase):
 
         mock_ensure.assert_called_once_with(reporter=None)
         self.assertTrue(session._authenticated)
+        self.assertEqual(session.deposit_token, "")
 
     def test_ensure_authenticated_skips_when_already_authed(self) -> None:
         """ensure_authenticated is a no-op when the session is already marked authenticated."""
@@ -110,27 +111,34 @@ class TestDataLumosBrowserSession(unittest.TestCase):
         self.assertEqual(playwright.chromium.launch.call_count, 2)
 
     def test_recent_login_is_reused(self) -> None:
-        """A login younger than 30 minutes does not open the sign-in form again."""
+        """A finished sign-in does not open the form again on the next project."""
         session = DataLumosBrowserSession()
         session._authenticated = True
-        session._authenticated_at = time.monotonic()
         session._page = MagicMock()
+        session._page.url = "https://www.datalumos.org/datalumos/workspace"
         with patch("upload.DataLumosAuthenticator.DataLumosAuthenticator") as auth_cls:
             session.ensure_authenticated()
         auth_cls.assert_not_called()
 
-    def test_login_refreshes_after_thirty_minutes(self) -> None:
-        """A login that is 30 minutes old signs in again."""
-        session = DataLumosBrowserSession()
+    def test_login_page_signs_in_again(self) -> None:
+        """A browser sent to Keycloak signs in and drops the saved deposit token."""
+        session = self._session_with_credentials()
         session._authenticated = True
-        session._authenticated_at = time.monotonic() - (LOGIN_MAX_AGE_SECONDS + 1)
-        session._page = MagicMock()
-        Args._config["datalumos_username"] = "user@example.com"
-        Args._config["datalumos_password"] = "secret"
+        session.keep_deposit_token("jwt-saved")
+        session._page.url = "https://login.icpsr.umich.edu/realms/icpsr"
         with patch("upload.DataLumosAuthenticator.DataLumosAuthenticator") as auth_cls:
             session.ensure_authenticated()
         auth_cls.return_value.authenticate.assert_called_once()
+        self.assertEqual(session.deposit_token, "")
         self.assertTrue(session._authenticated)
+
+    def test_sign_in_required_matches_a_rejected_deposit_call(self) -> None:
+        """A 401 and a login-page redirect both ask for a new sign-in."""
+        self.assertTrue(sign_in_required(RuntimeError("Deposit POST /publish failed (401)")))
+        self.assertTrue(
+            sign_in_required(RuntimeError("DataLumos sent the browser to the login page"))
+        )
+        self.assertFalse(sign_in_required(RuntimeError("view was not available")))
 
     def test_failed_sign_in_retries_the_same_project(self) -> None:
         """One failed sign-in waits and tries again before the project continues."""

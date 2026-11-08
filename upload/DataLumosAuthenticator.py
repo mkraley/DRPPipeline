@@ -287,6 +287,26 @@ class DataLumosAuthenticator:
         return False
 
 
+def page_needs_login(page: Optional[Page]) -> bool:
+    """Return True when the browser is on the DataLumos or Keycloak sign-in page.
+
+    The profile-retrieval ``loginError`` page is a failed login, not a request
+    to sign in again.
+    """
+    if page is None:
+        return False
+    try:
+        url = page.url
+    except Exception:
+        return False
+    if not isinstance(url, str):
+        return False
+    lowered = url.lower()
+    if "loginerror" in lowered:
+        return False
+    return "login" in lowered or "signin" in lowered
+
+
 def datalumos_session_error(page: Page) -> Optional[str]:
     """
     Return a login-failure message when DataLumos did not open the workspace.
