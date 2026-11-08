@@ -18,6 +18,7 @@ from upload.minimize_browser_window import (
     AWAKE_WHEN_MINIMIZED_ARGS,
     keep_browser_window_minimized,
 )
+from upload.terminal_deposit_store import TerminalDepositStore
 from utils.Args import Args
 from utils.Logger import Logger
 
@@ -40,15 +41,18 @@ class DataLumosBrowserSession:
     before using the page; call close() when done.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, store: TerminalDepositStore | None = None) -> None:
         """Initialize session. Browser is created on first ensure_browser()."""
         self._playwright: Optional[Playwright] = None
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
+        self._store = store or TerminalDepositStore()
+        self._saved_state: dict[str, Any] | None = None
         self._authenticated = False
         self._deposit_token = ""
         self._exit_registered = False
+        self._restore_terminal_session()
 
     @property
     def deposit_token(self) -> str:
@@ -59,9 +63,11 @@ class DataLumosBrowserSession:
         """Remember a deposit bearer token for the rest of this browser session.
 
         Later projects send this token themselves. A rejected token is stored
-        as empty so the next project can open the workspace once.
+        as empty so the next project can open the workspace once. The token
+        and browser cookies are also written for the next command in this terminal.
         """
         self._deposit_token = token or ""
+        self._persist()
 
     def ensure_browser(self) -> Page:
         """Ensure browser is initialized and return the page."""
@@ -116,6 +122,8 @@ class DataLumosBrowserSession:
                 "Playwright video recording enabled; WebM files are written under %s when the session closes.",
                 resolved,
             )
+        if self._saved_state:
+            ctx_kwargs["storage_state"] = self._saved_state
         self._context = self._browser.new_context(**ctx_kwargs)
         self._context.set_default_timeout(Args.upload_timeout)
         self._page = self._context.new_page()
@@ -189,6 +197,7 @@ class DataLumosBrowserSession:
     def _note_login_success(self, attempt: int) -> None:
         """Record a successful sign-in and say when it took more than one try."""
         self._authenticated = True
+        self._persist()
         if attempt == 1:
             return
         Logger.info(
@@ -215,9 +224,44 @@ class DataLumosBrowserSession:
         return page_needs_login(self._page)
 
     def _drop_login(self) -> None:
-        """Forget the sign-in and the bearer token saved for this browser."""
+        """Forget the sign-in and remove the session saved for this terminal."""
+        self._clear_memory()
+        self._saved_state = None
+        self._store.delete()
+
+    def _clear_memory(self) -> None:
+        """Forget the in-memory sign-in without removing the terminal's file."""
         self._authenticated = False
         self._deposit_token = ""
+
+    def _restore_terminal_session(self) -> None:
+        """Load the token and cookies saved by the previous command in this terminal."""
+        token, state = self._store.load()
+        self._saved_state = state
+        if not token:
+            return
+        self._deposit_token = token
+        self._authenticated = True
+        Logger.info("Reusing the DataLumos deposit token from this terminal")
+
+    def _persist(self) -> None:
+        """Write the current token and cookies for the next command in this terminal."""
+        state = self._cookie_state()
+        if state is not None:
+            self._saved_state = state
+        self._store.save(self._deposit_token, self._saved_state)
+
+    def _cookie_state(self) -> dict[str, Any] | None:
+        """Return the browser cookie jar, or None when it cannot be read."""
+        if self._context is None:
+            return None
+        try:
+            state = self._context.storage_state()
+        except Exception:
+            return None
+        if not isinstance(state, dict):
+            return None
+        return state
 
     def close(self) -> None:
         """
@@ -231,6 +275,7 @@ class DataLumosBrowserSession:
             self._abandon()
             return
 
+        self._persist()
         if self._page is not None:
             try:
                 self._page.close()
@@ -259,7 +304,7 @@ class DataLumosBrowserSession:
                 pass
             self._playwright = None
 
-        self._drop_login()
+        self._clear_memory()
         Logger.debug("Browser resources cleaned up")
 
     def _abandon(self) -> None:
@@ -274,7 +319,7 @@ class DataLumosBrowserSession:
         self._context = None
         self._browser = None
         self._playwright = None
-        self._drop_login()
+        self._clear_memory()
         Logger.debug("Browser resources abandoned after interrupt")
 
 

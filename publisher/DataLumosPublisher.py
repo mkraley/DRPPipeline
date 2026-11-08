@@ -151,7 +151,7 @@ class DataLumosPublisher:
     def __init__(self) -> None:
         """Initialize the DataLumos publisher. Config from Args."""
         self._session = DataLumosBrowserSession()
-        self._deposit_token = ""
+        self._deposit_token = self._session.deposit_token
 
     def run(self, drpid: int) -> None:
         """
@@ -240,6 +240,7 @@ class DataLumosPublisher:
 
     def close(self) -> None:
         """Close the browser kept open across the projects in this batch."""
+        self._session.keep_deposit_token(self._deposit_token)
         self._session.close()
 
     def _nominate_gwda(self, page: Page, source_url: str) -> Optional[str]:
@@ -727,6 +728,7 @@ class DataLumosPublisher:
     def _keep_deposit_token(self, client: "DataLumosPublishClient") -> None:
         """Remember the bearer token so the next project does not render the workspace."""
         self._deposit_token = client.token
+        self._session.keep_deposit_token(client.token)
 
     def _reset_to_project_workspace(self, page: Page, workspace_id: str) -> None:
         """

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from upload.DataLumosBrowserSession import DataLumosBrowserSession, sign_in_required
+from upload.terminal_deposit_store import TerminalDepositStore
 from utils.Args import Args
 from utils.Logger import Logger
 
@@ -140,6 +143,52 @@ class TestDataLumosBrowserSession(unittest.TestCase):
         )
         self.assertFalse(sign_in_required(RuntimeError("view was not available")))
 
+    def test_restored_token_skips_sign_in(self) -> None:
+        """A token saved by the previous command in this terminal is reused."""
+        store = self._store()
+        store.save("jwt-saved", {"cookies": [{"name": "sid"}], "origins": []})
+        session = DataLumosBrowserSession(store)
+        session._page = MagicMock()
+        session._page.url = "https://www.datalumos.org/datalumos/workspace"
+        self.assertEqual(session.deposit_token, "jwt-saved")
+        with patch("upload.DataLumosAuthenticator.DataLumosAuthenticator") as auth_cls:
+            session.ensure_authenticated()
+        auth_cls.assert_not_called()
+
+    def test_close_leaves_the_token_for_the_next_command(self) -> None:
+        """Closing the browser keeps the token and cookies for this terminal."""
+        store = self._store()
+        session = DataLumosBrowserSession(store)
+        session.keep_deposit_token("jwt-1")
+        session._context = MagicMock()
+        session._context.storage_state.return_value = {
+            "cookies": [{"name": "sid"}],
+            "origins": [],
+        }
+        session.close()
+        self.assertEqual(session.deposit_token, "")
+        token, state = store.load()
+        self.assertEqual(token, "jwt-1")
+        self.assertEqual(state["cookies"][0]["name"], "sid")
+
+    def test_restored_cookies_are_loaded_into_the_new_browser(self) -> None:
+        """The next command's browser starts with the saved cookie jar."""
+        store = self._store()
+        cookies = {"cookies": [{"name": "sid"}], "origins": []}
+        store.save("jwt-1", cookies)
+        session, _page, playwright = self._browser_session(store)
+        with patch("upload.DataLumosBrowserSession.sync_playwright") as mock_pw:
+            mock_pw.return_value.start.return_value = playwright
+            with patch("upload.DataLumosBrowserSession.keep_browser_window_minimized"):
+                session.ensure_browser()
+        state = playwright.chromium.launch.return_value.new_context.call_args.kwargs
+        self.assertEqual(state["storage_state"], cookies)
+
+    def _store(self) -> TerminalDepositStore:
+        """Return a store in a private folder for one pretend terminal."""
+        folder = Path(tempfile.mkdtemp())
+        return TerminalDepositStore(folder, terminal_id=42)
+
     def test_failed_sign_in_retries_the_same_project(self) -> None:
         """One failed sign-in waits and tries again before the project continues."""
         session = self._session_with_credentials()
@@ -184,7 +233,7 @@ class TestDataLumosBrowserSession(unittest.TestCase):
         Args._config["datalumos_password"] = "secret"
         return session
 
-    def _browser_session(self) -> tuple:
+    def _browser_session(self, store: TerminalDepositStore | None = None) -> tuple:
         """Return a session whose Playwright objects are mocks."""
         page = MagicMock()
         browser = MagicMock()
@@ -193,7 +242,7 @@ class TestDataLumosBrowserSession(unittest.TestCase):
         browser.new_context.return_value = context
         playwright = MagicMock()
         playwright.chromium.launch.return_value = browser
-        return DataLumosBrowserSession(), page, playwright
+        return DataLumosBrowserSession(store), page, playwright
 
 
 if __name__ == "__main__":
