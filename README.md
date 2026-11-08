@@ -5,6 +5,7 @@ A modular pipeline for collecting data from various sources (e.g., government we
 - **[Setup](docs/Setup.md)** — Prerequisites and installation  
 - **[Usage](docs/Usage.md)** — Parameters, SPA, command line, database  
 - **[Status](docs/Status.md)** — Project status values, meanings, and transitions  
+- **[DataLumos deposit API](docs/DataLumosDepositApi.md)** — Deposit calls used for upload, publish, and draft delete  
 
 ## Overview
 
@@ -70,7 +71,7 @@ DRPPipeline/
 | **collect** | Collects sourced projects into local folders (Socrata, catalog.data.gov, CMS, USFS, ADC, BTS, SSA, EPA, NPS IRMA, FERC, etc.; selected by `source` in config). SSA and EPA share the Data.gov catalog collector. The FERC collector also infers keywords, time range, data types, and geographic coverage. Electric Quarterly Report CSV zips are sourced as seven year-range projects, each under 25 GiB, with ``python scripts/source_eqr_projects.py``. |
 | **collect_interactively** | Flask app for manual collection: browse URLs, save PDFs, update metadata. Under active development; not managed by the orchestration MCP. |
 | **upload** | Uploads collected data to DataLumos. Project creation and metadata use the deposit API. The browser stays open for the batch, signs in again after 30 minutes, retries a failed sign-in on the same project up to 3 times, and later projects reuse the deposit token from the first open. Files are posted to the same deposit calls the Upload button makes (`/uploadRawFile`, or `/uploadZipFile` when the folder has subfolders), four at a time, without opening the project page. `--ui-upload` keeps the browser form and the project-page file modal. The on-disk file count is checked against `num_files` before the project is created. |
-| **publish** | Publishes on DataLumos through the deposit API (`viewStorage`, then `POST /publish`) and updates the source inventory. The public view URL is opened in the browser and must show the published project before the project is marked published. The browser stays open for the login token, reuses that token for the rest of the batch, signs in again after 30 minutes, and retries once when the deposit token is rejected. |
+| **publish** | Publishes on DataLumos through the deposit API (`viewStorage`, then `POST /publish`) and updates the source inventory. Only one publish process writes the Google Sheet at a time. The public view URL is opened in the browser and must show the published project before the project is marked published. The browser stays open for the login token, reuses that token for the rest of the batch, signs in again after 30 minutes, and retries once when the deposit token is rejected. |
 | **clean_inprogress** | Standalone utility that deletes DataLumos workspace projects in “Deposit In Progress” state (no DB writes). Pass `--keep-ids` with DRPIDs to leave those deposits alone. |
 | **noop** | No-op; useful for testing. |
 

@@ -51,6 +51,9 @@ htmlcov/
 # Pipeline GUI stop signal (created when user clicks Stop)
 .drp_pipeline_stop
 
+# Cross-process Google Sheet edit lock (beside the database)
+.sheet_edit_*.lock
+
 # Database
 *.db*
 *.sqlite

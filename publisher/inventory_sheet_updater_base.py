@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from publisher.sheet_edit_lock import SheetEditLock
 from utils.Args import Args
 from utils.google_sheets_service import build_sheets_v4_service, execute_sheets_request
 from utils.Logger import Logger
@@ -344,86 +345,18 @@ class InventorySheetUpdaterBase(ABC):
             return False, "Source URL is required to find matching row"
 
         try:
-            credentials = service_account.Credentials.from_service_account_file(
-                str(credentials_path),
-                scopes=["https://www.googleapis.com/auth/spreadsheets"],
-            )
-            service = build_sheets_v4_service(credentials, cache_discovery=False)
-
-            column_map = self._get_column_mapping(
-                service, sheet_id, sheet_name, required_columns, optional_columns
-            )
-            if not column_map:
-                raise ValueError("Failed to get column mapping from Google Sheet")
-            url_col_letter = column_map.get("URL")
-            if not url_col_letter:
-                raise ValueError("Could not find URL column in sheet")
-
-            row_number = self._find_row_by_url(
-                service, sheet_id, sheet_name, url_col_letter, source_url.strip()
-            )
-            append_new = False
-            if not row_number:
-                row_number = self._get_next_append_row(
-                    service, sheet_id, sheet_name, url_col_letter
+            with SheetEditLock(str(sheet_id), str(sheet_name or "")):
+                return self._write_locked_row(
+                    sheet_id=sheet_id,
+                    credentials_path=credentials_path,
+                    sheet_name=sheet_name,
+                    source_url=source_url,
+                    required_columns=required_columns,
+                    optional_columns=optional_columns,
+                    build_requests=build_requests,
+                    log_suffix=log_suffix,
+                    **build_kwargs,
                 )
-                append_new = True
-                Logger.info(
-                    f"No sheet row matches source URL; appending at row {row_number}{log_suffix}"
-                )
-
-            Logger.debug(
-                f"{'Appending' if append_new else 'Updating'} Google Sheet row {row_number}{log_suffix}"
-            )
-
-            project = build_kwargs.get("project")
-            project_dict = project if isinstance(project, dict) else None
-            title_to_write, agency_to_write, office_to_write = self._resolve_metadata_for_row(
-                service,
-                sheet_id,
-                sheet_name,
-                row_number,
-                append_new,
-                column_map,
-                project_dict,
-            )
-
-            update_requests = build_requests(
-                sheet_name=sheet_name,
-                row_number=row_number,
-                column_map=column_map,
-                append_new_row=append_new,
-                source_url=source_url.strip(),
-                title_to_write=title_to_write,
-                agency_to_write=agency_to_write,
-                office_to_write=office_to_write,
-                service=service,
-                sheet_id=sheet_id,
-                **build_kwargs,
-            )
-            if not update_requests:
-                return False, "No data to update"
-
-            body = {"valueInputOption": "USER_ENTERED", "data": update_requests}
-            execute_sheets_request(
-                service.spreadsheets().values().batchUpdate(
-                    spreadsheetId=sheet_id,
-                    body=body,
-                ),
-                operation_label="Sheets batchUpdate",
-            )
-
-            if append_new:
-                self._remember_appended_url(
-                    sheet_id, sheet_name, url_col_letter, source_url.strip()
-                )
-
-            action = "Appended" if append_new else "Updated"
-            Logger.info(
-                f"{action} Google Sheet row {row_number}{log_suffix} with {len(update_requests)} columns"
-            )
-            return True, None
-
         except ValueError as exc:
             return False, str(exc)
         except FileNotFoundError:
@@ -433,6 +366,181 @@ class InventorySheetUpdaterBase(ABC):
         except Exception as exc:
             Logger.warning(f"Error updating Google Sheet{log_suffix}: {exc}")
             return False, str(exc)
+
+    def _write_locked_row(
+        self,
+        sheet_id: str,
+        credentials_path: Path,
+        sheet_name: str,
+        source_url: str,
+        required_columns: List[str],
+        optional_columns: Optional[List[str]],
+        build_requests: Callable[..., List[Dict[str, Any]]],
+        log_suffix: str,
+        **build_kwargs: Any,
+    ) -> Tuple[bool, Optional[str]]:
+        """Read the matching row and write it while the sheet lock is held."""
+        service = self._sheets_service(credentials_path)
+        located = self._locate_row(
+            service,
+            sheet_id,
+            sheet_name,
+            source_url,
+            required_columns,
+            optional_columns,
+            log_suffix,
+        )
+        column_map, url_col_letter, row_number, append_new = located
+        return self._send_row_update(
+            service,
+            sheet_id,
+            sheet_name,
+            source_url,
+            row_number,
+            append_new,
+            column_map,
+            url_col_letter,
+            build_requests,
+            log_suffix,
+            build_kwargs,
+        )
+
+    def _sheets_service(self, credentials_path: Path) -> Any:
+        """Build a Sheets client from the service-account file."""
+        credentials = service_account.Credentials.from_service_account_file(
+            str(credentials_path),
+            scopes=["https://www.googleapis.com/auth/spreadsheets"],
+        )
+        return build_sheets_v4_service(credentials, cache_discovery=False)
+
+    def _locate_row(
+        self,
+        service: Any,
+        sheet_id: str,
+        sheet_name: str,
+        source_url: str,
+        required_columns: List[str],
+        optional_columns: Optional[List[str]],
+        log_suffix: str,
+    ) -> Tuple[Dict[str, str], str, int, bool]:
+        """Return column map, URL column, row number, and whether the row is new."""
+        column_map = self._get_column_mapping(
+            service, sheet_id, sheet_name, required_columns, optional_columns
+        )
+        if not column_map:
+            raise ValueError("Failed to get column mapping from Google Sheet")
+        url_col_letter = column_map.get("URL")
+        if not url_col_letter:
+            raise ValueError("Could not find URL column in sheet")
+        row_number = self._find_row_by_url(
+            service, sheet_id, sheet_name, url_col_letter, source_url.strip()
+        )
+        append_new = False
+        if not row_number:
+            row_number = self._get_next_append_row(
+                service, sheet_id, sheet_name, url_col_letter
+            )
+            append_new = True
+            Logger.info(
+                f"No sheet row matches source URL; appending at row {row_number}{log_suffix}"
+            )
+        Logger.debug(
+            f"{'Appending' if append_new else 'Updating'} Google Sheet row {row_number}{log_suffix}"
+        )
+        return column_map, url_col_letter, row_number, append_new
+
+    def _send_row_update(
+        self,
+        service: Any,
+        sheet_id: str,
+        sheet_name: str,
+        source_url: str,
+        row_number: int,
+        append_new: bool,
+        column_map: Dict[str, str],
+        url_col_letter: str,
+        build_requests: Callable[..., List[Dict[str, Any]]],
+        log_suffix: str,
+        build_kwargs: Dict[str, Any],
+    ) -> Tuple[bool, Optional[str]]:
+        """Write one located row and remember an append in the local cache."""
+        update_requests = self._requests_for_located_row(
+            service,
+            sheet_id,
+            sheet_name,
+            source_url,
+            row_number,
+            append_new,
+            column_map,
+            build_requests,
+            build_kwargs,
+        )
+        if not update_requests:
+            return False, "No data to update"
+        self._batch_update(service, sheet_id, update_requests)
+        if append_new:
+            self._remember_appended_url(
+                sheet_id, sheet_name, url_col_letter, source_url.strip()
+            )
+        action = "Appended" if append_new else "Updated"
+        Logger.info(
+            f"{action} Google Sheet row {row_number}{log_suffix} with {len(update_requests)} columns"
+        )
+        return True, None
+
+    def _requests_for_located_row(
+        self,
+        service: Any,
+        sheet_id: str,
+        sheet_name: str,
+        source_url: str,
+        row_number: int,
+        append_new: bool,
+        column_map: Dict[str, str],
+        build_requests: Callable[..., List[Dict[str, Any]]],
+        build_kwargs: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Build the cell updates for a row that has already been located."""
+        project = build_kwargs.get("project")
+        project_dict = project if isinstance(project, dict) else None
+        title_to_write, agency_to_write, office_to_write = self._resolve_metadata_for_row(
+            service,
+            sheet_id,
+            sheet_name,
+            row_number,
+            append_new,
+            column_map,
+            project_dict,
+        )
+        return build_requests(
+            sheet_name=sheet_name,
+            row_number=row_number,
+            column_map=column_map,
+            append_new_row=append_new,
+            source_url=source_url.strip(),
+            title_to_write=title_to_write,
+            agency_to_write=agency_to_write,
+            office_to_write=office_to_write,
+            service=service,
+            sheet_id=sheet_id,
+            **build_kwargs,
+        )
+
+    def _batch_update(
+        self,
+        service: Any,
+        sheet_id: str,
+        update_requests: List[Dict[str, Any]],
+    ) -> None:
+        """Send one values.batchUpdate for the located row."""
+        body = {"valueInputOption": "USER_ENTERED", "data": update_requests}
+        execute_sheets_request(
+            service.spreadsheets().values().batchUpdate(
+                spreadsheetId=sheet_id,
+                body=body,
+            ),
+            operation_label="Sheets batchUpdate",
+        )
 
     def _column_index_to_letter(self, col_index: int) -> str:
         """Convert 1-based column index to letter (e.g. 1 -> A, 27 -> AA)."""
