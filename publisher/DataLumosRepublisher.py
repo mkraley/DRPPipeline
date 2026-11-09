@@ -38,6 +38,10 @@ class DataLumosRepublisher(DataLumosPublisher):
         """Return ``republish`` for inventory gate error messages."""
         return "republish"
 
+    def _refuse_when_already_published(self) -> bool:
+        """Republish is the run that is allowed to post over a public version."""
+        return False
+
     def _nominate_gwda(self, page: Page, source_url: str) -> str | None:
         """
         Skip GWDA nomination on republish.

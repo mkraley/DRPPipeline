@@ -159,6 +159,29 @@ class TestDataLumosPublishClient(unittest.TestCase):
             )
         self.assertEqual(client.token, "")
 
+    def test_published_versions_reads_view_versions(self) -> None:
+        """A public V1 is kept and an unpublished row is dropped."""
+        page = MagicMock()
+
+        def fake_request(*_args: object, **_kwargs: object) -> dict:
+            payload = [
+                {"versionLabel": "V1", "status": "PUBLISHED"},
+                {"versionLabel": "V2", "status": "UNPUBLISHED"},
+            ]
+            return {"status": 200, "body": json.dumps(payload), "elapsedMs": 1}
+
+        with patch(
+            "publisher.DataLumosPublishClient.deposit_request",
+            side_effect=fake_request,
+        ) as request:
+            labels = DataLumosPublishClient(page, token="jwt").published_versions("42")
+
+        self.assertEqual(labels, ["V1"])
+        url = str(request.call_args.args[3])
+        self.assertIn("/deposit/viewVersions?", url)
+        self.assertIn("path=%2Fdatalumos%2F42", url)
+        page.goto.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

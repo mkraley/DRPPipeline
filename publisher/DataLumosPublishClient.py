@@ -23,12 +23,14 @@ from publisher.publish_terms import (
     apply_publish_answers,
     license_list_url,
     public_domain_license_id,
+    published_version_labels,
     resource_path,
     review_terms_url,
     term_attribute_names,
     terms_attributes_url,
     terms_url,
     view_storage_url,
+    view_versions_url,
 )
 from upload.deposit_direct import deposit_request, parse_body, prepare_deposit_token
 from upload.deposit_page_request import append_deposit_record, redact_secrets
@@ -76,6 +78,11 @@ class DataLumosPublishClient:
         path = resource_path(workspace_id)
         payload = self._get(view_storage_url(path))
         return storage_status_from_api(payload)
+
+    def published_versions(self, workspace_id: str) -> list[str]:
+        """Return public version labels from ``viewVersions``."""
+        path = resource_path(workspace_id)
+        return published_version_labels(self._get(view_versions_url(path)))
 
     def publish_project(self, workspace_id: str, version_title: str | None = None) -> None:
         """POST the terms dialog answers for ``workspace_id``."""

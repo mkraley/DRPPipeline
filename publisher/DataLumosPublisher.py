@@ -138,8 +138,9 @@ class DataLumosPublisher:
 
     Implements ModuleProtocol.     For each eligible project (status
     ``uploaded``), this module: nominates the source URL to GWDA, authenticates,
-    checks ``viewStorage`` against the database, POSTs ``/deposit/publish``
-    with the terms-dialog answers, and updates Storage with published_url and
+    checks ``viewStorage`` against the database, refuses when ``viewVersions``
+    already lists a public version, POSTs ``/deposit/publish`` with the
+    terms-dialog answers, and updates Storage with published_url and
     status="published" only after the public view URL responds.
 
     Prerequisites: status ``uploaded`` (plus sheet-only statuses) and no errors
@@ -711,6 +712,9 @@ class DataLumosPublisher:
         client = self._publish_client(page)
         try:
             client.ensure_ready()
+            blocked = self._block_if_already_published(client, workspace_id)
+            if blocked:
+                return False, blocked
             client.publish_project(workspace_id, self._version_title())
             view_url = self._published_view_url(workspace_id)
             if client.view_is_public(view_url):
@@ -718,6 +722,40 @@ class DataLumosPublisher:
             return False, f"Published view URL was not available: {view_url}"
         finally:
             self._keep_deposit_token(client)
+
+    def _refuse_when_already_published(self) -> bool:
+        """Return True when an existing public version must stop this publish."""
+        return True
+
+    def _block_if_already_published(self, client: Any, workspace_id: str) -> Optional[str]:
+        """
+        Return an error when posting publish would create another public version.
+
+        Republish overrides ``_refuse_when_already_published`` and is allowed
+        to post.
+
+        Args:
+            client: Deposit client for this batch.
+            workspace_id: DataLumos project id.
+
+        Returns:
+            An error message when a public version already exists, else None.
+        """
+        if not self._refuse_when_already_published():
+            return None
+        labels = client.published_versions(workspace_id)
+        if not labels:
+            return None
+        shown = ", ".join(labels)
+        Logger.info(
+            "DataLumos project %s is already published (%s); not posting /publish",
+            workspace_id,
+            shown,
+        )
+        return (
+            f"DataLumos project {workspace_id} is already published ({shown}); "
+            "refusing to publish again"
+        )
 
     def _publish_client(self, page: Page) -> "DataLumosPublishClient":
         """Return a publish client that already has this batch's deposit token."""

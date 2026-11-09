@@ -8,6 +8,7 @@ from publisher.publish_terms import (
     PUBLIC_DOMAIN_LICENSE_ID,
     apply_publish_answers,
     public_domain_license_id,
+    published_version_labels,
     term_attribute_names,
 )
 
@@ -59,6 +60,26 @@ class TestPublishTerms(unittest.TestCase):
             [{"groups": [{"attributes": [{"attribute": "licenseQuestion"}]}]}]
         )
         self.assertEqual(names, {"licenseQuestion"})
+
+    def test_public_versions_ignore_the_working_copy_and_unpublished_rows(self) -> None:
+        """V1 counts; V0 and an unpublished row do not."""
+        labels = published_version_labels(
+            [
+                {"versionLabel": "V0", "status": ""},
+                {"versionLabel": "V1", "status": "PUBLISHED"},
+                {"versionLabel": "V2", "status": "UNPUBLISHED"},
+            ]
+        )
+        self.assertEqual(labels, ["V1"])
+
+    def test_empty_version_list_is_not_published(self) -> None:
+        """A project with no versions has not been published."""
+        self.assertEqual(published_version_labels([]), [])
+
+    def test_version_payload_must_be_a_list(self) -> None:
+        """A non-list body is not treated as unpublished."""
+        with self.assertRaises(RuntimeError):
+            published_version_labels({"versionLabel": "V1"})
 
 
 if __name__ == "__main__":

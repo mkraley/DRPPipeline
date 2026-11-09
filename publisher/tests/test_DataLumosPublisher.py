@@ -871,3 +871,33 @@ class TestDataLumosPublisher(unittest.TestCase):
         self.assertIsNone(self.publisher._session._page)
         self.assertIsNone(self.publisher._session._playwright)
         self.assertFalse(self.publisher._session._authenticated)
+
+    def test_publish_stops_when_a_public_version_exists(self) -> None:
+        """An existing V1 blocks POST /publish and leaves the project unpublished here."""
+        drpid = Storage.create_record("https://example.com/already")
+        Storage.update_record(drpid, {"datalumos_id": "261000", "status": "uploaded"})
+        client = MagicMock()
+        client.published_versions.return_value = ["V1"]
+        self.publisher._publish_client = MagicMock(return_value=client)  # type: ignore[method-assign]
+
+        success, message = self.publisher._publish_over_http(MagicMock(), drpid)
+
+        self.assertFalse(success)
+        self.assertIn("already published (V1)", message or "")
+        client.publish_project.assert_not_called()
+        client.view_is_public.assert_not_called()
+
+    def test_publish_posts_when_no_public_version_exists(self) -> None:
+        """An empty version list still posts publish."""
+        drpid = Storage.create_record("https://example.com/fresh")
+        Storage.update_record(drpid, {"datalumos_id": "261001", "status": "uploaded"})
+        client = MagicMock()
+        client.published_versions.return_value = []
+        client.view_is_public.return_value = True
+        self.publisher._publish_client = MagicMock(return_value=client)  # type: ignore[method-assign]
+
+        success, message = self.publisher._publish_over_http(MagicMock(), drpid)
+
+        self.assertTrue(success)
+        self.assertIsNone(message)
+        client.publish_project.assert_called_once_with("261001", None)

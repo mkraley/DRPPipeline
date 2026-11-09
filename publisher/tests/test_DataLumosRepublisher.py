@@ -56,6 +56,21 @@ class TestDataLumosRepublisher(unittest.TestCase):
 
             shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def test_republish_posts_when_a_public_version_exists(self) -> None:
+        """Republish does not treat an existing public version as a reason to stop."""
+        drpid = Storage.create_record("https://example.com/again")
+        Storage.update_record(drpid, {"datalumos_id": "261002", "status": "re-uploaded"})
+        client = MagicMock()
+        client.view_is_public.return_value = True
+        self.module._publish_client = MagicMock(return_value=client)  # type: ignore[method-assign]
+
+        success, message = self.module._publish_over_http(MagicMock(), drpid)
+
+        self.assertTrue(success)
+        self.assertIsNone(message)
+        client.published_versions.assert_not_called()
+        client.publish_project.assert_called_once_with("261002", REPUBLISH_VERSION_TITLE)
+
     def test_version_title_constant(self) -> None:
         """Version title text matches the product requirement."""
         self.assertEqual(REPUBLISH_VERSION_TITLE, "added missing file")

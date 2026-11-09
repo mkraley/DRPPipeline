@@ -3,12 +3,14 @@ Build the DataLumos publish request the review dialog already sends.
 
 Captured from ``deposit.min.js`` build 20260910-150211. Publish Data POSTs the
 ``getTermsAndConditions`` object as JSON to ``/deposit/publish``. Storage
-inventory is ``GET /deposit/viewStorage``.
+inventory is ``GET /deposit/viewStorage``. Public versions are
+``GET /deposit/viewVersions``.
 """
 
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any
 
 from upload.deposit_page_request import DEPOSIT_SERVER, encode_query
@@ -40,6 +42,56 @@ def resource_path(workspace_id: str) -> str:
 def view_storage_url(path: str) -> str:
     """URL for the Storage Status payload of one project."""
     return f"{DEPOSIT_SERVER}/viewStorage?path={encode_query(path)}"
+
+
+def view_versions_url(path: str) -> str:
+    """URL for the Published Versions list of one project."""
+    return f"{DEPOSIT_SERVER}/viewVersions?path={encode_query(path)}"
+
+
+_PUBLIC_VERSION = re.compile(r"^V[1-9]\d*$")
+
+
+def published_version_labels(versions: object) -> list[str]:
+    """
+    Return labels of versions that are already public.
+
+    ``viewVersions`` is the list the workspace shows as Published Versions.
+    A row marked ``UNPUBLISHED`` is struck through and does not count. ``V0``
+    is the working copy and does not count.
+
+    Args:
+        versions: JSON from ``viewVersions``.
+
+    Returns:
+        Public version labels such as ``V1``.
+
+    Raises:
+        RuntimeError: When the payload is not a list.
+    """
+    if not isinstance(versions, list):
+        raise RuntimeError("viewVersions did not return a list")
+    labels: list[str] = []
+    for item in versions:
+        label = _public_version_label(item)
+        if label:
+            labels.append(label)
+    return labels
+
+
+def _public_version_label(item: object) -> str:
+    """Return a public version label, or empty when the row is not public."""
+    if not isinstance(item, dict):
+        return ""
+    status = str(item.get("status") or "").strip().upper()
+    if status == "UNPUBLISHED":
+        return ""
+    label = str(item.get("versionLabel") or "").strip().upper()
+    if status == "PUBLISHED":
+        return label or "PUBLISHED"
+    if _PUBLIC_VERSION.match(label):
+        return label
+    return ""
 
 
 def terms_url(path: str) -> str:

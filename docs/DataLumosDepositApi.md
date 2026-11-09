@@ -137,6 +137,12 @@ Publish reads this before it will publish. The fields the pipeline uses:
 
 The count must equal `num_files` plus the number of product folders. The space label must match `file_size`. A label like `< 0.01 GB` matches any database size under that threshold.
 
+## Published versions
+
+`GET /deposit/viewVersions?path={path}`
+
+The body is a list. Each row has `versionLabel` and `status`. Publish reads this before `POST /publish`. A row counts as already public when `versionLabel` is `V1` or later, or when `status` is `PUBLISHED`. A row with `status` `UNPUBLISHED` does not count, and `V0` is the working copy. When any public row is present, publish stops and does not post. Republish skips this read.
+
 ## Publish
 
 Publish Data posts the object returned by the terms call, with the review-dialog answers filled in. The four reads happen first, in this order:
