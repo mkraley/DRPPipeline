@@ -8,7 +8,7 @@ from typing import Any
 
 from utils.source_sheet_defaults import new_source_sheet_defaults
 
-_SOURCE_CODE = re.compile(r"[a-z]{2,10}")
+_SOURCE_CODE = re.compile(r"[a-z][a-z0-9]{1,9}")
 
 
 def normalize_source_code(raw: str) -> str:
@@ -19,14 +19,17 @@ def normalize_source_code(raw: str) -> str:
         raw: Initials typed on the command line.
 
     Returns:
-        Lowercase letters, 2–10 characters.
+        Lowercase code, 2–10 characters, starting with a letter.
 
     Raises:
-        ValueError: If ``raw`` is not a short alphabetic code.
+        ValueError: If ``raw`` is not a short letter-and-digit code.
     """
     code = raw.strip().lower()
     if _SOURCE_CODE.fullmatch(code) is None:
-        raise ValueError("Source initials must be 2–10 letters, for example nrc.")
+        raise ValueError(
+            "Source initials must be 2–10 characters, start with a letter, "
+            "and use only letters and digits, for example nrc or epa2."
+        )
     return code
 
 

@@ -48,10 +48,13 @@ class TestNewSourcePlan(unittest.TestCase):
     """Tests for source-code planning that does not call Google."""
 
     def test_normalize_source_code(self) -> None:
-        """Initials are stored as lowercase letters."""
+        """Initials are stored lowercase and may include digits after a letter."""
         self.assertEqual(normalize_source_code(" NRC "), "nrc")
+        self.assertEqual(normalize_source_code("EPA2"), "epa2")
         with self.assertRaises(ValueError):
-            normalize_source_code("n1")
+            normalize_source_code("1epa")
+        with self.assertRaises(ValueError):
+            normalize_source_code("a")
 
     def test_build_source_config_drops_template_secrets(self) -> None:
         """The new section keeps Baserow defaults and a blank DataLumos password."""
