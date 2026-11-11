@@ -18,6 +18,27 @@ _ITEM_ID = re.compile(r"[0-9a-fA-F]{32}")
 _HUB_HOST_SUFFIXES = (".hub.arcgis.com", ".maps.arcgis.com")
 
 
+def landing_page_url(source_url: str) -> str:
+    """
+    Return the page to print for a Clip and Ship item.
+
+    Dataset explore URLs print the about page, which holds Load more and the
+    down-arrow sections. Document and hub-page URLs print themselves.
+
+    Args:
+        source_url: Stored source URL.
+
+    Returns:
+        About-page URL for datasets, otherwise ``source_url``.
+    """
+    parsed = urlparse(source_url.strip())
+    item_id = item_id_from_source_url(source_url)
+    path = parsed.path.lower()
+    if item_id and "/datasets/" in path and not path.rstrip("/").endswith("/about"):
+        return f"{hub_item_url(item_id, 'Feature Service')}/about"
+    return source_url.strip()
+
+
 def hub_item_url(item_id: str, item_type: str) -> str:
     """
     Return the public Hub page for a catalog item.

@@ -302,9 +302,27 @@ class UsfsPageDownloader:
         pdf_path: Path,
         *,
         open_details_selector: str | None = None,
+        spa_ready: bool = False,
     ) -> bool:
-        """Navigate to ``url`` and write a PDF to ``pdf_path``."""
-        return self._render_pdf(url, pdf_path, open_details_selector) is not None
+        """
+        Navigate to ``url`` and write a PDF to ``pdf_path``.
+
+        Args:
+            url: Page to print.
+            pdf_path: Destination PDF.
+            open_details_selector: Optional element whose ``<details>`` ancestor opens.
+            spa_ready: When True, wait for SPA content, expand Load more and
+                down arrows, and print with screen media.
+        """
+        return (
+            self._render_pdf(
+                url,
+                pdf_path,
+                open_details_selector,
+                spa_ready=spa_ready,
+            )
+            is not None
+        )
 
     def url_to_titled_pdf(
         self,
@@ -402,17 +420,24 @@ class UsfsPageDownloader:
         url: str,
         pdf_path: Path,
         open_details_selector: str | None,
+        *,
+        spa_ready: bool = False,
     ) -> Path | None:
-        """Navigate, optionally expand a details section, and print to PDF."""
+        """Navigate, expand the page, and print to PDF."""
         if not self._ensure_browser():
             return None
         page = self._session.new_page()
         if page is None:
             return None
         try:
-            self._prepare_page_for_pdf(page, url, open_details_selector)
+            self._prepare_page_for_pdf(
+                page,
+                url,
+                open_details_selector,
+                spa_ready=spa_ready,
+            )
             pdf_path.parent.mkdir(parents=True, exist_ok=True)
-            return self._write_page_pdf(page, pdf_path)
+            return self._write_page_pdf(page, pdf_path, spa_ready=spa_ready)
         except Exception as exc:
             Logger.error("Failed to render PDF from %s: %s", url, exc)
             return None

@@ -7,6 +7,7 @@ import unittest
 from sourcing.EpaHubCandidateFetcher import (
     hub_item_url,
     item_id_from_source_url,
+    landing_page_url,
     row_from_feature,
     rows_from_features,
 )
@@ -46,6 +47,16 @@ class TestEpaHubCandidateRows(unittest.TestCase):
         self.assertEqual(row["agency"], AGENCY)
         self.assertEqual(row["office"], "U.S. EPA Office of Water")
         self.assertEqual(row["summary"], "Line one line two")
+
+    def test_dataset_landing_page_is_the_about_page(self) -> None:
+        """Dataset explore URLs print the about page that has the expand controls."""
+        source = f"https://edg-epa.hub.arcgis.com/datasets/{_FEATURE_ID}"
+        self.assertEqual(
+            landing_page_url(source),
+            f"https://edg-epa.hub.arcgis.com/datasets/{_FEATURE_ID}/about",
+        )
+        page = f"https://edg-epa.hub.arcgis.com/pages/{_PAGE_ID}"
+        self.assertEqual(landing_page_url(page), page)
 
     def test_service_definition_and_hub_page_paths(self) -> None:
         """Service definitions and hub pages use their Hub sections."""

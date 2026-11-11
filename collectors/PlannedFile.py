@@ -12,6 +12,7 @@ _GENERATED_SIDECAR_NAMES = frozenset({
     "project_metadata.json",
     "product_metadata.json",
     "catalog_page.pdf",
+    "landing_page.pdf",
     "catalog_detail.pdf",
     "metadata.pdf",
     "file_index.pdf",

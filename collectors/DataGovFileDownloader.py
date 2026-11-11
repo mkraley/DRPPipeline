@@ -448,27 +448,7 @@ class DataGovFileDownloader:
         Returns:
             Path to the written JSON file, or None on failure.
         """
-        json_url = arcgis_json_url(entry.url)
-        dest = folder_path / _arcgis_json_filename(entry.url)
-        try:
-            response = requests.get(
-                json_url,
-                timeout=60,
-                verify=requests_verify(),
-                headers={"Accept": "application/json"},
-            )
-        except requests.RequestException as exc:
-            Logger.error("ArcGIS JSON download failed for %s: %s", json_url, exc)
-            return None
-        if response.status_code >= 400 or not response.content:
-            Logger.error(
-                "ArcGIS JSON download HTTP %s for %s",
-                response.status_code,
-                json_url,
-            )
-            return None
-        dest.write_bytes(response.content)
-        return dest
+        return save_arcgis_service_json(folder_path, entry.url)
 
 
 def _html_resource_failure_message(failures: list[str], total: int) -> str:
@@ -493,6 +473,40 @@ def _html_resource_failure_message(failures: list[str], total: int) -> str:
     if failed == 1:
         return f"{summary}: {failures[0]}"
     return summary + "\n" + "\n".join(failures)
+
+
+def save_arcgis_service_json(folder_path: Path, service_url: str) -> Path | None:
+    """
+    Download MapServer/FeatureServer ``?f=json`` metadata into ``folder_path``.
+
+    Args:
+        folder_path: Project output folder.
+        service_url: MapServer or FeatureServer URL.
+
+    Returns:
+        Path to the written JSON file, or None on failure.
+    """
+    json_url = arcgis_json_url(service_url)
+    dest = folder_path / _arcgis_json_filename(service_url)
+    try:
+        response = requests.get(
+            json_url,
+            timeout=60,
+            verify=requests_verify(),
+            headers={"Accept": "application/json"},
+        )
+    except requests.RequestException as exc:
+        Logger.error("ArcGIS JSON download failed for %s: %s", json_url, exc)
+        return None
+    if response.status_code >= 400 or not response.content:
+        Logger.error(
+            "ArcGIS JSON download HTTP %s for %s",
+            response.status_code,
+            json_url,
+        )
+        return None
+    dest.write_bytes(response.content)
+    return dest
 
 
 def _arcgis_json_filename(service_url: str) -> str:

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from collectors.PageExpandForPdf import (
     _click_playwright_arcgis_controls,
+    _click_playwright_down_arrows,
     expand_read_more_and_load_more,
 )
 
@@ -95,6 +96,10 @@ class TestPageExpandForPdf(unittest.TestCase):
         load.nth.return_value = load_nth
 
         def locator_side_effect(selector: str, **_kwargs: object) -> MagicMock:
+            if "chevronDown" in selector:
+                empty = MagicMock()
+                empty.count.return_value = 0
+                return empty
             if "more-button" in selector:
                 return more
             link = MagicMock()
@@ -106,6 +111,21 @@ class TestPageExpandForPdf(unittest.TestCase):
         self.assertEqual(_click_playwright_arcgis_controls(page), 2)
         more_nth.click.assert_called_once()
         load_nth.click.assert_called_once()
+
+    def test_playwright_clicks_each_down_arrow(self) -> None:
+        """Collapsed chevronDown controls are clicked from last to first."""
+        page = MagicMock()
+        icons = MagicMock()
+        icons.count.return_value = 2
+        first = MagicMock()
+        second = MagicMock()
+        first.is_visible.return_value = True
+        second.is_visible.return_value = True
+        icons.nth.side_effect = lambda index: second if index == 1 else first
+        page.locator.return_value = icons
+        self.assertEqual(_click_playwright_down_arrows(page), 2)
+        second.click.assert_called_once()
+        first.click.assert_called_once()
 
     def test_live_browser_expands_arcgis_markup(self) -> None:
         """Live Chromium expands button.more-button and calcite-link Load more."""
@@ -119,6 +139,10 @@ class TestPageExpandForPdf(unittest.TestCase):
 <button class="btn btn-link more-button" aria-expanded="false" type="button">
   Read More
 </button>
+<section id="block" hidden>DETAILS</section>
+<button id="arrow" type="button">
+  <calcite-icon icon="chevronDown" aria-label="Expand"></calcite-icon>
+</button>
 <div id="items"><div>item1</div></div>
 <calcite-link icon-end="chevron-down" role="presentation">Load more</calcite-link>
 <script>
@@ -131,6 +155,10 @@ document.querySelector("calcite-link").addEventListener("click", function () {
   d.textContent = "item2";
   document.getElementById("items").appendChild(d);
   this.remove();
+});
+document.getElementById("arrow").addEventListener("click", function () {
+  document.getElementById("block").hidden = false;
+  this.querySelector("calcite-icon").setAttribute("icon", "chevronUp");
 });
 </script>
 </body></html>"""
@@ -149,6 +177,8 @@ document.querySelector("calcite-link").addEventListener("click", function () {
                   desc: getComputedStyle(document.getElementById("desc")).display,
                   items: document.querySelectorAll("#items div").length,
                   hasLm: !!document.querySelector("calcite-link"),
+                  block: document.getElementById("block").hidden,
+                  arrow: document.querySelector("#arrow calcite-icon").getAttribute("icon"),
                 })"""
                 )
             finally:
@@ -159,6 +189,8 @@ document.querySelector("calcite-link").addEventListener("click", function () {
         self.assertEqual(state["desc"], "block")
         self.assertEqual(state["items"], 2)
         self.assertFalse(state["hasLm"])
+        self.assertFalse(state["block"])
+        self.assertEqual(state["arrow"], "chevronUp")
 
 
 if __name__ == "__main__":

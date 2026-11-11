@@ -10,7 +10,7 @@ from utils.Args import Args
 
 _CATALOG_SOURCES = frozenset({"ahrq", "dol"})
 _SOURCE_KEYS = frozenset(
-    {"adc", "bts", "cdc", "cms", "epa", "ferc", "nps", "ssa", "usfs"}
+    {"adc", "bts", "cdc", "cms", "epa", "epa2", "ferc", "nps", "ssa", "usfs"}
 )
 
 
@@ -24,6 +24,7 @@ def _collector_map() -> dict[str, Type]:
     from collectors.AdcCollector import AdcCollector
     from collectors.BtsCollector import BtsCollector
     from collectors.CmsGovCollector import CmsGovCollector
+    from collectors.Epa2Collector import Epa2Collector
     from collectors.EpaCollector import EpaCollector
     from collectors.FercCollector import FercCollector
     from collectors.NpsCollector import NpsCollector
@@ -37,6 +38,7 @@ def _collector_map() -> dict[str, Type]:
         "cdc": SocrataCollector,
         "cms": CmsGovCollector,
         "epa": EpaCollector,
+        "epa2": Epa2Collector,
         "ferc": FercCollector,
         "nps": NpsCollector,
         "ssa": SsaCollector,
