@@ -180,6 +180,52 @@ class TestPageUnclipForPdf(unittest.TestCase):
         self.assertEqual(after["mast"], "none")
         self.assertEqual(after["scrim"], "none")
 
+    def test_live_browser_opens_summary_overflow_toggle(self) -> None:
+        """Hub summary fades lose their max-height so the last line remains."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright not installed")
+
+        html = """<!DOCTYPE html><html><body>
+<div class="overflow-toggle">
+  <div class="ember-view" style="height:60px; overflow:hidden;">
+    <div class="overflow-toggle-inner hide-overflow"
+         style="max-height:60px; overflow:hidden; -webkit-mask-image:linear-gradient(#000 50%, transparent);">
+      <p>Summary line one of the dataset description.</p>
+      <p id="tail">Last line that must remain visible.</p>
+    </div>
+  </div>
+</div>
+</body></html>"""
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.set_content(html)
+                unclip_overflow_for_pdf(page)
+                after = page.evaluate(
+                    """() => {
+                  const inner = document.querySelector(".overflow-toggle-inner");
+                  const parent = inner.parentElement;
+                  const st = getComputedStyle(inner);
+                  return {
+                    maxH: st.maxHeight,
+                    mask: st.webkitMaskImage,
+                    parentOverflow: getComputedStyle(parent).overflowY,
+                    tailTop: document.getElementById("tail").getBoundingClientRect().top,
+                    parentBottom: parent.getBoundingClientRect().bottom,
+                  };
+                }"""
+                )
+            finally:
+                browser.close()
+
+        self.assertEqual(after["maxH"], "none")
+        self.assertEqual(after["mask"], "none")
+        self.assertEqual(after["parentOverflow"], "visible")
+        self.assertLess(after["tailTop"], after["parentBottom"])
+
 
 if __name__ == "__main__":
     unittest.main()

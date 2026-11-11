@@ -98,7 +98,8 @@ class TestEpa2Collector(unittest.TestCase):
         result = collector._collect(_DATASET_URL, 1, {})
 
         self.assertEqual(result["title"], "NPL Boundaries")
-        self.assertEqual(result["office"], "U.S. EPA Office of Land")
+        self.assertEqual(result["agency"], "Environmental Protection Agency")
+        self.assertEqual(result["office"], "Environmental Protection Agency")
         self.assertIn("Superfund", result["keywords"])
         self.assertIn("GIS", result["data_types"])
         self.assertTrue((Path(result["folder_path"]) / LANDING_PDF_NAME).is_file())

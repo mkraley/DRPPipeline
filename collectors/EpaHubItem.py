@@ -8,13 +8,16 @@ from typing import Any
 
 import requests
 
-from sourcing.EpaHubCandidateFetcher import row_from_feature
+from collectors.EpaHubMetadata import metadata_from_feature
 from sourcing.EpaHubCatalogClient import DEFAULT_ITEMS_URL
-from sourcing.EpaSourcing import AGENCY
-from utils.datalumos_data_types import DATA_TYPE_GIS
 from utils.url_utils import requests_verify
 
-_GEOSPATIAL_TYPES = {"feature service", "map service", "service definition"}
+__all__ = [
+    "EpaHubItemClient",
+    "bbox_from_geometry",
+    "metadata_from_feature",
+    "service_url_from_feature",
+]
 
 
 class EpaHubItemClient:
@@ -70,31 +73,46 @@ class EpaHubItemClient:
             raise RuntimeError(f"EDG item {item_id} was not a feature")
         return payload
 
+    def data_updated_ms(self, service_url: str) -> int | None:
+        """
+        Return the feature layer's data-updated time.
 
-def metadata_from_feature(feature: dict[str, Any]) -> dict[str, Any]:
-    """
-    Map a Hub feature to Storage metadata fields.
+        Args:
+            service_url: FeatureServer or MapServer URL.
 
-    Args:
-        feature: GeoJSON feature from the Clip and Ship catalog.
+        Returns:
+            ``editingInfo.dataLastEditDate`` in epoch milliseconds, or None.
+        """
+        url = service_url.strip()
+        if not url:
+            return None
+        try:
+            response = self._get(
+                f"{url.rstrip('/')}/0",
+                params={"f": "json"},
+                timeout=self._timeout_sec,
+                verify=requests_verify(),
+            )
+            payload = response.json()
+        except (TypeError, ValueError, OSError):
+            return None
+        if getattr(response, "status_code", 500) >= 400 or not isinstance(payload, dict):
+            return None
+        info = payload.get("editingInfo")
+        if not isinstance(info, dict):
+            return None
+        return _positive_int(info.get("dataLastEditDate"))
 
-    Returns:
-        Title, summary, agency, office, keywords, and data type.
-    """
-    row = row_from_feature(feature) or {}
-    properties = feature.get("properties")
-    props = properties if isinstance(properties, dict) else {}
-    item_type = str(props.get("type") or "")
-    fields: dict[str, Any] = {
-        "title": row.get("title") or str(props.get("title") or "").strip(),
-        "summary": row.get("summary") or "",
-        "agency": AGENCY,
-        "office": row.get("office") or AGENCY,
-        "keywords": _keywords(props.get("tags")),
-    }
-    if item_type.strip().casefold() in _GEOSPATIAL_TYPES:
-        fields["data_types"] = DATA_TYPE_GIS
-    return fields
+
+def _positive_int(value: Any) -> int | None:
+    """Return a positive int, or None."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    if number <= 0:
+        return None
+    return number
 
 
 def service_url_from_feature(feature: dict[str, Any]) -> str:
@@ -139,16 +157,6 @@ def bbox_from_geometry(geometry: Any) -> dict[str, float] | None:
         "east": max(lons),
         "north": max(lats),
     }
-
-
-def _keywords(tags: Any) -> str:
-    """Join Hub tags into a comma-separated keyword string."""
-    if isinstance(tags, str):
-        return tags.strip()
-    if not isinstance(tags, list):
-        return ""
-    values = [str(tag).strip() for tag in tags if str(tag).strip()]
-    return ", ".join(values)
 
 
 def _collect_points(value: Any, points: list[tuple[float, float]]) -> None:

@@ -60,6 +60,31 @@ _UNCLIP_OVERFLOW_JS = """
     } catch (_) {}
   };
 
+  const unlockSummaryToggle = (el) => {
+    const cls = typeof el.className === "string" ? el.className : "";
+    if (!cls.includes("overflow-toggle-inner")) return false;
+    let node = el;
+    while (node && node.nodeType === 1) {
+      const nodeCls = typeof node.className === "string" ? node.className : "";
+      try {
+        node.classList.remove("hide-overflow");
+        node.style.setProperty("max-height", "none", "important");
+        node.style.setProperty("height", "auto", "important");
+        node.style.setProperty("overflow", "visible", "important");
+        node.style.setProperty("overflow-y", "visible", "important");
+        node.style.setProperty("mask-image", "none", "important");
+        node.style.setProperty("-webkit-mask-image", "none", "important");
+        touched++;
+      } catch (_) {}
+      if (nodeCls.includes("overflow-toggle") && !nodeCls.includes("inner")) break;
+      node = node.parentElement;
+    }
+    try {
+      el.style.setProperty("padding-bottom", "12px", "important");
+    } catch (_) {}
+    return true;
+  };
+
   const hidePinnedChrome = (el) => {
     const tag = (el.tagName || "").toUpperCase();
     const rect = el.getBoundingClientRect();
@@ -135,6 +160,7 @@ _UNCLIP_OVERFLOW_JS = """
       } catch (_) {
         continue;
       }
+      if (unlockSummaryToggle(el)) continue;
       const position = st.position;
       if (position === "fixed" || position === "sticky") {
         if (hidePinnedChrome(el)) {

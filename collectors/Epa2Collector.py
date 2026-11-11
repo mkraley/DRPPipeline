@@ -20,6 +20,7 @@ from collectors.EpaHubItem import (
     EpaHubItemClient,
     bbox_from_geometry,
     metadata_from_feature,
+    service_url_from_feature,
 )
 from collectors.UsfsPageDownloader import UsfsPageDownloader
 from sourcing.EpaHubCandidateFetcher import item_id_from_source_url
@@ -119,7 +120,10 @@ class Epa2Collector(CollectorBase):
 
     def _result_from_feature(self, drpid: int, feature: dict[str, Any]) -> dict[str, Any]:
         """Build the Storage result, including geographic coverage."""
-        result = metadata_from_feature(feature)
+        result = metadata_from_feature(
+            feature,
+            data_updated_ms=self._data_updated_ms(feature),
+        )
         box = bbox_from_geometry(feature.get("geometry"))
         if box is None:
             return result
@@ -129,6 +133,16 @@ class Epa2Collector(CollectorBase):
         for warning in geo.warnings:
             record_warning(drpid, warning)
         return result
+
+    def _data_updated_ms(self, feature: dict[str, Any]) -> int | None:
+        """Return the layer data-updated time when the feature has a service URL."""
+        service_url = service_url_from_feature(feature)
+        if not service_url:
+            return None
+        reader = getattr(self._items, "data_updated_ms", None)
+        if not callable(reader):
+            return None
+        return reader(service_url)
 
     def _note_missing_data(
         self,
