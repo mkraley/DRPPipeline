@@ -5,9 +5,9 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
+from collectors.HubLandingPage import expand_hub_field_sections
 from collectors.PageExpandForPdf import (
     _click_playwright_arcgis_controls,
-    _click_playwright_down_arrows,
     expand_read_more_and_load_more,
 )
 
@@ -22,6 +22,9 @@ class TestPageExpandForPdf(unittest.TestCase):
         with patch(
             "collectors.PageExpandForPdf._click_playwright_arcgis_controls",
             return_value=0,
+        ), patch(
+            "collectors.PageExpandForPdf.expand_hub_field_sections",
+            return_value=0,
         ):
             total = expand_read_more_and_load_more(page, max_rounds=5)
         self.assertEqual(total, 0)
@@ -33,6 +36,9 @@ class TestPageExpandForPdf(unittest.TestCase):
         page.evaluate.side_effect = [2, 1, 0]
         with patch(
             "collectors.PageExpandForPdf._click_playwright_arcgis_controls",
+            return_value=0,
+        ), patch(
+            "collectors.PageExpandForPdf.expand_hub_field_sections",
             return_value=0,
         ):
             total = expand_read_more_and_load_more(
@@ -49,6 +55,9 @@ class TestPageExpandForPdf(unittest.TestCase):
         with patch(
             "collectors.PageExpandForPdf._click_playwright_arcgis_controls",
             return_value=0,
+        ), patch(
+            "collectors.PageExpandForPdf.expand_hub_field_sections",
+            return_value=0,
         ):
             total = expand_read_more_and_load_more(
                 page, max_rounds=3, round_wait_ms=1
@@ -57,17 +66,20 @@ class TestPageExpandForPdf(unittest.TestCase):
         self.assertEqual(page.evaluate.call_count, 3)
 
     def test_includes_playwright_arcgis_clicks(self) -> None:
-        """Playwright ArcGIS clicks are counted toward the total."""
+        """Playwright clicks and Hub section clicks both count."""
         page = MagicMock()
         page.evaluate.side_effect = [0]
         with patch(
             "collectors.PageExpandForPdf._click_playwright_arcgis_controls",
             side_effect=[2, 0],
+        ), patch(
+            "collectors.PageExpandForPdf.expand_hub_field_sections",
+            side_effect=[4, 0],
         ):
             total = expand_read_more_and_load_more(
                 page, max_rounds=5, round_wait_ms=1
             )
-        self.assertEqual(total, 2)
+        self.assertEqual(total, 6)
 
     def test_playwright_arcgis_noop_on_empty_page(self) -> None:
         """Playwright helper returns 0 when locators find nothing."""
@@ -112,20 +124,11 @@ class TestPageExpandForPdf(unittest.TestCase):
         more_nth.click.assert_called_once()
         load_nth.click.assert_called_once()
 
-    def test_playwright_clicks_each_down_arrow(self) -> None:
-        """Collapsed chevronDown controls are clicked from last to first."""
+    def test_hub_sections_report_their_clicks(self) -> None:
+        """Field accordions and table tabs are counted from the page script."""
         page = MagicMock()
-        icons = MagicMock()
-        icons.count.return_value = 2
-        first = MagicMock()
-        second = MagicMock()
-        first.is_visible.return_value = True
-        second.is_visible.return_value = True
-        icons.nth.side_effect = lambda index: second if index == 1 else first
-        page.locator.return_value = icons
-        self.assertEqual(_click_playwright_down_arrows(page), 2)
-        second.click.assert_called_once()
-        first.click.assert_called_once()
+        page.evaluate.return_value = 3
+        self.assertEqual(expand_hub_field_sections(page), 3)
 
     def test_live_browser_expands_arcgis_markup(self) -> None:
         """Live Chromium expands button.more-button and calcite-link Load more."""
@@ -145,6 +148,9 @@ class TestPageExpandForPdf(unittest.TestCase):
 </button>
 <div id="items"><div>item1</div></div>
 <calcite-link icon-end="chevron-down" role="presentation">Load more</calcite-link>
+<calcite-tab-title id="chart">Chart</calcite-tab-title>
+<calcite-tab-title id="table">Table</calcite-tab-title>
+<div id="table-panel" hidden>rows</div>
 <script>
 document.querySelector("button.more-button").addEventListener("click", function () {
   this.setAttribute("aria-expanded", "true");
@@ -159,6 +165,10 @@ document.querySelector("calcite-link").addEventListener("click", function () {
 document.getElementById("arrow").addEventListener("click", function () {
   document.getElementById("block").hidden = false;
   this.querySelector("calcite-icon").setAttribute("icon", "chevronUp");
+});
+document.getElementById("table").addEventListener("click", function () {
+  this.setAttribute("selected", "");
+  document.getElementById("table-panel").hidden = false;
 });
 </script>
 </body></html>"""
@@ -179,6 +189,7 @@ document.getElementById("arrow").addEventListener("click", function () {
                   hasLm: !!document.querySelector("calcite-link"),
                   block: document.getElementById("block").hidden,
                   arrow: document.querySelector("#arrow calcite-icon").getAttribute("icon"),
+                  table: document.getElementById("table-panel").hidden,
                 })"""
                 )
             finally:
@@ -191,6 +202,7 @@ document.getElementById("arrow").addEventListener("click", function () {
         self.assertFalse(state["hasLm"])
         self.assertFalse(state["block"])
         self.assertEqual(state["arrow"], "chevronUp")
+        self.assertFalse(state["table"])
 
 
 if __name__ == "__main__":

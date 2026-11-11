@@ -141,6 +141,45 @@ class TestPageUnclipForPdf(unittest.TestCase):
         self.assertEqual(after["radius"], "0px")
         self.assertEqual(after["edgeDisplay"], "none")
 
+    def test_live_browser_hides_chrome_and_card_frames(self) -> None:
+        """Icon rails, scrims, and card borders do not survive into the PDF."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright not installed")
+
+        html = """<!DOCTYPE html><html><body>
+<div id="card" style="border:1px solid #111; height:200px;">card text</div>
+<div id="rail" style="position:fixed; top:80px; left:0; width:44px; height:120px;">
+  icons
+</div>
+<header id="mast" style="position:fixed; top:0; left:0; right:0; height:64px;">
+  Home Help
+</header>
+<div id="scrim" style="position:fixed; top:0; left:0; width:100vw; height:100vh;"></div>
+</body></html>"""
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.set_content(html)
+                unclip_overflow_for_pdf(page)
+                after = page.evaluate(
+                    """() => ({
+                  border: getComputedStyle(document.getElementById("card")).borderTopWidth,
+                  rail: getComputedStyle(document.getElementById("rail")).display,
+                  mast: getComputedStyle(document.getElementById("mast")).display,
+                  scrim: getComputedStyle(document.getElementById("scrim")).display,
+                })"""
+                )
+            finally:
+                browser.close()
+
+        self.assertEqual(after["border"], "0px")
+        self.assertEqual(after["rail"], "none")
+        self.assertEqual(after["mast"], "none")
+        self.assertEqual(after["scrim"], "none")
+
 
 if __name__ == "__main__":
     unittest.main()

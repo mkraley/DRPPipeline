@@ -4,6 +4,7 @@ Plan Clip and Ship download files and interpret Hub export responses.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,8 @@ _SUFFIXES = {
     "geopackage": ".gpkg",
     "sqlite": ".sqlite",
 }
+_ITEM_ID = re.compile(r"[0-9a-fA-F]{32}")
+_LAYER_SUFFIX = re.compile(r"_[0-9]+$")
 
 
 @dataclass(frozen=True)
@@ -49,7 +52,7 @@ def file_specs(feature: dict[str, Any], service: dict[str, Any]) -> list[tuple[s
     definition = _service_definition_spec(feature)
     if definition is not None:
         return [definition]
-    item_id = str(feature.get("id") or "").strip()
+    item_id = download_item_id(feature)
     if not item_id or not service:
         return []
     specs: list[tuple[str, str]] = []
@@ -59,6 +62,29 @@ def file_specs(feature: dict[str, Any], service: dict[str, Any]) -> list[tuple[s
             url = f"{_DOWNLOAD_ROOT}/{item_id}/{fmt}?layers={layer_id}&redirect=false"
             specs.append((name, url))
     return specs
+
+
+def download_item_id(feature: dict[str, Any]) -> str:
+    """
+    Return the ArcGIS item id accepted by the Hub download API.
+
+    Hub search features append ``_0`` (the layer) to the item id. The download
+    API rejects that suffix.
+
+    Args:
+        feature: Hub search feature.
+
+    Returns:
+        Item id without a layer suffix.
+    """
+    properties = feature.get("properties")
+    props = properties if isinstance(properties, dict) else {}
+    raw = str(feature.get("id") or "").strip()
+    for candidate in (str(props.get("id") or "").strip(), raw):
+        normalized = _LAYER_SUFFIX.sub("", candidate)
+        if _ITEM_ID.fullmatch(normalized):
+            return normalized.lower()
+    return _LAYER_SUFFIX.sub("", raw) or raw
 
 
 def ready_from_response(response: Any) -> ReadyFile | None:
@@ -74,12 +100,12 @@ def ready_from_response(response: Any) -> ReadyFile | None:
     status_code = int(getattr(response, "status_code", 500))
     if status_code in {301, 302, 303, 307, 308}:
         return _ready_redirect(response)
-    content_type = str(response.headers.get("Content-Type") or "")
-    if status_code == 202 or "json" in content_type.lower():
-        return _ready_from_json(response)
     if status_code >= 400:
         close_response(response)
         return ReadyFile("", None, f"export HTTP {status_code}")
+    content_type = str(response.headers.get("Content-Type") or "")
+    if status_code == 202 or "json" in content_type.lower():
+        return _ready_from_json(response)
     file_url = str(getattr(response, "url", "") or "")
     size = content_length(response)
     close_response(response)
@@ -136,7 +162,7 @@ def _service_definition_spec(feature: dict[str, Any]) -> tuple[str, str] | None:
     props = properties if isinstance(properties, dict) else {}
     if str(props.get("type") or "").strip().casefold() != "service definition":
         return None
-    item_id = str(feature.get("id") or props.get("id") or "").strip()
+    item_id = download_item_id(feature)
     name = sanitize_filename(str(props.get("name") or f"{item_id}.sd"))
     return name, _ITEM_DATA.format(item_id=item_id)
 
@@ -188,7 +214,7 @@ def _ready_from_json(response: Any) -> ReadyFile | None:
     status = str(payload.get("status") or "").strip().casefold()
     if status in _PENDING:
         return None
-    file_url = str(payload.get("downloadUrl") or payload.get("url") or "").strip()
+    file_url = _export_file_url(payload)
     size = _int_or_none(payload.get("contentLength"))
     if size is None:
         size = _int_or_none(payload.get("size"))
@@ -196,7 +222,19 @@ def _ready_from_json(response: Any) -> ReadyFile | None:
         return ReadyFile(file_url, size, None)
     if status in {"error", "failed"}:
         return ReadyFile(request_url, None, f"export {status}")
+    if status in {"completed", "complete", "ready", "success", "succeeded"}:
+        return ReadyFile(request_url, None, "export finished without a file url")
     return None
+
+
+def _export_file_url(payload: dict[str, Any]) -> str:
+    """Return the file URL from a Hub export status body."""
+    lowered = {str(key).casefold(): value for key, value in payload.items()}
+    for key in ("downloadurl", "resulturl", "url"):
+        text = str(lowered.get(key) or "").strip()
+        if text:
+            return text
+    return ""
 
 
 def _int_or_none(value: Any) -> int | None:

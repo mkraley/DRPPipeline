@@ -4,7 +4,9 @@ Remove overflow / sticky / border clipping so Chromium print-to-PDF keeps text.
 ArcGIS Hub (and similar SPAs) keep expanded ``Read more`` / ``Load more``
 text inside scroll shells with ``overflow``, sticky chrome, and card borders.
 Chromium then clips or redraws those frame edges at each page break, which
-can obscure lines at the top and bottom of continued sections.
+can obscure lines at the top and bottom of continued sections. Fixed site
+headers, icon rails, and full-screen scrims are removed so they do not cover
+the first page.
 """
 
 from __future__ import annotations
@@ -28,8 +30,9 @@ html, body {
 }
 """
 
-# Tall framed panels get border edges redrawn at every page break.
-_MIN_FRAME_HEIGHT_PX = 240
+# Framed panels get border edges redrawn where a page break cuts them.
+# Hub cards are often just over 200px, short of a full page but still split.
+_MIN_FRAME_HEIGHT_PX = 160
 
 _UNCLIP_OVERFLOW_JS = """
 (minFrameHeight) => {
@@ -55,6 +58,27 @@ _UNCLIP_OVERFLOW_JS = """
       el.style.setProperty("overflow-y", "visible", "important");
       touched++;
     } catch (_) {}
+  };
+
+  const hidePinnedChrome = (el) => {
+    const tag = (el.tagName || "").toUpperCase();
+    const rect = el.getBoundingClientRect();
+    const vw = document.documentElement.clientWidth || window.innerWidth || 1;
+    const vh = document.documentElement.clientHeight || window.innerHeight || 1;
+    const className = typeof el.className === "string" ? el.className : "";
+    const scrim = tag === "CALCITE-SCRIM" || /scrim/i.test(className);
+    const masthead = tag === "HEADER" || tag === "NAV";
+    const rail = rect.width > 0 && rect.width < 160 && rect.height >= 48;
+    const text = (el.innerText || "").replace(/\\s+/g, " ").trim();
+    const cover =
+      rect.width >= vw * 0.8 && rect.height >= vh * 0.8 && text.length < 40;
+    if (!(scrim || masthead || rail || cover)) return false;
+    try {
+      el.style.setProperty("display", "none", "important");
+      return true;
+    } catch (_) {
+      return false;
+    }
   };
 
   const stripFrame = (el) => {
@@ -113,6 +137,10 @@ _UNCLIP_OVERFLOW_JS = """
       }
       const position = st.position;
       if (position === "fixed" || position === "sticky") {
+        if (hidePinnedChrome(el)) {
+          touched++;
+          continue;
+        }
         try {
           el.style.setProperty("position", "static", "important");
           touched++;

@@ -25,6 +25,7 @@ from collectors.EpaHubExportPlan import (
     ready_from_response,
 )
 from collectors.PlannedFile import PlannedFile
+from utils.Logger import Logger
 from utils.collector_status import (
     MAX_DOWNLOAD_BYTES,
     deferred_download_skip_note,
@@ -77,6 +78,7 @@ class EpaHubExports:
         planned: list[PlannedFile] = []
         downloaded = bytes_on_disk(folder)
         for name, url in file_specs(feature, self._service_payload(folder, feature)):
+            Logger.info("Requesting Hub export %s", name)
             ready = self._resolve(url)
             planned_file, note, written = self._save_ready(
                 folder, name, url, ready, downloaded
@@ -85,7 +87,14 @@ class EpaHubExports:
             if note:
                 notes.append(note)
             if written:
+                Logger.info("Saved Hub export %s", name)
                 downloaded += written
+            elif planned_file.access_error:
+                Logger.warning(
+                    "Hub export %s was not saved: %s",
+                    name,
+                    planned_file.access_error,
+                )
         return notes, planned
 
     def commit(self, drpid: int, folder: Path, planned: list[PlannedFile]) -> str:

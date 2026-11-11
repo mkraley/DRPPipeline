@@ -1,9 +1,10 @@
 """
 EPA2 collector for DRP Pipeline.
 
-Collects one EDG Clip and Ship item: a landing-page PDF with Load more and
-down arrows expanded, service JSON when the item is a feature service, and
-the Hub open-format exports that fit in the download budget.
+Collects one EDG Clip and Ship item: follows View Full Details when that
+button is present, prints that page with Load more, down arrows, and Table
+chosen over Chart, then saves service JSON and the Hub exports that fit in
+the download budget.
 
 Run via orchestrator when ``Args.source`` is ``epa2``.
 """
@@ -21,7 +22,7 @@ from collectors.EpaHubItem import (
     metadata_from_feature,
 )
 from collectors.UsfsPageDownloader import UsfsPageDownloader
-from sourcing.EpaHubCandidateFetcher import item_id_from_source_url, landing_page_url
+from sourcing.EpaHubCandidateFetcher import item_id_from_source_url
 from utils.Errors import abort_project, record_error, record_warning
 from utils.IcpsrGeographicNormalizer import normalize_geographic_metadata
 from utils.Logger import Logger
@@ -105,10 +106,14 @@ class Epa2Collector(CollectorBase):
         source_url: str,
         drpid: int,
     ) -> None:
-        """Print the about/landing page after Load more and down arrows expand."""
-        target = landing_page_url(source_url)
-        if pages.url_to_pdf(target, folder / LANDING_PDF_NAME, spa_ready=True):
-            Logger.info("Saved %s from %s", LANDING_PDF_NAME, target)
+        """Print the full-details page after its sections are expanded."""
+        if pages.url_to_pdf(
+            source_url,
+            folder / LANDING_PDF_NAME,
+            spa_ready=True,
+            follow_full_details=True,
+        ):
+            Logger.info("Saved %s from %s", LANDING_PDF_NAME, source_url)
             return
         abort_project(drpid, f"Failed to save landing page PDF: {LANDING_PDF_NAME}")
 

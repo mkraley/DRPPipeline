@@ -2,7 +2,8 @@
 Expand truncated page content before print-to-PDF capture.
 
 Clicks visible ``Read more``, ``Load more``, short ``Show more`` controls,
-and collapsed Hub down-arrows (``chevronDown`` / Expand).
+collapsed Hub down-arrows (``chevronDown`` / Expand), and chooses Table
+when a section offers Chart or Table.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import re
 from contextlib import suppress
 from typing import Any
 
+from collectors.HubLandingPage import expand_hub_field_sections
 from utils.Logger import Logger
 
 _DEFAULT_MAX_ROUNDS = 20
@@ -77,20 +79,6 @@ _CLICK_EXPAND_ROUND_JS = """
     }
   };
 
-  const visitDownArrows = (root) => {
-    const nodes = root.querySelectorAll ? root.querySelectorAll("*") : [];
-    for (const el of nodes) {
-      if (el.shadowRoot) visitDownArrows(el.shadowRoot);
-      const icon = (el.getAttribute && el.getAttribute("icon")) || "";
-      if (icon !== "chevronDown") continue;
-      const label = ((el.getAttribute && el.getAttribute("aria-label")) || "").trim();
-      if (label && !/^expand$/i.test(label)) continue;
-      const host = (el.closest && el.closest("button, [role='button']")) || el;
-      if (clickEl(host)) clicked++;
-    }
-  };
-  visitDownArrows(document);
-
   for (const el of document.querySelectorAll("button.more-button")) {
     if (clickEl(el)) clicked++;
   }
@@ -140,35 +128,18 @@ def _click_visible_locator(locator: Any, *, label: str) -> bool:
         return False
 
 
-def _click_playwright_down_arrows(page: Any) -> int:
+def _click_playwright_arcgis_controls(page: Any) -> int:
     """
-    Open collapsed Hub sections marked with a down chevron.
+    Click ArcGIS Hub Read More / Load more via Playwright (pierces shadow DOM).
 
-    ArcGIS Hub about pages use ``calcite-icon icon="chevronDown"``
-    (accessible name ``Expand``) for each closed metadata block.
+    Down arrows and Chart/Table choices are expanded separately so a hit on
+    one control does not skip the others, and so an icon click cannot toggle
+    an accordion shut.
 
     Returns:
         Number of successful clicks this pass.
     """
     clicked = 0
-    icons = page.locator("[icon='chevronDown']")
-    count = _locator_count(icons)
-    for index in range(count - 1, -1, -1):
-        if index >= _locator_count(icons):
-            continue
-        if _click_visible_locator(icons.nth(index), label="down arrow"):
-            clicked += 1
-    return clicked
-
-
-def _click_playwright_arcgis_controls(page: Any) -> int:
-    """
-    Click ArcGIS Hub Read More / Load more via Playwright (pierces shadow DOM).
-
-    Returns:
-        Number of successful clicks this pass.
-    """
-    clicked = _click_playwright_down_arrows(page)
     more_buttons = page.locator("button.more-button:not([aria-expanded='true'])")
     for index in range(_locator_count(more_buttons)):
         if _click_visible_locator(more_buttons.nth(index), label="Read More"):
@@ -200,7 +171,8 @@ def expand_read_more_and_load_more(
     round_wait_ms: int = _ROUND_WAIT_MS,
 ) -> int:
     """
-    Click ``Read more`` / ``Load more``, short ``Show more``, and Hub down-arrows.
+    Click ``Read more`` / ``Load more``, short ``Show more``, Hub down-arrows,
+    and a Table tab when the section also offers a chart.
 
     Args:
         page: Playwright page with loaded document.
@@ -220,6 +192,14 @@ def expand_read_more_and_load_more(
         except Exception as exc:
             Logger.debug(
                 "Playwright expand-for-PDF round %s failed: %s",
+                round_index + 1,
+                exc,
+            )
+        try:
+            round_clicks += expand_hub_field_sections(page)
+        except Exception as exc:
+            Logger.debug(
+                "Hub section expand round %s failed: %s",
                 round_index + 1,
                 exc,
             )

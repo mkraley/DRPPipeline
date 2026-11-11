@@ -9,6 +9,7 @@ from urllib.parse import unquote, urlparse
 
 from collectors.ContentLengthProbe import ContentLengthProbe
 from collectors.InaccessibleDownloads import access_error_for_status
+from collectors.HubLandingPage import open_real_landing_page
 from collectors.PageExpandForPdf import expand_read_more_and_load_more
 from collectors.PageUnclipForPdf import unclip_overflow_for_pdf
 from collectors.PlaywrightSession import PlaywrightSession
@@ -303,6 +304,7 @@ class UsfsPageDownloader:
         *,
         open_details_selector: str | None = None,
         spa_ready: bool = False,
+        follow_full_details: bool = False,
     ) -> bool:
         """
         Navigate to ``url`` and write a PDF to ``pdf_path``.
@@ -313,6 +315,8 @@ class UsfsPageDownloader:
             open_details_selector: Optional element whose ``<details>`` ancestor opens.
             spa_ready: When True, wait for SPA content, expand Load more and
                 down arrows, and print with screen media.
+            follow_full_details: When True, click ``View Full Details`` before
+                expanding and printing.
         """
         return (
             self._render_pdf(
@@ -320,6 +324,7 @@ class UsfsPageDownloader:
                 pdf_path,
                 open_details_selector,
                 spa_ready=spa_ready,
+                follow_full_details=follow_full_details,
             )
             is not None
         )
@@ -422,6 +427,7 @@ class UsfsPageDownloader:
         open_details_selector: str | None,
         *,
         spa_ready: bool = False,
+        follow_full_details: bool = False,
     ) -> Path | None:
         """Navigate, expand the page, and print to PDF."""
         if not self._ensure_browser():
@@ -435,6 +441,7 @@ class UsfsPageDownloader:
                 url,
                 open_details_selector,
                 spa_ready=spa_ready,
+                follow_full_details=follow_full_details,
             )
             pdf_path.parent.mkdir(parents=True, exist_ok=True)
             return self._write_page_pdf(page, pdf_path, spa_ready=spa_ready)
@@ -452,26 +459,36 @@ class UsfsPageDownloader:
         open_details_selector: str | None = None,
         *,
         spa_ready: bool = False,
+        follow_full_details: bool = False,
     ) -> None:
         """Load ``url`` and expand a ``<details>`` section when requested."""
         page.set_default_timeout(_PRINT_TIMEOUT_MS)
+        self._goto_for_pdf(page, url, spa_ready=spa_ready)
+        if spa_ready:
+            self._dismiss_page_overlays(page)
+            if follow_full_details:
+                open_real_landing_page(page)
+                self._dismiss_page_overlays(page)
+            expand_read_more_and_load_more(page)
+        if open_details_selector:
+            self._open_closest_details(page, open_details_selector)
+            expand_read_more_and_load_more(page)
+
+    def _goto_for_pdf(self, page: Any, url: str, *, spa_ready: bool) -> None:
+        """Open ``url`` and wait for a static page or a Hub SPA."""
         wait_until = "domcontentloaded" if spa_ready else _NAVIGATION_WAIT
         nav_timeout = 90000 if spa_ready else _NAVIGATION_TIMEOUT_MS
         page.goto(url, wait_until=wait_until, timeout=nav_timeout)
         page.wait_for_timeout(_SPA_SETTLE_MS if spa_ready else _SETTLE_MS)
         with suppress(Exception):
             page.wait_for_load_state("load", timeout=_LOAD_TIMEOUT_MS)
-        if spa_ready:
-            with suppress(Exception):
-                page.wait_for_load_state(
-                    "networkidle",
-                    timeout=_SPA_NETWORK_IDLE_TIMEOUT_MS,
-                )
-            self._dismiss_page_overlays(page)
-            expand_read_more_and_load_more(page)
-        if open_details_selector:
-            self._open_closest_details(page, open_details_selector)
-            expand_read_more_and_load_more(page)
+        if not spa_ready:
+            return
+        with suppress(Exception):
+            page.wait_for_load_state(
+                "networkidle",
+                timeout=_SPA_NETWORK_IDLE_TIMEOUT_MS,
+            )
 
     def _dismiss_page_overlays(self, page: Any) -> None:
         """Click common consent/close controls and hide leftover dialogs."""

@@ -65,12 +65,18 @@ class TestEpa2Collector(unittest.TestCase):
             shutil.rmtree(self.temp_dir)
 
     def test_collect_prints_about_page_and_saves_metadata(self) -> None:
-        """The landing PDF is the about page, printed with SPA expansion."""
+        """The landing PDF starts at the source page and follows full details."""
         pages = MagicMock()
 
-        def _pdf(url: str, path: Path, spa_ready: bool = False) -> bool:
+        def _pdf(
+            url: str,
+            path: Path,
+            spa_ready: bool = False,
+            follow_full_details: bool = False,
+        ) -> bool:
             self.assertTrue(spa_ready)
-            self.assertTrue(url.endswith("/about"))
+            self.assertTrue(follow_full_details)
+            self.assertEqual(url, _DATASET_URL)
             path.write_bytes(b"%PDF-1.4")
             return True
 
@@ -103,8 +109,13 @@ class TestEpa2Collector(unittest.TestCase):
         pages = MagicMock()
         seen: list[str] = []
 
-        def _pdf(url: str, path: Path, spa_ready: bool = False) -> bool:
-            del spa_ready
+        def _pdf(
+            url: str,
+            path: Path,
+            spa_ready: bool = False,
+            follow_full_details: bool = False,
+        ) -> bool:
+            del spa_ready, follow_full_details
             seen.append(url)
             path.write_bytes(b"%PDF-1.4")
             return True
