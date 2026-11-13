@@ -4,8 +4,10 @@ EPA2 collector for DRP Pipeline.
 Collects one EDG Clip and Ship item: follows View Full Details when that
 button is present, prints that page with Load more, down arrows, and Table
 chosen over Chart, and prints View All Metadata when that link is present.
-A later collect keeps files already saved. Service JSON and the Hub exports
-that fit in the download budget are saved after the pages.
+A later collect keeps files already saved and does not request a Hub format
+the download API has already called unsupported. Service JSON and the Hub
+exports that fit in the download budget are saved after the pages. Export
+warnings are stored on the project.
 
 Run via orchestrator when ``Args.source`` is ``epa2``.
 """
@@ -80,7 +82,7 @@ class Epa2Collector(CollectorBase):
         finally:
             if owns_pages:
                 pages.close()
-        notes, planned = self._exports.download_all(folder, feature)
+        notes, planned = self._exports.download_all(folder, feature, drpid=drpid)
         result = self._result_from_feature(drpid, feature)
         result["folder_path"] = str(folder)
         if notes:

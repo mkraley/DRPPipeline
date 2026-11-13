@@ -101,8 +101,9 @@ def ready_from_response(response: Any) -> ReadyFile | None:
     if status_code in {301, 302, 303, 307, 308}:
         return _ready_redirect(response)
     if status_code >= 400:
+        detail = _export_error(response, status_code)
         close_response(response)
-        return ReadyFile("", None, f"export HTTP {status_code}")
+        return ReadyFile("", None, detail)
     content_type = str(response.headers.get("Content-Type") or "")
     if status_code == 202 or "json" in content_type.lower():
         return _ready_from_json(response)
@@ -123,6 +124,20 @@ def content_length(response: Any) -> int | None:
         Byte length, or None.
     """
     return _int_or_none(response.headers.get("Content-Length"))
+
+
+def _export_error(response: Any, status_code: int) -> str:
+    """Return an unsupported-format label, or the HTTP status."""
+    message = ""
+    try:
+        payload = response.json()
+    except (TypeError, ValueError, AttributeError):
+        payload = None
+    if isinstance(payload, dict):
+        message = str(payload.get("message") or "")
+    if "unsupported file format" in message.casefold():
+        return "unsupported file format"
+    return f"export HTTP {status_code}"
 
 
 def close_response(response: Any) -> None:

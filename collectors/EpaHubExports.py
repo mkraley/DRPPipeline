@@ -25,6 +25,7 @@ from collectors.EpaHubExportPlan import (
     ready_from_response,
 )
 from collectors.PlannedFile import PlannedFile
+from utils.Errors import clear_file_warnings, record_warning
 from utils.Logger import Logger
 from utils.collector_status import (
     MAX_DOWNLOAD_BYTES,
@@ -39,6 +40,8 @@ _MAX_REQUEST_FAILURES = 3
 _MAX_SERVER_ERRORS = 5
 _SERVER_ERROR_PAUSE_SEC = 5.0
 _RETRYABLE_HTTP = frozenset({500, 502, 503, 504})
+_UNSUPPORTED_ERROR = "unsupported file format"
+_UNSUPPORTED_NOTE = "unsupported_exports.txt"
 
 
 class EpaHubExports:
@@ -66,11 +69,14 @@ class EpaHubExports:
         self._sleep = sleeper or time.sleep
         self._attempts = attempts
         self._pause_sec = pause_sec
+        self._drpid: int | None = None
 
     def download_all(
         self,
         folder: Path,
         feature: dict[str, Any],
+        *,
+        drpid: int | None = None,
     ) -> tuple[list[str], list[PlannedFile]]:
         """
         Save service JSON and export files that fit in the download budget.
@@ -78,16 +84,24 @@ class EpaHubExports:
         Args:
             folder: Project output folder.
             feature: Hub search feature.
+            drpid: Project id. When set, export warnings are stored on the project.
 
         Returns:
             Status notes and the planned file list, including deferred files.
         """
         notes: list[str] = []
         planned: list[PlannedFile] = []
+        self._drpid = drpid
         downloaded = bytes_on_disk(folder)
+        refused = _unsupported_names(folder)
         for name, url in file_specs(feature, self._service_payload(folder, feature)):
+            if name in refused:
+                Logger.info("Skipping unsupported Hub export %s", name)
+                planned.append(PlannedFile(name, url, access_error=_UNSUPPORTED_ERROR))
+                continue
             kept = self._existing(folder, name, url)
             if kept is not None:
+                self._clear_saved_warning(name)
                 planned.append(kept)
                 downloaded += kept.size_bytes or 0
                 continue
@@ -101,14 +115,24 @@ class EpaHubExports:
                 notes.append(note)
             if written:
                 Logger.info("Saved Hub export %s", name)
+                self._clear_saved_warning(name)
                 downloaded += written
             elif planned_file.access_error:
-                Logger.warning(
-                    "Hub export %s was not saved: %s",
-                    name,
-                    planned_file.access_error,
-                )
+                self._note_unsaved(folder, planned_file)
         return notes, planned
+
+    def _note_unsaved(self, folder: Path, planned_file: PlannedFile) -> None:
+        """Remember an unsupported format and store the missing-file warning."""
+        if planned_file.access_error == _UNSUPPORTED_ERROR:
+            _remember_unsupported(folder, planned_file.relative_path)
+        message = "Hub export %s was not saved: %s" % (
+            planned_file.relative_path,
+            planned_file.access_error,
+        )
+        if self._drpid is None:
+            Logger.warning(message)
+            return
+        record_warning(self._drpid, message)
 
     def commit(self, drpid: int, folder: Path, planned: list[PlannedFile]) -> str:
         """
@@ -206,7 +230,7 @@ class EpaHubExports:
         """Pause and try again after a transient Hub server error."""
         if _server_status(ready) is None or seen + 1 >= _MAX_SERVER_ERRORS:
             return False
-        Logger.warning("Hub export returned %s; retrying", ready.error)
+        self._warn("Hub export returned %s; retrying", ready.error)
         self._sleep(_SERVER_ERROR_PAUSE_SEC)
         return True
 
@@ -215,7 +239,7 @@ class EpaHubExports:
         try:
             return self._request(url, stream=True, allow_redirects=False)
         except requests.RequestException as exc:
-            Logger.warning("Hub export request failed: %s", exc)
+            self._warn("Hub export request failed: %s", exc)
             return None
 
     def _with_size(self, ready: ReadyFile, requested_url: str) -> ReadyFile:
@@ -232,7 +256,7 @@ class EpaHubExports:
                 timeout=_DOWNLOAD_TIMEOUT,
             )
         except requests.RequestException as exc:
-            Logger.warning("Could not read export size: %s", exc)
+            self._warn("Could not read export size: %s", exc)
             return ready
         size = content_length(head)
         close_response(head)
@@ -258,14 +282,14 @@ class EpaHubExports:
                 timeout=_DOWNLOAD_TIMEOUT,
             )
         except requests.RequestException as exc:
-            Logger.warning("Hub export download failed: %s", exc)
+            self._warn("Hub export download failed: %s", exc)
             return False
         try:
             if getattr(response, "status_code", 500) >= 400:
                 return False
             return self._write_body(response, dest)
         except requests.RequestException as exc:
-            Logger.warning("Hub export download failed: %s", exc)
+            self._warn("Hub export download failed: %s", exc)
             dest.unlink(missing_ok=True)
             return False
         finally:
@@ -280,6 +304,17 @@ class EpaHubExports:
                     handle.write(chunk)
         return dest.is_file() and dest.stat().st_size > 0
 
+    def _warn(self, message: str, *args: object) -> None:
+        """Log a retry or probe warning without storing it."""
+        text = message % args if args else message
+        Logger.warning(text)
+
+    def _clear_saved_warning(self, filename: str) -> None:
+        """Drop a stored missing-file warning once ``filename`` is on disk."""
+        if self._drpid is None:
+            return
+        clear_file_warnings(self._drpid, filename)
+
 
 def _server_status(ready: ReadyFile) -> int | None:
     """Return a retryable HTTP status from an export error, or None."""
@@ -293,4 +328,21 @@ def _server_status(ready: ReadyFile) -> int | None:
     if code in _RETRYABLE_HTTP:
         return code
     return None
+
+
+def _unsupported_names(folder: Path) -> set[str]:
+    """Return export filenames the Hub has already refused."""
+    path = folder / _UNSUPPORTED_NOTE
+    if not path.is_file():
+        return set()
+    text = path.read_text(encoding="utf-8-sig")
+    return {line.strip() for line in text.splitlines() if line.strip()}
+
+
+def _remember_unsupported(folder: Path, name: str) -> None:
+    """Remember ``name`` so a later collect does not request it."""
+    names = _unsupported_names(folder)
+    names.add(name)
+    lines = "\n".join(sorted(names))
+    (folder / _UNSUPPORTED_NOTE).write_text(f"{lines}\n", encoding="utf-8-sig")
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import requests
 
@@ -160,6 +160,47 @@ class TestEpaHubExports(unittest.TestCase):
         self.assertEqual(sleeps, [])
         self.assertIn("HTTP 400", planned[0].access_error or "")
 
+    def test_unsupported_format_is_remembered_and_not_retried(self) -> None:
+        """An unsupported format is named as such and skipped on the next collect."""
+        calls = {"count": 0}
+
+        def getter(url: str, **_kwargs: object) -> MagicMock:
+            del url
+            calls["count"] += 1
+            return _json_response(
+                400,
+                {
+                    "message": (
+                        "Unsupported file format. Supported file formats are "
+                        "csv, shapefile, geojson, kml"
+                    ),
+                    "statusCode": 400,
+                },
+            )
+
+        feature = {"id": "abc", "properties": {"type": "Feature Service", "url": ""}}
+        service = {"layers": [{"id": 0, "name": "Sites"}], "supportedExportFormats": "sqlite"}
+        exports = EpaHubExports(getter=getter, sleeper=lambda _sec: None, attempts=5)
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            with patch("collectors.EpaHubExports.record_warning") as recorded:
+                _notes, planned = exports.download_all(
+                    folder,
+                    _with_service(feature, service, exports),
+                    drpid=3,
+                )
+                self.assertEqual(planned[0].access_error, "unsupported file format")
+                note = (folder / "unsupported_exports.txt").read_text(encoding="utf-8-sig")
+                self.assertIn("Sites_sqlite.sqlite", note)
+                exports.download_all(
+                    folder,
+                    _with_service(feature, service, exports),
+                    drpid=3,
+                )
+                recorded.assert_called_once()
+                self.assertIn("unsupported file format", recorded.call_args.args[1])
+        self.assertEqual(calls["count"], 1)
+
     def test_read_timeout_is_retried_then_skipped(self) -> None:
         """A hung export request does not abort the rest of the download."""
         calls = {"count": 0}
@@ -223,6 +264,33 @@ class TestEpaHubExports(unittest.TestCase):
             )
         self.assertEqual(planned[0].relative_path, "Sites_csv.csv")
         self.assertEqual(sleeps, [5.0, 5.0])
+
+    def test_successful_retry_does_not_store_a_warning(self) -> None:
+        """A file saved after a Hub 500 leaves no warning on the project."""
+        ready = _json_response(
+            200,
+            {"status": "ready", "downloadUrl": "https://files.example/layer.csv", "contentLength": 4},
+        )
+        body = _file_response(b"csv!")
+        responses = [_status_response(500), ready, body]
+
+        def getter(url: str, **_kwargs: object) -> MagicMock:
+            del url
+            return responses.pop(0)
+
+        feature = {"id": "abc", "properties": {"type": "Feature Service", "url": ""}}
+        service = {"layers": [{"id": 0, "name": "Sites"}], "supportedExportFormats": "csv"}
+        exports = EpaHubExports(getter=getter, sleeper=lambda _sec: None, attempts=5)
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "collectors.EpaHubExports.record_warning"
+        ) as recorded, patch("collectors.EpaHubExports.clear_file_warnings") as cleared:
+            exports.download_all(
+                Path(tmp),
+                _with_service(feature, service, exports),
+                drpid=3,
+            )
+        recorded.assert_not_called()
+        cleared.assert_called_once_with(3, "Sites_csv.csv")
 
     def test_repeated_http_500_stops_after_five(self) -> None:
         """A Hub 500 is not polled for the whole generation window."""

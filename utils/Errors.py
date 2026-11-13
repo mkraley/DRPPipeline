@@ -237,3 +237,29 @@ def record_warning(
         Storage.append_to_field(drpid, "warnings", warning_msg)
     except Exception as exc:  # pragma: no cover (defensive; Storage impl may vary)
         Logger.exception(f"Failed recording warning for DRPID={drpid}: {exc}")
+
+
+def clear_file_warnings(drpid: int, filename: str) -> None:
+    """
+    Remove stored warnings for a file that has since been saved.
+
+    Args:
+        drpid: Project DRPID.
+        filename: Export filename named in the warning.
+    """
+    marker = f"Hub export {filename} was not saved"
+    if not filename.strip():
+        return
+    try:
+        record = Storage.get(drpid) or {}
+        current = str(record.get("warnings") or "")
+        if marker not in current:
+            return
+        kept = [
+            line
+            for line in current.splitlines()
+            if line.strip() and marker not in line
+        ]
+        Storage.update_record(drpid, {"warnings": "\n".join(kept) or None})
+    except Exception as exc:  # pragma: no cover (defensive; Storage impl may vary)
+        Logger.exception(f"Failed clearing warnings for DRPID={drpid}: {exc}")

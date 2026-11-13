@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 
 from utils.Errors import (
     PipelineFatal,
+    clear_file_warnings,
     derive_error_status,
     is_error_status,
     normalize_status_hyphens,
@@ -211,3 +212,24 @@ class TestRecordWarning(unittest.TestCase):
 
         _mock_logger.warning.assert_called_once_with("nope")
         _mock_storage.append_to_field.assert_not_called()
+
+    @patch("utils.Errors.Storage", _mock_storage)
+    @patch("utils.Errors.Logger", _mock_logger)
+    def test_clear_file_warnings_drops_the_saved_file(self) -> None:
+        """A saved file removes only its own missing-file warning."""
+        _mock_storage.reset_mock()
+        _mock_storage.get.return_value = {
+            "warnings": (
+                "Hub export cattle_sqlite.sqlite was not saved: export HTTP 500\n"
+                "Hub export cattle_excel.xlsx was not saved: unsupported file format"
+            )
+        }
+        clear_file_warnings(3, "cattle_sqlite.sqlite")
+        _mock_storage.update_record.assert_called_once_with(
+            3,
+            {
+                "warnings": (
+                    "Hub export cattle_excel.xlsx was not saved: unsupported file format"
+                )
+            },
+        )
