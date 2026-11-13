@@ -91,7 +91,7 @@ class Epa2Collector(CollectorBase):
         if status != "collected":
             result["status"] = status
             result["_skipped_large_file"] = True
-        self.finalize_folder_stats(result, folder)
+        self.finalize_folder_stats(result, folder, planned)
         self._note_missing_data(drpid, feature, planned)
         Logger.info("EPA2 collection complete for DRPID %s", drpid)
         return result

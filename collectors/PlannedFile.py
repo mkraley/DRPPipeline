@@ -63,3 +63,50 @@ def is_generated_sidecar(path: Path) -> bool:
     if name in _GENERATED_SIDECAR_NAMES:
         return True
     return name.endswith("_data_table_info.csv")
+
+
+def inventory_with_deferred(
+    folder: Path,
+    files: list[PlannedFile],
+) -> tuple[list[str], int, int]:
+    """
+    Return extensions, bytes, and file count, including deferred downloads.
+
+    Files already saved count at their on-disk size. A planned file that was
+    not saved, and was not refused, adds its catalog size and one file.
+    """
+    extensions: set[str] = set()
+    total_bytes = 0
+    num_files = 0
+    if folder.is_dir():
+        for path in folder.rglob("*"):
+            if not path.is_file():
+                continue
+            num_files += 1
+            total_bytes += path.stat().st_size
+            _add_extension(extensions, path.name)
+    for item in _deferred_files(folder, files):
+        num_files += 1
+        total_bytes += int(item.size_bytes or 0)
+        _add_extension(extensions, item.filename())
+    return sorted(extensions), total_bytes, num_files
+
+
+def _deferred_files(folder: Path, files: list[PlannedFile]) -> list[PlannedFile]:
+    """Return planned downloads that are still absent and were not refused."""
+    missing: list[PlannedFile] = []
+    for item in files:
+        if item.access_error:
+            continue
+        dest = item.destination(folder)
+        if dest.is_file() and dest.stat().st_size > 0:
+            continue
+        missing.append(item)
+    return missing
+
+
+def _add_extension(extensions: set[str], filename: str) -> None:
+    """Record the lowercase suffix of ``filename`` when it has one."""
+    suffix = PurePosixPath(filename).suffix
+    if suffix:
+        extensions.add(suffix.lstrip(".").lower())

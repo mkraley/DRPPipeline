@@ -108,6 +108,8 @@ class TestEpa2Collector(unittest.TestCase):
         self.assertIn("Superfund", result["keywords"])
         self.assertIn("GIS", result["data_types"])
         self.assertTrue((Path(result["folder_path"]) / LANDING_PDF_NAME).is_file())
+        self.assertEqual(result["num_files"], 2)
+        self.assertEqual(result["file_size"], "16 B")
         exports.download_all.assert_called_once()
 
     def test_hub_page_prints_its_own_url(self) -> None:

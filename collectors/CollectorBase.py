@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, FrozenSet
 
 from storage import Storage
+from collectors.PlannedFile import PlannedFile, inventory_with_deferred
 from utils.Args import Args
 from utils.Errors import ProjectAbort, record_error
 from utils.collector_status import merge_result_to_storage
@@ -173,17 +174,31 @@ class CollectorBase(ABC):
         return None
 
     @staticmethod
-    def finalize_folder_stats(result: dict[str, Any], folder_path: Path) -> None:
+    def finalize_folder_stats(
+        result: dict[str, Any],
+        folder_path: Path,
+        planned: list[PlannedFile] | None = None,
+    ) -> None:
         """
         Populate ``num_files``, ``file_size``, ``extensions``, and ``download_date``.
+
+        When ``planned`` is given, deferred downloads that are not on disk are
+        included in the file count and byte total.
 
         Args:
             result: Mutable result dict.
             folder_path: Project output directory.
+            planned: Catalog files, including ones skipped for size.
         """
         if not folder_path.is_dir():
             return
-        extensions, total_bytes, num_files = folder_extensions_and_size(folder_path)
+        if planned is None:
+            extensions, total_bytes, num_files = folder_extensions_and_size(folder_path)
+        else:
+            extensions, total_bytes, num_files = inventory_with_deferred(
+                folder_path,
+                planned,
+            )
         result["num_files"] = num_files
         result["file_size"] = format_file_size(total_bytes)
         if extensions:
