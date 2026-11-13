@@ -5,7 +5,11 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock
 
-from collectors.HubLandingPage import dataset_about_url, open_real_landing_page
+from collectors.HubLandingPage import (
+    dataset_about_url,
+    metadata_page_url,
+    open_real_landing_page,
+)
 
 
 class TestHubLandingPage(unittest.TestCase):
@@ -47,6 +51,26 @@ class TestHubLandingPage(unittest.TestCase):
         self.assertFalse(open_real_landing_page(page))
         page.goto.assert_not_called()
         page.get_by_role.return_value.first.wait_for.assert_not_called()
+
+    def test_metadata_page_url_reads_the_link(self) -> None:
+        """View All Metadata returns its absolute address."""
+        page = MagicMock()
+        link = MagicMock()
+        link.count.return_value = 1
+        link.first.get_attribute.return_value = "https://www.arcgis.com/sharing/rest/metadata"
+        page.get_by_role.return_value = link
+        self.assertEqual(
+            metadata_page_url(page),
+            "https://www.arcgis.com/sharing/rest/metadata",
+        )
+
+    def test_metadata_page_url_is_absent_without_the_link(self) -> None:
+        """Pages without View All Metadata do not invent an address."""
+        page = MagicMock()
+        empty = MagicMock()
+        empty.count.return_value = 0
+        page.get_by_role.return_value = empty
+        self.assertIsNone(metadata_page_url(page))
 
     def test_dataset_about_url_ignores_other_sections(self) -> None:
         """Hub pages and documents are not rewritten to a dataset about URL."""

@@ -9,7 +9,7 @@ from urllib.parse import unquote, urlparse
 
 from collectors.ContentLengthProbe import ContentLengthProbe
 from collectors.InaccessibleDownloads import access_error_for_status
-from collectors.HubLandingPage import open_real_landing_page
+from collectors.HubLandingPage import metadata_page_url, open_real_landing_page
 from collectors.PageExpandForPdf import expand_read_more_and_load_more
 from collectors.PageUnclipForPdf import unclip_overflow_for_pdf
 from collectors.PlaywrightSession import PlaywrightSession
@@ -305,6 +305,7 @@ class UsfsPageDownloader:
         open_details_selector: str | None = None,
         spa_ready: bool = False,
         follow_full_details: bool = False,
+        metadata_pdf_path: Path | None = None,
     ) -> bool:
         """
         Navigate to ``url`` and write a PDF to ``pdf_path``.
@@ -317,6 +318,8 @@ class UsfsPageDownloader:
                 down arrows, and print with screen media.
             follow_full_details: When True, click ``View Full Details`` before
                 expanding and printing.
+            metadata_pdf_path: When set, also print a View All Metadata link
+                from the prepared page.
         """
         return (
             self._render_pdf(
@@ -325,6 +328,7 @@ class UsfsPageDownloader:
                 open_details_selector,
                 spa_ready=spa_ready,
                 follow_full_details=follow_full_details,
+                metadata_pdf_path=metadata_pdf_path,
             )
             is not None
         )
@@ -428,6 +432,7 @@ class UsfsPageDownloader:
         *,
         spa_ready: bool = False,
         follow_full_details: bool = False,
+        metadata_pdf_path: Path | None = None,
     ) -> Path | None:
         """Navigate, expand the page, and print to PDF."""
         if not self._ensure_browser():
@@ -443,14 +448,30 @@ class UsfsPageDownloader:
                 spa_ready=spa_ready,
                 follow_full_details=follow_full_details,
             )
+            metadata_url = metadata_page_url(page) if metadata_pdf_path else None
             pdf_path.parent.mkdir(parents=True, exist_ok=True)
-            return self._write_page_pdf(page, pdf_path, spa_ready=spa_ready)
+            written = self._write_page_pdf(page, pdf_path, spa_ready=spa_ready)
+            if written is not None and metadata_url and metadata_pdf_path:
+                self._write_metadata_pdf(page, metadata_url, metadata_pdf_path)
+            return written
         except Exception as exc:
             Logger.error("Failed to render PDF from %s: %s", url, exc)
             return None
         finally:
             with suppress(Exception):
                 page.close()
+
+    def _write_metadata_pdf(self, page: Any, url: str, pdf_path: Path) -> None:
+        """Print the View All Metadata page. A failure leaves the landing PDF."""
+        try:
+            self._goto_for_pdf(page, url, spa_ready=False)
+            pdf_path.parent.mkdir(parents=True, exist_ok=True)
+            if self._write_page_pdf(page, pdf_path) is None:
+                Logger.warning("Failed to save View All Metadata PDF")
+                return
+            Logger.info("Saved %s", pdf_path.name)
+        except Exception as exc:
+            Logger.warning("Failed to save View All Metadata PDF: %s", exc)
 
     def _prepare_page_for_pdf(
         self,

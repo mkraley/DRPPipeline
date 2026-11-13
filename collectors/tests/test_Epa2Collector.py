@@ -9,7 +9,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from collectors.Epa2Collector import LANDING_PDF_NAME, Epa2Collector
+from collectors.Epa2Collector import LANDING_PDF_NAME, METADATA_PDF_NAME, Epa2Collector
+from utils.file_utils import output_folder_name
 from collectors.PlannedFile import PlannedFile
 from storage import Storage
 from utils.Args import Args
@@ -73,10 +74,14 @@ class TestEpa2Collector(unittest.TestCase):
             path: Path,
             spa_ready: bool = False,
             follow_full_details: bool = False,
+            metadata_pdf_path: Path | None = None,
         ) -> bool:
             self.assertTrue(spa_ready)
             self.assertTrue(follow_full_details)
             self.assertEqual(url, _DATASET_URL)
+            self.assertIsNotNone(metadata_pdf_path)
+            assert metadata_pdf_path is not None
+            self.assertEqual(metadata_pdf_path.name, METADATA_PDF_NAME)
             path.write_bytes(b"%PDF-1.4")
             return True
 
@@ -115,8 +120,9 @@ class TestEpa2Collector(unittest.TestCase):
             path: Path,
             spa_ready: bool = False,
             follow_full_details: bool = False,
+            metadata_pdf_path: Path | None = None,
         ) -> bool:
-            del spa_ready, follow_full_details
+            del spa_ready, follow_full_details, metadata_pdf_path
             seen.append(url)
             path.write_bytes(b"%PDF-1.4")
             return True
@@ -136,6 +142,26 @@ class TestEpa2Collector(unittest.TestCase):
             exports=exports,
         )._collect(source, 2, {})
         self.assertEqual(seen, [source])
+
+    def test_retry_keeps_the_existing_folder(self) -> None:
+        """A second collect does not delete export files already saved."""
+        folder = self.temp_dir / output_folder_name(1)
+        folder.mkdir()
+        saved = folder / "Sites_csv.csv"
+        saved.write_bytes(b"kept")
+        pages = MagicMock()
+        pages.url_to_pdf.side_effect = lambda *_args, **_kwargs: True
+        items = MagicMock()
+        items.fetch_feature.return_value = _feature()
+        exports = MagicMock()
+        exports.download_all.return_value = ([], [])
+        exports.commit.return_value = "collected"
+        Epa2Collector(
+            page_downloader=pages,
+            item_client=items,
+            exports=exports,
+        )._collect(_DATASET_URL, 1, {})
+        self.assertEqual(saved.read_bytes(), b"kept")
 
 
 if __name__ == "__main__":

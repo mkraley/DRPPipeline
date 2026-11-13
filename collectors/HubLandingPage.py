@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 from utils.Logger import Logger
 
 _FULL_DETAILS = re.compile(r"View\s+Full\s+Details", re.I)
+_ALL_METADATA = re.compile(r"View\s+All\s+Metadata", re.I)
 _SETTLE_MS = 2000
 _NAV_TIMEOUT_MS = 90000
 
@@ -104,6 +105,29 @@ def dataset_about_url(page_url: str) -> str | None:
     if not parsed.scheme or not parsed.netloc:
         return None
     return f"{parsed.scheme}://{parsed.netloc}/datasets/{parts[1]}/about"
+
+
+def metadata_page_url(page: Any) -> str | None:
+    """
+    Return the View All Metadata address when the details page links to it.
+
+    Args:
+        page: Playwright page on the full details view.
+
+    Returns:
+        Absolute metadata page URL, or None when the link is absent.
+    """
+    try:
+        locator = page.get_by_role("link", name=_ALL_METADATA)
+        if locator.count() < 1:
+            return None
+        href = str(locator.first.get_attribute("href") or "").strip()
+    except Exception as exc:
+        Logger.debug("View All Metadata lookup failed: %s", exc)
+        return None
+    if href.startswith("http://") or href.startswith("https://"):
+        return href
+    return None
 
 
 def expand_hub_field_sections(page: Any) -> int:

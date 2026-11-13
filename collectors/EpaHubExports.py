@@ -36,6 +36,9 @@ from utils.url_utils import requests_verify
 _STATUS_TIMEOUT = (10, 30)
 _DOWNLOAD_TIMEOUT = (10, 300)
 _MAX_REQUEST_FAILURES = 3
+_MAX_SERVER_ERRORS = 5
+_SERVER_ERROR_PAUSE_SEC = 5.0
+_RETRYABLE_HTTP = frozenset({500, 502, 503, 504})
 
 
 class EpaHubExports:
@@ -46,7 +49,7 @@ class EpaHubExports:
         *,
         getter: Any | None = None,
         sleeper: Any | None = None,
-        attempts: int = 30,
+        attempts: int = 150,
         pause_sec: float = 2.0,
     ) -> None:
         """
@@ -55,7 +58,8 @@ class EpaHubExports:
         Args:
             getter: ``requests.get`` replacement for tests.
             sleeper: ``time.sleep`` replacement for tests.
-            attempts: How many times to poll a generating export.
+            attempts: How many times to poll a generating export. The default
+                waits about five minutes.
             pause_sec: Seconds between polls.
         """
         self._get = getter or requests.get
@@ -82,6 +86,11 @@ class EpaHubExports:
         planned: list[PlannedFile] = []
         downloaded = bytes_on_disk(folder)
         for name, url in file_specs(feature, self._service_payload(folder, feature)):
+            kept = self._existing(folder, name, url)
+            if kept is not None:
+                planned.append(kept)
+                downloaded += kept.size_bytes or 0
+                continue
             Logger.info("Requesting Hub export %s", name)
             ready = self._resolve(url)
             planned_file, note, written = self._save_ready(
@@ -156,24 +165,50 @@ class EpaHubExports:
         size = dest.stat().st_size
         return PlannedFile(name, file_url, size), "", size
 
+    def _existing(self, folder: Path, name: str, url: str) -> PlannedFile | None:
+        """Return a planned file when ``name`` is already saved."""
+        dest = folder / name
+        if not dest.is_file() or dest.stat().st_size <= 0:
+            return None
+        Logger.info("Keeping existing Hub export %s", name)
+        return PlannedFile(name, url, dest.stat().st_size)
+
     def _resolve(self, url: str) -> ReadyFile:
         """Poll until an export is ready, then return its file URL and size."""
         failures = 0
+        server_errors = 0
         for _attempt in range(self._attempts):
-            response = self._poll(url)
-            if response is None:
+            ready, failed = self._status(url)
+            if failed:
                 failures += 1
                 if failures >= _MAX_REQUEST_FAILURES:
                     return ReadyFile(url, None, "export request timed out")
                 self._sleep(self._pause_sec)
                 continue
             failures = 0
-            ready = ready_from_response(response)
             if ready is None:
                 self._sleep(self._pause_sec)
                 continue
+            if self._retry_server_error(ready, server_errors):
+                server_errors += 1
+                continue
             return self._with_size(ready, url)
         return ReadyFile(url, None, "export was not ready")
+
+    def _status(self, url: str) -> tuple[ReadyFile | None, bool]:
+        """Return one status result and whether the request itself failed."""
+        response = self._poll(url)
+        if response is None:
+            return None, True
+        return ready_from_response(response), False
+
+    def _retry_server_error(self, ready: ReadyFile, seen: int) -> bool:
+        """Pause and try again after a transient Hub server error."""
+        if _server_status(ready) is None or seen + 1 >= _MAX_SERVER_ERRORS:
+            return False
+        Logger.warning("Hub export returned %s; retrying", ready.error)
+        self._sleep(_SERVER_ERROR_PAUSE_SEC)
+        return True
 
     def _poll(self, url: str) -> Any | None:
         """GET one export status. None means the request itself failed."""
@@ -244,4 +279,18 @@ class EpaHubExports:
                 if chunk:
                     handle.write(chunk)
         return dest.is_file() and dest.stat().st_size > 0
+
+
+def _server_status(ready: ReadyFile) -> int | None:
+    """Return a retryable HTTP status from an export error, or None."""
+    text = ready.error or ""
+    if not text.startswith("export HTTP "):
+        return None
+    try:
+        code = int(text.removeprefix("export HTTP ").split()[0])
+    except ValueError:
+        return None
+    if code in _RETRYABLE_HTTP:
+        return code
+    return None
 

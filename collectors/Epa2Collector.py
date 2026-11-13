@@ -3,8 +3,9 @@ EPA2 collector for DRP Pipeline.
 
 Collects one EDG Clip and Ship item: follows View Full Details when that
 button is present, prints that page with Load more, down arrows, and Table
-chosen over Chart, then saves service JSON and the Hub exports that fit in
-the download budget.
+chosen over Chart, and prints View All Metadata when that link is present.
+A later collect keeps files already saved. Service JSON and the Hub exports
+that fit in the download budget are saved after the pages.
 
 Run via orchestrator when ``Args.source`` is ``epa2``.
 """
@@ -29,6 +30,7 @@ from utils.IcpsrGeographicNormalizer import normalize_geographic_metadata
 from utils.Logger import Logger
 
 LANDING_PDF_NAME = "landing_page.pdf"
+METADATA_PDF_NAME = "all_metadata.pdf"
 
 
 class Epa2Collector(CollectorBase):
@@ -69,7 +71,7 @@ class Epa2Collector(CollectorBase):
         feature = self._load_feature(drpid, item_id)
         if feature is None:
             return {}
-        folder = self.create_project_folder(drpid)
+        folder = self.create_project_folder(drpid, recreate=False)
         if folder is None:
             return {}
         pages, owns_pages = self._open_pages()
@@ -113,6 +115,7 @@ class Epa2Collector(CollectorBase):
             folder / LANDING_PDF_NAME,
             spa_ready=True,
             follow_full_details=True,
+            metadata_pdf_path=folder / METADATA_PDF_NAME,
         ):
             Logger.info("Saved %s from %s", LANDING_PDF_NAME, source_url)
             return

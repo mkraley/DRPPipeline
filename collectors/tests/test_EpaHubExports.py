@@ -183,6 +183,75 @@ class TestEpaHubExports(unittest.TestCase):
         self.assertEqual(calls["count"], 3)
         self.assertIn("timed out", planned[0].access_error or "")
 
+    def test_saved_export_is_not_requested_again(self) -> None:
+        """A file already on disk is kept and the Hub is not asked again."""
+        def getter(url: str, **_kwargs: object) -> MagicMock:
+            del url
+            raise AssertionError("existing export should not be requested")
+
+        feature = {"id": "abc", "properties": {"type": "Feature Service", "url": ""}}
+        service = {"layers": [{"id": 0, "name": "Sites"}], "supportedExportFormats": "csv"}
+        exports = EpaHubExports(getter=getter, sleeper=lambda _sec: None)
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "Sites_csv.csv").write_bytes(b"csv!")
+            _notes, planned = exports.download_all(folder, _with_service(feature, service, exports))
+            self.assertEqual(planned[0].size_bytes, 4)
+            self.assertEqual((folder / "Sites_csv.csv").read_bytes(), b"csv!")
+
+    def test_http_500_is_retried_then_saved(self) -> None:
+        """A short Hub 500 burst is retried and the later file is saved."""
+        ready = _json_response(
+            200,
+            {"status": "ready", "downloadUrl": "https://files.example/layer.csv", "contentLength": 4},
+        )
+        body = _file_response(b"csv!")
+        responses = [_status_response(500), _status_response(500), ready, body]
+        sleeps: list[float] = []
+
+        def getter(url: str, **_kwargs: object) -> MagicMock:
+            del url
+            return responses.pop(0)
+
+        feature = {"id": "abc", "properties": {"type": "Feature Service", "url": ""}}
+        service = {"layers": [{"id": 0, "name": "Sites"}], "supportedExportFormats": "csv"}
+        exports = EpaHubExports(getter=getter, sleeper=sleeps.append, attempts=10)
+        with tempfile.TemporaryDirectory() as tmp:
+            _notes, planned = exports.download_all(
+                Path(tmp),
+                _with_service(feature, service, exports),
+            )
+        self.assertEqual(planned[0].relative_path, "Sites_csv.csv")
+        self.assertEqual(sleeps, [5.0, 5.0])
+
+    def test_repeated_http_500_stops_after_five(self) -> None:
+        """A Hub 500 is not polled for the whole generation window."""
+        calls = {"count": 0}
+
+        def getter(url: str, **_kwargs: object) -> MagicMock:
+            del url
+            calls["count"] += 1
+            return _status_response(500)
+
+        feature = {"id": "abc", "properties": {"type": "Feature Service", "url": ""}}
+        service = {"layers": [{"id": 0, "name": "Sites"}], "supportedExportFormats": "csv"}
+        exports = EpaHubExports(getter=getter, sleeper=lambda _sec: None, attempts=20)
+        with tempfile.TemporaryDirectory() as tmp:
+            _notes, planned = exports.download_all(
+                Path(tmp),
+                _with_service(feature, service, exports),
+            )
+        self.assertEqual(calls["count"], 5)
+        self.assertIn("HTTP 500", planned[0].access_error or "")
+
+
+def _status_response(status_code: int) -> MagicMock:
+    """Return a mock response with only a status code."""
+    response = MagicMock()
+    response.status_code = status_code
+    response.headers = {}
+    return response
+
 
 def _with_service(feature: dict, service: dict, exports: EpaHubExports) -> dict:
     """Make download_all see ``service`` without a live FeatureServer request."""
