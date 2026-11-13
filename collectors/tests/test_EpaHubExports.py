@@ -7,6 +7,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import requests
+
 from collectors.EpaHubExports import EpaHubExports
 from utils.Logger import Logger
 
@@ -157,6 +159,29 @@ class TestEpaHubExports(unittest.TestCase):
         self.assertNotIn("_0", seen[0])
         self.assertEqual(sleeps, [])
         self.assertIn("HTTP 400", planned[0].access_error or "")
+
+    def test_read_timeout_is_retried_then_skipped(self) -> None:
+        """A hung export request does not abort the rest of the download."""
+        calls = {"count": 0}
+
+        def getter(url: str, **_kwargs: object) -> MagicMock:
+            del url
+            calls["count"] += 1
+            raise requests.exceptions.ReadTimeout("read timed out")
+
+        feature = {
+            "id": "2d718d2733a74d1689d72b922c0ac4f4",
+            "properties": {"type": "Feature Service", "url": ""},
+        }
+        service = {"layers": [{"id": 0, "name": "Sites"}], "supportedExportFormats": "csv"}
+        exports = EpaHubExports(getter=getter, sleeper=lambda _sec: None, attempts=10)
+        with tempfile.TemporaryDirectory() as tmp:
+            _notes, planned = exports.download_all(
+                Path(tmp),
+                _with_service(feature, service, exports),
+            )
+        self.assertEqual(calls["count"], 3)
+        self.assertIn("timed out", planned[0].access_error or "")
 
 
 def _with_service(feature: dict, service: dict, exports: EpaHubExports) -> dict:

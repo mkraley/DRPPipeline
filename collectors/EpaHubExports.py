@@ -33,6 +33,10 @@ from utils.collector_status import (
 )
 from utils.url_utils import requests_verify
 
+_STATUS_TIMEOUT = (10, 30)
+_DOWNLOAD_TIMEOUT = (10, 300)
+_MAX_REQUEST_FAILURES = 3
+
 
 class EpaHubExports:
     """Save service metadata and generated open-format exports."""
@@ -154,8 +158,16 @@ class EpaHubExports:
 
     def _resolve(self, url: str) -> ReadyFile:
         """Poll until an export is ready, then return its file URL and size."""
+        failures = 0
         for _attempt in range(self._attempts):
-            response = self._request(url, stream=True, allow_redirects=False)
+            response = self._poll(url)
+            if response is None:
+                failures += 1
+                if failures >= _MAX_REQUEST_FAILURES:
+                    return ReadyFile(url, None, "export request timed out")
+                self._sleep(self._pause_sec)
+                continue
+            failures = 0
             ready = ready_from_response(response)
             if ready is None:
                 self._sleep(self._pause_sec)
@@ -163,22 +175,39 @@ class EpaHubExports:
             return self._with_size(ready, url)
         return ReadyFile(url, None, "export was not ready")
 
+    def _poll(self, url: str) -> Any | None:
+        """GET one export status. None means the request itself failed."""
+        try:
+            return self._request(url, stream=True, allow_redirects=False)
+        except requests.RequestException as exc:
+            Logger.warning("Hub export request failed: %s", exc)
+            return None
+
     def _with_size(self, ready: ReadyFile, requested_url: str) -> ReadyFile:
         """Fill in Content-Length when the status body did not include it."""
         if ready.error or ready.size_bytes is not None:
             return ready
         if ready.file_url in {"", requested_url}:
             return ready
-        head = self._request(ready.file_url, stream=True, allow_redirects=True)
+        try:
+            head = self._request(
+                ready.file_url,
+                stream=True,
+                allow_redirects=True,
+                timeout=_DOWNLOAD_TIMEOUT,
+            )
+        except requests.RequestException as exc:
+            Logger.warning("Could not read export size: %s", exc)
+            return ready
         size = content_length(head)
         close_response(head)
         return ReadyFile(ready.file_url, size, None)
 
     def _request(self, url: str, **kwargs: Any) -> Any:
         """GET ``url`` with the configured client."""
+        kwargs.setdefault("timeout", _STATUS_TIMEOUT)
         return self._get(
             url,
-            timeout=120,
             verify=requests_verify(),
             headers={"Accept": "*/*"},
             **kwargs,
@@ -186,11 +215,24 @@ class EpaHubExports:
 
     def _write(self, url: str, dest: Path) -> bool:
         """Stream ``url`` to ``dest``."""
-        response = self._request(url, stream=True, allow_redirects=True)
+        try:
+            response = self._request(
+                url,
+                stream=True,
+                allow_redirects=True,
+                timeout=_DOWNLOAD_TIMEOUT,
+            )
+        except requests.RequestException as exc:
+            Logger.warning("Hub export download failed: %s", exc)
+            return False
         try:
             if getattr(response, "status_code", 500) >= 400:
                 return False
             return self._write_body(response, dest)
+        except requests.RequestException as exc:
+            Logger.warning("Hub export download failed: %s", exc)
+            dest.unlink(missing_ok=True)
+            return False
         finally:
             close_response(response)
 
