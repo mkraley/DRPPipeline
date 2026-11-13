@@ -83,25 +83,65 @@ class EpaHubItemClient:
         Returns:
             ``editingInfo.dataLastEditDate`` in epoch milliseconds, or None.
         """
-        url = service_url.strip()
+        url = service_url.strip().rstrip("/")
         if not url:
             return None
+        latest: int | None = None
+        for layer_id in _layer_ids(self._read_json(url)):
+            updated = _edit_date(self._read_json(f"{url}/{layer_id}"))
+            if updated is not None and (latest is None or updated > latest):
+                latest = updated
+        return latest
+
+    def _read_json(self, url: str) -> dict[str, Any] | None:
+        """GET ArcGIS JSON. None means the request failed or returned an error."""
         try:
             response = self._get(
-                f"{url.rstrip('/')}/0",
+                url,
                 params={"f": "json"},
                 timeout=self._timeout_sec,
                 verify=requests_verify(),
             )
             payload = response.json()
-        except (TypeError, ValueError, OSError):
+        except (TypeError, ValueError, OSError, requests.RequestException):
             return None
         if getattr(response, "status_code", 500) >= 400 or not isinstance(payload, dict):
             return None
-        info = payload.get("editingInfo")
-        if not isinstance(info, dict):
+        if isinstance(payload.get("error"), dict):
             return None
-        return _positive_int(info.get("dataLastEditDate"))
+        return payload
+
+
+def _layer_ids(payload: dict[str, Any] | None) -> list[int]:
+    """Return feature layer ids, or layer 0 when the service lists none."""
+    layers = payload.get("layers") if isinstance(payload, dict) else None
+    if not isinstance(layers, list):
+        return [0]
+    ids = [number for layer in layers if (number := _layer_id(layer)) is not None]
+    return ids or [0]
+
+
+def _layer_id(layer: Any) -> int | None:
+    """Return a layer id, including 0."""
+    if not isinstance(layer, dict):
+        return None
+    try:
+        number = int(layer.get("id"))
+    except (TypeError, ValueError):
+        return None
+    if number < 0:
+        return None
+    return number
+
+
+def _edit_date(payload: dict[str, Any] | None) -> int | None:
+    """Return ``editingInfo.dataLastEditDate`` when present."""
+    if not isinstance(payload, dict):
+        return None
+    info = payload.get("editingInfo")
+    if not isinstance(info, dict):
+        return None
+    return _positive_int(info.get("dataLastEditDate"))
 
 
 def _positive_int(value: Any) -> int | None:

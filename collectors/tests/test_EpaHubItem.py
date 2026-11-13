@@ -79,7 +79,7 @@ class TestEpaHubItem(unittest.TestCase):
             "properties": {
                 "title": "AirNow",
                 "type": "Feature Layer",
-                "snippet": "Short snippet",
+                "snippet": "Hourly AirNow concentrations for the latest hour.",
                 "source": "Office of Air",
                 "description": html,
                 "created": 1554242307000,
@@ -112,7 +112,47 @@ class TestEpaHubItem(unittest.TestCase):
             "https://services.arcgis.com/org/arcgis/rest/services/Air/FeatureServer"
         )
         self.assertEqual(updated, 1700000000000)
-        self.assertTrue(seen[0].endswith("/FeatureServer/0"))
+        self.assertTrue(any(url.endswith("/FeatureServer/0") for url in seen))
+
+    def test_data_updated_uses_the_listed_layer_id(self) -> None:
+        """A service whose only layer is not 0 still supplies a data-updated date."""
+        def getter(url: str, **_kwargs: object) -> MagicMock:
+            response = MagicMock()
+            response.status_code = 200
+            if url.rstrip("/").endswith("/16"):
+                response.json.return_value = {
+                    "editingInfo": {"dataLastEditDate": 1663712380084},
+                }
+                return response
+            response.json.return_value = {"layers": [{"id": 16, "name": "cattle"}]}
+            return response
+
+        updated = EpaHubItemClient(getter=getter).data_updated_ms(
+            "https://services.arcgis.com/org/arcgis/rest/services/Cattle/FeatureServer"
+        )
+        self.assertEqual(updated, 1663712380084)
+
+    def test_summary_keeps_the_snippet_paragraph(self) -> None:
+        """The Hub summary paragraph stays in front of the description section."""
+        feature = {
+            "id": _ITEM,
+            "properties": {
+                "title": "Cattle",
+                "type": "Feature Layer",
+                "snippet": "This map shows the number of cattle operations by county.",
+                "description": (
+                    "<p>This is an EnviroAtlas web service.</p>"
+                    "<div><b>About the census</b></div>"
+                    "<p>Later section.</p>"
+                ),
+            },
+        }
+        summary = metadata_from_feature(feature)["summary"]
+        self.assertTrue(
+            summary.startswith("This map shows the number of cattle operations by county.")
+        )
+        self.assertIn("This is an EnviroAtlas web service.", summary)
+        self.assertNotIn("Later section", summary)
 
 
 if __name__ == "__main__":

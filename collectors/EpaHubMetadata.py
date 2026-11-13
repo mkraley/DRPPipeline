@@ -1,9 +1,10 @@
 """
 Map an EDG Clip and Ship feature to Storage metadata.
 
-The summary is the first section of the full description. Agency and office
-are the Environmental Protection Agency. Feature layers are GIS data, and the
-time range is the published date through the data-updated date.
+The summary is the Hub snippet followed by the first section of the full
+description. Agency and office are the Environmental Protection Agency.
+Feature layers are GIS data, and the time range is the published date through
+the data-updated date.
 """
 
 from __future__ import annotations
@@ -84,11 +85,19 @@ def epoch_date(value: Any) -> str:
 
 
 def _summary(props: dict[str, Any]) -> str:
-    """Prefer the description's first section over the short snippet."""
-    description = first_section_text(str(props.get("description") or ""))
-    if description:
-        return description
-    return " ".join(str(props.get("snippet") or "").split())
+    """Keep the snippet, then the description's first section."""
+    section = first_section_text(str(props.get("description") or ""))
+    snippet = " ".join(str(props.get("snippet") or "").split())
+    if not snippet or _fold(snippet) in _fold(section):
+        return section or snippet
+    if not section:
+        return snippet
+    return f"{snippet}\n\n{section}"
+
+
+def _fold(text: str) -> str:
+    """Collapse whitespace for a case-insensitive comparison."""
+    return " ".join(text.casefold().split())
 
 
 def first_section_text(html: str) -> str:
