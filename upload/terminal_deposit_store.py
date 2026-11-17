@@ -2,7 +2,8 @@
 Saved DataLumos token and cookies for one terminal.
 
 Each terminal has its own file, named with that shell's process id, so a
-command in another window cannot reuse the session. The file lives in the
+command in another window cannot reuse the session. The id is the nearest
+interactive shell ancestor when one can be found. The file lives in the
 temp directory, outside this repo.
 """
 
@@ -13,6 +14,8 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Any
+
+from upload.terminal_id import resolve_terminal_id
 
 
 class TerminalDepositStore:
@@ -26,10 +29,12 @@ class TerminalDepositStore:
         """
         Args:
             directory: Folder for the session file. Defaults to the temp directory.
-            terminal_id: Shell process id. Defaults to this process's parent.
+            terminal_id: Shell process id. Defaults to the nearest interactive shell.
         """
         self._directory = directory
-        self._terminal_id = os.getppid() if terminal_id is None else terminal_id
+        self._terminal_id = (
+            resolve_terminal_id() if terminal_id is None else terminal_id
+        )
 
     def load(self) -> tuple[str, dict[str, Any] | None]:
         """Return this terminal's token and cookie state, or an empty session."""

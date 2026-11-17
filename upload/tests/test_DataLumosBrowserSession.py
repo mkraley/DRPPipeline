@@ -29,9 +29,14 @@ class TestDataLumosBrowserSession(unittest.TestCase):
         sys.argv = self._original_argv
 
     def test_saved_deposit_token_is_cleared_when_the_browser_closes(self) -> None:
-        """A closed browser cannot reuse the previous bearer token."""
+        """A closed browser cannot reuse the previous bearer token in memory."""
         session = DataLumosBrowserSession()
         session.keep_deposit_token("jwt-from-first-project")
+        session._page = MagicMock()
+        session._context = MagicMock()
+        session._context.storage_state.return_value = {"cookies": [], "origins": []}
+        session._browser = MagicMock()
+        session._playwright = MagicMock()
         self.assertEqual(session.deposit_token, "jwt-from-first-project")
         session.close()
         self.assertEqual(session.deposit_token, "")
@@ -170,6 +175,24 @@ class TestDataLumosBrowserSession(unittest.TestCase):
         token, state = store.load()
         self.assertEqual(token, "jwt-1")
         self.assertEqual(state["cookies"][0]["name"], "sid")
+
+    def test_second_close_does_not_wipe_the_saved_token(self) -> None:
+        """atexit must not overwrite the terminal store after a normal close."""
+        store = self._store()
+        session = DataLumosBrowserSession(store)
+        session.keep_deposit_token("jwt-1")
+        session._page = MagicMock()
+        session._context = MagicMock()
+        session._context.storage_state.return_value = {
+            "cookies": [{"name": "sid"}],
+            "origins": [],
+        }
+        session._browser = MagicMock()
+        session._playwright = MagicMock()
+        session.close()
+        self.assertEqual(store.load()[0], "jwt-1")
+        session.close()
+        self.assertEqual(store.load()[0], "jwt-1")
 
     def test_restored_cookies_are_loaded_into_the_new_browser(self) -> None:
         """The next command's browser starts with the saved cookie jar."""

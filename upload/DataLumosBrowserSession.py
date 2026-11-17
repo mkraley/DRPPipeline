@@ -270,9 +270,15 @@ class DataLumosBrowserSession:
         During Ctrl-C (KeyboardInterrupt active), abandons Playwright handles
         without awaiting in-flight page ops — graceful ``page.close()`` otherwise
         leaves pending asyncio tasks that spam the console on exit.
+
+        Idempotent: a second call (for example from ``atexit`` after the
+        orchestrator already closed) must not rewrite the terminal session
+        file with an empty token.
         """
         if sys.exc_info()[0] is KeyboardInterrupt:
             self._abandon()
+            return
+        if not self._has_browser():
             return
 
         self._persist()
@@ -306,6 +312,15 @@ class DataLumosBrowserSession:
 
         self._clear_memory()
         Logger.debug("Browser resources cleaned up")
+
+    def _has_browser(self) -> bool:
+        """Return True when a Playwright browser is still held by this session."""
+        return (
+            self._page is not None
+            or self._context is not None
+            or self._browser is not None
+            or self._playwright is not None
+        )
 
     def _abandon(self) -> None:
         """
