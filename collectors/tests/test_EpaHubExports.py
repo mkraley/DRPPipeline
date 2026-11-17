@@ -43,6 +43,50 @@ class TestEpaHubExports(unittest.TestCase):
         """Initialize logging so export progress lines can be written."""
         Logger.initialize(log_level="WARNING", log_file=False)
 
+    def test_existing_kml_zip_is_renamed_and_not_requested(self) -> None:
+        """A KML file saved earlier as .zip is renamed and kept."""
+        feature = {"id": "abc", "properties": {"type": "Feature Service", "url": ""}}
+        service = {"layers": [{"id": 0, "name": "Sites"}], "supportedExportFormats": "kml"}
+
+        def getter(url: str, **_kwargs: object) -> MagicMock:
+            del url
+            raise AssertionError("existing export was requested")
+
+        exports = EpaHubExports(getter=getter, sleeper=lambda _sec: None)
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "Sites_kml.zip").write_bytes(b"<kml></kml>")
+            _notes, planned = exports.download_all(folder, _with_service(feature, service, exports))
+            self.assertEqual(planned[0].relative_path, "Sites_kml.kml")
+            self.assertEqual((folder / "Sites_kml.kml").read_bytes(), b"<kml></kml>")
+            self.assertFalse((folder / "Sites_kml.zip").exists())
+
+    def test_result_url_extension_is_the_saved_name(self) -> None:
+        """The saved file uses the extension on the generated URL."""
+        ready = _json_response(
+            200,
+            {
+                "status": "ready",
+                "resultUrl": "https://files.example/All_cattle.kmz",
+                "contentLength": 4,
+            },
+        )
+        body = _file_response(b"kmz!")
+        responses = [ready, body]
+
+        def getter(url: str, **_kwargs: object) -> MagicMock:
+            del url
+            return responses.pop(0)
+
+        feature = {"id": "abc", "properties": {"type": "Feature Service", "url": ""}}
+        service = {"layers": [{"id": 0, "name": "Sites"}], "supportedExportFormats": "filegdb"}
+        exports = EpaHubExports(getter=getter, sleeper=lambda _sec: None, attempts=3)
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            _notes, planned = exports.download_all(folder, _with_service(feature, service, exports))
+            self.assertEqual(planned[0].relative_path, "Sites_filegdb.kmz")
+            self.assertEqual((folder / "Sites_filegdb.kmz").read_bytes(), b"kmz!")
+
     def test_polls_until_ready_then_saves(self) -> None:
         """A 202 generating response is followed by the download URL."""
         pending = _json_response(202, {"status": "InProgress"})

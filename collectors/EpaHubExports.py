@@ -21,7 +21,9 @@ from collectors.EpaHubExportPlan import (
     bytes_on_disk,
     close_response,
     content_length,
+    corrected_zip_export,
     file_specs,
+    name_with_export_extension,
     ready_from_response,
 )
 from collectors.PlannedFile import PlannedFile
@@ -178,6 +180,7 @@ class EpaHubExports:
         file_url = ready.file_url or source_url
         if ready.error:
             return PlannedFile(name, file_url, access_error=ready.error), "", 0
+        name = name_with_export_extension(name, file_url)
         if would_exceed_download_budget(downloaded, ready.size_bytes) and (
             ready.size_bytes is not None or downloaded >= MAX_DOWNLOAD_BYTES
         ):
@@ -186,16 +189,31 @@ class EpaHubExports:
         dest = folder / name
         if not self._write(file_url, dest):
             return PlannedFile(name, file_url, access_error="download failed"), "", 0
+        dest = corrected_zip_export(dest)
         size = dest.stat().st_size
-        return PlannedFile(name, file_url, size), "", size
+        return PlannedFile(dest.name, file_url, size), "", size
 
     def _existing(self, folder: Path, name: str, url: str) -> PlannedFile | None:
-        """Return a planned file when ``name`` is already saved."""
-        dest = folder / name
-        if not dest.is_file() or dest.stat().st_size <= 0:
+        """Return a planned file when this export is already saved."""
+        dest = self._saved_export(folder, name)
+        if dest is None:
             return None
-        Logger.info("Keeping existing Hub export %s", name)
-        return PlannedFile(name, url, dest.stat().st_size)
+        Logger.info("Keeping existing Hub export %s", dest.name)
+        return PlannedFile(dest.name, url, dest.stat().st_size)
+
+    def _saved_export(self, folder: Path, name: str) -> Path | None:
+        """Return the on-disk export for ``name``, correcting a mismatched .zip."""
+        legacy = folder / f"{Path(name).stem}.zip"
+        if legacy.is_file():
+            corrected_zip_export(legacy)
+        exact = folder / name
+        if exact.is_file() and exact.stat().st_size > 0:
+            return exact
+        stem = Path(name).stem
+        for path in folder.iterdir():
+            if path.is_file() and path.stem == stem and path.stat().st_size > 0:
+                return path
+        return None
 
     def _resolve(self, url: str) -> ReadyFile:
         """Poll until an export is ready, then return its file URL and size."""

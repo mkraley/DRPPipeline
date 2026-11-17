@@ -5,9 +5,11 @@ Plan Clip and Ship download files and interpret Hub export responses.
 from __future__ import annotations
 
 import re
+import zipfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 from collectors.PlannedFile import is_generated_sidecar
 from utils.file_utils import sanitize_filename
@@ -24,6 +26,8 @@ _SUFFIXES = {
     "excel": ".xlsx",
     "geopackage": ".gpkg",
     "sqlite": ".sqlite",
+    "kml": ".kml",
+    "featurecollection": ".json",
 }
 _ITEM_ID = re.compile(r"[0-9a-fA-F]{32}")
 _LAYER_SUFFIX = re.compile(r"_[0-9]+$")
@@ -205,6 +209,89 @@ def _layers(service: dict[str, Any]) -> list[tuple[int, str]]:
 def _suffix(fmt: str) -> str:
     """Return a filename suffix for a Hub export format."""
     return _SUFFIXES.get(fmt.strip().casefold(), ".zip")
+
+
+def name_with_export_extension(name: str, file_url: str) -> str:
+    """Use the generated file's extension when the result URL has one.
+
+    Args:
+        name: Planned download name.
+        file_url: URL of the file Hub generated.
+
+    Returns:
+        ``name`` with the result URL's extension, or ``name`` unchanged.
+    """
+    suffix = _extension_from_url(file_url)
+    planned = PurePosixPath(name)
+    if not suffix or planned.suffix.lower() != ".zip" or suffix == ".zip":
+        return name
+    return str(planned.with_suffix(suffix))
+
+
+def corrected_zip_export(path: Path) -> Path:
+    """Rename an export whose extension does not match its bytes.
+
+    A ``.zip`` that is KML or JSON takes that extension. A ``.kml`` that is a
+    zipped KMZ becomes ``.kmz``.
+
+    Args:
+        path: File already saved by an earlier collect.
+
+    Returns:
+        The file to keep. A mismatched name is renamed in place.
+    """
+    if not path.is_file():
+        return path
+    suffix = _extension_for_content(path)
+    current = path.suffix.lower()
+    if not suffix or suffix == current:
+        return path
+    if current != ".zip" and not (current == ".kml" and suffix == ".kmz"):
+        return path
+    dest = path.with_suffix(suffix)
+    if dest == path:
+        return path
+    if dest.is_file() and dest.stat().st_size > 0:
+        path.unlink()
+        return dest
+    if dest.exists():
+        dest.unlink()
+    path.rename(dest)
+    return dest
+
+
+def _extension_from_url(url: str) -> str:
+    """Return the lowercase extension on a result URL, including the dot."""
+    suffix = PurePosixPath(unquote(urlparse(url).path)).suffix.lower()
+    if suffix and suffix[1:].isalnum():
+        return suffix
+    return ""
+
+
+def _extension_for_content(path: Path) -> str | None:
+    """Return the extension the saved bytes actually are."""
+    try:
+        head = path.read_bytes()[:1024]
+    except OSError:
+        return None
+    stripped = head.lstrip()
+    lowered = stripped.lower()
+    if b"<kml" in lowered:
+        return ".kml"
+    if stripped.startswith((b"{", b"[")):
+        return ".json"
+    if head.startswith(b"PK") and _zip_has_kml(path):
+        return ".kmz"
+    return None
+
+
+def _zip_has_kml(path: Path) -> bool:
+    """Return True when a zip archive contains a KML member."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            return any(name.lower().endswith(".kml") for name in archive.namelist())
+    except (OSError, zipfile.BadZipFile):
+        return False
 
 
 def _ready_redirect(response: Any) -> ReadyFile:
