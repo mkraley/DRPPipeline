@@ -25,6 +25,7 @@ from upload.DataLumosFileUploader import (
     PARALLEL_FILE_UPLOADS,
     queue_wait_timeout_ms,
 )
+from upload.UploadIssueReporter import UploadIssueReporter
 from upload.deposit_direct import parse_body
 from upload.deposit_page_request import DEPOSIT_SERVER, redact_secrets
 from utils.file_utils import format_file_size
@@ -33,19 +34,31 @@ from utils.Logger import Logger
 _QUEUE_TIMEOUT_MS = 600000
 
 
+class FileAlreadyPresent(Exception):
+    """DataLumos already has this file. The upload skips it and continues."""
+
+
 class DepositFileUpload:
     """Upload one project's files with the deposit bearer token."""
 
-    def __init__(self, page: Page, token: str, timeout_ms: int = _QUEUE_TIMEOUT_MS) -> None:
+    def __init__(
+        self,
+        page: Page,
+        token: str,
+        timeout_ms: int = _QUEUE_TIMEOUT_MS,
+        reporter: UploadIssueReporter | None = None,
+    ) -> None:
         """
         Args:
             page: Authenticated Playwright page. Its cookie jar is copied onto each POST.
             token: Bearer token already read for this browser session.
             timeout_ms: How long to wait for the server to accept one file.
+            reporter: Stores a warning when a file is already in the project.
         """
         self._page = page
         self._token = token or ""
         self._timeout_ms = timeout_ms
+        self._reporter = reporter
         self._cookie_records: list[dict[str, str]] = []
 
     @property
@@ -83,7 +96,9 @@ class DepositFileUpload:
         zip_path = _zip_folder(folder)
         try:
             Logger.info("Uploading zip via deposit API: %s", zip_path.name)
-            self._upload_one(workspace_id, zip_path, zip_upload=True)
+            already = self._upload_one(workspace_id, zip_path, zip_upload=True)
+            if already is not None:
+                self._skip_already_present(already)
         finally:
             zip_path.unlink(missing_ok=True)
 
@@ -96,7 +111,9 @@ class DepositFileUpload:
     ) -> None:
         """POST one group of files and raise the first rejection."""
         self._announce_batch(batch, start, total)
-        errors = self._post_batch(workspace_id, batch)
+        errors, skipped = self._post_batch(workspace_id, batch)
+        for path in skipped:
+            self._skip_already_present(path)
         if errors:
             raise RuntimeError(errors[0])
 
@@ -104,44 +121,68 @@ class DepositFileUpload:
         """Log each file in a parallel group before any of them are sent."""
         for offset, path in enumerate(batch, start=start + 1):
             Logger.info(
-                "uploading file %s of %s (%s)",
+                "uploading file %s of %s: %s (%s)",
                 offset,
                 total,
+                path.name,
                 format_file_size(path.stat().st_size),
             )
 
-    def _post_batch(self, workspace_id: str, batch: list[Path]) -> list[str]:
-        """POST every file in the group. Returns rejection messages."""
+    def _post_batch(self, workspace_id: str, batch: list[Path]) -> tuple[list[str], list[Path]]:
+        """POST every file in the group. Returns rejections and files already present."""
         errors: list[str] = []
+        skipped: list[Path] = []
         with ThreadPoolExecutor(max_workers=len(batch)) as pool:
             futures = [
                 pool.submit(self._upload_one, workspace_id, path, zip_upload=False)
                 for path in batch
             ]
             for future in futures:
-                errors.extend(_future_error(future))
-        return errors
+                error, already = _future_outcome(future)
+                if error:
+                    errors.append(error)
+                if already is not None:
+                    skipped.append(already)
+        return errors, skipped
 
-    def _upload_one(self, workspace_id: str, path: Path, *, zip_upload: bool) -> None:
-        """POST one file and require the queued or zip-accepted response."""
+    def _upload_one(self, workspace_id: str, path: Path, *, zip_upload: bool) -> Path | None:
+        """POST one file. Return the path when DataLumos already has it."""
         if not self._token:
-            raise RuntimeError("Deposit token is missing")
+            raise RuntimeError(f"{path.name}: Deposit token is missing")
         endpoint = "uploadZipFile" if zip_upload else "uploadRawFile"
         timeout_s = queue_wait_timeout_ms(self._timeout_ms, path.stat().st_size) / 1000
         started = time.perf_counter()
         try:
             response = self._post(upload_url(workspace_id, path, zip_upload=zip_upload), path, timeout_s)
         except requests.RequestException as exc:
-            raise RuntimeError(f"Deposit POST /deposit/{endpoint} failed ({exc})") from exc
+            raise RuntimeError(f"{path.name}: Deposit POST /deposit/{endpoint} failed ({exc})") from exc
         Logger.info(
-            "Deposit POST /deposit/%s -> %s in %.1fs",
+            "Deposit POST /deposit/%s %s -> %s in %.1fs",
             endpoint,
+            path.name,
             response.status_code,
             time.perf_counter() - started,
         )
         if response.status_code == 401:
             self._token = ""
-        interpret_upload_response(response.status_code, response.text, endpoint)
+        try:
+            interpret_upload_response(response.status_code, response.text, endpoint)
+        except FileAlreadyPresent:
+            return path
+        except RuntimeError as exc:
+            raise RuntimeError(f"{path.name}: {exc}") from exc
+        return None
+
+    def _skip_already_present(self, path: Path) -> None:
+        """Record that ``path`` was left in place because the project already has it."""
+        message = (
+            "Skipped upload; file is already in this project: "
+            f"{path.name} ({format_file_size(path.stat().st_size)})"
+        )
+        if self._reporter is not None:
+            self._reporter.warn(message)
+            return
+        Logger.warning(message)
 
     def _load_cookies(self) -> None:
         """Copy the browser cookies on this thread, before any worker starts.
@@ -179,13 +220,17 @@ def upload_url(workspace_id: str, path: Path, *, zip_upload: bool) -> str:
 
 
 def interpret_upload_response(status: int, body_text: str, endpoint: str) -> None:
-    """Raise unless the body is the modal's queued or zip-accepted payload."""
+    """Raise unless the body is the modal's queued or zip-accepted payload.
+
+    An empty body means the file is already in the project. That raises
+    ``FileAlreadyPresent`` so the caller can skip the file.
+    """
     if status < 200 or status >= 300:
         detail = redact_secrets(body_text)[:300]
         raise RuntimeError(f"Deposit POST /deposit/{endpoint} failed ({status}): {detail}")
     body = parse_body(body_text)
     if body is None or body == "":
-        raise RuntimeError("File is already in this project")
+        raise FileAlreadyPresent("File is already in this project")
     if not isinstance(body, dict):
         detail = redact_secrets(body_text)[:300]
         raise RuntimeError(f"Deposit POST /deposit/{endpoint} returned an unexpected body: {detail}")
@@ -251,10 +296,12 @@ def _jar_from_records(records: list[dict[str, str]]) -> requests.cookies.Request
     return jar
 
 
-def _future_error(future: Any) -> list[str]:
-    """Return a worker failure message, or an empty list when it succeeded."""
+def _future_outcome(future: Any) -> tuple[str, Path | None]:
+    """Return a worker failure message and a path DataLumos already has."""
     try:
-        future.result()
+        already = future.result()
     except Exception as exc:
-        return [str(exc)]
-    return []
+        return str(exc), None
+    if isinstance(already, Path):
+        return "", already
+    return "", None

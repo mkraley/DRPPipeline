@@ -317,7 +317,7 @@ class DataLumosUploader:
         if not folder_path:
             return
         if workspace_id:
-            self._upload_folder_via_api(page, workspace_id, folder_path)
+            self._upload_folder_via_api(page, workspace_id, folder_path, reporter)
             return
         from upload.DataLumosFileUploader import DataLumosFileUploader
 
@@ -326,11 +326,17 @@ class DataLumosUploader:
         )
         file_uploader.upload_files(folder_path)
 
-    def _upload_folder_via_api(self, page: Any, workspace_id: str, folder_path: str) -> None:
+    def _upload_folder_via_api(
+        self,
+        page: Any,
+        workspace_id: str,
+        folder_path: str,
+        reporter: UploadIssueReporter,
+    ) -> None:
         """POST the folder through the same deposit calls the Upload button makes."""
         from upload.DepositFileUpload import DepositFileUpload
 
-        upload = DepositFileUpload(page, self._session.deposit_token)
+        upload = DepositFileUpload(page, self._session.deposit_token, reporter=reporter)
         upload.upload_folder(workspace_id, folder_path)
         self._session.keep_deposit_token(upload.token)
 

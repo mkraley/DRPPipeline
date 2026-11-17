@@ -12,6 +12,7 @@ from utils.Logger import Logger
 
 from upload.DepositFileUpload import (
     DepositFileUpload,
+    FileAlreadyPresent,
     interpret_upload_response,
     upload_url,
 )
@@ -29,8 +30,8 @@ class TestUploadResponse(unittest.TestCase):
         interpret_upload_response(200, '{"type": "zip", "name": "bundle.zip"}', "uploadZipFile")
 
     def test_empty_body_means_the_file_is_already_there(self) -> None:
-        """The modal shows its duplicate-file error when the body is empty."""
-        with self.assertRaises(RuntimeError) as caught:
+        """An empty body is the duplicate-file signal, not a failed upload."""
+        with self.assertRaises(FileAlreadyPresent) as caught:
             interpret_upload_response(200, "", "uploadRawFile")
         self.assertIn("already", str(caught.exception))
 
@@ -139,6 +140,53 @@ class TestDepositFileUpload(unittest.TestCase):
         self.assertTrue(all(thread_id == caller for thread_id in cookie_threads))
         self.assertTrue(post_threads)
         self.assertTrue(all(thread_id != caller for thread_id in post_threads))
+
+    def test_file_already_present_is_skipped_and_the_next_file_uploads(self) -> None:
+        """A duplicate is a warning. The remaining files are still posted."""
+        old = self.temp_dir / "old.txt"
+        new = self.temp_dir / "new.txt"
+        old.write_text("old", encoding="utf-8")
+        new.write_text("new", encoding="utf-8")
+        page = MagicMock()
+        page.context.cookies.return_value = []
+        reporter = MagicMock()
+        posted: list[str] = []
+
+        def post(*_args: object, **kwargs: object) -> MagicMock:
+            name = kwargs["files"]["file"][0]
+            posted.append(str(name))
+            if name == "old.txt":
+                return MagicMock(status_code=200, text="")
+            return MagicMock(status_code=200, text='{"name": "new.txt"}')
+
+        with patch("upload.DepositFileUpload.requests.post", side_effect=post):
+            DepositFileUpload(page, "jwt-saved", reporter=reporter).upload_files(
+                "42",
+                [old, new],
+            )
+        self.assertCountEqual(posted, ["old.txt", "new.txt"])
+        reporter.warn.assert_called_once()
+        self.assertIn("old.txt", reporter.warn.call_args.args[0])
+
+    def test_rejected_upload_names_the_file(self) -> None:
+        """A failed post names the file in the progress line and the error."""
+        path = self.temp_dir / "notes.txt"
+        path.write_bytes(b"hi")
+        page = MagicMock()
+        page.context.cookies.return_value = []
+        response = MagicMock(status_code=500, text="denied")
+        with patch("upload.DepositFileUpload.requests.post", return_value=response):
+            with patch("upload.DepositFileUpload.Logger") as logger:
+                with self.assertRaises(RuntimeError) as caught:
+                    DepositFileUpload(page, "jwt-saved").upload_files("42", [path])
+        self.assertIn("notes.txt", str(caught.exception))
+        logger.info.assert_any_call(
+            "uploading file %s of %s: %s (%s)",
+            1,
+            1,
+            "notes.txt",
+            "2 B",
+        )
 
 
 if __name__ == "__main__":

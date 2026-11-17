@@ -404,9 +404,10 @@ class DataLumosFileUploader:
         """Log each file in a parallel drop before any of them are waited on."""
         for offset, path in enumerate(batch, start=start + 1):
             Logger.info(
-                "uploading file %s of %s (%s)",
+                "uploading file %s of %s: %s (%s)",
                 offset,
                 total,
+                path.name,
                 format_file_size(path.stat().st_size),
             )
 

@@ -319,13 +319,14 @@ class TestDataLumosUploader(unittest.TestCase):
         self.uploader._session = MagicMock()
         self.uploader._session.deposit_token = "jwt-saved"
         page = self.uploader._session.ensure_browser.return_value
+        reporter = UploadIssueReporter(1)
         with patch("upload.DepositProjectUpload.DepositProjectUpload") as deposit_cls:
             deposit_cls.return_value.create.return_value = "42"
             with patch("upload.DataLumosUploader.Storage.update_record"):
                 with patch("upload.DepositFileUpload.DepositFileUpload") as file_cls:
-                    self.uploader._upload_project(project, 1, UploadIssueReporter(1))
+                    self.uploader._upload_project(project, 1, reporter)
         page.goto.assert_not_called()
-        file_cls.assert_called_once_with(page, "jwt-saved")
+        file_cls.assert_called_once_with(page, "jwt-saved", reporter=reporter)
         file_cls.return_value.upload_folder.assert_called_once_with("42", str(self.temp_dir))
 
     def test_later_project_reuses_the_saved_deposit_token(self) -> None:
