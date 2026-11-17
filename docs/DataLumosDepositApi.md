@@ -141,7 +141,7 @@ The count must equal `num_files` plus the number of product folders. The space l
 
 `GET /deposit/viewVersions?path={path}`
 
-The body is a list. Each row has `versionLabel` and `status`. Publish reads this before `POST /publish`. A row counts as already public when `versionLabel` is `V1` or later, or when `status` is `PUBLISHED`. A row with `status` `UNPUBLISHED` does not count, and `V0` is the working copy. When any public row is present, publish stops and does not post. Republish skips this read.
+The body is normally a list. Each row has `versionLabel` and `status`. Publish reads this before `POST /publish`. A row counts as already public when `versionLabel` is `V1` or later, or when `status` is `PUBLISHED`. A row with `status` `UNPUBLISHED` does not count, and `V0` is the working copy. An empty or null body is treated as no versions (not yet published). When any public row is present, publish stops and does not post. Republish skips this read.
 
 ## Publish
 

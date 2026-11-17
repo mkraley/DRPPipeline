@@ -58,7 +58,8 @@ def published_version_labels(versions: object) -> list[str]:
 
     ``viewVersions`` is the list the workspace shows as Published Versions.
     A row marked ``UNPUBLISHED`` is struck through and does not count. ``V0``
-    is the working copy and does not count.
+    is the working copy and does not count. An empty or null body is treated
+    as no versions (not yet published); the deposit UI does the same.
 
     Args:
         versions: JSON from ``viewVersions``.
@@ -67,10 +68,17 @@ def published_version_labels(versions: object) -> list[str]:
         Public version labels such as ``V1``.
 
     Raises:
-        RuntimeError: When the payload is not a list.
+        RuntimeError: When the payload is present but not a list.
     """
+    if versions is None or versions == "":
+        return []
     if not isinstance(versions, list):
-        raise RuntimeError("viewVersions did not return a list")
+        preview = repr(versions)
+        if len(preview) > 200:
+            preview = preview[:200] + "..."
+        raise RuntimeError(
+            f"viewVersions did not return a list (got {type(versions).__name__}: {preview})"
+        )
     labels: list[str] = []
     for item in versions:
         label = _public_version_label(item)

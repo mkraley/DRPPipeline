@@ -76,10 +76,16 @@ class TestPublishTerms(unittest.TestCase):
         """A project with no versions has not been published."""
         self.assertEqual(published_version_labels([]), [])
 
+    def test_null_or_blank_version_body_is_not_published(self) -> None:
+        """Empty HTTP bodies parse as None/\"\" and mean no public versions."""
+        self.assertEqual(published_version_labels(None), [])
+        self.assertEqual(published_version_labels(""), [])
+
     def test_version_payload_must_be_a_list(self) -> None:
         """A non-list body is not treated as unpublished."""
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(RuntimeError) as caught:
             published_version_labels({"versionLabel": "V1"})
+        self.assertIn("dict", str(caught.exception))
 
 
 if __name__ == "__main__":
