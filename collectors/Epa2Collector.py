@@ -19,6 +19,7 @@ from typing import Any
 
 from collectors.CollectorBase import CollectorBase
 from collectors.EpaHubExports import EpaHubExports
+from collectors.PlannedFile import notes_with_remaining_downloads
 from collectors.EpaHubItem import (
     EpaHubItemClient,
     bbox_from_geometry,
@@ -85,6 +86,7 @@ class Epa2Collector(CollectorBase):
         notes, planned = self._exports.download_all(folder, feature, drpid=drpid)
         result = self._result_from_feature(drpid, feature)
         result["folder_path"] = str(folder)
+        notes = notes_with_remaining_downloads(notes, folder, planned)
         if notes:
             result["status_notes"] = "\n".join(notes)
         status = self._exports.commit(drpid, folder, planned)

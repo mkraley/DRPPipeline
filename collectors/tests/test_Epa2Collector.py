@@ -112,6 +112,26 @@ class TestEpa2Collector(unittest.TestCase):
         self.assertEqual(result["file_size"], "16 B")
         exports.download_all.assert_called_once()
 
+    def test_deferred_export_is_counted_and_summarized(self) -> None:
+        """A file left for the 1 GB cap counts in the totals and the summary."""
+        pages = MagicMock()
+        pages.url_to_pdf.side_effect = lambda url, path, **_kwargs: path.write_bytes(b"%PDF-1.4") or True
+        items = MagicMock()
+        items.fetch_feature.return_value = _feature()
+        exports = MagicMock()
+        exports.download_all.return_value = (
+            ["Skipped download (>1GB): big.zip (2.0 GB) - download manually: https://example.com/big.zip"],
+            [PlannedFile("big.zip", "https://example.com/big.zip", 2 * 1024**3)],
+        )
+        exports.commit.return_value = "collected - large"
+        collector = Epa2Collector(page_downloader=pages, item_client=items, exports=exports)
+
+        result = collector._collect(_DATASET_URL, 1, {})
+
+        self.assertEqual(result["num_files"], 2)
+        self.assertEqual(result["file_size"], "2.0 GB")
+        self.assertIn("Remaining downloads: 1 file(s), 2.0 GB not yet downloaded", result["status_notes"])
+
     def test_hub_page_prints_its_own_url(self) -> None:
         """A hub page is not rewritten to a dataset about URL."""
         pages = MagicMock()

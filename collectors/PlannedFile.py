@@ -92,6 +92,26 @@ def inventory_with_deferred(
     return sorted(extensions), total_bytes, num_files
 
 
+def notes_with_remaining_downloads(
+    notes: list[str],
+    folder: Path,
+    files: list[PlannedFile],
+) -> list[str]:
+    """Return the skip notes plus one summary of files still not downloaded."""
+    from utils.collector_status import pending_download_summary_note
+
+    kept = [line for line in notes if not line.startswith("Remaining downloads:")]
+    pending = _deferred_files(folder, files)
+    summary = pending_download_summary_note(
+        len(pending),
+        sum(int(item.size_bytes or 0) for item in pending),
+        has_unknown_sizes=any(item.size_bytes is None for item in pending),
+    )
+    if summary:
+        kept.append(summary)
+    return kept
+
+
 def _deferred_files(folder: Path, files: list[PlannedFile]) -> list[PlannedFile]:
     """Return planned downloads that are still absent and were not refused."""
     missing: list[PlannedFile] = []
