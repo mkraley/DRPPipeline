@@ -15,7 +15,9 @@ from upload.DepositAttribute import (
     tilde_join,
 )
 from upload.DepositMetadata import DepositMetadata
+from upload.deposit_existing import organization_present, person_present, time_period_present
 from upload.deposit_field_match import match_fields
+from utils.Logger import Logger
 
 
 class DepositMetadataWriter:
@@ -83,6 +85,9 @@ class DepositMetadataWriter:
             return
         attr = self._require(matched, "agency")
         for org_name in agencies:
+            if organization_present(attr.value, org_name):
+                Logger.info("Agency already on the project: %s", org_name)
+                continue
             self._client.add_organization(path, attr.key, org_name)
 
     def _write_investigators(
@@ -96,6 +101,13 @@ class DepositMetadataWriter:
             return
         attr = self._require(matched, "investigators")
         for first_name, last_name, affiliation in people:
+            if person_present(attr.value, first_name, last_name):
+                Logger.info(
+                    "Principal investigator already on the project: %s %s",
+                    first_name,
+                    last_name,
+                )
+                continue
             self._client.add_person(path, attr.key, first_name, last_name, affiliation)
 
     def _write_keywords(
@@ -128,6 +140,13 @@ class DepositMetadataWriter:
         if not metadata.time_start:
             raise RuntimeError("Time period requires a start date")
         attr = self._require(matched, "time_period")
+        if time_period_present(attr.value, metadata.time_start, metadata.time_end):
+            Logger.info(
+                "Time period already on the project: %s – %s",
+                metadata.time_start,
+                metadata.time_end,
+            )
+            return
         self._client.add_date_range(
             path,
             attr.ui_control or "timePeriod",

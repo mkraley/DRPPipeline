@@ -104,6 +104,8 @@ One call per agency or office.
 
 `label` is the attribute's `uiControl`, or `timePeriod` when that is empty. Used for the project time period. A time period without a start date is refused locally and is not posted.
 
+A later upload of the same project reads the current `value` and does not call `addOrg`, `addPerson`, or `addDateRange` when that agency, investigator, or time period is already stored. Those three calls append, so posting them again would add a second copy.
+
 ## Subject-term suggestions
 
 `GET /deposit/suggestSubjectTerms?term={text}&page=1`

@@ -153,6 +153,29 @@ class TestDepositRequestBody(unittest.TestCase):
         self.assertEqual(kwargs["method"], "DELETE")
         page.request.post.assert_not_called()
 
+    def test_cloudflare_challenge_is_retried_from_the_page(self) -> None:
+        """A Just a moment page is sent again from the browser."""
+        from upload.deposit_direct import deposit_request
+
+        Logger.initialize(log_level="ERROR", log_file=False)
+        page = MagicMock()
+        response = MagicMock()
+        response.status = 403
+        response.text.return_value = "<title>Just a moment...</title>"
+        page.request.get.return_value = response
+        page.evaluate.return_value = {"status": 200, "body": "[]", "elapsedMs": 4}
+
+        result = deposit_request(
+            page,
+            "jwt",
+            "GET",
+            "https://deposit.icpsr.umich.edu/deposit/getAttributes?pathUrl=%2Fdatalumos%2F1",
+        )
+
+        self.assertEqual(result["status"], 200)
+        page.evaluate.assert_called_once()
+        self.assertEqual(page.evaluate.call_args.args[1]["method"], "GET")
+
 
 if __name__ == "__main__":
     unittest.main()

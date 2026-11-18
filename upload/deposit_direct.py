@@ -15,7 +15,7 @@ from typing import Any, Optional
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
-from upload.deposit_page_request import HOME_PATH, WORKSPACE_URL
+from upload.deposit_page_request import AJAX_JS, HOME_PATH, WORKSPACE_URL
 from utils.Logger import Logger
 
 _TOKEN_RE = re.compile(r"""var jwtToken = ['"]([^'"]+)['"]""")
@@ -151,12 +151,20 @@ def deposit_request(
     content_type: Optional[str] = None,
     body: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Perform one deposit request with the browser cookie jar and bearer token."""
+    """Perform one deposit request with the browser cookie jar and bearer token.
+
+    A Cloudflare challenge is retried from the open page, which can complete
+    the browser check that the API client cannot.
+    """
     headers = {"Authorization": f"Bearer {token}"}
     started = time.perf_counter()
     response = _send(page, method, url, headers, data, content_type, body)
+    response_body = response.text()
+    if _cloudflare_challenge(response.status, response_body):
+        Logger.info("Deposit host asked for a browser check; retrying from the page")
+        return _request_from_page(page, method, url, data, content_type, body)
     elapsed_ms = round((time.perf_counter() - started) * 1000)
-    return {"status": response.status, "body": response.text(), "elapsedMs": elapsed_ms}
+    return {"status": response.status, "body": response_body, "elapsedMs": elapsed_ms}
 
 
 def project_path(body: Any) -> str:
@@ -179,6 +187,45 @@ def parse_body(body_text: str) -> Any:
         return json.loads(body_text)
     except json.JSONDecodeError:
         return body_text
+
+
+def _cloudflare_challenge(status: int, body: str) -> bool:
+    """Return True when the deposit host returned a Cloudflare check page."""
+    if status not in {403, 503}:
+        return False
+    text = body.casefold()
+    return "just a moment" in text or "cf-challenge" in text or "challenge-platform" in text
+
+
+def _request_from_page(
+    page: Page,
+    method: str,
+    url: str,
+    data: Optional[dict[str, str]],
+    content_type: Optional[str],
+    body: Optional[str],
+) -> dict[str, Any]:
+    """Send the deposit call with the page's own fetch stack."""
+    request: dict[str, Any] = {"url": url, "method": method}
+    if body is not None:
+        request["data"] = body
+        request["contentType"] = content_type or "application/json"
+    elif data is not None:
+        request["data"] = data
+    if content_type and body is None:
+        request["contentType"] = content_type
+    try:
+        result = page.evaluate(AJAX_JS, request)
+    except PlaywrightError as exc:
+        Logger.warning("Deposit page retry failed: %s", exc)
+        return {
+            "status": 403,
+            "body": "Cloudflare browser check was not completed",
+            "elapsedMs": 0,
+        }
+    if not isinstance(result, dict):
+        return {"status": 0, "body": "", "elapsedMs": 0}
+    return result
 
 
 def _send(
