@@ -514,13 +514,12 @@ class UploadLargeFiles:
         reporter: UploadIssueReporter,
     ) -> None:
         workspace_id = get_field(project, "datalumos_id")
-        page = self._session.ensure_browser()
-        self._session.ensure_authenticated(reporter=reporter)
-
-        project_url = self._project_url(workspace_id)
         Logger.info("Navigating to existing DataLumos project %s", workspace_id)
-        page.goto(project_url, wait_until="domcontentloaded")
-        page.wait_for_load_state("networkidle", timeout=WORKSPACE_LOAD_TIMEOUT_MS)
+        page = self._session.open_project(
+            self._project_url(workspace_id),
+            reporter,
+            network_idle_timeout_ms=WORKSPACE_LOAD_TIMEOUT_MS,
+        )
 
         from upload.DataLumosAuthenticator import wait_for_human_verification
 

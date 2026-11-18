@@ -128,6 +128,58 @@ class TestDataLumosBrowserSession(unittest.TestCase):
             session.ensure_authenticated()
         auth_cls.assert_not_called()
 
+    def test_project_redirect_to_login_signs_in_and_opens_the_project(self) -> None:
+        """A reused token still signs in when the project page is the ICPSR login."""
+        session = DataLumosBrowserSession()
+        page = MagicMock()
+        page.url = "about:blank"
+        session._page = page
+        session._authenticated = True
+        session.ensure_browser = MagicMock(return_value=page)
+        seen: list[str] = []
+
+        def _ensure(**_kwargs: object) -> None:
+            seen.append(str(page.url))
+            if "login" in str(page.url):
+                page.url = "https://www.datalumos.org/datalumos/"
+
+        def _goto(_url: str, **_kwargs: object) -> None:
+            page.url = (
+                "https://www.datalumos.org/datalumos/workspace?goToLevel=project"
+                if seen.count("https://login.icpsr.umich.edu/realms/icpsr")
+                else "https://login.icpsr.umich.edu/realms/icpsr"
+            )
+
+        page.goto.side_effect = _goto
+        session.ensure_authenticated = MagicMock(side_effect=_ensure)
+        opened = session.open_project(
+            "https://www.datalumos.org/datalumos/workspace?goToLevel=project",
+            network_idle_timeout_ms=1000,
+        )
+        self.assertIs(opened, page)
+        self.assertEqual(page.goto.call_count, 2)
+        page.wait_for_load_state.assert_called_once()
+
+    def test_project_page_still_on_login_fails_instead_of_waiting(self) -> None:
+        """A second redirect to the sign-in page stops the upload."""
+        session = DataLumosBrowserSession()
+        page = MagicMock()
+        page.url = "https://login.icpsr.umich.edu/realms/icpsr"
+        session._page = page
+        session.ensure_browser = MagicMock(return_value=page)
+        session.ensure_authenticated = MagicMock()
+
+        def _goto(_url: str, **_kwargs: object) -> None:
+            page.url = "https://login.icpsr.umich.edu/realms/icpsr"
+
+        page.goto.side_effect = _goto
+        with self.assertRaises(RuntimeError):
+            session.open_project(
+                "https://www.datalumos.org/datalumos/workspace?goToLevel=project",
+                network_idle_timeout_ms=1000,
+            )
+        page.wait_for_load_state.assert_not_called()
+
     def test_login_page_signs_in_again(self) -> None:
         """A browser sent to Keycloak signs in and drops the saved deposit token."""
         session = self._session_with_credentials()

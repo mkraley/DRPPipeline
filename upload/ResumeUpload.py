@@ -81,14 +81,15 @@ class ResumeUpload:
             Logger.info("No new files to upload for DRPID=%s", drpid)
             return
         paths = self._pending_paths(folder, pending, reporter)
-        page = self._session.ensure_browser()
-        self._session.ensure_authenticated(reporter=reporter)
         workspace_id = get_field(project, "datalumos_id")
         project_url = (
             f"{self.WORKSPACE_URL}?goToLevel=project&goToPath=/datalumos/{workspace_id}#"
         )
-        page.goto(project_url, wait_until="domcontentloaded")
-        page.wait_for_load_state("networkidle", timeout=WORKSPACE_LOAD_TIMEOUT_MS)
+        page = self._session.open_project(
+            project_url,
+            reporter,
+            network_idle_timeout_ms=WORKSPACE_LOAD_TIMEOUT_MS,
+        )
         from upload.DataLumosAuthenticator import wait_for_human_verification
         from upload.DataLumosFileUploader import DataLumosFileUploader
 

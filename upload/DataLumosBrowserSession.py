@@ -142,6 +142,49 @@ class DataLumosBrowserSession:
         self._require_credentials()
         self._sign_in_with_retries(reporter)
 
+    def open_project(
+        self,
+        project_url: str,
+        reporter: Optional["UploadIssueReporter"] = None,
+        *,
+        network_idle_timeout_ms: int,
+    ) -> Page:
+        """Open a workspace project, signing in when that navigation shows login.
+
+        A reused deposit token marks the session signed in before this browser
+        exists. The project page can then redirect to ICPSR. Checking only
+        before the navigation leaves the upload waiting for a button the login
+        page does not have.
+
+        Args:
+            project_url: Workspace URL for one DataLumos project.
+            reporter: Optional issue reporter for the sign-in.
+            network_idle_timeout_ms: How long to wait for the project page to settle.
+
+        Returns:
+            The page open on the project.
+
+        Raises:
+            RuntimeError: The project page is still the sign-in page after a new login.
+        """
+        page = self.ensure_browser()
+        self.ensure_authenticated(reporter=reporter)
+        self._goto_project(page, project_url, network_idle_timeout_ms)
+        if not self._on_login_page():
+            return page
+        self.ensure_authenticated(reporter=reporter)
+        self._goto_project(page, project_url, network_idle_timeout_ms)
+        if self._on_login_page():
+            raise RuntimeError("DataLumos project page is still the sign-in page")
+        return page
+
+    def _goto_project(self, page: Page, project_url: str, network_idle_timeout_ms: int) -> None:
+        """Open ``project_url`` and wait for it to settle unless it is the login page."""
+        page.goto(project_url, wait_until="domcontentloaded")
+        if self._on_login_page():
+            return
+        page.wait_for_load_state("networkidle", timeout=network_idle_timeout_ms)
+
     def _require_credentials(self) -> None:
         """Raise when the DataLumos username or password is missing."""
         if Args.datalumos_username and Args.datalumos_password:
