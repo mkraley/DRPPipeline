@@ -44,6 +44,8 @@ env/
 .coverage
 htmlcov/
 .tox/
+collectors/tests/_cache/
+collectors/tests/_tmp_*/
 
 # Logs
 *.log

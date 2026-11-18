@@ -15,6 +15,42 @@ from utils.Logger import Logger
 from utils.collector_status import MAX_DOWNLOAD_BYTES, STATUS_COLLECTED_LARGE_FILE
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "bts_detail_54854.html"
+_BUDGET_CACHE_DIR = Path(__file__).parent / "_cache"
+_BUDGET_600MIB = _BUDGET_CACHE_DIR / "bts_budget_600mib.bin"
+
+
+def _ensure_budget_fixture(size_bytes: int) -> Path:
+    """
+    Return a on-disk file of ``size_bytes``, creating it only when missing.
+
+    The 600 MiB fixture is reused across test runs so the suite does not
+    truncate a multi-hundred-megabyte file every time.
+    """
+    _BUDGET_CACHE_DIR.mkdir(exist_ok=True)
+    if _BUDGET_600MIB.is_file() and _BUDGET_600MIB.stat().st_size == size_bytes:
+        return _BUDGET_600MIB
+    with _BUDGET_600MIB.open("wb") as handle:
+        handle.truncate(size_bytes)
+    return _BUDGET_600MIB
+
+
+def _place_sized_file(dest: Path, size_bytes: int, fixture: Path | None) -> None:
+    """
+    Put a file of ``size_bytes`` at ``dest``.
+
+    Prefers a hard link to the cached fixture when sizes match. Falls back to
+    truncate when linking is unavailable.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.unlink(missing_ok=True)
+    if fixture is not None and fixture.is_file() and fixture.stat().st_size == size_bytes:
+        try:
+            dest.hardlink_to(fixture)
+            return
+        except OSError:
+            pass
+    with dest.open("wb") as handle:
+        handle.truncate(size_bytes)
 
 
 class TestBtsCollector(unittest.TestCase):
@@ -306,16 +342,16 @@ class TestBtsCollector(unittest.TestCase):
         folder.mkdir(exist_ok=True)
         size_cache: dict[str, int | None] = {}
         access_errors: dict[str, str] = {}
+        first_size = 600 * 1024 * 1024
+        second_size = 500 * 1024 * 1024
+        fixture = _ensure_budget_fixture(first_size)
         try:
             from collectors.BtsMetadataExtractor import BtsDownloadFile
 
-            first_size = 600 * 1024 * 1024
-            second_size = 500 * 1024 * 1024
-
             def _fake_download(url: str, dest: Path) -> tuple[int, bool]:
+                del url
                 size = first_size if dest.name == "first.zip" else second_size
-                with dest.open("wb") as handle:
-                    handle.truncate(size)
+                _place_sized_file(dest, size, fixture if size == first_size else None)
                 return dest.stat().st_size, True
 
             page_downloader.download_file.side_effect = _fake_download
