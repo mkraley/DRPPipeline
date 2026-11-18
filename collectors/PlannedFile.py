@@ -14,7 +14,6 @@ _GENERATED_SIDECAR_NAMES = frozenset({
     "catalog_page.pdf",
     "landing_page.pdf",
     "all_metadata.pdf",
-    "unsupported_exports.txt",
     "catalog_detail.pdf",
     "metadata.pdf",
     "file_index.pdf",

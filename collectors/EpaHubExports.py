@@ -43,7 +43,6 @@ _MAX_SERVER_ERRORS = 5
 _SERVER_ERROR_PAUSE_SEC = 5.0
 _RETRYABLE_HTTP = frozenset({500, 502, 503, 504})
 _UNSUPPORTED_ERROR = "unsupported file format"
-_UNSUPPORTED_NOTE = "unsupported_exports.txt"
 
 
 class EpaHubExports:
@@ -95,12 +94,7 @@ class EpaHubExports:
         planned: list[PlannedFile] = []
         self._drpid = drpid
         downloaded = bytes_on_disk(folder)
-        refused = _unsupported_names(folder)
         for name, url in file_specs(feature, self._service_payload(folder, feature)):
-            if name in refused:
-                Logger.info("Skipping unsupported Hub export %s", name)
-                planned.append(PlannedFile(name, url, access_error=_UNSUPPORTED_ERROR))
-                continue
             kept = self._existing(folder, name, url)
             if kept is not None:
                 self._clear_saved_warning(name)
@@ -120,13 +114,11 @@ class EpaHubExports:
                 self._clear_saved_warning(name)
                 downloaded += written
             elif planned_file.access_error:
-                self._note_unsaved(folder, planned_file)
+                self._note_unsaved(planned_file)
         return notes, planned
 
-    def _note_unsaved(self, folder: Path, planned_file: PlannedFile) -> None:
-        """Remember an unsupported format and store the missing-file warning."""
-        if planned_file.access_error == _UNSUPPORTED_ERROR:
-            _remember_unsupported(folder, planned_file.relative_path)
+    def _note_unsaved(self, planned_file: PlannedFile) -> None:
+        """Store a missing-file warning for an export that was not saved."""
         message = "Hub export %s was not saved: %s" % (
             planned_file.relative_path,
             planned_file.access_error,
@@ -346,21 +338,4 @@ def _server_status(ready: ReadyFile) -> int | None:
     if code in _RETRYABLE_HTTP:
         return code
     return None
-
-
-def _unsupported_names(folder: Path) -> set[str]:
-    """Return export filenames the Hub has already refused."""
-    path = folder / _UNSUPPORTED_NOTE
-    if not path.is_file():
-        return set()
-    text = path.read_text(encoding="utf-8-sig")
-    return {line.strip() for line in text.splitlines() if line.strip()}
-
-
-def _remember_unsupported(folder: Path, name: str) -> None:
-    """Remember ``name`` so a later collect does not request it."""
-    names = _unsupported_names(folder)
-    names.add(name)
-    lines = "\n".join(sorted(names))
-    (folder / _UNSUPPORTED_NOTE).write_text(f"{lines}\n", encoding="utf-8-sig")
 

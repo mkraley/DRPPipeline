@@ -204,8 +204,8 @@ class TestEpaHubExports(unittest.TestCase):
         self.assertEqual(sleeps, [])
         self.assertIn("HTTP 400", planned[0].access_error or "")
 
-    def test_unsupported_format_is_remembered_and_not_retried(self) -> None:
-        """An unsupported format is named as such and skipped on the next collect."""
+    def test_unsupported_format_is_recorded_as_a_warning(self) -> None:
+        """An unsupported format is named as such and stored as a project warning."""
         calls = {"count": 0}
 
         def getter(url: str, **_kwargs: object) -> MagicMock:
@@ -234,13 +234,7 @@ class TestEpaHubExports(unittest.TestCase):
                     drpid=3,
                 )
                 self.assertEqual(planned[0].access_error, "unsupported file format")
-                note = (folder / "unsupported_exports.txt").read_text(encoding="utf-8-sig")
-                self.assertIn("Sites_excel.xlsx", note)
-                exports.download_all(
-                    folder,
-                    _with_service(feature, service, exports),
-                    drpid=3,
-                )
+                self.assertFalse((folder / "unsupported_exports.txt").exists())
                 recorded.assert_called_once()
                 self.assertIn("unsupported file format", recorded.call_args.args[1])
         self.assertEqual(calls["count"], 1)
