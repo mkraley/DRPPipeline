@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import inspect
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
+from collectors.BoundedEvaluate import evaluate_with_timeout
 from collectors.ContentLengthProbe import ContentLengthProbe
 from collectors.InaccessibleDownloads import access_error_for_status
 from collectors.HubLandingPage import metadata_page_url, open_real_landing_page
@@ -24,6 +27,8 @@ _SPA_SETTLE_MS = 10000
 _SPA_NETWORK_IDLE_TIMEOUT_MS = 30000
 _LOAD_TIMEOUT_MS = 35000
 _PRINT_TIMEOUT_MS = 90000
+_ACTION_TIMEOUT_MS = 3000
+_PDF_PRINT_TIMEOUT_MS = 120000
 _FILE_DOWNLOAD_TIMEOUT_MS = 600 * 1000
 _CONTENT_LENGTH_TIMEOUT_MS = 30_000
 _INLINE_DOCUMENT_SUFFIXES = frozenset({".xml", ".json", ".txt", ".csv"})
@@ -48,22 +53,71 @@ _OVERLAY_HIDE_SELECTORS = (
 )
 
 
-def _pause_network_for_print(page: Any) -> None:
-    """Drop in-flight requests so print-to-PDF does not wait on them.
+def _stop_page_loading(page: Any) -> None:
+    """Tell Chromium the document has finished loading.
 
-    Chromium's print call has no timeout and waits until loading finishes.
-    A Hub page that keeps a request open leaves collect on that project.
+    Print and page scripts wait while any request is open. This is a browser
+    command, so it returns while the page itself is busy.
     """
     with suppress(Exception):
-        page.context.set_offline(True)
-    with suppress(Exception):
-        page.evaluate("() => window.stop()")
+        session = page.context.new_cdp_session(page)
+        try:
+            session.send("Page.stopLoading")
+        finally:
+            session.detach()
 
 
-def _resume_network_after_print(page: Any) -> None:
-    """Allow the next navigation after a print."""
-    with suppress(Exception):
-        page.context.set_offline(False)
+def _wait_for_page_text(page: Any) -> None:
+    """Wait until the page has readable text.
+
+    Stopping the load before that leaves a blank PDF. A map on this page
+    keeps a request open, so the wait is a few short checks, not network idle.
+    """
+    for _ in range(12):
+        try:
+            length = int(
+                evaluate_with_timeout(
+                    page,
+                    "() => (document.body && document.body.innerText || '').length",
+                    timeout_ms=5000,
+                )
+                or 0
+            )
+        except Exception:
+            length = 0
+        if length > 400:
+            return
+        with suppress(Exception):
+            page.wait_for_timeout(1000)
+
+
+def _print_pdf(page: Any, pdf_path: Path, **options: Any) -> None:
+    """Write a PDF, giving Chromium's print call a deadline.
+
+    The public ``page.pdf`` call does not send a timeout, so a page that never
+    finishes loading waits until the browser is closed.
+    """
+    if not _pdf_accepts_timeout(page):
+        public = dict(options)
+        if "printBackground" in public:
+            public["print_background"] = public.pop("printBackground")
+        page.pdf(path=str(pdf_path), **public)
+        return
+    encoded = page._sync(
+        page._impl_obj._channel.send(
+            "pdf",
+            lambda _timeout: _PDF_PRINT_TIMEOUT_MS,
+            options,
+        )
+    )
+    pdf_path.write_bytes(base64.b64decode(encoded))
+
+
+def _pdf_accepts_timeout(page: Any) -> bool:
+    """Return True when ``page`` is a real Playwright page with an async channel."""
+    channel = getattr(getattr(page, "_impl_obj", None), "_channel", None)
+    send = getattr(channel, "send", None)
+    return inspect.iscoroutinefunction(send) and callable(getattr(page, "_sync", None))
 
 
 def _is_inline_document_url(url: str) -> bool:
@@ -501,13 +555,17 @@ class UsfsPageDownloader:
         follow_full_details: bool = False,
     ) -> None:
         """Load ``url`` and expand a ``<details>`` section when requested."""
-        page.set_default_timeout(_PRINT_TIMEOUT_MS)
+        Logger.info("Loading %s for PDF", url)
+        page.set_default_timeout(_ACTION_TIMEOUT_MS)
         self._goto_for_pdf(page, url, spa_ready=spa_ready)
         if spa_ready:
             self._dismiss_page_overlays(page)
             if follow_full_details:
+                Logger.info("Opening full details for PDF")
                 open_real_landing_page(page)
                 self._dismiss_page_overlays(page)
+            _wait_for_page_text(page)
+            Logger.info("Expanding page for PDF")
             expand_read_more_and_load_more(page)
         if open_details_selector:
             self._open_closest_details(page, open_details_selector)
@@ -545,7 +603,7 @@ class UsfsPageDownloader:
             " }); } }"
         )
         with suppress(Exception):
-            page.evaluate(hide_script, list(_OVERLAY_HIDE_SELECTORS))
+            evaluate_with_timeout(page, hide_script, list(_OVERLAY_HIDE_SELECTORS))
 
     def _open_closest_details(self, page: Any, selector: str) -> None:
         """Open the ``<details>`` ancestor of the first matching element."""
@@ -563,6 +621,7 @@ class UsfsPageDownloader:
         spa_ready: bool = False,
     ) -> Path | None:
         """Print the current page to ``pdf_path``."""
+        Logger.info("Printing %s", pdf_path.name)
         if spa_ready:
             # ArcGIS Hub/item SPAs hide most content under print CSS.
             with suppress(Exception):
@@ -570,19 +629,17 @@ class UsfsPageDownloader:
             # Expanded Read more / Load more text sits in overflow shells and
             # sticky chrome; Chromium clips those at each page break otherwise.
             unclip_overflow_for_pdf(page)
-        _pause_network_for_print(page)
-        try:
-            if spa_ready:
-                page.pdf(
-                    path=str(pdf_path),
-                    format="Letter",
-                    print_background=True,
-                    margin=_PDF_MARGINS,
-                )
-            else:
-                page.pdf(path=str(pdf_path), format="A4", print_background=True)
-        finally:
-            _resume_network_after_print(page)
+        _stop_page_loading(page)
+        if spa_ready:
+            _print_pdf(
+                page,
+                pdf_path,
+                format="Letter",
+                printBackground=True,
+                margin=_PDF_MARGINS,
+            )
+            return pdf_path if pdf_path.is_file() and pdf_path.stat().st_size > 0 else None
+        _print_pdf(page, pdf_path, format="A4", printBackground=True)
         if pdf_path.is_file() and pdf_path.stat().st_size > 0:
             return pdf_path
         return None

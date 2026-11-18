@@ -9,14 +9,18 @@ when a section offers Chart or Table.
 from __future__ import annotations
 
 import re
+import time
 from contextlib import suppress
 from typing import Any
 
+from collectors.BoundedEvaluate import evaluate_with_timeout, query_count_with_timeout
 from collectors.HubLandingPage import expand_hub_field_sections
 from utils.Logger import Logger
 
 _DEFAULT_MAX_ROUNDS = 20
 _ROUND_WAIT_MS = 750
+_EXPAND_BUDGET_S = 20.0
+_MAX_CONTROLS = 12
 
 # ArcGIS Hub: button.more-button ("Read More"); calcite-link ("Load more").
 # Prefer a single .click() — dual dispatch+click toggles Ember "Read More" shut.
@@ -108,11 +112,7 @@ _CLICK_EXPAND_ROUND_JS = """
 
 def _locator_count(locator: Any) -> int:
     """Return a non-negative locator count, or 0 if unavailable."""
-    try:
-        value = locator.count()
-        return max(int(value), 0)
-    except Exception:
-        return 0
+    return query_count_with_timeout(locator)
 
 
 def _click_visible_locator(locator: Any, *, label: str) -> bool:
@@ -128,7 +128,10 @@ def _click_visible_locator(locator: Any, *, label: str) -> bool:
         return False
 
 
-def _click_playwright_arcgis_controls(page: Any) -> int:
+def _click_playwright_arcgis_controls(
+    page: Any,
+    deadline: float | None = None,
+) -> int:
     """
     Click ArcGIS Hub Read More / Load more via Playwright (pierces shadow DOM).
 
@@ -139,9 +142,13 @@ def _click_playwright_arcgis_controls(page: Any) -> int:
     Returns:
         Number of successful clicks this pass.
     """
+    if deadline is None:
+        deadline = time.monotonic() + _EXPAND_BUDGET_S
     clicked = 0
     more_buttons = page.locator("button.more-button:not([aria-expanded='true'])")
-    for index in range(_locator_count(more_buttons)):
+    for index in range(min(_locator_count(more_buttons), _MAX_CONTROLS)):
+        if time.monotonic() > deadline:
+            return clicked
         if _click_visible_locator(more_buttons.nth(index), label="Read More"):
             clicked += 1
 
@@ -149,14 +156,18 @@ def _click_playwright_arcgis_controls(page: Any) -> int:
     load_more = page.locator("calcite-link").filter(
         has_text=re.compile(r"Load\s+more", re.I)
     )
-    for index in range(_locator_count(load_more)):
+    for index in range(min(_locator_count(load_more), _MAX_CONTROLS)):
+        if time.monotonic() > deadline:
+            return clicked + load_clicked
         if _click_visible_locator(load_more.nth(index), label="Load more"):
             load_clicked += 1
 
     # Shadow-piercing fallback when host role is presentation and host click missed.
-    if load_clicked == 0:
+    if load_clicked == 0 and time.monotonic() <= deadline:
         by_role = page.get_by_role("button", name=re.compile(r"Load\s+more", re.I))
-        for index in range(_locator_count(by_role)):
+        for index in range(min(_locator_count(by_role), _MAX_CONTROLS)):
+            if time.monotonic() > deadline:
+                break
             if _click_visible_locator(by_role.nth(index), label="role Load more"):
                 load_clicked += 1
 
@@ -183,11 +194,14 @@ def expand_read_more_and_load_more(
         Total number of control clicks performed.
     """
     total = 0
+    deadline = time.monotonic() + _EXPAND_BUDGET_S
     for round_index in range(max_rounds):
+        if time.monotonic() > deadline:
+            break
         round_clicks = 0
         pw_clicks = 0
         try:
-            pw_clicks = _click_playwright_arcgis_controls(page)
+            pw_clicks = _click_playwright_arcgis_controls(page, deadline)
             round_clicks += pw_clicks
         except Exception as exc:
             Logger.debug(
@@ -208,7 +222,7 @@ def expand_read_more_and_load_more(
         # so Ember "Read More" is not toggled shut by a second click.
         if pw_clicks == 0:
             try:
-                round_clicks += int(page.evaluate(_CLICK_EXPAND_ROUND_JS))
+                round_clicks += int(evaluate_with_timeout(page, _CLICK_EXPAND_ROUND_JS))
             except Exception as exc:
                 Logger.debug(
                     "Expand-for-PDF JS round %s failed: %s",

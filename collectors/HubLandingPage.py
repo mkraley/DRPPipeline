@@ -12,6 +12,7 @@ from contextlib import suppress
 from typing import Any
 from urllib.parse import urlparse
 
+from collectors.BoundedEvaluate import evaluate_with_timeout
 from utils.Logger import Logger
 
 _FULL_DETAILS = re.compile(r"View\s+Full\s+Details", re.I)
@@ -141,7 +142,7 @@ def expand_hub_field_sections(page: Any) -> int:
         Number of controls clicked, or 0 when the page cannot be scripted.
     """
     try:
-        return max(int(page.evaluate(_HUB_SECTION_JS)), 0)
+        return max(int(evaluate_with_timeout(page, _HUB_SECTION_JS)), 0)
     except Exception as exc:
         Logger.debug("Hub field expand failed: %s", exc)
         return 0

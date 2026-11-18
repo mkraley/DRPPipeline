@@ -14,6 +14,7 @@ from __future__ import annotations
 from contextlib import suppress
 from typing import Any
 
+from collectors.BoundedEvaluate import evaluate_with_timeout
 from utils.Logger import Logger
 
 # Applied without @media print: SPA PDFs use emulate_media("screen").
@@ -244,7 +245,9 @@ def unclip_overflow_for_pdf(page: Any) -> int:
         page.add_style_tag(content=_UNCLIP_CSS)
     touched = 0
     try:
-        touched = int(page.evaluate(_UNCLIP_OVERFLOW_JS, _MIN_FRAME_HEIGHT_PX))
+        touched = int(
+            evaluate_with_timeout(page, _UNCLIP_OVERFLOW_JS, _MIN_FRAME_HEIGHT_PX)
+        )
     except Exception as exc:
         with suppress(Exception):
             Logger.debug("Unclip-for-PDF failed: %s", exc)

@@ -1,16 +1,23 @@
 """Tests for UsfsPageDownloader."""
 
+import asyncio
+import base64
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import ANY, MagicMock, patch
 
 from collectors.ContentLengthProbe import ContentLengthProbe
-from collectors.UsfsPageDownloader import UsfsPageDownloader
+from collectors.UsfsPageDownloader import UsfsPageDownloader, _PDF_PRINT_TIMEOUT_MS, _print_pdf
 from utils.Logger import Logger
 
 
 class TestUsfsPageDownloader(unittest.TestCase):
+    def setUp(self) -> None:
+        """Logger is required when a page is loaded or printed."""
+        Logger.initialize(log_level="ERROR", log_file=False)
+
     @patch.object(UsfsPageDownloader, "_restart_browser", return_value=False)
     def test_download_file_returns_false_when_browser_unavailable(
         self, mock_restart: MagicMock
@@ -227,7 +234,9 @@ class TestUsfsPageDownloader(unittest.TestCase):
         downloader._session.new_page = MagicMock(return_value=mock_page)
 
         def _pdf(**kwargs: object) -> None:
-            mock_page.context.set_offline.assert_called_with(True)
+            mock_page.context.new_cdp_session.return_value.send.assert_any_call(
+                "Page.stopLoading"
+            )
             Path(str(kwargs["path"])).write_bytes(b"%PDF")
 
         mock_page.pdf.side_effect = _pdf
@@ -241,10 +250,8 @@ class TestUsfsPageDownloader(unittest.TestCase):
         self.assertTrue(ok)
         mock_page.locator.assert_called_with("h2.complete-metadata-heading")
         mock_page.locator.return_value.first.evaluate.assert_called_once()
-        mock_page.evaluate.assert_any_call("() => window.stop()")
-        self.assertEqual(
-            [call.args[0] for call in mock_page.context.set_offline.call_args_list],
-            [True, False],
+        mock_page.context.new_cdp_session.return_value.send.assert_any_call(
+            "Page.stopLoading"
         )
 
     @patch.object(UsfsPageDownloader, "_ensure_browser", return_value=True)
@@ -353,6 +360,24 @@ class TestUsfsPageDownloader(unittest.TestCase):
         )
         mock_expand.assert_called_once_with(mock_page)
         mock_unclip.assert_called_once_with(mock_page)
+
+    def test_print_sends_a_timeout(self) -> None:
+        """A real Playwright page gives Chromium's print call a deadline."""
+        page = MagicMock()
+
+        async def send(method: str, timeout_calculator: Any, params: dict[str, Any] | None = None) -> str:
+            self.assertEqual(method, "pdf")
+            self.assertEqual(timeout_calculator(None), _PDF_PRINT_TIMEOUT_MS)
+            self.assertEqual(params["format"], "Letter")
+            return base64.b64encode(b"%PDF").decode("ascii")
+
+        page._impl_obj._channel.send = send
+        page._sync = lambda coro: asyncio.run(coro)
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "page.pdf"
+            _print_pdf(page, dest, format="Letter", printBackground=True)
+            self.assertEqual(dest.read_bytes(), b"%PDF")
+        page.pdf.assert_not_called()
 
 
 if __name__ == "__main__":
