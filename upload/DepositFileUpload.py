@@ -10,9 +10,6 @@ project page does not have to load.
 from __future__ import annotations
 
 import mimetypes
-import os
-import shutil
-import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -23,7 +20,9 @@ from playwright.sync_api import Page
 
 from upload.DataLumosFileUploader import (
     PARALLEL_FILE_UPLOADS,
+    files_to_upload,
     queue_wait_timeout_ms,
+    zip_directory_for_upload,
 )
 from upload.UploadIssueReporter import UploadIssueReporter
 from upload.deposit_direct import parse_body
@@ -75,7 +74,7 @@ class DepositFileUpload:
         if any(path.is_dir() for path in folder.iterdir()):
             self._upload_zip_folder(workspace_id, folder)
             return
-        files = [path for path in folder.iterdir() if path.is_file()]
+        files = files_to_upload(folder)
         if not files:
             Logger.info("No files to upload in %s", folder_path)
             return
@@ -258,12 +257,7 @@ def _raise_for_file_status(body: dict[str, Any]) -> None:
 
 def _zip_folder(folder: Path) -> Path:
     """Zip a project folder. The caller deletes the archive."""
-    descriptor, zip_path = tempfile.mkstemp(suffix=".zip")
-    os.close(descriptor)
-    archive = Path(zip_path)
-    shutil.make_archive(str(archive.with_suffix("")), "zip", folder, ".")
-    Logger.info("Zipped contents of %s to %s", folder, archive.name)
-    return archive
+    return zip_directory_for_upload(folder)
 
 
 def _cookie_records(page: Page) -> list[dict[str, str]]:

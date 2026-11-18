@@ -223,7 +223,7 @@ class TestEpaHubExports(unittest.TestCase):
             )
 
         feature = {"id": "abc", "properties": {"type": "Feature Service", "url": ""}}
-        service = {"layers": [{"id": 0, "name": "Sites"}], "supportedExportFormats": "sqlite"}
+        service = {"layers": [{"id": 0, "name": "Sites"}], "supportedExportFormats": "excel"}
         exports = EpaHubExports(getter=getter, sleeper=lambda _sec: None, attempts=5)
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
@@ -235,7 +235,7 @@ class TestEpaHubExports(unittest.TestCase):
                 )
                 self.assertEqual(planned[0].access_error, "unsupported file format")
                 note = (folder / "unsupported_exports.txt").read_text(encoding="utf-8-sig")
-                self.assertIn("Sites_sqlite.sqlite", note)
+                self.assertIn("Sites_excel.xlsx", note)
                 exports.download_all(
                     folder,
                     _with_service(feature, service, exports),

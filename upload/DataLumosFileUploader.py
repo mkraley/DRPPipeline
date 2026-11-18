@@ -10,7 +10,6 @@ the Import From Zip feature instead of uploading files one-by-one.
 """
 
 import os
-import shutil
 import tempfile
 import time
 import zipfile
@@ -109,12 +108,44 @@ JS_INJECT_FILE_INPUT = """
 """
 
 
+def is_sqlite_file(path: Path) -> bool:
+    """Return True when ``path`` is a SQLite geodatabase export."""
+    return path.suffix.casefold() == ".sqlite"
+
+
+def files_to_upload(folder: Path) -> list[Path]:
+    """Return top-level files to upload, leaving SQLite geodatabases out."""
+    chosen: list[Path] = []
+    for path in folder.iterdir():
+        if not path.is_file():
+            continue
+        if is_sqlite_file(path):
+            Logger.info("Skipping SQLite upload: %s", path.name)
+            continue
+        chosen.append(path)
+    return chosen
+
+
+def zip_directory_for_upload(folder: Path) -> Path:
+    """Zip a folder for Import From Zip, leaving SQLite files out."""
+    descriptor, zip_path = tempfile.mkstemp(suffix=".zip")
+    os.close(descriptor)
+    archive = Path(zip_path)
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as archive_file:
+        for path in folder.rglob("*"):
+            if not path.is_file() or is_sqlite_file(path):
+                continue
+            archive_file.write(path, path.relative_to(folder).as_posix())
+    Logger.info("Zipped contents of %s to %s", folder, archive.name)
+    return archive
+
+
 def folder_upload_plan(folder_path: str) -> tuple[int, bool]:
     """
     Return how many upload operations a folder needs, and whether that is a zip.
 
     A folder with subfolders is one Import From Zip. Otherwise the count is the
-    regular files in the folder's top level.
+    regular files in the folder's top level. SQLite files are not counted.
 
     Args:
         folder_path: Project folder that would be passed to ``upload_files``.
@@ -127,7 +158,10 @@ def folder_upload_plan(folder_path: str) -> tuple[int, bool]:
         return 0, False
     if any(path.is_dir() for path in folder.iterdir()):
         return 1, True
-    return len([path for path in folder.iterdir() if path.is_file()]), False
+    uploadable = [
+        path for path in folder.iterdir() if path.is_file() and not is_sqlite_file(path)
+    ]
+    return len(uploadable), False
 
 
 def any_file_in_subfolder(project_folder: Path, files: List[Path]) -> bool:
@@ -282,14 +316,7 @@ class DataLumosFileUploader:
         Returns:
             Path to the temporary zip file (caller must delete).
         """
-        folder = Path(folder_path)
-        fd, zip_path = tempfile.mkstemp(suffix=".zip")
-        os.close(fd)
-        zip_path_obj = Path(zip_path)
-        base_name = str(zip_path_obj.with_suffix(""))
-        shutil.make_archive(base_name, "zip", folder, ".")
-        Logger.info(f"Zipped contents of {folder_path} to {zip_path_obj.name}")
-        return zip_path_obj
+        return zip_directory_for_upload(Path(folder_path))
 
     def _require_files(self, files: List[Path]) -> None:
         """Raise when any path is not a regular file."""
@@ -499,7 +526,7 @@ class DataLumosFileUploader:
             raise FileNotFoundError(f"Folder not found: {folder_path}")
         if not folder.is_dir():
             raise NotADirectoryError(f"Path is not a directory: {folder_path}")
-        files = [f for f in folder.iterdir() if f.is_file()]
+        files = files_to_upload(folder)
         Logger.debug(f"Found {len(files)} files in {folder_path}")
         return files
 

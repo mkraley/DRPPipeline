@@ -175,6 +175,7 @@ class TestDataLumosFileUploader(unittest.TestCase):
         """Test _zip_folder_contents creates a zip containing all contents."""
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "root.txt").write_text("root")
+            (Path(tmp) / "Final_sqlite.sqlite").write_text("db")
             sub = Path(tmp) / "sub"
             sub.mkdir()
             (sub / "nested.txt").write_text("nested")
@@ -187,6 +188,7 @@ class TestDataLumosFileUploader(unittest.TestCase):
                     names = set(zf.namelist())
                 self.assertIn("root.txt", names)
                 self.assertIn("sub/nested.txt", names)
+                self.assertNotIn("Final_sqlite.sqlite", names)
             finally:
                 zip_path.unlink(missing_ok=True)
 
@@ -471,6 +473,13 @@ class TestDataLumosFileUploader(unittest.TestCase):
             (Path(tmp) / "a.txt").write_text("a", encoding="utf-8")
             (Path(tmp) / "b.txt").write_text("b", encoding="utf-8")
             self.assertEqual(folder_upload_plan(tmp), (2, False))
+
+    def test_folder_upload_plan_skips_sqlite(self) -> None:
+        """A SQLite geodatabase is not an upload operation."""
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "Final_csv.csv").write_text("a", encoding="utf-8")
+            (Path(tmp) / "Final_sqlite.sqlite").write_text("db", encoding="utf-8")
+            self.assertEqual(folder_upload_plan(tmp), (1, False))
 
     def test_confirm_visible_queue_count_requires_every_file(self) -> None:
         """The queue check fails when fewer completion lines remain than files sent."""

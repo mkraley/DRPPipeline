@@ -29,6 +29,16 @@ class TestEpaHubExportPlan(unittest.TestCase):
         self.assertIn("cattle_featureCollection.json", names)
         self.assertIn("cattle_shapefile.zip", names)
 
+    def test_sqlite_export_is_not_requested(self) -> None:
+        """SQLite is dropped even when the service advertises it."""
+        feature = {"id": "ab" * 16, "properties": {}}
+        service = {
+            "layers": [{"id": 0, "name": "Sites"}],
+            "supportedExportFormats": "csv,sqlite,shapefile",
+        }
+        names = [name for name, _url in file_specs(feature, service)]
+        self.assertEqual(names, ["Sites_csv.csv", "Sites_shapefile.zip"])
+
     def test_result_url_extension_replaces_the_planned_suffix(self) -> None:
         """A generated .kmz is not saved under the planned .kml name."""
         url = "https://services.arcgis.com/cache/All_cattle.kml?token=1"
