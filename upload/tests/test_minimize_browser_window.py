@@ -57,12 +57,14 @@ class TestMinimizeBrowserWindow(unittest.TestCase):
         child = MagicMock(name="child")
         with patch("upload.minimize_browser_window.minimize_browser_window") as mock_min:
             keep_browser_window_minimized(page)
-            handler = page.on.call_args.args[1]
+            handlers = {call.args[0]: call.args[1] for call in page.on.call_args_list}
             self.assertEqual(mock_min.call_count, 1)
-            handler(child)
+            handlers["framenavigated"](child)
             self.assertEqual(mock_min.call_count, 1)
-            handler(page.main_frame)
+            handlers["framenavigated"](page.main_frame)
             self.assertEqual(mock_min.call_count, 2)
+            handlers["load"]()
+            self.assertEqual(mock_min.call_count, 3)
 
     def test_headed_session_keeps_the_window_minimized(self) -> None:
         """A visible DataLumos session minimizes after the page is created."""
@@ -86,6 +88,7 @@ class TestMinimizeBrowserWindow(unittest.TestCase):
         self.assertIs(opened, page)
         mock_keep.assert_called_once_with(page)
         launch_args = playwright.chromium.launch.call_args.kwargs["args"]
+        self.assertIn("--start-minimized", launch_args)
         self.assertIn("--disable-backgrounding-occluded-windows", launch_args)
 
     def test_headless_session_does_not_minimize(self) -> None:

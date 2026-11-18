@@ -16,6 +16,7 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from upload.deposit_page_request import AJAX_JS, HOME_PATH, WORKSPACE_URL
+from upload.minimize_browser_window import minimize_browser_window
 from utils.Logger import Logger
 
 _TOKEN_RE = re.compile(r"""var jwtToken = ['"]([^'"]+)['"]""")
@@ -61,20 +62,12 @@ def workspace_html_token(page: Page) -> str:
     return _install_html_token(page, response.text())
 
 
-def open_workspace_for_token(page: Page, reporter: Any = None) -> None:
-    """Render the workspace until ``jwtToken`` exists, then stop the load.
+def _open_workspace_document(page: Page, reporter: Any) -> None:
+    """Load the workspace and leave ``jwtToken`` defined on the page."""
+    from upload.DataLumosAuthenticator import page_needs_login, wait_for_human_verification
 
-    The document often contains the token before the script runs. When it
-    does not, the deposit app is given five minutes to assign ``jwtToken``.
-    Deposit calls send that bearer token themselves.
-    """
-    from upload.DataLumosAuthenticator import wait_for_human_verification
-
-    Logger.info("Opening DataLumos workspace for deposit API calls")
     page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=_REQUEST_TIMEOUT_MS)
     wait_for_human_verification(page, timeout=60000, reporter=reporter)
-    from upload.DataLumosAuthenticator import page_needs_login
-
     if page_needs_login(page):
         raise RuntimeError("DataLumos sent the browser to the login page")
     if _install_document_token(page):
@@ -82,6 +75,20 @@ def open_workspace_for_token(page: Page, reporter: Any = None) -> None:
         return
     _wait_for_rendered_token(page)
     _stop_loading(page)
+
+
+def open_workspace_for_token(page: Page, reporter: Any = None) -> None:
+    """Render the workspace until ``jwtToken`` exists, then stop the load.
+
+    The document often contains the token before the script runs. When it
+    does not, the deposit app is given five minutes to assign ``jwtToken``.
+    Deposit calls send that bearer token themselves.
+    """
+    Logger.info("Opening DataLumos workspace for deposit API calls")
+    try:
+        _open_workspace_document(page, reporter)
+    finally:
+        minimize_browser_window(page)
 
 
 def _install_html_token(page: Page, html: str) -> str:
@@ -241,6 +248,7 @@ def _ensure_browser_page(page: Page, token: str) -> None:
         Logger.info("Opening the workspace so the deposit call can run in the browser")
         page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=_REQUEST_TIMEOUT_MS)
     page.evaluate(_INSTALL_TOKEN_JS, token)
+    minimize_browser_window(page)
 
 
 def _send(

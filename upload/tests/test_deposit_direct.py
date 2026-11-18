@@ -52,10 +52,12 @@ class TestDepositDirect(unittest.TestCase):
         response.status = 200
         response.text.return_value = "<html>sign in</html>"
         page.request.get.return_value = response
-        with patch("upload.DataLumosAuthenticator.wait_for_human_verification"):
-            token = prepare_deposit_token(page)
+        with patch("upload.deposit_direct.minimize_browser_window") as minimize:
+            with patch("upload.DataLumosAuthenticator.wait_for_human_verification"):
+                token = prepare_deposit_token(page)
         self.assertEqual(token, _TOKEN)
         page.goto.assert_called_once()
+        minimize.assert_called_once_with(page)
         waited_for = page.wait_for_function.call_args.args[0]
         self.assertIn("jwtToken", waited_for)
         self.assertNotIn("$.ajax", waited_for)
@@ -190,16 +192,18 @@ class TestDepositRequestBody(unittest.TestCase):
         page.request.get.return_value = response
         page.evaluate.return_value = {"status": 200, "body": "[]", "elapsedMs": 4}
 
-        result = deposit_request(
-            page,
-            "jwt",
-            "GET",
-            "https://deposit.icpsr.umich.edu/deposit/getAttributes?pathUrl=%2Fdatalumos%2F1",
-        )
+        with patch("upload.deposit_direct.minimize_browser_window") as minimize:
+            result = deposit_request(
+                page,
+                "jwt",
+                "GET",
+                "https://deposit.icpsr.umich.edu/deposit/getAttributes?pathUrl=%2Fdatalumos%2F1",
+            )
 
         self.assertEqual(result["status"], 200)
         page.goto.assert_called_once()
         self.assertIn("datalumos.org", page.goto.call_args.args[0])
+        minimize.assert_called_once_with(page)
 
 
 if __name__ == "__main__":

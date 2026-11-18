@@ -16,6 +16,7 @@ from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_
 
 from upload.minimize_browser_window import (
     AWAKE_WHEN_MINIMIZED_ARGS,
+    START_MINIMIZED_ARG,
     keep_browser_window_minimized,
 )
 from upload.terminal_deposit_store import TerminalDepositStore
@@ -91,6 +92,7 @@ class DataLumosBrowserSession:
             "--no-sandbox",
         ]
         if not Args.upload_headless:
+            launch_args.append(START_MINIMIZED_ARG)
             launch_args.extend(AWAKE_WHEN_MINIMIZED_ARGS)
         self._browser = self._playwright.chromium.launch(
             headless=Args.upload_headless,

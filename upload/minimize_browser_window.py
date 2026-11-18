@@ -11,6 +11,7 @@ AWAKE_WHEN_MINIMIZED_ARGS = [
     "--disable-renderer-backgrounding",
     "--disable-background-timer-throttling",
 ]
+START_MINIMIZED_ARG = "--start-minimized"
 
 
 def minimize_browser_window(page: Page) -> None:
@@ -33,9 +34,10 @@ def minimize_browser_window(page: Page) -> None:
 
 
 def keep_browser_window_minimized(page: Page) -> None:
-    """Minimize now, and again after each main-frame navigation."""
+    """Minimize now, and again after a navigation shows the window."""
     minimize_browser_window(page)
     page.on("framenavigated", lambda frame: _minimize_main_frame(page, frame))
+    page.on("load", lambda *_args: minimize_browser_window(page))
 
 
 def _minimize_main_frame(page: Page, frame: Frame) -> None:
