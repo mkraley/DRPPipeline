@@ -20,8 +20,9 @@ class TestDataLumosDepositClient(unittest.TestCase):
 
     def test_ajax_keeps_the_token_in_the_page(self) -> None:
         """The page script sets the bearer header and does not return the token."""
-        self.assertIn("global: false", AJAX_JS)
+        self.assertIn("fetch(", AJAX_JS)
         self.assertIn("Authorization", AJAX_JS)
+        self.assertNotIn("$.ajax", AJAX_JS)
         self.assertNotIn("return jwtToken", AJAX_JS)
 
     def test_create_project_posts_general_type(self) -> None:

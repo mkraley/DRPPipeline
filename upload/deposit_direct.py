@@ -162,7 +162,7 @@ def deposit_request(
     response_body = response.text()
     if _cloudflare_challenge(response.status, response_body):
         Logger.info("Deposit host asked for a browser check; retrying from the page")
-        return _request_from_page(page, method, url, data, content_type, body)
+        return _request_from_page(page, token, method, url, data, content_type, body)
     elapsed_ms = round((time.perf_counter() - started) * 1000)
     return {"status": response.status, "body": response_body, "elapsedMs": elapsed_ms}
 
@@ -199,6 +199,7 @@ def _cloudflare_challenge(status: int, body: str) -> bool:
 
 def _request_from_page(
     page: Page,
+    token: str,
     method: str,
     url: str,
     data: Optional[dict[str, str]],
@@ -206,6 +207,7 @@ def _request_from_page(
     body: Optional[str],
 ) -> dict[str, Any]:
     """Send the deposit call with the page's own fetch stack."""
+    _ensure_browser_page(page, token)
     request: dict[str, Any] = {"url": url, "method": method}
     if body is not None:
         request["data"] = body
@@ -226,6 +228,19 @@ def _request_from_page(
     if not isinstance(result, dict):
         return {"status": 0, "body": "", "elapsedMs": 0}
     return result
+
+
+def _ensure_browser_page(page: Page, token: str) -> None:
+    """Open the workspace when this page cannot call the deposit host.
+
+    A reused session starts on a blank page, which has no DataLumos origin and
+    no jQuery. The deposit call has to run from the workspace.
+    """
+    url = _page_url(page)
+    if "datalumos.org" not in url and "deposit.icpsr.umich.edu" not in url:
+        Logger.info("Opening the workspace so the deposit call can run in the browser")
+        page.goto(WORKSPACE_URL, wait_until="domcontentloaded", timeout=_REQUEST_TIMEOUT_MS)
+    page.evaluate(_INSTALL_TOKEN_JS, token)
 
 
 def _send(

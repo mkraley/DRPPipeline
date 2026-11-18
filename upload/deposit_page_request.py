@@ -21,34 +21,40 @@ _JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,
 
 AJAX_JS = """async (request) => {
   const started = performance.now();
-  const result = await new Promise((resolve) => {
-    $.ajax({
-      url: request.url,
-      type: request.method,
-      data: request.data || undefined,
-      contentType: request.contentType || undefined,
-      dataType: "text",
-      global: false,
-      crossDomain: true,
-      timeout: 120000,
-      beforeSend: (xhr) => {
-        if (typeof jwtToken === "string" && jwtToken) {
-          xhr.setRequestHeader("Authorization", "Bearer " + jwtToken);
-        }
-      },
-      success: (data, _status, xhr) => {
-        resolve({status: xhr.status, body: data == null ? "" : String(data)});
-      },
-      error: (xhr) => {
-        resolve({status: xhr.status || 0, body: xhr.responseText || ""});
-      },
-    });
-  });
-  return {
-    status: result.status,
-    body: result.body,
-    elapsedMs: Math.round(performance.now() - started),
-  };
+  const headers = {};
+  if (typeof jwtToken === "string" && jwtToken) {
+    headers["Authorization"] = "Bearer " + jwtToken;
+  }
+  const method = request.method || "GET";
+  let body;
+  if (request.data != null && method !== "GET" && method !== "DELETE") {
+    if (typeof request.data === "string") {
+      body = request.data;
+      if (request.contentType) {
+        headers["Content-Type"] = request.contentType;
+      }
+    } else {
+      body = new URLSearchParams(request.data).toString();
+      headers["Content-Type"] = request.contentType
+        || "application/x-www-form-urlencoded; charset=UTF-8";
+    }
+  }
+  try {
+    const response = await fetch(request.url, {method, headers, body});
+    const text = await response.text();
+    return {
+      status: response.status,
+      body: text,
+      elapsedMs: Math.round(performance.now() - started),
+    };
+  } catch (error) {
+    const message = error && error.message ? String(error.message) : String(error);
+    return {
+      status: 0,
+      body: message,
+      elapsedMs: Math.round(performance.now() - started),
+    };
+  }
 }"""
 
 

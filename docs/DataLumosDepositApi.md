@@ -20,7 +20,7 @@ The pipeline reads that value from the workspace document (or from the page once
 Authorization: Bearer {jwtToken}
 ```
 
-The browser cookie jar goes with the request. File uploads copy those cookies onto a separate HTTP client because the body is a streamed multipart file. A rejected deposit call, or a page that has landed on the login site, signs in again and drops the saved token. Tokens are not written to the log.
+The browser cookie jar goes with the request. When the deposit host returns a Cloudflare check, the same call is repeated from the workspace page. That page is opened first when the browser is not already on DataLumos. File uploads copy those cookies onto a separate HTTP client because the body is a streamed multipart file. A rejected deposit call, or a page that has landed on the login site, signs in again and drops the saved token. Tokens are not written to the log.
 
 The same token is reused for every project in a batch. When the command exits, the token and browser cookies are written to a file named with that terminal's process id, under the temp directory. The next command in the same terminal loads them and skips sign-in and the workspace wait. A command in a different terminal has its own file. The workspace is opened again only when the page has no token, which happens after a fresh login and after the GWDA nomination leaves the browser on another site.
 

@@ -1,9 +1,9 @@
 """
 Call the ICPSR deposit API from an already authenticated DataLumos page.
 
-Requests go through the page's jQuery so the in-page session can attach its
-bearer token. The token is not returned to Python. ``global: false`` keeps
-these calls from raising the workspace ``#busy`` overlay.
+Requests go through the page's fetch so the in-page session can attach its
+bearer token. The token is not returned to Python. Fetch does not raise the
+workspace ``#busy`` overlay.
 """
 
 from __future__ import annotations

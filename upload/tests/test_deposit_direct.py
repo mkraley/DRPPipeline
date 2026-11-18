@@ -159,6 +159,7 @@ class TestDepositRequestBody(unittest.TestCase):
 
         Logger.initialize(log_level="ERROR", log_file=False)
         page = MagicMock()
+        page.url = "https://www.datalumos.org/datalumos/workspace"
         response = MagicMock()
         response.status = 403
         response.text.return_value = "<title>Just a moment...</title>"
@@ -173,8 +174,32 @@ class TestDepositRequestBody(unittest.TestCase):
         )
 
         self.assertEqual(result["status"], 200)
-        page.evaluate.assert_called_once()
+        page.goto.assert_not_called()
         self.assertEqual(page.evaluate.call_args.args[1]["method"], "GET")
+
+    def test_cloudflare_retry_opens_the_workspace_from_a_blank_page(self) -> None:
+        """A reused session has no workspace page, so the retry opens one."""
+        from upload.deposit_direct import deposit_request
+
+        Logger.initialize(log_level="ERROR", log_file=False)
+        page = MagicMock()
+        page.url = "about:blank"
+        response = MagicMock()
+        response.status = 403
+        response.text.return_value = "<title>Just a moment...</title>"
+        page.request.get.return_value = response
+        page.evaluate.return_value = {"status": 200, "body": "[]", "elapsedMs": 4}
+
+        result = deposit_request(
+            page,
+            "jwt",
+            "GET",
+            "https://deposit.icpsr.umich.edu/deposit/getAttributes?pathUrl=%2Fdatalumos%2F1",
+        )
+
+        self.assertEqual(result["status"], 200)
+        page.goto.assert_called_once()
+        self.assertIn("datalumos.org", page.goto.call_args.args[0])
 
 
 if __name__ == "__main__":
