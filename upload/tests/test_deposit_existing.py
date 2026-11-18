@@ -13,6 +13,16 @@ from upload.DepositMetadataWriter import DepositMetadataWriter
 from upload.deposit_existing import organization_present, person_present, time_period_present
 from upload.tests.deposit_attribute_samples import sample_payload
 
+_ORG_URI = (
+    "https://fedora.prod.icpsr.umich.edu/fedora/rest/datalumos/261857/organizations/YRJSK"
+)
+_PERIOD_URI = (
+    "https://fedora.prod.icpsr.umich.edu/fedora/rest/datalumos/261857/timePeriod/6aHGg"
+)
+_PERSON_URI = (
+    "https://fedora.prod.icpsr.umich.edu/fedora/rest/datalumos/261857/persons/Ab12C"
+)
+
 
 class TestDepositExisting(unittest.TestCase):
     """Stored values are recognized across the shapes getAttributes returns."""
@@ -23,6 +33,12 @@ class TestDepositExisting(unittest.TestCase):
         self.assertTrue(organization_present(value, "Environmental Protection Agency"))
         self.assertFalse(organization_present(value, "Office of Water"))
 
+    def test_organization_matches_fedora_uri(self) -> None:
+        """Live getAttributes returns organization URIs, not display names."""
+        value = [_ORG_URI]
+        self.assertTrue(organization_present(value, "Environmental Protection Agency"))
+        self.assertTrue(organization_present(value, "Office of Water"))
+
     def test_person_matches_first_and_last_in_one_entry(self) -> None:
         """A stored person is not treated as present because of another entry."""
         value = [
@@ -31,6 +47,11 @@ class TestDepositExisting(unittest.TestCase):
         ]
         self.assertTrue(person_present(value, "Ada", "Lovelace"))
         self.assertFalse(person_present(value, "Ada", "Hopper"))
+
+    def test_person_matches_fedora_uri(self) -> None:
+        """Person URIs count as present; organization URIs do not."""
+        self.assertTrue(person_present([_PERSON_URI], "Ada", "Lovelace"))
+        self.assertFalse(person_present([_ORG_URI], "Ada", "Lovelace"))
 
     def test_time_period_matches_a_display_string(self) -> None:
         """A US date range is the same period as the stored ISO dates."""
@@ -43,6 +64,12 @@ class TestDepositExisting(unittest.TestCase):
         value = ["2019 – 2026"]
         self.assertTrue(time_period_present(value, "2019", "2026"))
         self.assertFalse(time_period_present(value, "2018", "2019"))
+
+    def test_time_period_matches_fedora_uri(self) -> None:
+        """Live getAttributes returns timePeriod URIs, not start/end dates."""
+        value = [_PERIOD_URI]
+        self.assertTrue(time_period_present(value, "2019-04-02", "2026-11-13"))
+        self.assertTrue(time_period_present(value, "2024", "2024-12-31"))
 
 
 class TestDepositMetadataWriterSkips(unittest.TestCase):
@@ -82,6 +109,35 @@ class TestDepositMetadataWriterSkips(unittest.TestCase):
         DepositMetadataWriter(client).fill_metadata("/datalumos/9", metadata)
         client.add_organization.assert_not_called()
         client.add_person.assert_not_called()
+        client.add_date_range.assert_not_called()
+
+    def test_fedora_uris_skip_agency_and_period_on_rerun(self) -> None:
+        """Re-run upload sees Fedora URIs and does not call addOrg or addDateRange."""
+        payload = sample_payload()
+        properties = payload["allSections"][0]["groups"][0]["attributes"]
+        for wrapper in properties:
+            prop = wrapper["resourceProperty"]
+            if prop["label"] == "Time Period":
+                prop["value"] = [_PERIOD_URI]
+            if prop["label"] == "Government Agency":
+                prop["value"] = [_ORG_URI]
+        client = MagicMock()
+        client.get_attributes.return_value = flatten_attributes(payload)
+        metadata = DepositMetadata(
+            title="Cattle",
+            agencies=("Environmental Protection Agency",),
+            investigators=(),
+            summary="",
+            original_url="",
+            keywords=(),
+            geography=(),
+            time_start="2019-04-02",
+            time_end="2026-11-13",
+            data_types=(),
+            notes="",
+        )
+        DepositMetadataWriter(client).fill_metadata("/datalumos/9", metadata)
+        client.add_organization.assert_not_called()
         client.add_date_range.assert_not_called()
 
     def test_empty_fields_are_still_posted(self) -> None:

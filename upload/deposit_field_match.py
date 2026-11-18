@@ -51,6 +51,9 @@ def match_fields(attrs: list[DepositAttribute]) -> dict[str, DepositAttribute]:
         field = _field_for_attr(attr)
         if field and field not in matched:
             matched[field] = attr
+        if attr.ui_control.casefold() == "orgorperson":
+            matched.setdefault("agency", attr)
+            matched.setdefault("investigators", attr)
     return matched
 
 
@@ -77,6 +80,8 @@ def _field_for_attr(attr: DepositAttribute) -> str:
         return "keywords"
     if control in {"timeperiod", "collectiondate"}:
         return "time_period"
+    if "government agency" in label and "principal investigator" in label:
+        return "agency"
     if "agency" in label:
         return "agency"
     if label.startswith("principal investigator"):

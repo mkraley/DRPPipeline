@@ -313,10 +313,9 @@ class TestBtsCollector(unittest.TestCase):
             second_size = 500 * 1024 * 1024
 
             def _fake_download(url: str, dest: Path) -> tuple[int, bool]:
-                if dest.name == "first.zip":
-                    dest.write_bytes(b"x" * first_size)
-                else:
-                    dest.write_bytes(b"x" * second_size)
+                size = first_size if dest.name == "first.zip" else second_size
+                with dest.open("wb") as handle:
+                    handle.truncate(size)
                 return dest.stat().st_size, True
 
             page_downloader.download_file.side_effect = _fake_download

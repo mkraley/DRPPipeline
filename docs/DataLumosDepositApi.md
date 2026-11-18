@@ -106,6 +106,8 @@ One call per agency or office.
 
 A later upload of the same project reads the current `value` and does not call `addOrg`, `addPerson`, or `addDateRange` when that agency, investigator, or time period is already stored. Those three calls append, so posting them again would add a second copy.
 
+For these fields, `getAttributes` returns Fedora child-resource URIs (for example `.../organizations/YRJSK` or `.../timePeriod/6aHGg`), not the display name or dates. A non-empty URI list means the entry is already stored; matching on the agency text or start/end dates alone would miss it and append a duplicate.
+
 ## Subject-term suggestions
 
 `GET /deposit/suggestSubjectTerms?term={text}&page=1`

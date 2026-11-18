@@ -227,6 +227,7 @@ class TestUsfsPageDownloader(unittest.TestCase):
         downloader._session.new_page = MagicMock(return_value=mock_page)
 
         def _pdf(**kwargs: object) -> None:
+            mock_page.context.set_offline.assert_called_with(True)
             Path(str(kwargs["path"])).write_bytes(b"%PDF")
 
         mock_page.pdf.side_effect = _pdf
@@ -240,6 +241,11 @@ class TestUsfsPageDownloader(unittest.TestCase):
         self.assertTrue(ok)
         mock_page.locator.assert_called_with("h2.complete-metadata-heading")
         mock_page.locator.return_value.first.evaluate.assert_called_once()
+        mock_page.evaluate.assert_any_call("() => window.stop()")
+        self.assertEqual(
+            [call.args[0] for call in mock_page.context.set_offline.call_args_list],
+            [True, False],
+        )
 
     @patch.object(UsfsPageDownloader, "_ensure_browser", return_value=True)
     def test_url_html_to_pdf_keeps_stylesheets_and_images(self, _mock_ensure: MagicMock) -> None:

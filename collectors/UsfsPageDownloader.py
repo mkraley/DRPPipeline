@@ -48,6 +48,24 @@ _OVERLAY_HIDE_SELECTORS = (
 )
 
 
+def _pause_network_for_print(page: Any) -> None:
+    """Drop in-flight requests so print-to-PDF does not wait on them.
+
+    Chromium's print call has no timeout and waits until loading finishes.
+    A Hub page that keeps a request open leaves collect on that project.
+    """
+    with suppress(Exception):
+        page.context.set_offline(True)
+    with suppress(Exception):
+        page.evaluate("() => window.stop()")
+
+
+def _resume_network_after_print(page: Any) -> None:
+    """Allow the next navigation after a print."""
+    with suppress(Exception):
+        page.context.set_offline(False)
+
+
 def _is_inline_document_url(url: str) -> bool:
     """
     Return True when Chromium is likely to render the URL as a page.
@@ -552,14 +570,19 @@ class UsfsPageDownloader:
             # Expanded Read more / Load more text sits in overflow shells and
             # sticky chrome; Chromium clips those at each page break otherwise.
             unclip_overflow_for_pdf(page)
-            page.pdf(
-                path=str(pdf_path),
-                format="Letter",
-                print_background=True,
-                margin=_PDF_MARGINS,
-            )
-        else:
-            page.pdf(path=str(pdf_path), format="A4", print_background=True)
+        _pause_network_for_print(page)
+        try:
+            if spa_ready:
+                page.pdf(
+                    path=str(pdf_path),
+                    format="Letter",
+                    print_background=True,
+                    margin=_PDF_MARGINS,
+                )
+            else:
+                page.pdf(path=str(pdf_path), format="A4", print_background=True)
+        finally:
+            _resume_network_after_print(page)
         if pdf_path.is_file() and pdf_path.stat().st_size > 0:
             return pdf_path
         return None

@@ -84,11 +84,14 @@ class DepositMetadataWriter:
         if not agencies:
             return
         attr = self._require(matched, "agency")
+        posted: set[str] = set()
         for org_name in agencies:
-            if organization_present(attr.value, org_name):
+            key = org_name.strip().casefold()
+            if key in posted or organization_present(attr.value, org_name):
                 Logger.info("Agency already on the project: %s", org_name)
                 continue
             self._client.add_organization(path, attr.key, org_name)
+            posted.add(key)
 
     def _write_investigators(
         self,
@@ -100,8 +103,10 @@ class DepositMetadataWriter:
         if not people:
             return
         attr = self._require(matched, "investigators")
+        posted: set[tuple[str, str]] = set()
         for first_name, last_name, affiliation in people:
-            if person_present(attr.value, first_name, last_name):
+            key = (first_name.strip().casefold(), last_name.strip().casefold())
+            if key in posted or person_present(attr.value, first_name, last_name):
                 Logger.info(
                     "Principal investigator already on the project: %s %s",
                     first_name,
@@ -109,6 +114,7 @@ class DepositMetadataWriter:
                 )
                 continue
             self._client.add_person(path, attr.key, first_name, last_name, affiliation)
+            posted.add(key)
 
     def _write_keywords(
         self,

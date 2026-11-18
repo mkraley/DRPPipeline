@@ -4,20 +4,31 @@ Detect agency, investigator, and time-period values already stored on a project.
 A later upload reads ``getAttributes`` and skips an add call when the same
 entry is already there. ``addOrg``, ``addPerson``, and ``addDateRange`` append,
 so posting them again creates a second copy.
+
+DataLumos returns Fedora resource URIs for these fields (not display text).
+Any organization URI means agency is already stored; the URI never contains
+the agency name. The same applies to person and time-period URIs.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
 _ISO_DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 _US_DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
 _YEAR = re.compile(r"\b(\d{4})\b")
+_YEAR_ONLY = re.compile(r"^\d{4}$")
+_ORG_URI = re.compile(r"/organizations/[^/\s]+", re.IGNORECASE)
+_PERSON_URI = re.compile(r"/(?:persons|people)/[^/\s]+", re.IGNORECASE)
+_PERIOD_URI = re.compile(r"/timePeriod/[^/\s]+", re.IGNORECASE)
 
 
 def organization_present(value: Any, name: str) -> bool:
-    """Return True when ``name`` is already an organization on ``value``."""
+    """Return True when an organization is already stored on ``value``."""
+    if _uri_present(value, _ORG_URI):
+        return True
     wanted = name.strip().casefold()
     if not wanted:
         return False
@@ -26,6 +37,8 @@ def organization_present(value: Any, name: str) -> bool:
 
 def person_present(value: Any, first_name: str, last_name: str) -> bool:
     """Return True when this person is already stored on ``value``."""
+    if _uri_present(value, _PERSON_URI):
+        return True
     first = first_name.strip().casefold()
     last = last_name.strip().casefold()
     display = f"{first} {last}".strip()
@@ -43,20 +56,38 @@ def person_present(value: Any, first_name: str, last_name: str) -> bool:
 
 
 def time_period_present(value: Any, start: str, end: str) -> bool:
-    """Return True when this start and end are already one stored period."""
+    """
+    Return True when a time period is already stored on ``value``.
+
+    Fedora ``timePeriod`` URIs count as present. Display strings still match
+    by date, including year-only bounds against full dates.
+    """
+    if _uri_present(value, _PERIOD_URI):
+        return True
     start_key = _canonical_date(start)
     end_key = _canonical_date(end)
     if not start_key:
         return False
     for texts in _entries(value):
         found = _dates_in_texts(texts)
-        if start_key in found and (not end_key or end_key in found):
+        if _date_matches(start_key, found) and (
+            not end_key or _date_matches(end_key, found)
+        ):
+            return True
+    return False
+
+
+def _uri_present(value: Any, pattern: re.Pattern[str]) -> bool:
+    """Return True when any stored text matches a Fedora child-resource URI."""
+    for text in _entry_texts(value):
+        if pattern.search(text):
             return True
     return False
 
 
 def _entries(value: Any) -> list[list[str]]:
     """Return each stored entry as its own list of text values."""
+    value = _decode_json_value(value)
     if isinstance(value, list):
         return [_texts(item) for item in value if _texts(item)]
     texts = _texts(value)
@@ -82,10 +113,12 @@ def _texts(value: Any) -> list[str]:
 
 def _collect(value: Any, found: list[str]) -> None:
     """Append strings from ``value`` into ``found``."""
+    value = _decode_json_value(value)
     if isinstance(value, str):
-        text = value.strip()
-        if text:
-            found.append(text)
+        for part in value.split("~~"):
+            text = part.strip()
+            if text:
+                found.append(text)
         return
     if isinstance(value, dict):
         for item in value.values():
@@ -97,6 +130,19 @@ def _collect(value: Any, found: list[str]) -> None:
         return
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         found.append(str(value))
+
+
+def _decode_json_value(value: Any) -> Any:
+    """Parse a JSON array/object string once; otherwise return ``value``."""
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text or text[0] not in "[{":
+        return value
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return value
 
 
 def _dates_in_texts(texts: list[str]) -> set[str]:
@@ -128,3 +174,15 @@ def _canonical_date(value: str) -> str:
     if len(found) == 1:
         return next(iter(found))
     return text
+
+
+def _date_matches(wanted: str, found: set[str]) -> bool:
+    """Return True when ``wanted`` is the same bound as one date in ``found``."""
+    if wanted in found:
+        return True
+    if _YEAR_ONLY.fullmatch(wanted):
+        return any(item == wanted or item.startswith(f"{wanted}-") for item in found)
+    year = wanted[:4]
+    if _YEAR_ONLY.fullmatch(year) and year in found:
+        return True
+    return False

@@ -58,6 +58,35 @@ class TestDepositAttribute(unittest.TestCase):
         self.assertEqual(matched["investigators"].key, "icpsr_pi")
         self.assertEqual(matched["keywords"].ui_control, "keyword")
 
+    def test_match_fields_maps_org_or_person_to_agency_and_investigators(self) -> None:
+        """DataLumos uses one orgOrPerson control for agency and investigators."""
+        payload = {
+            "allSections": [
+                {
+                    "groups": [
+                        {
+                            "attributes": [
+                                {
+                                    "resourceProperty": {
+                                        "label": "Government Agency/Principal Investigator(s)",
+                                        "ontology": "dcterms",
+                                        "attribute": "creator",
+                                        "uiControl": "orgOrPerson",
+                                        "type": "list",
+                                        "value": "",
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+        matched = match_fields(flatten_attributes(payload))
+        self.assertEqual(matched["agency"].key, "dcterms_creator")
+        self.assertEqual(matched["investigators"].key, "dcterms_creator")
+        self.assertIs(matched["agency"], matched["investigators"])
+
 
 if __name__ == "__main__":
     unittest.main()
