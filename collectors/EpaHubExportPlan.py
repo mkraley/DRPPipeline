@@ -187,28 +187,47 @@ def _service_definition_spec(feature: dict[str, Any]) -> tuple[str, str] | None:
 
 
 def _formats(service: dict[str, Any]) -> list[str]:
-    """Return export formats advertised by the service, or the default list.
-
-    SQLite geodatabases are omitted. They repeat the CSV and file geodatabase,
-    and DataLumos rejects the file.
-    """
+    """Return export formats advertised by the service, or the default list."""
     raw = str(service.get("supportedExportFormats") or "")
     found = [part.strip() for part in raw.split(",") if part.strip()]
-    formats = found or list(_DEFAULT_FORMATS)
-    return [fmt for fmt in formats if fmt.casefold() != "sqlite"]
+    return found or list(_DEFAULT_FORMATS)
 
 
 def _layers(service: dict[str, Any]) -> list[tuple[int, str]]:
-    """Return ``(layer id, layer name)`` pairs, defaulting to layer 0."""
-    layers = service.get("layers")
+    """Return feature layers and standalone tables, defaulting to layer 0.
+
+    Hub shows both in the download list. A table is requested with the same
+    ``layers`` id the download API uses for a feature layer.
+    """
+    members = _named_members(service.get("layers"))
+    members.extend(_named_members(service.get("tables")))
+    return _unique_names(members) or [(0, "layer")]
+
+
+def _named_members(members: Any) -> list[tuple[int, str]]:
+    """Return ``(id, name)`` pairs from a FeatureServer layers or tables list."""
     parsed: list[tuple[int, str]] = []
-    if isinstance(layers, list):
-        for layer in layers:
-            if not isinstance(layer, dict) or layer.get("id") is None:
-                continue
-            name = str(layer.get("name") or f"layer_{layer['id']}").strip()
-            parsed.append((int(layer["id"]), name or f"layer_{layer['id']}"))
-    return parsed or [(0, "layer")]
+    if not isinstance(members, list):
+        return parsed
+    for member in members:
+        if not isinstance(member, dict) or member.get("id") is None:
+            continue
+        name = str(member.get("name") or f"layer_{member['id']}").strip()
+        parsed.append((int(member["id"]), name or f"layer_{member['id']}"))
+    return parsed
+
+
+def _unique_names(members: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """Keep a second copy of a name distinct by appending its id."""
+    seen: dict[str, int] = {}
+    named: list[tuple[int, str]] = []
+    for layer_id, name in members:
+        count = seen.get(name.casefold(), 0)
+        seen[name.casefold()] = count + 1
+        if count:
+            name = f"{name}_{layer_id}"
+        named.append((layer_id, name))
+    return named
 
 
 def _suffix(fmt: str) -> str:
@@ -236,8 +255,8 @@ def name_with_export_extension(name: str, file_url: str) -> str:
 def corrected_zip_export(path: Path) -> Path:
     """Rename an export whose extension does not match its bytes.
 
-    A ``.zip`` that is KML or JSON takes that extension. A ``.kml`` that is a
-    zipped KMZ becomes ``.kmz``.
+    A ``.zip`` that is KML or JSON takes that extension. A ``.txt`` whose bytes
+    are JSON becomes ``.json``. A ``.kml`` that is a zipped KMZ becomes ``.kmz``.
 
     Args:
         path: File already saved by an earlier collect.
@@ -251,7 +270,7 @@ def corrected_zip_export(path: Path) -> Path:
     current = path.suffix.lower()
     if not suffix or suffix == current:
         return path
-    if current != ".zip" and not (current == ".kml" and suffix == ".kmz"):
+    if not _extension_may_change(current, suffix):
         return path
     dest = path.with_suffix(suffix)
     if dest == path:
@@ -263,6 +282,15 @@ def corrected_zip_export(path: Path) -> Path:
         dest.unlink()
     path.rename(dest)
     return dest
+
+
+def _extension_may_change(current: str, suffix: str) -> bool:
+    """Return True when a saved suffix is allowed to become ``suffix``."""
+    if current == ".zip":
+        return True
+    if current == ".txt" and suffix == ".json":
+        return True
+    return current == ".kml" and suffix == ".kmz"
 
 
 def _extension_from_url(url: str) -> str:

@@ -109,25 +109,29 @@ JS_INJECT_FILE_INPUT = """
 
 
 def is_sqlite_file(path: Path) -> bool:
-    """Return True when ``path`` is a SQLite geodatabase export."""
-    return path.suffix.casefold() == ".sqlite"
+    """Return True for a raw SQLite or GeoPackage export.
+
+    DataLumos rejects those databases. The collect step stores them as
+    ``{layer}_sqlite.zip`` or ``{layer}_gpkg.zip``, and that zip is uploaded.
+    """
+    return path.suffix.casefold() in {".sqlite", ".gpkg"}
 
 
 def files_to_upload(folder: Path) -> list[Path]:
-    """Return top-level files to upload, leaving SQLite geodatabases out."""
+    """Return top-level files to upload, leaving raw SQLite databases out."""
     chosen: list[Path] = []
     for path in folder.iterdir():
         if not path.is_file():
             continue
         if is_sqlite_file(path):
-            Logger.info("Skipping SQLite upload: %s", path.name)
+            Logger.info("Skipping raw SQLite geodatabase upload: %s", path.name)
             continue
         chosen.append(path)
     return chosen
 
 
 def zip_directory_for_upload(folder: Path) -> Path:
-    """Zip a folder for Import From Zip, leaving SQLite files out."""
+    """Zip a folder for Import From Zip, leaving raw SQLite databases out."""
     descriptor, zip_path = tempfile.mkstemp(suffix=".zip")
     os.close(descriptor)
     archive = Path(zip_path)
@@ -145,7 +149,9 @@ def folder_upload_plan(folder_path: str) -> tuple[int, bool]:
     Return how many upload operations a folder needs, and whether that is a zip.
 
     A folder with subfolders is one Import From Zip. Otherwise the count is the
-    regular files in the folder's top level. SQLite files are not counted.
+    regular files in the folder's top level. Raw SQLite and GeoPackage files
+    are not counted. Their ``{layer}_sqlite.zip`` and ``{layer}_gpkg.zip``
+    archives are.
 
     Args:
         folder_path: Project folder that would be passed to ``upload_files``.

@@ -29,15 +29,39 @@ class TestEpaHubExportPlan(unittest.TestCase):
         self.assertIn("cattle_featureCollection.json", names)
         self.assertIn("cattle_shapefile.zip", names)
 
-    def test_sqlite_export_is_not_requested(self) -> None:
-        """SQLite is dropped even when the service advertises it."""
+    def test_sqlite_export_is_requested(self) -> None:
+        """SQLite is requested so it can be stored as a zip."""
         feature = {"id": "ab" * 16, "properties": {}}
         service = {
             "layers": [{"id": 0, "name": "Sites"}],
             "supportedExportFormats": "csv,sqlite,shapefile",
         }
         names = [name for name, _url in file_specs(feature, service)]
-        self.assertEqual(names, ["Sites_csv.csv", "Sites_shapefile.zip"])
+        self.assertEqual(names, ["Sites_csv.csv", "Sites_sqlite.sqlite", "Sites_shapefile.zip"])
+
+    def test_tables_are_requested_with_layers(self) -> None:
+        """A standalone table is downloaded with the same formats as a layer."""
+        feature = {"id": "ab" * 16, "properties": {}}
+        service = {
+            "layers": [{"id": 0, "name": "Final"}],
+            "tables": [{"id": 2, "name": "Buyer_Seller"}],
+            "supportedExportFormats": "csv",
+        }
+        names = [name for name, _url in file_specs(feature, service)]
+        self.assertEqual(names, ["Final_csv.csv", "Buyer_Seller_csv.csv"])
+        urls = [url for _name, url in file_specs(feature, service)]
+        self.assertIn("layers=2", urls[1])
+
+    def test_duplicate_layer_and_table_names_stay_distinct(self) -> None:
+        """A table that repeats a layer name gets its id in the filename."""
+        feature = {"id": "ab" * 16, "properties": {}}
+        service = {
+            "layers": [{"id": 0, "name": "Final"}],
+            "tables": [{"id": 2, "name": "Final"}],
+            "supportedExportFormats": "csv",
+        }
+        names = [name for name, _url in file_specs(feature, service)]
+        self.assertEqual(names, ["Final_csv.csv", "Final_2_csv.csv"])
 
     def test_result_url_extension_replaces_the_planned_suffix(self) -> None:
         """A generated .kmz is not saved under the planned .kml name."""
@@ -67,6 +91,15 @@ class TestEpaHubExportPlan(unittest.TestCase):
             path.write_bytes(b'{"layers": []}')
             renamed = corrected_zip_export(path)
         self.assertEqual(renamed.name, "Sites_featureCollection.json")
+
+    def test_json_bytes_saved_as_txt_are_renamed(self) -> None:
+        """Hub's feature-collection .txt is JSON and becomes .json."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Final_featureCollection.txt"
+            path.write_bytes(b'{"layers": []}')
+            renamed = corrected_zip_export(path)
+        self.assertEqual(renamed.name, "Final_featureCollection.json")
+        self.assertFalse(path.exists())
 
     def test_shapefile_zip_is_left_alone(self) -> None:
         """A zip that is not KML or JSON keeps its name."""

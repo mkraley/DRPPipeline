@@ -350,6 +350,76 @@ class TestEpaHubExports(unittest.TestCase):
         self.assertEqual(calls["count"], 5)
         self.assertIn("HTTP 500", planned[0].access_error or "")
 
+    def test_feature_collection_txt_url_is_saved_as_json(self) -> None:
+        """A feature collection Hub labels .txt is saved as .json."""
+        ready = _json_response(
+            200,
+            {
+                "status": "ready",
+                "resultUrl": "https://files.example/Water_System_Boundaries_915.txt",
+                "contentLength": 12,
+            },
+        )
+        body = _file_response(b'{"layers":[]}')
+        responses = [ready, body]
+
+        def getter(url: str, **_kwargs: object) -> MagicMock:
+            del url
+            return responses.pop(0)
+
+        feature = {"id": "abc", "properties": {"type": "Feature Service", "url": ""}}
+        service = {
+            "layers": [{"id": 0, "name": "Final"}],
+            "supportedExportFormats": "featureCollection",
+        }
+        exports = EpaHubExports(getter=getter, sleeper=lambda _sec: None, attempts=3)
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            _notes, planned = exports.download_all(folder, _with_service(feature, service, exports))
+            self.assertEqual(planned[0].relative_path, "Final_featureCollection.json")
+            self.assertEqual((folder / "Final_featureCollection.json").read_bytes(), b'{"layers":[]}')
+            self.assertFalse(list(folder.glob("*.txt")))
+            self.assertFalse(list(folder.glob("*.zip")))
+
+    def test_existing_feature_collection_txt_is_renamed(self) -> None:
+        """A feature collection already saved as .txt becomes .json and is kept."""
+        def getter(url: str, **_kwargs: object) -> MagicMock:
+            del url
+            raise AssertionError("existing export was requested")
+
+        feature = {"id": "abc", "properties": {"type": "Feature Service", "url": ""}}
+        service = {
+            "layers": [{"id": 0, "name": "Final"}],
+            "supportedExportFormats": "featureCollection",
+        }
+        exports = EpaHubExports(getter=getter, sleeper=lambda _sec: None)
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "Final_featureCollection.txt").write_bytes(b'{"layers":[]}')
+            _notes, planned = exports.download_all(folder, _with_service(feature, service, exports))
+            self.assertEqual(planned[0].relative_path, "Final_featureCollection.json")
+            self.assertFalse((folder / "Final_featureCollection.txt").exists())
+
+    def test_existing_geopackage_is_packed_and_not_requested(self) -> None:
+        """A GeoPackage already on disk is zipped and Hub is not asked again."""
+        def getter(url: str, **_kwargs: object) -> MagicMock:
+            del url
+            raise AssertionError("existing export was requested")
+
+        feature = {"id": "abc", "properties": {"type": "Feature Service", "url": ""}}
+        service = {
+            "layers": [{"id": 0, "name": "Final"}],
+            "supportedExportFormats": "geoPackage",
+        }
+        exports = EpaHubExports(getter=getter, sleeper=lambda _sec: None)
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "Final_geoPackage.gpkg").write_bytes(b"SQLite format 3\x00")
+            _notes, planned = exports.download_all(folder, _with_service(feature, service, exports))
+            self.assertEqual(planned[0].relative_path, "Final_gpkg.zip")
+            self.assertFalse((folder / "Final_geoPackage.gpkg").exists())
+            self.assertTrue((folder / "Final_gpkg.zip").is_file())
+
 
 def _status_response(status_code: int) -> MagicMock:
     """Return a mock response with only a status code."""

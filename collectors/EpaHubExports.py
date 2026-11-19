@@ -27,6 +27,7 @@ from collectors.EpaHubExportPlan import (
     ready_from_response,
 )
 from collectors.PlannedFile import PlannedFile
+from collectors.SqliteExportPack import pack_sqlite_export, sqlite_archive_name
 from utils.Errors import clear_file_warnings, record_warning
 from utils.Logger import Logger
 from utils.collector_status import (
@@ -110,7 +111,7 @@ class EpaHubExports:
             if note:
                 notes.append(note)
             if written:
-                Logger.info("Saved Hub export %s", name)
+                Logger.info("Saved Hub export %s", planned_file.relative_path)
                 self._clear_saved_warning(name)
                 downloaded += written
             elif planned_file.access_error:
@@ -181,7 +182,7 @@ class EpaHubExports:
         dest = folder / name
         if not self._write(file_url, dest):
             return PlannedFile(name, file_url, access_error="download failed"), "", 0
-        dest = corrected_zip_export(dest)
+        dest = pack_sqlite_export(corrected_zip_export(dest))
         size = dest.stat().st_size
         return PlannedFile(dest.name, file_url, size), "", size
 
@@ -194,17 +195,39 @@ class EpaHubExports:
         return PlannedFile(dest.name, url, dest.stat().st_size)
 
     def _saved_export(self, folder: Path, name: str) -> Path | None:
-        """Return the on-disk export for ``name``, correcting a mismatched .zip."""
-        legacy = folder / f"{Path(name).stem}.zip"
-        if legacy.is_file():
-            corrected_zip_export(legacy)
+        """Return the on-disk export for ``name``, correcting a mismatched name."""
+        self._correct_saved_names(folder, name)
+        packed = self._saved_sqlite(folder, name)
+        if packed is not None:
+            return packed
         exact = folder / name
         if exact.is_file() and exact.stat().st_size > 0:
-            return exact
+            return pack_sqlite_export(exact)
         stem = Path(name).stem
         for path in folder.iterdir():
             if path.is_file() and path.stem == stem and path.stat().st_size > 0:
-                return path
+                return pack_sqlite_export(path)
+        return None
+
+    def _correct_saved_names(self, folder: Path, name: str) -> None:
+        """Rename a JSON feature collection saved earlier as ``.zip`` or ``.txt``."""
+        stem = Path(name).stem
+        for suffix in (".zip", ".txt"):
+            legacy = folder / f"{stem}{suffix}"
+            if legacy.is_file():
+                corrected_zip_export(legacy)
+
+    def _saved_sqlite(self, folder: Path, name: str) -> Path | None:
+        """Return the packed SQLite or GeoPackage zip, packing a raw file first."""
+        archive_name = sqlite_archive_name(Path(name))
+        if not archive_name:
+            return None
+        raw = folder / name
+        if raw.is_file() and raw.stat().st_size > 0:
+            return pack_sqlite_export(raw)
+        packed = folder / archive_name
+        if packed.is_file() and packed.stat().st_size > 0:
+            return packed
         return None
 
     def _resolve(self, url: str) -> ReadyFile:

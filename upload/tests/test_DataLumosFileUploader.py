@@ -176,6 +176,7 @@ class TestDataLumosFileUploader(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "root.txt").write_text("root")
             (Path(tmp) / "Final_sqlite.sqlite").write_text("db")
+            (Path(tmp) / "Final_geoPackage.gpkg").write_text("gpkg")
             sub = Path(tmp) / "sub"
             sub.mkdir()
             (sub / "nested.txt").write_text("nested")
@@ -189,6 +190,7 @@ class TestDataLumosFileUploader(unittest.TestCase):
                 self.assertIn("root.txt", names)
                 self.assertIn("sub/nested.txt", names)
                 self.assertNotIn("Final_sqlite.sqlite", names)
+                self.assertNotIn("Final_geoPackage.gpkg", names)
             finally:
                 zip_path.unlink(missing_ok=True)
 
@@ -475,11 +477,13 @@ class TestDataLumosFileUploader(unittest.TestCase):
             self.assertEqual(folder_upload_plan(tmp), (2, False))
 
     def test_folder_upload_plan_skips_sqlite(self) -> None:
-        """A SQLite geodatabase is not an upload operation."""
+        """A raw SQLite or GeoPackage file is not an upload; the packed zip is."""
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "Final_csv.csv").write_text("a", encoding="utf-8")
             (Path(tmp) / "Final_sqlite.sqlite").write_text("db", encoding="utf-8")
-            self.assertEqual(folder_upload_plan(tmp), (1, False))
+            (Path(tmp) / "Final_geoPackage.gpkg").write_text("gpkg", encoding="utf-8")
+            (Path(tmp) / "Final_gpkg.zip").write_bytes(b"zip")
+            self.assertEqual(folder_upload_plan(tmp), (2, False))
 
     def test_confirm_visible_queue_count_requires_every_file(self) -> None:
         """The queue check fails when fewer completion lines remain than files sent."""
