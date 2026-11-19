@@ -187,10 +187,15 @@ def _service_definition_spec(feature: dict[str, Any]) -> tuple[str, str] | None:
 
 
 def _formats(service: dict[str, Any]) -> list[str]:
-    """Return export formats advertised by the service, or the default list."""
+    """Return export formats advertised by the service, or the default list.
+
+    SQLite geodatabases are omitted. They repeat the file geodatabase, and
+    DataLumos rejects the raw database.
+    """
     raw = str(service.get("supportedExportFormats") or "")
     found = [part.strip() for part in raw.split(",") if part.strip()]
-    return found or list(_DEFAULT_FORMATS)
+    formats = found or list(_DEFAULT_FORMATS)
+    return [fmt for fmt in formats if fmt.casefold() != "sqlite"]
 
 
 def _layers(service: dict[str, Any]) -> list[tuple[int, str]]:

@@ -29,15 +29,15 @@ class TestEpaHubExportPlan(unittest.TestCase):
         self.assertIn("cattle_featureCollection.json", names)
         self.assertIn("cattle_shapefile.zip", names)
 
-    def test_sqlite_export_is_requested(self) -> None:
-        """SQLite is requested so it can be stored as a zip."""
+    def test_sqlite_export_is_not_requested(self) -> None:
+        """SQLite is dropped even when the service advertises it."""
         feature = {"id": "ab" * 16, "properties": {}}
         service = {
             "layers": [{"id": 0, "name": "Sites"}],
             "supportedExportFormats": "csv,sqlite,shapefile",
         }
         names = [name for name, _url in file_specs(feature, service)]
-        self.assertEqual(names, ["Sites_csv.csv", "Sites_sqlite.sqlite", "Sites_shapefile.zip"])
+        self.assertEqual(names, ["Sites_csv.csv", "Sites_shapefile.zip"])
 
     def test_tables_are_requested_with_layers(self) -> None:
         """A standalone table is downloaded with the same formats as a layer."""
