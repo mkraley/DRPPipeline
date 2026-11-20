@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Type
 
 from sourcing.AdcSourcing import AdcSourcing
+from sourcing.AqsSourcing import AqsSourcing
 from sourcing.BtsSourcing import BtsSourcing
 from sourcing.Epa2Sourcing import Epa2Sourcing
 from sourcing.EpaSourcing import EpaSourcing
@@ -18,6 +19,7 @@ from sourcing.SpreadsheetSourcing import SpreadsheetSourcing
 from utils.Args import Args
 
 _ADC_SOURCE = "adc"
+_AQS_SOURCE = "aqs"
 _BTS_SOURCE = "bts"
 _EPA_SOURCE = "epa"
 _EPA2_SOURCE = "epa2"
@@ -28,6 +30,7 @@ _SPREADSHEET_SOURCES = frozenset({"ahrq", "cdc", "cms", "dol", "usfs"})
 _API_SOURCES = frozenset(
     {
         _ADC_SOURCE,
+        _AQS_SOURCE,
         _BTS_SOURCE,
         _EPA_SOURCE,
         _EPA2_SOURCE,
@@ -46,13 +49,15 @@ def sourcing_class_for_source(source: str | None = None) -> Type[SourcingBase]:
         source: Source key from config; defaults to ``Args.source``.
 
     Returns:
-        API catalog sourcing class (ADC, BTS, EPA, EPA2, FERC, NPS, SSA) or
-        ``SpreadsheetSourcing`` for sheet-based sources.
+        API catalog sourcing class (ADC, AQS, BTS, EPA, EPA2, FERC, NPS, SSA)
+        or ``SpreadsheetSourcing`` for sheet-based sources.
     """
     key = (source if source is not None else getattr(Args, "source", None) or "")
     key = str(key).strip().lower()
     if key == _ADC_SOURCE:
         return AdcSourcing
+    if key == _AQS_SOURCE:
+        return AqsSourcing
     if key == _BTS_SOURCE:
         return BtsSourcing
     if key == _EPA_SOURCE:
