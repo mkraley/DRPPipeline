@@ -99,11 +99,19 @@ class AqsPageParser(HTMLParser):
 
     def _finish_cell(self) -> None:
         """Append the open cell to the current row."""
+        self._keep_open_anchor()
         text = "".join(self._cell_text)
         self._row.append((text, list(self._cell_hrefs), self._cell_header))
         if self._cell_header:
             self._row_header = True
         self._in_cell = False
+
+    def _keep_open_anchor(self) -> None:
+        """Keep a link whose end tag is missing when the cell closes."""
+        if not self._href:
+            return
+        self._cell_hrefs.append(self._href)
+        self._href = ""
 
     def _finish_anchor(self) -> None:
         """Record a link inside a cell, or hold a loose zip until its size."""

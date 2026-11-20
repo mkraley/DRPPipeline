@@ -17,7 +17,7 @@ _PAGE = """
 <tr>
 <td>2024</td>
 <td><a href="annual_conc_by_monitor_2024.zip">f</a><br>5 Rows<br>12 KB<br>
-<a href="Data_Advisory_PM25_88101_Pregen_Files.pdf">PM2.5</a></td>
+<a href="Data_Advisory_PM25_88101_Pregen_Files.pdf">PM2.5</td>
 <td><a href="annual_aqi_by_cbsa_2024.zip">f</a><br>1 Rows<br>2 KB</td>
 </tr>
 <tr>
@@ -77,30 +77,31 @@ class TestAqsPageParser(unittest.TestCase):
         sites = self.by_id["sites"]
         names = [item.filename for item in sites.files]
         self.assertEqual(names, ["aqs_sites.zip", "aqs_monitors.zip"])
-        self.assertEqual(sites.title(), "Site and Monitor Descriptions")
+        self.assertEqual(sites.title(), "Air Data Site and Monitor Descriptions")
 
     def test_zero_kb_zip_is_omitted_and_advisory_is_kept(self) -> None:
-        """A 0 KB year is counted as omitted, and the advisory PDF stays once."""
+        """A 0 KB year is omitted, and an unclosed advisory link is kept once."""
         column = self.by_id["annual_conc_by_monitor"]
         data = [item.filename for item in column.files if item.kind == "data"]
         advisories = [item.filename for item in column.files if item.kind == "advisory"]
         self.assertEqual(data, ["annual_conc_by_monitor_2024.zip"])
         self.assertEqual(advisories, ["Data_Advisory_PM25_88101_Pregen_Files.pdf"])
         self.assertEqual(column.omitted_empty, 1)
-        self.assertIn(FORMATS_FILENAME, column.collection_notes())
+        self.assertIn("Data_Advisory_PM25_88101_Pregen_Files.pdf", column.collection_notes())
+        self.assertNotIn(FORMATS_FILENAME, column.collection_notes())
 
     def test_repeated_pollutant_is_a_separate_series_per_table(self) -> None:
         """Daily and hourly ozone are different projects."""
         self.assertEqual(
             self.by_id["daily_44201"].title(),
-            "Daily Summary Data - Ozone (44201)",
+            "Air Data Daily Summary Data - Ozone (44201)",
         )
         self.assertEqual(
             self.by_id["hourly_44201"].title(),
-            "Hourly Data - Ozone (44201)",
+            "Air Data Hourly Data - Ozone (44201)",
         )
-        self.assertEqual(self.by_id["daily_aqi_by_cbsa"].title(), "Daily AQI by CBSA")
-        self.assertEqual(self.by_id["blanks_all"].title(), "Blanks Data")
+        self.assertEqual(self.by_id["daily_aqi_by_cbsa"].title(), "Air Data Daily AQI by CBSA")
+        self.assertEqual(self.by_id["blanks_all"].title(), "Air Data Blanks Data")
 
 
 if __name__ == "__main__":

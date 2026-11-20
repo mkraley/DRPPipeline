@@ -58,14 +58,17 @@ class AqsSourcing(SourcingBase):
     def _insert_pending(self, series: list[AqsSeries], limit: int | None) -> None:
         """Insert pending columns up to the batch limit."""
         pending = self._pending(series)
+        refreshed = self._refresh_existing(series)
         batch = pending[:limit] if limit is not None else pending
         checker = DuplicateChecker()
         inserted, skipped, failed, assigned = self._insert_batch(batch, checker)
         Logger.info(
-            "%s sourcing complete: %s column(s) on the page, %s inserted%s, "
-            "%s failed, %s duplicate(s) skipped, %s pending for next batch",
+            "%s sourcing complete: %s column(s) on the page, %s refreshed, "
+            "%s inserted%s, %s failed, %s duplicate(s) skipped, "
+            "%s pending for next batch",
             _LABEL,
             len(series),
+            refreshed,
             inserted,
             self.format_id_range(assigned),
             failed,
@@ -116,3 +119,15 @@ class AqsSourcing(SourcingBase):
         """Return series whose project URLs are not yet stored."""
         stored = set(Storage.list_source_urls())
         return [item for item in series if item.source_url() not in stored]
+
+    def _refresh_existing(self, series: list[AqsSeries]) -> int:
+        """Rewrite titles and summaries for columns already in Storage."""
+        refreshed = 0
+        for item in series:
+            drpid = Storage.drpid_for_source_url(item.source_url())
+            if drpid is None:
+                continue
+            Storage.update_record(drpid, item.metadata_fields())
+            refreshed += 1
+            Logger.info("%s refreshed %s", _LABEL, item.title())
+        return refreshed

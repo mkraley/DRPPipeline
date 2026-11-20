@@ -68,26 +68,36 @@ class TestAqsSourcing(unittest.TestCase):
         self.assertEqual(
             titles,
             [
-                "Daily Summary Data - Ozone (44201)",
-                "Daily Summary Data - SO2 (42401)",
+                "Air Data Daily Summary Data - Ozone (44201)",
+                "Air Data Daily Summary Data - SO2 (42401)",
             ],
         )
         self.assertEqual(projects[0]["agency"], "Environmental Protection Agency")
+        self.assertEqual(projects[0]["office"], "Environmental Protection Agency")
+        self.assertIn("FileFormats.html", projects[0]["summary"])
+        self.assertFalse(projects[0].get("collection_notes"))
         self.assertTrue(projects[0]["source_url"].endswith("#daily_44201"))
 
     @patch("sourcing.AqsSourcing.DuplicateChecker")
-    def test_run_skips_urls_already_stored(self, mock_checker_cls: MagicMock) -> None:
-        """A column whose URL is already stored is not inserted again."""
+    def test_run_refreshes_an_existing_column(self, mock_checker_cls: MagicMock) -> None:
+        """A stored column keeps its DRPID and receives the current title."""
         mock_checker_cls.return_value.exists_in_storage.return_value = False
-        self.storage.create_record(
+        existing = self.storage.create_record(
             "https://aqs.epa.gov/aqsweb/airdata/download_files.html#daily_44201"
+        )
+        self.storage.update_record(
+            existing,
+            {"title": "Old title", "status": "sourced", "collection_notes": "Also save FileFormats.html."},
         )
 
         self._sourcing().run(-1)
 
+        updated = self.storage.get(existing)
+        self.assertEqual(updated["title"], "Air Data Daily Summary Data - Ozone (44201)")
+        self.assertEqual(updated["status"], "sourced")
+        self.assertFalse(updated.get("collection_notes"))
         projects = self.storage.list_eligible_projects("sourced", None)
-        self.assertEqual(len(projects), 1)
-        self.assertEqual(projects[0]["title"], "Daily Summary Data - SO2 (42401)")
+        self.assertEqual(len(projects), 2)
 
     @patch("sourcing.AqsSourcing.DuplicateChecker")
     @patch.object(Args, "num_rows", 1)

@@ -24,6 +24,14 @@ class TestAqsDownloadClient(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             client.fetch_html()
 
+    def test_content_length_reads_the_header(self) -> None:
+        """Content-Length is returned as an integer."""
+        response = MagicMock(status_code=200)
+        response.headers = {"Content-Length": "4096"}
+        client = AqsDownloadClient(getter=lambda *_args, **_kwargs: response)
+        self.assertEqual(client.content_length("https://aqs.epa.gov/aqsweb/airdata/x.zip"), 4096)
+        response.close.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

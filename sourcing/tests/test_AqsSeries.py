@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 
 from sourcing.AqsFile import AqsFile
-from sourcing.AqsSeries import AqsSeries, INDEX_FILENAME
+from sourcing.AqsSeries import AQS_SUMMARY_NOTE, AqsSeries, INDEX_FILENAME
 from utils.datalumos_data_types import DATA_TYPE_AGGREGATE, DATA_TYPE_OBSERVATIONAL
 
 
@@ -29,7 +29,10 @@ class TestAqsSeries(unittest.TestCase):
     def test_storage_fields_cover_the_year_span(self) -> None:
         """Hourly ozone is observational data from the first year through the last."""
         fields = _series().storage_fields()
-        self.assertEqual(fields["title"], "Hourly Data - Ozone (44201)")
+        self.assertEqual(fields["title"], "Air Data Hourly Data - Ozone (44201)")
+        self.assertEqual(fields["office"], "Environmental Protection Agency")
+        self.assertIn(AQS_SUMMARY_NOTE, fields["summary"])
+        self.assertEqual(fields["collection_notes"], "")
         self.assertEqual(fields["time_start"], "1980")
         self.assertEqual(fields["time_end"], "2026")
         self.assertEqual(fields["data_types"], DATA_TYPE_OBSERVATIONAL)

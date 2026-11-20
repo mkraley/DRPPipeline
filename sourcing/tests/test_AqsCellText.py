@@ -25,6 +25,16 @@ class TestAqsCellText(unittest.TestCase):
         }
         self.assertIsNone(series_from_bucket("Daily Summary Data", "Ozone", bucket))
 
+    def test_column_with_only_empty_files_is_skipped(self) -> None:
+        """A column whose zips are all 0 KB is not a project."""
+        bucket = {
+            "files": [],
+            "advisories": [],
+            "prefixes": ["hourly_LEAD"],
+            "omitted": 47,
+        }
+        self.assertIsNone(series_from_bucket("Hourly Data", "Lead", bucket))
+
 
 if __name__ == "__main__":
     unittest.main()

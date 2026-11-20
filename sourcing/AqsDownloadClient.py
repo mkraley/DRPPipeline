@@ -11,6 +11,7 @@ from utils.url_utils import requests_verify
 
 DEFAULT_TIMEOUT_SEC = 60
 _USER_AGENT = "DRPPipeline"
+AIRDATA_FILE_ROOT = "https://aqs.epa.gov/aqsweb/airdata/"
 
 
 class AqsDownloadClient:
@@ -67,3 +68,50 @@ class AqsDownloadClient:
             raise RuntimeError(
                 f"AirData download page returned HTTP {response.status_code}"
             )
+
+    def content_length(self, url: str) -> int | None:
+        """
+        Return the Content-Length for one AirData file.
+
+        Args:
+            url: Absolute file URL.
+
+        Returns:
+            Byte length, or None when the header is missing or the request fails.
+        """
+        try:
+            response = self._get(
+                url,
+                headers={"User-Agent": _USER_AGENT},
+                timeout=self._timeout_sec,
+                verify=requests_verify(),
+                stream=True,
+            )
+        except requests.RequestException:
+            return None
+        try:
+            if response.status_code != 200:
+                return None
+            return _content_length(response.headers.get("Content-Length"))
+        finally:
+            response.close()
+
+
+def file_url(filename: str) -> str:
+    """
+    Return the absolute URL for a file named on the download page.
+
+    Args:
+        filename: Zip, HTML, CSV, or PDF name.
+    """
+    return f"{AIRDATA_FILE_ROOT}{filename}"
+
+
+def _content_length(raw: str | None) -> int | None:
+    """Parse a Content-Length header."""
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None

@@ -34,9 +34,10 @@ def series_from_bucket(
     series_id = _series_id(section, column, prefixes)
     if not series_id:
         return None
-    files = file_list(bucket, "files") + file_list(bucket, "advisories")
-    if not files and int(bucket["omitted"]) == 0:
+    data = file_list(bucket, "files")
+    if not data:
         return None
+    files = data + file_list(bucket, "advisories")
     return AqsSeries(series_id, section, column, files, int(bucket["omitted"]))
 
 

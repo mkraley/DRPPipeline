@@ -15,7 +15,13 @@ DOWNLOAD_PAGE_URL = "https://aqs.epa.gov/aqsweb/airdata/download_files.html"
 FORMATS_FILENAME = "FileFormats.html"
 INDEX_FILENAME = "file_list.csv"
 AGENCY = "Environmental Protection Agency"
-OFFICE = "Office of Air Quality Planning and Standards"
+OFFICE = AGENCY
+AQS_SUMMARY_NOTE = (
+    "This data comes from EPA's Air Quality System (AQS). "
+    "Data collection agencies report their data to EPA via this system and it "
+    "calculates several types of aggregate (summary) data for EPA internal use. "
+    "See FileFormats.html for details on the contents."
+)
 
 _OBSERVATIONAL_SECTIONS = frozenset(
     {"Hourly Data", "8-Hour Average Data", "Blanks Data"}
@@ -53,12 +59,7 @@ class AqsSeries:
 
     def title(self) -> str:
         """Return the DataLumos title for this column."""
-        column = self.column.strip()
-        if not column:
-            return self.section
-        if column.lower().startswith(self.section.lower()):
-            return column
-        return f"{self.section} - {column}"
+        return f"Air Data {self._column_title()}"
 
     def source_url(self) -> str:
         """Return the unique project URL for this column."""
@@ -66,21 +67,17 @@ class AqsSeries:
 
     def summary(self) -> str:
         """Return a short description of the files in this column."""
-        if self.series_id == "sites":
-            return (
-                "Current Air Quality System site and monitor listings from the "
-                "EPA AirData pre-generated download page, plus the file list "
-                "for that page."
-            )
-        subject = self.column.strip() or self.section
-        return (
-            f"Pre-generated {self.section} files for {subject} from the EPA "
-            f"AirData download page. {self._year_span_text()}{self._omitted_text()}"
-        )
+        return f"{self._description()} {AQS_SUMMARY_NOTE}"
 
     def collection_notes(self) -> str:
-        """Return the extra files saved with this project."""
-        names = [item.filename for item in self.packaged_files() if item.kind != "data"]
+        """Return notes for extra files other than the format page."""
+        names = [
+            item.filename
+            for item in self.packaged_files()
+            if item.kind not in {"data", "format"}
+        ]
+        if not names:
+            return ""
         if len(names) == 1:
             return f"Also save {names[0]}."
         listed = ", ".join(names[:-1]) + f" and {names[-1]}"
@@ -111,8 +108,8 @@ class AqsSeries:
             return DATA_TYPE_OBSERVATIONAL
         return DATA_TYPE_AGGREGATE
 
-    def storage_fields(self) -> dict[str, str]:
-        """Return the Storage columns written when this series is sourced."""
+    def metadata_fields(self) -> dict[str, str]:
+        """Return the descriptive Storage columns for this column."""
         start, end = self._year_bounds()
         fields = {
             "title": self.title(),
@@ -124,11 +121,16 @@ class AqsSeries:
             "geographic_coverage": "United States",
             "extensions": "zip",
             "collection_notes": self.collection_notes(),
-            "status": "sourced",
         }
         if start:
             fields["time_start"] = start
             fields["time_end"] = end
+        return fields
+
+    def storage_fields(self) -> dict[str, str]:
+        """Return the Storage columns written when this series is first sourced."""
+        fields = self.metadata_fields()
+        fields["status"] = "sourced"
         return fields
 
     def _year_span_text(self) -> str:
@@ -140,6 +142,29 @@ class AqsSeries:
         if start == end:
             return f"One zip for {start}."
         return f"One zip per year from {start} through {end} ({count} files)."
+
+    def _column_title(self) -> str:
+        """Return the column title before the Air Data prefix."""
+        column = self.column.strip()
+        if not column:
+            return self.section
+        if column.lower().startswith(self.section.lower()):
+            return column
+        return f"{self.section} - {column}"
+
+    def _description(self) -> str:
+        """Return the column-specific summary before the shared AQS note."""
+        if self.series_id == "sites":
+            return (
+                "Current Air Quality System site and monitor listings from the "
+                "EPA AirData pre-generated download page, plus the file list "
+                "for that page."
+            )
+        subject = self.column.strip() or self.section
+        return (
+            f"Pre-generated {self.section} files for {subject} from the EPA "
+            f"AirData download page. {self._year_span_text()}{self._omitted_text()}"
+        )
 
     def _omitted_text(self) -> str:
         """Describe zips left out because the page lists them as 0 KB."""

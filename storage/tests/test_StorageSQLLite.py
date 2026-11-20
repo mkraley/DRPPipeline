@@ -191,6 +191,13 @@ class TestStorageSQLLite(unittest.TestCase):
         
         self.assertTrue(self.storage.exists_by_source_url("https://example.com"))
 
+    def test_drpid_for_source_url(self) -> None:
+        """drpid_for_source_url returns the stored DRPID."""
+        self.storage.initialize(db_path=self.test_db_path)
+        drpid = self.storage.create_record("https://example.com/aqs")
+        self.assertEqual(self.storage.drpid_for_source_url("https://example.com/aqs"), drpid)
+        self.assertIsNone(self.storage.drpid_for_source_url("https://example.com/missing"))
+
     def test_list_source_urls_ordered_by_drpid(self) -> None:
         """list_source_urls returns every URL in DRPID order."""
         self.storage.initialize(db_path=self.test_db_path)

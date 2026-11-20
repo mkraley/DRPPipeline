@@ -485,6 +485,30 @@ class StorageSQLLite:
             commit=False,
         )
         return [str(row[0]) for row in cursor.fetchall()]
+
+    def drpid_for_source_url(self, source_url: str) -> int | None:
+        """
+        Return the DRPID stored for ``source_url``.
+
+        Args:
+            source_url: Project source URL.
+
+        Returns:
+            The matching DRPID, or None when the URL is not stored.
+
+        Raises:
+            RuntimeError: If Storage is not initialized.
+        """
+        cursor = self._execute_query(
+            "SELECT DRPID FROM projects WHERE source_url = ?",
+            (source_url,),
+            operation_name="find DRPID by source_url",
+            commit=False,
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return int(row[0])
     
     def delete(self, drpid: int) -> None:
         """
