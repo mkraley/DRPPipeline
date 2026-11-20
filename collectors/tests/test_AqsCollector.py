@@ -24,6 +24,7 @@ _PAGE = """
 </table>
 """
 _BODY = b"aqs-zip"
+_PDF = b"%PDF-1.4 format"
 
 
 class TestAqsCollector(unittest.TestCase):
@@ -38,6 +39,7 @@ class TestAqsCollector(unittest.TestCase):
         self.temp_dir = Path(tempfile.mkdtemp())
         Args._config["base_output_dir"] = str(self.temp_dir)
         Args._config["google_sheet_name"] = "AQS"
+        (self.temp_dir / "AirData FileFormats.pdf").write_bytes(_PDF)
         Storage.reset()
         self.storage = Storage.initialize("StorageSQLLite", db_path=self.temp_dir / "aqs.db")
 
@@ -50,7 +52,7 @@ class TestAqsCollector(unittest.TestCase):
             shutil.rmtree(self.temp_dir)
 
     def test_collect_saves_the_format_page_before_the_zip(self) -> None:
-        """The column zip and FileFormats.html land in the project folder."""
+        """The column zip and the shared format PDF land in the project folder."""
         url = "https://aqs.epa.gov/aqsweb/airdata/download_files.html#daily_aqi_by_cbsa"
         drpid = self.storage.create_record(url)
         collector = self._collector()
@@ -58,8 +60,11 @@ class TestAqsCollector(unittest.TestCase):
         result = collector._collect(url, drpid, {})
 
         folder = self.temp_dir / f"AQS{drpid:06d}"
-        self.assertEqual((folder / "FileFormats.html").read_bytes(), _BODY)
+        self.assertFalse((folder / "FileFormats.html").exists())
+        self.assertFalse((folder / "FileFormats.zip").exists())
+        self.assertEqual((folder / "AirData FileFormats.pdf").read_bytes(), _PDF)
         self.assertEqual((folder / "daily_aqi_by_cbsa_2024.zip").read_bytes(), _BODY)
+        self.assertIn("AirData FileFormats.pdf", result["summary"])
         self.assertEqual(result["title"], "Air Data Daily AQI by CBSA")
         self.assertEqual(result["office"], "Environmental Protection Agency")
         self.assertNotIn("status", result)

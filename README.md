@@ -79,7 +79,7 @@ Each module (except `noop` and `clean_inprogress`) advances project `status` so 
 
 To start a new source (SQLite database, download folder, config section, and a new tab on the shared inventory spreadsheet), run `python scripts/start_new_source.py nrc`. The new tab copies the header row from `Baserow Batch Import Template (please download)`. The DataLumos login is left for you to create.
 
-AQS collection (`python main.py collect --source aqs`) saves each column's yearly zips, `FileFormats.html`, the PM2.5 advisory when that column links it, and `file_list.csv` on the site and monitor project. A column whose zips are all 0 KB is not sourced. Downloads stop at the 1 GiB budget; the rest are recorded for a later large-file upload.
+AQS collection (`python main.py collect --source aqs`) saves each column's yearly zips, copies `AirData FileFormats.pdf` from the AQS output folder into the project, saves the PM2.5 advisory when that column links it, and saves `file_list.csv` on the site and monitor project. A column whose zips are all 0 KB is not sourced. Downloads stop at the 1 GiB budget; the rest are recorded for a later large-file upload.
 
 Daily NRC event-notification PDFs for one month, a year, or a year range: `python scripts/collect_event_notifications.py --year 2024` or `--year 1999 --through 2026`. A finished year is written to `{year}.zip` in the project folder. See [Usage](docs/Usage.md).
 

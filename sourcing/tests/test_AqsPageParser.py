@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 
 from sourcing.AqsPageParser import AqsPageParser
-from sourcing.AqsSeries import FORMATS_FILENAME
+from sourcing.AqsSeries import FORMATS_PDF_NAME
 
 _PAGE = """
 <h2>Site and Monitor Descriptions</h2>
@@ -88,7 +88,8 @@ class TestAqsPageParser(unittest.TestCase):
         self.assertEqual(advisories, ["Data_Advisory_PM25_88101_Pregen_Files.pdf"])
         self.assertEqual(column.omitted_empty, 1)
         self.assertIn("Data_Advisory_PM25_88101_Pregen_Files.pdf", column.collection_notes())
-        self.assertNotIn(FORMATS_FILENAME, column.collection_notes())
+        self.assertNotIn(FORMATS_PDF_NAME, column.collection_notes())
+        self.assertNotIn("FileFormats.html", column.collection_notes())
 
     def test_repeated_pollutant_is_a_separate_series_per_table(self) -> None:
         """Daily and hourly ozone are different projects."""

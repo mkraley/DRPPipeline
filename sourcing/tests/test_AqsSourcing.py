@@ -74,7 +74,7 @@ class TestAqsSourcing(unittest.TestCase):
         )
         self.assertEqual(projects[0]["agency"], "Environmental Protection Agency")
         self.assertEqual(projects[0]["office"], "Environmental Protection Agency")
-        self.assertIn("FileFormats.html", projects[0]["summary"])
+        self.assertIn("AirData FileFormats.pdf", projects[0]["summary"])
         self.assertFalse(projects[0].get("collection_notes"))
         self.assertTrue(projects[0]["source_url"].endswith("#daily_44201"))
 

@@ -12,7 +12,7 @@ from utils.datalumos_data_types import (
 )
 
 DOWNLOAD_PAGE_URL = "https://aqs.epa.gov/aqsweb/airdata/download_files.html"
-FORMATS_FILENAME = "FileFormats.html"
+FORMATS_PDF_NAME = "AirData FileFormats.pdf"
 INDEX_FILENAME = "file_list.csv"
 AGENCY = "Environmental Protection Agency"
 OFFICE = AGENCY
@@ -20,7 +20,7 @@ AQS_SUMMARY_NOTE = (
     "This data comes from EPA's Air Quality System (AQS). "
     "Data collection agencies report their data to EPA via this system and it "
     "calculates several types of aggregate (summary) data for EPA internal use. "
-    "See FileFormats.html for details on the contents."
+    f"See {FORMATS_PDF_NAME} for details on the contents."
 )
 
 _OBSERVATIONAL_SECTIONS = frozenset(
@@ -70,11 +70,11 @@ class AqsSeries:
         return f"{self._description()} {AQS_SUMMARY_NOTE}"
 
     def collection_notes(self) -> str:
-        """Return notes for extra files other than the format page."""
+        """Return notes for extra files other than the yearly data."""
         names = [
             item.filename
             for item in self.packaged_files()
-            if item.kind not in {"data", "format"}
+            if item.kind != "data"
         ]
         if not names:
             return ""
@@ -84,8 +84,8 @@ class AqsSeries:
         return f"Also save {listed}."
 
     def packaged_files(self) -> tuple[AqsFile, ...]:
-        """Return data files plus the format page, index, and advisories."""
-        extras = [AqsFile(FORMATS_FILENAME, 0, 0, "format")]
+        """Return data files plus the index and advisories."""
+        extras: list[AqsFile] = []
         if self.series_id == "sites":
             extras.append(AqsFile(INDEX_FILENAME, 0, 0, "index"))
         advisories = [item for item in self.files if item.kind == "advisory"]

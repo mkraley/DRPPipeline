@@ -1,13 +1,15 @@
 """
 AQS collector for DRP Pipeline.
 
-Downloads the yearly zips for one AirData column, plus FileFormats.html.
+Downloads the yearly zips for one AirData column and copies
+``AirData FileFormats.pdf`` from the AQS output folder into the project.
 The site project also saves file_list.csv, and a column that links the PM2.5
 advisory saves that PDF. Downloads stop at the shared 1 GiB budget.
 """
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
@@ -18,7 +20,8 @@ from collectors.PlannedFile import PlannedFile
 from sourcing.AqsDownloadClient import AqsDownloadClient, file_url
 from sourcing.AqsFile import AqsFile
 from sourcing.AqsPageParser import AqsPageParser
-from sourcing.AqsSeries import AqsSeries
+from sourcing.AqsSeries import FORMATS_PDF_NAME, AqsSeries
+from utils.Args import Args
 from utils.Errors import abort_project, record_error
 from utils.Logger import Logger
 from utils.download_with_progress import download_via_url
@@ -66,6 +69,9 @@ class AqsCollector(CollectorBase):
         if folder is None:
             return {}
         planned = [self._planned_file(item) for item in _collect_order(series)]
+        format_pdf = self._copy_format_pdf(drpid, folder)
+        if format_pdf is not None:
+            planned.insert(0, format_pdf)
         notes = self._download(drpid, folder, planned)
         return self._result(drpid, folder, series, planned, notes)
 
@@ -82,6 +88,17 @@ class AqsCollector(CollectorBase):
         if self._series is None:
             self._series = self._parser.parse_html(self._client.fetch_html())
         return self._series
+
+    def _copy_format_pdf(self, drpid: int, folder: Path) -> PlannedFile | None:
+        """Copy the shared format PDF into this project folder."""
+        source = Path(Args.base_output_dir) / FORMATS_PDF_NAME
+        dest = folder / FORMATS_PDF_NAME
+        if not source.is_file():
+            record_error(drpid, f"Format PDF is missing: {source}")
+            return None
+        if source.resolve() != dest.resolve():
+            shutil.copy2(source, dest)
+        return PlannedFile(FORMATS_PDF_NAME, str(source), dest.stat().st_size)
 
     def _planned_file(self, item: AqsFile) -> PlannedFile:
         """Build a budgeted download for one AirData file."""
@@ -133,7 +150,7 @@ class AqsCollector(CollectorBase):
 
 
 def _collect_order(series: AqsSeries) -> tuple[AqsFile, ...]:
-    """Save the format page and other small extras before the yearly zips."""
+    """Save small extras before the yearly zips."""
     packaged = series.packaged_files()
     extras = [item for item in packaged if item.kind != "data"]
     data = [item for item in packaged if item.kind == "data"]
